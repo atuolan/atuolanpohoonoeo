@@ -2,9 +2,12 @@
  * 讀偷窺手機要用的真資料：最近的聊天訊息、這段聊天的日記、他排好要打的電話。群聊沒有「跟使用者那串」，回傳空的
  */
 import { db, DB_STORES, type DiaryEntry } from "@/db/database";
+import { getAllQzonePosts, getSetting } from "@/db/operations";
 import { loadMessagePage } from "@/storage/chatMessageStorage";
 import type { Chat } from "@/types/chat";
 import type { PendingCall } from "@/types/incomingCall";
+import type { QZoneSettings } from "@/types/qzone";
+import { buildPeekPlurkNotes } from "@/utils/plurkModeration";
 import { buildPeekRealData, type PeekRealData, type PeekRealDataOptions } from "@/utils/peekRealData";
 
 /** 往回讀幾則：夠排最近 30 則對話和最近的交易 */
@@ -16,12 +19,14 @@ export function emptyPeekRealData(): PeekRealData {
 
 export async function loadPeekRealData(chat: Chat, options: PeekRealDataOptions): Promise<PeekRealData> {
   if (chat.isGroupChat) return emptyPeekRealData();
-  const [page, diaries, pendingCalls] = await Promise.all([
+  const [page, diaries, pendingCalls, plurkPosts, qzoneSettings] = await Promise.all([
     loadMessagePage(chat.id, MESSAGE_WINDOW),
     db.getAll<DiaryEntry>(DB_STORES.DIARIES),
     db.getAll<PendingCall>(DB_STORES.PENDING_CALLS).catch(() => [] as PendingCall[]),
+    getAllQzonePosts().catch(() => []),
+    getSetting<QZoneSettings>("qzone-settings").catch(() => undefined),
   ]);
-  return buildPeekRealData(
+  const real = buildPeekRealData(
     page.messages,
     diaries.filter((d) => d.chatId === chat.id),
     options,
@@ -31,4 +36,7 @@ export async function loadPeekRealData(chat: Chat, options: PeekRealDataOptions)
       chatCreatedAt: chat.createdAt,
     },
   );
+  // 噗浪近況：被禁言、偷偷說（用真的現在時間，禁言是噗浪上的事）
+  real.plurk = buildPeekPlurkNotes(plurkPosts, qzoneSettings?.characterBans, chat.characterId, Date.now());
+  return real;
 }

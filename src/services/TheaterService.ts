@@ -163,9 +163,10 @@ export async function postTheaterToQzone(post: TheaterPost): Promise<void> {
     visibility: "public",
     qualifier: "分享",
     authorType: "ai",
-    // 用 emoticons 存儲 theater post ID 以便跳轉
+    theaterPostId: post.id,
+    // 舊版 App 靠 emoticons 的 theater:ID 判斷，保留
     emoticons: { [`theater:${post.id}`]: 1 },
-  } as any);
+  });
 
   console.log(
     "[Theater] 已在噗浪發布小劇場連結:",

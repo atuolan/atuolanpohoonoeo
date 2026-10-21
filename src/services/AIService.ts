@@ -18,7 +18,12 @@ import {
     buildCharactersPrompt,
     buildExistingCommentsPrompt,
     parseBatchCommentsResponse,
+    parseBatchVerdict,
+    type BatchVerdict,
 } from "./BatchCommentsParser";
+import type { DirectorStrictness } from "@/utils/plurkDirectorConfig";
+import { PLURK_QUALIFIERS } from "@/utils/plurkQualifiers";
+import { MODERATOR_NAME } from "@/utils/plurkSquare";
 
 /**
  * 批量評論生成參數
@@ -40,6 +45,12 @@ export interface BatchCommentsParams {
   passerbyOnly?: boolean;
   chatContext?: Record<string, string>;
   replyToCharacterId?: string;
+  allowPasserby?: boolean; // false：只讓角色回應
+  toneHint?: string; // 單則重生的語氣要求
+  onlyCharacterId?: string; // 只生這位角色的一則
+  replyContext?: string; // 單則重生：原本那則在回覆誰、回覆什麼
+  moderation?: { strictness: DirectorStrictness }; // 廣場噗：版主可能刪留言
+  verdictFor?: { commentId: string; strictness: DirectorStrictness }; // 版主判定使用者剛留的言
 }
 
 /**
@@ -49,6 +60,8 @@ export interface BatchCommentsResult {
   success: boolean;
   comments: GeneratedComment[];
   error?: string;
+  /** 有給 verdictFor 時：版主對使用者那則留言的判定 */
+  verdict?: BatchVerdict | null;
 }
 
 /**
@@ -68,6 +81,12 @@ export async function generateBatchComments(
     passerbyOnly = false,
     chatContext = {},
     replyToCharacterId,
+    allowPasserby,
+    toneHint,
+    onlyCharacterId,
+    replyContext,
+    moderation,
+    verdictFor,
   } = params;
 
   let streamingWindow: ReturnType<typeof useStreamingWindow> | null = null;
@@ -113,6 +132,12 @@ export async function generateBatchComments(
       passerbyOnly,
       chatContext,
       replyToCharacterId,
+      allowPasserby,
+      toneHint,
+      onlyCharacterId,
+      replyContext,
+      moderation,
+      verdictFor,
     });
 
     console.log("📤 批量評論 - 系統提示詞:");
@@ -239,7 +264,7 @@ export async function generateBatchComments(
     });
     console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
-    return { success: true, comments };
+    return { success: true, comments, verdict: verdictFor ? parseBatchVerdict(fullContent) : undefined };
   } catch (error) {
     console.error("❌ 批量評論生成失敗:", error);
 
@@ -283,7 +308,7 @@ function buildCommentStyleSection(
   return texts.length > 0 ? `\n# 評論風格\n${texts.join("\n\n")}\n` : "";
 }
 
-function buildBatchCommentsPrompt(params: {
+export function buildBatchCommentsPrompt(params: {
   characters: Array<{
     id: string;
     name: string;
@@ -299,6 +324,12 @@ function buildBatchCommentsPrompt(params: {
   passerbyOnly?: boolean;
   chatContext?: Record<string, string>;
   replyToCharacterId?: string;
+  allowPasserby?: boolean;
+  toneHint?: string;
+  onlyCharacterId?: string;
+  replyContext?: string;
+  moderation?: { strictness: DirectorStrictness };
+  verdictFor?: { commentId: string; strictness: DirectorStrictness };
 }): string {
   const {
     characters,
@@ -311,6 +342,20 @@ function buildBatchCommentsPrompt(params: {
     replyToCharacterId,
     promptManagerStore,
   } = params;
+
+  const qualifierList = PLURK_QUALIFIERS.map((q) => q.label).join("、");
+  const strictness = params.moderation?.strictness;
+  const removedRule =
+    strictness === "hard"
+      ? "吵架、引戰、人身攻擊、洗版的留言"
+      : strictness === "mid"
+        ? "最多 1 則明顯人身攻擊或引戰的留言（大部分都不要加）"
+        : "";
+  const qualifierFormatLine =
+    `- qualifier: 噗浪發語詞，可省略（省略就是不加）；只能用：${qualifierList}` +
+    (removedRule
+      ? `\n- removed: 這是公開廣場，版主「${MODERATOR_NAME}」會刪掉${removedRule}。被刪的那則照樣寫出內容，另外加上 removed（原因 2–4 字，例如「人身攻擊」）；角色的留言不要被刪。`
+      : "");
 
   // 使用者在提示詞管理「噗浪評論」設定的評論風格
   const styleSection = buildCommentStyleSection(promptManagerStore);
@@ -399,6 +444,7 @@ ${existingCommentsPrompt}
 - characterName: 路人暱稱
 - content: 評論內容（10-80字）
 - replyTo: 回覆的評論 ID，如果是直接評論貼文則為 null
+${qualifierFormatLine}
 
 \`\`\`json
 {
@@ -447,6 +493,62 @@ ${existingCommentsPrompt}
     ? `\n# ⚠️ 重要：優先回覆指示\n用戶正在回覆 ${replyTargetDescription}。**${replyToChar.name} 必須是第一個回覆的角色（c1）**，直接回應用戶的最新評論。這裡的「用戶」是噗浪留言者／回覆操作者，不代表 ${replyToChar.name} 私聊記錄中的 {{user}}，除非身份資訊明確相同。其他角色的評論排在後面。\n`
     : "";
 
+  const passerbyAllowed = params.allowPasserby !== false;
+  const passerbySection = passerbyAllowed
+    ? `# 隨機路人評論者
+除了上述角色外，你還可以創造 1-3 個隨機路人來評論。路人的規則：
+- characterId 使用 "passerby-1", "passerby-2", "passerby-3" 等格式
+- characterName 使用真實、多樣化的網路暱稱，例如：
+  - "毛毛沒吃早餐"、"憑甚麼要做報告"、"從前像我一樣"
+  - "我餓了"、"阿瓜雲上下左右"、"膝蓋中了一劍但我沒跪"
+  - "冰糖葫蘆"、"薄荷可可"、"在你眼中我是誰"
+- 路人評論風格多樣：可以是粉絲、路人、吐槽、玩梗等
+- 路人可以和角色互動，也可以被角色回覆`
+    : "# 路人\n這則噗只有好友看得到，不要加入路人，只讓上面列出的角色回應。";
+  const onlyChar = params.onlyCharacterId
+    ? characters.find((c) => c.id === params.onlyCharacterId)
+    : null;
+  const singleSection = onlyChar
+    ? `\n# 這次只要一則\n只輸出 1 則 ${onlyChar.name} 的回應（characterId 用 "${onlyChar.id}"，id 用 "c1"，replyTo 用 null）。${params.replyContext ? `\n${params.replyContext}` : ""}${params.toneHint ? `\n語氣：${params.toneHint}` : ""}\n`
+    : "";
+  const exampleJson = passerbyAllowed
+    ? `    {"id": "c1", "characterId": "char-001", "characterName": "小明", "content": "評論內容", "replyTo": null, "qualifier": "覺得"},
+    {"id": "c2", "characterId": "passerby-1", "characterName": "今天也要早睡", "content": "路人評論", "replyTo": null},
+    {"id": "c3", "characterId": "char-002", "characterName": "小紅", "content": "回覆路人", "replyTo": "c2"}`
+    : `    {"id": "c1", "characterId": "char-001", "characterName": "小明", "content": "評論內容", "replyTo": null, "qualifier": "覺得"},
+    {"id": "c2", "characterId": "char-002", "characterName": "小紅", "content": "回覆小明", "replyTo": "c1"}`;
+  const requirements = onlyChar
+    ? "請只生成上面指定的那一則回應。"
+    : passerbyAllowed
+      ? `請為以上角色和路人生成評論區互動。
+
+要求：
+1. 每個角色至少發表 1 條評論
+2. 加入 1-3 個路人評論，增加真實感
+3. 鼓勵角色和路人之間互相回覆，形成對話
+4. 總評論數建議 ${minComments}-${maxComments} 條
+5. 評論要符合各自性格，有個性化
+6. 路人評論風格要多樣：粉絲、路人、吐槽、玩梗等`
+      : `請為以上角色生成評論區互動。
+
+要求：
+1. 每個角色至少發表 1 條評論
+2. 鼓勵角色之間互相回覆，形成對話
+3. 總評論數建議 ${minComments}-${maxComments} 條
+4. 評論要符合各自性格，有個性化`;
+
+  const verdictRule =
+    params.verdictFor?.strictness === "hard"
+      ? "吵架、引戰、人身攻擊、偏激的都要摺疊，嚴重的可以禁言 1–3 天"
+      : "只有很明顯的人身攻擊或引戰才摺疊，禁言最多 1 天；大部分留言都沒問題，fold 用 null";
+  const verdictSection = params.verdictFor
+    ? `
+# 版主判定
+已有評論中 id 為 ${params.verdictFor.commentId} 的那則是使用者剛留的言。廣場版主「${MODERATOR_NAME}」要判斷要不要摺疊它（${verdictRule}）。
+在 JSON 最外層、comments 旁邊另外輸出 "verdict": {"fold": null 或 "原因（2–4 字）", "banDays": 0}。角色的評論照常生成，不受判定影響。
+`
+    : "";
+
   // 正常模式（有角色參與）
   let prompt = `你是一個社交媒體評論區模擬器。你的任務是根據多個角色的人設，為一條貼文生成真實、自然的評論區互動。
 
@@ -457,20 +559,12 @@ ${existingCommentsPrompt}
 4. 使用繁體中文，口語化表達
 5. 如果角色使用外語，只在外語部分後加括號翻譯
 6. 噗浪作者、已有評論作者、被回覆者、路人、以及各角色私聊中的 {{user}} 是不同身份欄位；不得因為看到「用戶／玩家」就自動合併。
-${replyPrioritySection}${styleSection}
+${replyPrioritySection}${styleSection}${singleSection}
 # 評論區角色
 
 ${charactersPrompt}
 ${chatContextSection}
-# 隨機路人評論者
-除了上述角色外，你還可以創造 1-3 個隨機路人來評論。路人的規則：
-- characterId 使用 "passerby-1", "passerby-2", "passerby-3" 等格式
-- characterName 使用真實、多樣化的網路暱稱，例如：
-  - "毛毛沒吃早餐"、"憑甚麼要做報告"、"從前像我一樣"
-  - "我餓了"、"阿瓜雲上下左右"、"膝蓋中了一劍但我沒跪"
-  - "冰糖葫蘆"、"薄荷可可"、"在你眼中我是誰"
-- 路人評論風格多樣：可以是粉絲、路人、吐槽、玩梗等
-- 路人可以和角色互動，也可以被角色回覆
+${passerbySection}
 
 # 原始貼文
 
@@ -487,30 +581,22 @@ ${existingCommentsPrompt}
 # 輸出格式
 輸出 JSON 格式，每條評論包含：
 - id: 評論的唯一 ID（格式：c1, c2, c3...）
-- characterId: 角色 ID（角色用原 ID，路人用 passerby-1, passerby-2...）
-- characterName: 角色名稱或路人暱稱
+- characterId: ${passerbyAllowed ? "角色 ID（角色用原 ID，路人用 passerby-1, passerby-2...）" : "角色 ID（用上面列出的原 ID）"}
+- characterName: ${passerbyAllowed ? "角色名稱或路人暱稱" : "角色名稱"}
 - content: 評論內容（10-80字）
 - replyTo: 回覆的評論 ID，如果是直接評論貼文則為 null
+${qualifierFormatLine}
 
 \`\`\`json
 {
   "comments": [
-    {"id": "c1", "characterId": "char-001", "characterName": "小明", "content": "評論內容", "replyTo": null},
-    {"id": "c2", "characterId": "passerby-1", "characterName": "今天也要早睡", "content": "路人評論", "replyTo": null},
-    {"id": "c3", "characterId": "char-002", "characterName": "小紅", "content": "回覆路人", "replyTo": "c2"}
+${exampleJson}
   ]
 }
 \`\`\`
 
-請為以上角色和路人生成評論區互動。
-
-要求：
-1. 每個角色至少發表 1 條評論
-2. 加入 1-3 個路人評論，增加真實感
-3. 鼓勵角色和路人之間互相回覆，形成對話
-4. 總評論數建議 ${minComments}-${maxComments} 條
-5. 評論要符合各自性格，有個性化
-6. 路人評論風格要多樣：粉絲、路人、吐槽、玩梗等
+${verdictSection}
+${requirements}
 
 只輸出 JSON，不要有其他文字。`;
 

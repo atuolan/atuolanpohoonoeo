@@ -959,6 +959,7 @@ const peekPhoneCharacterId = ref<string | null>(null);
 const peekPhoneChatId = ref<string | null>(null);
 const peekPhoneSelectRef = ref<InstanceType<typeof PeekPhoneSelectScreen> | null>(null);
 const peekPhoneScreenRef = ref<InstanceType<typeof PeekPhoneScreen> | null>(null);
+const qzoneScreenRef = ref<InstanceType<typeof QZoneScreen> | null>(null);
 
 // 選好角色進手機也推一筆歷史，瀏覽器的返回才會回到選角色，不會跳過它
 function openPeekPhone(characterId: string, chatId: string) {
@@ -1516,6 +1517,16 @@ async function loadAppData() {
 
   // characters 已載入，立即啟動主動發訊息服務
   proactiveMessageService.start();
+
+  // 噗浪：慢慢回的回應到點時通知
+  import("@/services/plurkReveal")
+    .then(({ startPlurkRevealTicker }) => startPlurkRevealTicker())
+    .catch((err) => console.warn("[App] 噗浪到點通知啟動失敗:", err));
+
+  // 噗浪 AI 導演：自動模式
+  import("@/services/plurkDirector")
+    .then(({ plurkDirector }) => plurkDirector.start())
+    .catch((err) => console.warn("[App] 噗浪導演啟動失敗:", err));
 
   // 啟動封鎖系統輪詢與道歉外賣計時器恢復
   import("@/services/BlockService")
@@ -2777,6 +2788,17 @@ function goBackFromTheater() {
 // 從噗浪導航到小劇場（記錄歷史，可帶指定 postId 直接打開內文）
 const pendingTheaterPostId = ref<string | undefined>(undefined);
 
+/** 噗浪：個人頁「偷看他的手機」、版務公告、偷偷說的線索 → 他的私聊的 PEEK */
+async function openPeekFromQzone(characterId: string) {
+  const chat = await resolvePreferredDirectChat(characterId);
+  if (!chat) {
+    alert("還沒跟他聊過，看不到他的手機");
+    return;
+  }
+  navigationHistory.value.push("qzone");
+  openPeekPhone(characterId, chat.id);
+}
+
 function navigateToTheaterFromQzone(theaterPostId?: string) {
   navigationHistory.value.push("qzone");
   pendingTheaterPostId.value = theaterPostId;
@@ -2874,7 +2896,9 @@ function handleGlobalSwipeBack() {
       }
     },
     music: goHome,
-    qzone: goHome,
+    qzone: () => {
+      if (!qzoneScreenRef.value?.handleBack()) goHome();
+    },
     user: goHome,
     weather: goHome,
     shop: goBackFromQuickNav,
@@ -3033,8 +3057,11 @@ useSwipeBack(handleGlobalSwipeBack, swipeBackEnabled);
     <!-- 噗浪空間 -->
     <QZoneScreen
       v-else-if="currentPage === 'qzone'"
+      ref="qzoneScreenRef"
       @back="goHome"
       @navigate-theater="navigateToTheaterFromQzone"
+      @open-chat="startChat"
+      @open-peek="openPeekFromQzone"
     />
 
     <!-- 使用者設定 -->

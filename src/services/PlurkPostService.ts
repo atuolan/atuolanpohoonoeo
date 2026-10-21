@@ -11,6 +11,7 @@ import {
   parsePlurkBlock,
   PLURK_QUALIFIERS,
 } from "@/utils/plurkFormat";
+import { normalizeQualifier } from "@/utils/plurkQualifiers";
 
 export interface PlurkAuthor {
   id: string;
@@ -31,6 +32,7 @@ export async function publishCharacterPlurk(
   author: PlurkAuthor,
   raw: string,
   fallback: { name?: string; avatar?: string } = {},
+  opts: { timestamp?: number } = {},
 ): Promise<QZonePost | null> {
   const parsed = parsePlurkBlock(raw);
   if (!parsed) {
@@ -53,23 +55,25 @@ export async function publishCharacterPlurk(
 
   const name = author.nickname || author.data?.name || fallback.name || "角色";
   const hasReactions = Object.keys(parsed.reactions).length > 0;
+  const qualifier = normalizeQualifier(parsed.qualifier);
 
-  return qzoneStore.addPost({
-    authorId: author.id,
-    username: name,
-    avatar: author.avatar || fallback.avatar || defaultAvatar(author.id),
-    type: "shuoshuo",
-    content: parsed.content,
-    qualifier:
-      parsed.qualifier ||
-      PLURK_QUALIFIERS[Math.floor(Math.random() * PLURK_QUALIFIERS.length)],
-    visibility: "public",
-    authorType: "ai",
-    emoticons: hasReactions ? parsed.reactions : generateReactions(),
-    visibilityMode: isGroupPost ? "group-only" : "public",
-    groupName: isGroupPost ? `${name} 的粉絲` : undefined,
-    groupMemberIds: isGroupPost ? [...relatedCharacterIds] : undefined,
-  });
+  return qzoneStore.addPost(
+    {
+      authorId: author.id,
+      username: name,
+      avatar: author.avatar || fallback.avatar || defaultAvatar(author.id),
+      type: "shuoshuo",
+      content: parsed.content,
+      qualifier: qualifier || PLURK_QUALIFIERS[Math.floor(Math.random() * PLURK_QUALIFIERS.length)],
+      visibility: "public",
+      authorType: "ai",
+      emoticons: hasReactions ? parsed.reactions : generateReactions(),
+      visibilityMode: isGroupPost ? "group-only" : "public",
+      groupName: isGroupPost ? `${name} 的粉絲` : undefined,
+      groupMemberIds: isGroupPost ? [...relatedCharacterIds] : undefined,
+    },
+    { timestamp: opts.timestamp },
+  );
 }
 
 /** 給 {{socialPosts}} 使用：角色（群聊時為各成員）最近的噗文 */

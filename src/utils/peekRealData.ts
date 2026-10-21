@@ -32,6 +32,14 @@ export interface PeekRealData {
   pendingCalls: PeekPendingCall[];
   /** 兩人第一次聊天的日期（YYYY-MM-DD），給鎖屏密碼參考 */
   firstChatDate?: string;
+  /** 他在噗浪的近況：被禁言、偷偷說發過的噗 */
+  plurk?: PeekPlurkNotes;
+}
+
+export interface PeekPlurkNotes {
+  ban?: { reason: string; until: string };
+  /** 他用偷偷說匿名發的噗，新的在前 */
+  anonPosts: string[];
 }
 
 export interface PeekPendingCall {
@@ -293,6 +301,15 @@ export function describeRealDataForPrompt(real: PeekRealData, userName: string):
   if (real.pendingCalls.length) {
     lines.push(`他排好等一下要打給${userName}的電話（會變成行事曆上的提醒，可以在心情、日記裡呼應）：`);
     for (const c of real.pendingCalls) lines.push(`- ${c.time}，原因：${c.reason}`);
+  }
+  if (real.plurk?.ban) {
+    lines.push(
+      `他在噗浪廣場被版主禁言中（原因：${real.plurk.ban.reason}，到 ${real.plurk.ban.until}）。備忘錄可以有一封寫到一半、還沒送出的申訴。`,
+    );
+  }
+  if (real.plurk?.anonPosts.length) {
+    lines.push("他在噗浪用「偷偷說」匿名發過這些（別人不知道是他；可以在搜尋紀錄、備忘錄或心情裡露出一點蛛絲馬跡，但不要直接承認）：");
+    for (const text of real.plurk.anonPosts) lines.push(`- ${text}`);
   }
   return lines.join("\n");
 }

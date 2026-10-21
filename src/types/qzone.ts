@@ -2,6 +2,74 @@
  * 噗浪空間（QZone/Plurk）類型定義
  */
 
+import type { PlurkDirectorConfig } from "@/utils/plurkDirectorConfig";
+
+/** 誰看得到：全員／好友／私噗／偷偷說 */
+export type PlurkAudience = "all" | "friends" | "private" | "anon";
+/** 誰會來回應：讓 AI 挑／我指定／不要回應 */
+export type PlurkReplyPolicy = "ai" | "pick" | "none";
+
+/** 發噗面板記住的上次選擇 */
+export interface PlurkComposeDefaults {
+  audience: PlurkAudience;
+  replyPolicy: PlurkReplyPolicy;
+  allowPasserby: boolean;
+  slowReplies: boolean;
+}
+
+/** 廣場路人（噗主） */
+export interface PlurkNpc {
+  id: string;
+  name: string;
+  color: string;
+}
+
+/** 廣場版主的處置：摺疊噗、刪除回應 */
+export interface PlurkModeration {
+  action: "fold" | "delete";
+  reason: string;
+  by: string;
+  at: number;
+}
+
+/** 系統通知：版主處分、禁言、版務公告、申訴結果 */
+export interface PlurkSystemNotice {
+  id: string;
+  kind: "fold" | "ban" | "announce" | "appeal";
+  title: string;
+  text: string;
+  at: number;
+  postId?: string;
+  commentId?: string;
+  characterId?: string;
+}
+
+export interface PlurkAppeal {
+  reason: string;
+  sentAt: number;
+  /** 到這個時間才出結果 */
+  decideAt: number;
+  status: "pending" | "approved" | "denied";
+  reply?: string;
+}
+
+/** 使用者在廣場被禁言 */
+export interface PlurkBan {
+  reason: string;
+  by: string;
+  at: number;
+  until: number;
+  appeal?: PlurkAppeal;
+}
+
+/** 角色被禁言（版務公告、PEEK 近況） */
+export interface PlurkCharacterBan {
+  characterId: string;
+  reason: string;
+  at: number;
+  until: number;
+}
+
 // 媒體項目（圖片/視頻）
 export interface MediaItem {
   type: "image" | "video";
@@ -19,6 +87,8 @@ export interface QZoneComment {
   authorType?: "user" | "ai"; // 作者類型
   replyToId?: string; // 回覆的評論 ID
   replyToUsername?: string; // 回覆的評論作者名稱（顯示用）
+  qualifier?: string; // 回應的發語詞，沒有＝自由發揮
+  moderation?: PlurkModeration; // 被版主刪除
 }
 
 // 批量評論生成結果（單條）
@@ -28,6 +98,8 @@ export interface GeneratedComment {
   characterName: string;
   content: string;
   replyTo: string | null; // 回覆的評論 ID，null 表示直接評論貼文
+  qualifier?: string; // 發語詞（可省略）
+  removed?: string; // 廣場：版主刪除這則的原因
 }
 
 // 批量評論生成結果
@@ -70,6 +142,23 @@ export interface QZonePost {
   visibilityMode?: "public" | "group-only"; // 貼文可見性模式
   groupName?: string; // 群組名稱（顯示用）
   groupMemberIds?: string[]; // 群組成員 ID 列表（group-only 模式時記錄）
+  // 改版後的可見性與回應設定（舊資料沒有，讀取時用 utils/plurkPost 推）
+  audience?: PlurkAudience;
+  privateTo?: string[]; // 私噗給哪些角色
+  replyPolicy?: PlurkReplyPolicy;
+  replyPickIds?: string[]; // 「我指定」選的角色
+  allowPasserby?: boolean; // 讓路人也來回應
+  slowReplies?: boolean; // 像真人一樣慢慢回
+  theaterPostId?: string; // 小劇場連結
+  seenAt?: number; // 最後一次打開回應串的時間
+  muted?: boolean; // 消音：不再通知
+  // 廣場（第 3 期）
+  npc?: PlurkNpc; // 路人發的噗
+  onSquare?: boolean; // 只在廣場（路人噗）
+  anonOf?: string; // 角色的偷偷說：真正的角色 ID（畫面不顯示）
+  crowdLikes?: number; // 廣場上路人給的喜歡
+  moderation?: PlurkModeration; // 被版主摺疊
+  likeEvents?: Array<{ by: string; at: number }>; // 角色按的讚（第 4 期）
 }
 
 // 噗浪空間設定
@@ -81,6 +170,15 @@ export interface QZoneSettings {
   autoAIReply?: boolean; // 自動 AI 回覆
   enableChatContext?: boolean; // 讀取對話記錄
   chatContextCount?: number; // 讀取對話條數
+  composeDefaults?: PlurkComposeDefaults; // 發噗面板記住的選擇
+  unreadSince?: number; // 比這個時間舊的回應一律當已讀
+  director?: PlurkDirectorConfig; // AI 導演設定
+  npcFriends?: PlurkNpc[]; // 加了好友的路人（他們的噗會進河道）
+  anonQuota?: { day: string; count: number }; // 今天發了幾則偷偷說
+  systemNotices?: PlurkSystemNotice[]; // 系統通知（新的在前）
+  ban?: PlurkBan; // 廣場禁言
+  characterBans?: PlurkCharacterBan[]; // 角色被禁言
+  impressions?: Record<string, { tags: string[]; at: number }>; // 角色個人頁的印象標籤
 }
 
 // 自動互動配置
