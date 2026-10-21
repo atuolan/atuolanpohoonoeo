@@ -3,7 +3,7 @@
  * 也可能讓一位好友角色偷偷說心裡話
  */
 
-import { generatePlurkText, hasPlurkApi } from "@/services/plurkAI";
+import { extractJsonObject, generatePlurkText, hasPlurkApi } from "@/services/plurkAI";
 import { buildCastContext, effectiveFriendIds } from "@/services/plurkCast";
 import { plurkActivity } from "@/services/plurkReveal";
 import { useCharactersStore } from "@/stores/characters";
@@ -77,6 +77,13 @@ const STRICTNESS_RULES: Record<DirectorStrictness, string> = {
 
 export function buildSquarePrompt(input: SquarePromptInput): string {
   const qualifiers = PLURK_QUALIFIERS.map((q) => q.label).join("、");
+  const announceSection =
+    input.characters.length && input.strictness !== "loose"
+      ? `
+# 版務公告（很少發生）
+大約十次裡一次：可以讓上面其中一位角色因為在廣場吵架、洗版這類事被版主禁言，在 JSON 最外層、posts 旁邊加 "announce": {"characterId": "角色 id", "reason": "原因（10 字內）", "days": 1}（1–3 天）。大部分時候不要加。
+`
+      : "";
   const time = new Date(input.now).toLocaleString("zh-TW", { hour12: false });
   const recent = input.recentTexts.length
     ? `\n# 廣場上最近已經有的噗（不要重複題材）\n${input.recentTexts.map((t) => `- ${t}`).join("\n")}\n`
@@ -98,7 +105,7 @@ ${input.characters.map((c) => `- id: ${c.id}｜${c.name}｜個性：${c.personal
 4. 每則附 0–3 則其他路人的回應（replies），像真的留言串；也給一個喜歡數 likes（0–200 的整數，大部分在 50 以下）。
 5. qualifier 是噗浪發語詞，可省略；只能用：${qualifiers}
 6. 版主：${STRICTNESS_RULES[input.strictness]}
-${characterSection}${recent}
+${characterSection}${announceSection}${recent}
 # 輸出格式
 只輸出 JSON：
 \`\`\`json
@@ -122,6 +129,23 @@ function cleanText(value: unknown, max = MAX_CONTENT): string {
 
 function cleanQualifier(value: unknown): string | undefined {
   return typeof value === "string" && isKnownQualifier(value) ? normalizeQualifier(value) : undefined;
+}
+
+export interface ParsedSquareAnnounce {
+  characterId: string;
+  reason: string;
+  days: number;
+}
+
+/** 頂層的版務公告；角色不在名單裡、格式不對回傳 null */
+export function parseSquareAnnounce(raw: string, characterIds: Set<string>): ParsedSquareAnnounce | null {
+  const data = extractJsonObject(raw);
+  const item = data?.announce as Record<string, unknown> | undefined;
+  if (!item || typeof item !== "object") return null;
+  const characterId = typeof item.characterId === "string" ? item.characterId : "";
+  const reason = cleanText(item.reason, 20);
+  if (!characterIds.has(characterId) || !reason) return null;
+  return { characterId, reason, days: clampInt(item.days, 1, 3) };
 }
 
 export function parseSquareResponse(
@@ -293,6 +317,23 @@ export async function generateSquareBatch(): Promise<{ success: boolean; added: 
           { timestamp: replyAt },
         );
       }
+    }
+    const announce = parseSquareAnnounce(raw, new Set(characters.map((c) => c.id)));
+    if (announce && cfg.strictness !== "loose") {
+      const name = characters.find((c) => c.id === announce.characterId)?.name ?? "某位用戶";
+      const until = now + announce.days * 86_400_000;
+      await qzoneStore.updateSettings({
+        characterBans: [
+          ...(qzoneStore.settings.characterBans ?? []).filter((b) => b.until > now && b.characterId !== announce.characterId),
+          { characterId: announce.characterId, reason: announce.reason, at: now, until },
+        ],
+      });
+      await qzoneStore.addSystemNotice({
+        kind: "announce",
+        title: "版務公告",
+        text: `用戶「${name}」因${announce.reason}，禁言 ${announce.days} 天。`,
+        characterId: announce.characterId,
+      });
     }
     return { success: true, added: parsed.length };
   } catch (error) {

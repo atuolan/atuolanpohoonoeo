@@ -3,6 +3,7 @@ import type { PlurkBan, QZoneComment, QZonePost } from "@/types/qzone";
 import {
   appealStage,
   banRemaining,
+  buildPeekPlurkNotes,
   clampBanDays,
   countDuplicateReplies,
   groupLikeNotices,
@@ -83,5 +84,17 @@ describe("通知", () => {
       { postId: "y", likerIds: ["c"], at: now - 30 * 60_000 },
       { postId: "x", likerIds: ["b", "a"], at: now - H },
     ]);
+  });
+});
+
+describe("buildPeekPlurkNotes", () => {
+  it("禁言中的原因、最近 3 則偷偷說；都沒有回 undefined", () => {
+    const anon = (id: string, t: number) => p(id, [], { anonOf: "c1", audience: "anon", timestamp: t, content: `心事${id}` });
+    const posts = [anon("1", now - 4 * H), anon("2", now - 3 * H), anon("3", now - 2 * H), anon("4", now - H), anon("future", now + H)];
+    const notes = buildPeekPlurkNotes(posts, [{ characterId: "c1", reason: "吵架", at: now - H, until: now + 5 * H }], "c1", now);
+    expect(notes?.ban?.reason).toBe("吵架");
+    expect(notes?.anonPosts).toEqual(["心事4", "心事3", "心事2"]);
+    expect(buildPeekPlurkNotes(posts, [], "c2", now)).toBeUndefined();
+    expect(buildPeekPlurkNotes([], [{ characterId: "c1", reason: "r", at: 0, until: now - 1 }], "c1", now)).toBeUndefined();
   });
 });

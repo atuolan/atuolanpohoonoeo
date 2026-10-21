@@ -3,7 +3,11 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("@/services/plurkCast", () => ({ buildCastContext: vi.fn(), effectiveFriendIds: vi.fn() }));
 vi.mock("@/stores/qzone", () => ({ useQzoneStore: vi.fn() }));
 vi.mock("@/stores/characters", () => ({ useCharactersStore: vi.fn() }));
-vi.mock("@/services/plurkAI", () => ({ generatePlurkText: vi.fn(), hasPlurkApi: vi.fn() }));
+vi.mock("@/services/plurkAI", async () => {
+  const actual = await vi.importActual<typeof import("./plurkAI")>("./plurkAI");
+  return { ...actual, generatePlurkText: vi.fn(), hasPlurkApi: vi.fn() };
+});
+vi.mock("@/stores/settings", () => ({ useSettingsStore: vi.fn() }));
 vi.mock("@/stores/notification", () => ({ useNotificationStore: vi.fn() }));
 
 const { buildSquarePrompt, npcColorFor, npcIdFor, parseSquareResponse } = await import("./plurkSquareGeneration");
@@ -81,5 +85,23 @@ describe("npcIdFor / npcColorFor", () => {
     expect(npcIdFor("小魚")).toBe(npcIdFor("小魚"));
     expect(npcIdFor("小魚")).not.toBe(npcIdFor("大魚"));
     expect(npcColorFor("小魚")).toMatch(/^#[0-9A-F]{6}$/i);
+  });
+});
+
+describe("版務公告", () => {
+  it("只收名單裡的角色、天數 1–3", async () => {
+    const { parseSquareAnnounce } = await import("./plurkSquareGeneration");
+    const ids = new Set(["c1"]);
+    expect(parseSquareAnnounce('{"posts": [], "announce": {"characterId": "c1", "reason": "在多篇噗下爭吵", "days": 9}}', ids)).toEqual({
+      characterId: "c1", reason: "在多篇噗下爭吵", days: 3,
+    });
+    expect(parseSquareAnnounce('{"posts": [], "announce": {"characterId": "x", "reason": "r"}}', ids)).toBeNull();
+    expect(parseSquareAnnounce('{"posts": []}', ids)).toBeNull();
+  });
+  it("寬鬆或沒有角色時提示詞不給公告", () => {
+    const c = [{ id: "c1", name: "陸晏", personality: "", description: "" }];
+    expect(buildSquarePrompt({ count: 3, strictness: "loose", characters: c, recentTexts: [], now })).not.toContain("announce");
+    expect(buildSquarePrompt({ count: 3, strictness: "mid", characters: [], recentTexts: [], now })).not.toContain("announce");
+    expect(buildSquarePrompt({ count: 3, strictness: "mid", characters: c, recentTexts: [], now })).toContain("announce");
   });
 });

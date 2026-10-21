@@ -2,7 +2,9 @@
  * 廣場版主（純函式）：洗版判斷、禁言狀態、申訴進度、規定文字、讚的通知分組
  */
 
-import type { PlurkAppeal, PlurkBan, PlurkSystemNotice, QZonePost } from "@/types/qzone";
+import type { PlurkAppeal, PlurkBan, PlurkCharacterBan, PlurkSystemNotice, QZonePost } from "@/types/qzone";
+import type { PeekPlurkNotes } from "@/utils/peekRealData";
+import { plurkPlainText } from "@/utils/plurkContent";
 import type { DirectorStrictness } from "@/utils/plurkDirectorConfig";
 import { isSquarePost } from "@/utils/plurkSquare";
 
@@ -106,4 +108,25 @@ export function groupLikeNotices(posts: QZonePost[], now: number): LikeNotice[] 
     result.push({ postId: post.id, likerIds: [...new Set(events.map((e) => e.by))], at: events[0].at });
   }
   return result.sort((a, b) => b.at - a.at);
+}
+
+/** PEEK 用：這位角色在噗浪的近況（禁言中的原因與到期、最近 3 則偷偷說） */
+export function buildPeekPlurkNotes(
+  posts: QZonePost[],
+  characterBans: PlurkCharacterBan[] | undefined,
+  characterId: string,
+  now: number,
+): PeekPlurkNotes | undefined {
+  const ban = (characterBans ?? []).find((b) => b.characterId === characterId && b.until > now);
+  const anonPosts = posts
+    .filter((p) => p.anonOf === characterId && p.timestamp <= now)
+    .sort((a, b) => b.timestamp - a.timestamp)
+    .slice(0, 3)
+    .map((p) => plurkPlainText(p.content || "", 80));
+  if (!ban && anonPosts.length === 0) return undefined;
+  const until = new Date(ban?.until ?? 0);
+  return {
+    ban: ban ? { reason: ban.reason, until: `${until.getMonth() + 1}/${until.getDate()} ${String(until.getHours()).padStart(2, "0")}:00` } : undefined,
+    anonPosts,
+  };
 }
