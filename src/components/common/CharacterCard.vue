@@ -14,6 +14,7 @@ interface CharacterCardProps {
   showAvatar?: boolean;
   description?: string;
   layout?: "grid" | "list";
+  when?: string;
 }
 
 const props = withDefaults(defineProps<CharacterCardProps>(), {
@@ -25,6 +26,7 @@ const props = withDefaults(defineProps<CharacterCardProps>(), {
   showAvatar: true,
   description: "",
   layout: "grid",
+  when: "",
 });
 
 // Emits
@@ -32,7 +34,7 @@ const emit = defineEmits<{
   (e: "click", id: string): void;
   (e: "chat", id: string): void;
   (e: "multiChar", id: string): void;
-  (e: "delete", id: string): void;
+  (e: "more", id: string): void;
   (e: "longpress", id: string): void;
 }>();
 
@@ -41,6 +43,9 @@ const imageError = ref(false);
 
 // 顯示名稱（優先暱稱）
 const displayName = computed(() => props.nickname || props.name);
+
+// 封面／頭像顯示的第一個字
+const initial = computed(() => displayName.value.charAt(0));
 
 // 實際顯示的頭像（如果載入失敗則使用預設）
 const displayAvatar = computed(() => {
@@ -63,12 +68,22 @@ const subtitle = computed(() => {
   return parts.join(" · ");
 });
 
+// 卡片副標：優先用 subtitle，其次取前三個標籤
+const metaLine = computed(() => {
+  if (subtitle.value) return subtitle.value;
+  if (props.tags.length > 0) {
+    const base = props.tags.slice(0, 3).join(" · ");
+    return props.tags.length > 3 ? `${base} +${props.tags.length - 3}` : base;
+  }
+  return "尚未加標籤";
+});
+
 // 長按處理
 let longPressTimer: number | null = null;
 
 function onTouchStart() {
   longPressTimer = window.setTimeout(() => {
-    emit("longpress", props.id);
+    emit("more", props.id);
     longPressTimer = null;
   }, 500);
 }
@@ -94,9 +109,9 @@ function handleMultiChar(e: Event) {
   emit("multiChar", props.id);
 }
 
-function handleDelete(e: Event) {
+function handleMore(e: Event) {
   e.stopPropagation();
-  emit("delete", props.id);
+  emit("more", props.id);
 }
 
 // 圖片載入錯誤處理
@@ -107,316 +122,434 @@ function handleImageError() {
 // 右鍵選單（電腦端）
 function onContextMenu(e: MouseEvent) {
   e.preventDefault();
-  emit("longpress", props.id);
+  emit("more", props.id);
 }
 </script>
 
 <template>
   <div
-    class="character-card soft-card"
-    :class="[layout === 'list' ? 'layout-list' : 'layout-grid', { selected: isSelected }]"
-    @click="handleClick"
+    class="character-card"
+    :class="[
+      layout === 'list' ? 'layout-list' : 'layout-grid',
+      { selected: isSelected },
+    ]"
     @touchstart.passive="onTouchStart"
     @touchend="onTouchEnd"
     @touchcancel="onTouchEnd"
     @contextmenu.prevent="onContextMenu"
   >
-    <!-- 頭像區域 -->
-    <div v-if="showAvatar" class="card-avatar">
-      <img
-        :src="displayAvatar"
-        :alt="displayName"
-        loading="lazy"
-        @error="handleImageError"
-      />
+    <!-- ===== 格狀 ===== -->
+    <template v-if="layout === 'grid'">
+      <div class="card-cover" @click="handleClick">
+        <img
+          v-if="showAvatar"
+          :src="displayAvatar"
+          :alt="displayName"
+          loading="lazy"
+          @error="handleImageError"
+        />
+        <span v-else class="cover-initial">{{ initial }}</span>
 
-      <!-- 世界書數量標記 -->
-      <div v-if="lorebookCount > 0" class="lorebook-badge">
-        <svg viewBox="0 0 24 24" fill="currentColor">
-          <path
-            d="M18 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM6 4h5v8l-2.5-1.5L6 12V4z"
-          />
-        </svg>
-        <span>{{ lorebookCount }}</span>
-      </div>
-    </div>
+        <span class="cover-gradient" aria-hidden="true"></span>
 
-    <!-- 資訊區域 -->
-    <div class="card-content">
-      <div class="card-title">{{ displayName }}</div>
-      <div v-if="subtitle" class="card-subtitle">{{ subtitle }}</div>
+        <span v-if="when" class="cover-when">{{ when }}</span>
 
-      <!-- 描述（僅列表模式顯示） -->
-      <div v-if="layout === 'list' && description" class="card-description">
-        {{ description }}
-      </div>
-
-      <!-- 標籤 -->
-      <div v-if="tags.length > 0" class="card-tags">
-        <span
-          v-for="(tag, index) in tags.slice(0, 3)"
-          :key="index"
-          class="soft-tag"
-          :class="{ secondary: index === 1, success: index === 2 }"
-        >
-          {{ tag }}
+        <span v-if="lorebookCount > 0" class="lorebook-badge">
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2.2"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3z"></path>
+            <path d="M5 17a3 3 0 0 1 3-3h11"></path>
+          </svg>
+          世界書
         </span>
-        <span v-if="tags.length > 3" class="soft-tag more"
-          >+{{ tags.length - 3 }}</span
-        >
       </div>
-    </div>
 
-    <!-- 操作按鈕 -->
-    <div class="card-actions">
-      <button class="action-btn chat" title="開始聊天" @click="handleChat">
-        <svg viewBox="0 0 24 24" fill="currentColor">
-          <path
-            d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H5.17L4 17.17V4h16v12z"
+      <div class="card-name-row" @click="handleClick">
+        <div class="name-text">
+          <span class="card-name">{{ displayName }}</span>
+          <span class="card-meta">{{ metaLine }}</span>
+        </div>
+        <button
+          type="button"
+          class="more-btn"
+          aria-label="更多操作"
+          @click="handleMore"
+        >
+          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <circle cx="5" cy="12" r="1.8"></circle>
+            <circle cx="12" cy="12" r="1.8"></circle>
+            <circle cx="19" cy="12" r="1.8"></circle>
+          </svg>
+        </button>
+      </div>
+
+      <div class="card-actions">
+        <button type="button" class="action-btn chat-btn" @click="handleChat">
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M4 5h16v11H9l-5 4z"></path>
+          </svg>
+          聊天
+        </button>
+        <button type="button" class="action-btn multi-btn" @click="handleMultiChar">
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            aria-hidden="true"
+          >
+            <circle cx="9" cy="8" r="3"></circle>
+            <path d="M3 19a6 6 0 0 1 12 0"></path>
+            <path d="M16 5a3 3 0 0 1 0 6M18 19a6 6 0 0 0-2-4.5"></path>
+          </svg>
+          群聊
+        </button>
+      </div>
+    </template>
+
+    <!-- ===== 清單 ===== -->
+    <template v-else>
+      <div class="list-main" @click="handleClick">
+        <div v-if="showAvatar" class="list-avatar">
+          <img
+            :src="displayAvatar"
+            :alt="displayName"
+            loading="lazy"
+            @error="handleImageError"
           />
+        </div>
+
+        <div class="list-info">
+          <span class="card-name">{{ displayName }}</span>
+          <span class="card-meta">{{ metaLine }}</span>
+          <span v-if="when || lorebookCount > 0" class="list-facts">
+            <span v-if="when">{{ when }}</span>
+            <span v-if="lorebookCount > 0">· 綁定世界書</span>
+          </span>
+          <span v-if="description" class="list-desc">{{ description }}</span>
+        </div>
+      </div>
+
+      <button type="button" class="list-chat-btn" aria-label="聊天" @click="handleChat">
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M4 5h16v11H9l-5 4z"></path>
         </svg>
       </button>
+
       <button
-        class="action-btn multi-char"
-        title="多人卡模式"
-        @click="handleMultiChar"
+        type="button"
+        class="more-btn more-btn--vertical"
+        aria-label="更多操作"
+        @click="handleMore"
       >
-        <svg viewBox="0 0 24 24" fill="currentColor">
-          <path
-            d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"
-          />
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+          <circle cx="12" cy="5" r="1.8"></circle>
+          <circle cx="12" cy="12" r="1.8"></circle>
+          <circle cx="12" cy="19" r="1.8"></circle>
         </svg>
       </button>
-      <button class="action-btn delete" title="刪除" @click="handleDelete">
-        <svg viewBox="0 0 24 24" fill="currentColor">
-          <path
-            d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"
-          />
-        </svg>
-      </button>
-    </div>
+    </template>
   </div>
 </template>
 
 <style lang="scss" scoped>
 .character-card {
-  display: flex;
-  flex-direction: column;
-  // 不設置 height: 100%，讓卡片由內容決定高度
+  box-sizing: border-box;
+  position: relative;
 
   &.selected {
-    border-color: var(--color-primary);
-    box-shadow: 0 0 0 2px var(--color-primary-light);
+    box-shadow: 0 0 0 2px var(--color-primary);
   }
 
-  // ===== 列表（橫式）模式 =====
-  &.layout-list {
-    display: grid;
-    grid-template-columns: 96px minmax(0, 1fr) 48px;
-    align-items: stretch;
-    width: 100%;
-    box-sizing: border-box;
-    min-height: 140px;
+  // ===== 格狀 =====
+  &.layout-grid {
+    display: flex;
+    flex-direction: column;
+    border-radius: 18px;
+    background: var(--color-surface);
     overflow: hidden;
+  }
 
-    .card-avatar {
-      width: 88px;
-      min-width: 88px;
-      height: auto;
-      aspect-ratio: auto;
-      align-self: stretch;
-      border-radius: var(--radius-lg) 0 0 var(--radius-lg);
-    }
-
-    .card-content {
-      min-width: 0;
-      padding: 12px 8px 10px 12px;
-      justify-content: flex-start;
-      overflow: hidden;
-    }
-
-    .card-title {
-      font-size: 15px;
-      margin-bottom: 2px;
-    }
-
-    .card-subtitle {
-      font-size: 11px;
-      margin-bottom: 6px;
-    }
-
-    .card-tags {
-      margin-top: 6px;
-    }
-
-    .card-actions {
-      display: flex;
-      flex-direction: column;
-      width: 44px;
-      min-width: 44px;
-      padding: 10px 10px 10px 4px;
-      gap: 6px;
-      flex-shrink: 0;
-      align-self: stretch;
-      box-sizing: border-box;
-    }
-
-    .action-btn {
-      flex: 0 0 auto;
-      width: 100%;
-      height: 30px;
-
-      svg {
-        width: 16px;
-        height: 16px;
-      }
-    }
+  // ===== 清單 =====
+  &.layout-list {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 6px 8px 12px;
+    border-bottom: 1px solid var(--color-border);
+    background: var(--color-surface);
   }
 }
 
-.card-description {
-  font-size: 12px;
-  line-height: 1.5;
-  color: var(--color-text-secondary);
-  margin-bottom: 6px;
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  word-break: break-word;
-}
-
-.card-avatar {
+// ===== 格狀：封面 =====
+.card-cover {
   position: relative;
-  width: 100%;
-  aspect-ratio: 3 / 4;
+  height: 196px;
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   overflow: hidden;
-  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
-  background: var(--color-background);
+  background: var(--color-primary-light);
+  cursor: pointer;
 
   img {
     width: 100%;
     height: 100%;
     object-fit: cover;
-    transition: transform var(--transition-normal);
+    display: block;
   }
+}
 
-  .character-card:hover & img {
-    transform: scale(1.05);
-  }
+.cover-initial {
+  font-size: 72px;
+  font-weight: 900;
+  color: var(--color-primary);
+  line-height: 1;
+  opacity: 0.92;
+}
+
+.cover-gradient {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 60px;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0), rgba(0, 0, 0, 0.28));
+  pointer-events: none;
+}
+
+.cover-when {
+  position: absolute;
+  left: 12px;
+  bottom: 10px;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.9);
+  pointer-events: none;
 }
 
 .lorebook-badge {
   position: absolute;
-  top: 8px;
-  right: 8px;
+  top: 10px;
+  right: 10px;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.92);
+  color: #19171c;
+  font-size: 11px;
+  font-weight: 700;
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 4px 8px;
-  background: rgba(255, 255, 255, 0.9);
-  backdrop-filter: blur(8px);
-  border-radius: var(--radius-full);
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--color-primary);
+  pointer-events: none;
 
   svg {
-    width: 14px;
-    height: 14px;
+    width: 12px;
+    height: 12px;
   }
 }
 
-.card-content {
-  padding: 12px;
+// ===== 名稱列 =====
+.card-name-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 10px 6px 4px 12px;
+  cursor: pointer;
+}
+
+.name-text {
+  flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
+  gap: 3px;
+  padding-top: 2px;
 }
 
-.card-title {
+.card-name {
   font-size: 15px;
-  font-weight: 600;
+  font-weight: 700;
   color: var(--color-text);
-  margin-bottom: 4px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.card-subtitle {
+.card-meta {
   font-size: 12px;
   color: var(--color-text-secondary);
-  margin-bottom: 8px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.card-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  margin-top: auto; // 推到底部
-
-  .soft-tag {
-    font-size: 11px;
-    padding: 2px 8px;
-
-    &.more {
-      background: var(--color-background);
-      color: var(--color-text-muted);
-    }
-  }
-}
-
-.card-actions {
-  display: flex;
-  gap: 8px;
-  padding: 0 12px 12px;
-  flex-shrink: 0; // 防止按鈕被壓縮
-}
-
-.action-btn {
-  flex: 1;
+.more-btn {
+  flex: none;
+  width: 36px;
   height: 36px;
+  padding: 0;
+  border: none;
+  border-radius: 18px;
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: var(--radius-md);
-  background: var(--color-background);
-  color: var(--color-text-secondary);
-  border: none;
-  cursor: pointer;
-  transition: all var(--transition-fast);
 
   svg {
     width: 18px;
     height: 18px;
   }
 
-  &:hover {
-    background: var(--color-primary-light);
-    color: var(--color-primary);
+  &:active {
+    transform: scale(0.97);
+  }
+
+  &.more-btn--vertical {
+    width: 36px;
+    height: 44px;
+    border-radius: 0;
+  }
+}
+
+// ===== 格狀：按鈕 =====
+.card-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  padding: 6px 10px 10px;
+}
+
+.action-btn {
+  height: 40px;
+  border: none;
+  border-radius: 12px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+
+  svg {
+    width: 15px;
+    height: 15px;
   }
 
   &:active {
-    transform: scale(0.95);
+    transform: scale(0.97);
   }
 
-  &.chat:hover {
-    background: var(--color-primary-light);
-    color: var(--color-primary);
+  &.chat-btn {
+    background: var(--color-text);
+    color: var(--color-surface);
   }
 
-  &.multi-char:hover {
-    background: rgba(137, 207, 240, 0.15);
-    color: #89cff0;
+  &.multi-btn {
+    background: var(--color-background);
+    color: var(--color-text);
+  }
+}
+
+// ===== 清單 =====
+.list-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+}
+
+.list-avatar {
+  flex: none;
+  width: 52px;
+  height: 64px;
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--color-primary-light);
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+}
+
+.list-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.list-facts {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  display: flex;
+  gap: 8px;
+}
+
+.list-desc {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  line-height: 1.5;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  word-break: break-word;
+}
+
+.list-chat-btn {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: none;
+  border-radius: 14px;
+  background: var(--color-text);
+  color: var(--color-surface);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  svg {
+    width: 18px;
+    height: 18px;
   }
 
-  &.delete:hover {
-    background: rgba(255, 123, 123, 0.15);
-    color: var(--color-error);
+  &:active {
+    transform: scale(0.97);
   }
 }
 </style>
