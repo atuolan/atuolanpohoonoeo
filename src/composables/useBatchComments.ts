@@ -13,8 +13,10 @@ import { useQzoneStore } from "@/stores/qzone";
 import { useSettingsStore } from "@/stores/settings";
 import { useUserStore } from "@/stores/user";
 import type { StoredCharacter } from "@/types/character";
-import type { GeneratedComment } from "@/types/qzone";
+import type { GeneratedComment, QZoneComment } from "@/types/qzone";
+import type { DirectorStrictness } from "@/utils/plurkDirectorConfig";
 import { spreadReplyTimes } from "@/utils/plurkReplyTiming";
+import { isSquarePost, MODERATOR_NAME } from "@/utils/plurkSquare";
 import { computed } from "vue";
 
 export interface GenerateCommentsOptions {
@@ -125,6 +127,9 @@ export function useBatchComments() {
 
       // 準備已有評論（用於 replyTo 和歷史對話上下文）
       const existingComments = options?.includeExistingComments !== false ? post.comments : [];
+      // 廣場上的噗：版主可能刪留言
+      const strictness = qzoneStore.directorConfig.strictness;
+      const moderation = isSquarePost(post) && strictness !== "loose" ? { strictness } : undefined;
 
       const result = await generateBatchComments({
         characters: characters.map(toPromptCharacter),
@@ -138,6 +143,7 @@ export function useBatchComments() {
         allowPasserby: passerbyAllowed,
         chatContext: selectedChatContext,
         replyToCharacterId: options?.replyToCharacterId,
+        moderation,
       });
 
       if (!result.success) {
@@ -151,6 +157,7 @@ export function useBatchComments() {
         result.comments,
         characters,
         options?.slow ?? post.slowReplies ?? false,
+        moderation?.strictness,
       );
 
       aiGenerationStore.completeGeneration("qzone", "qzone-comments");
@@ -249,6 +256,7 @@ export function useBatchComments() {
     comments: GeneratedComment[],
     characters: StoredCharacter[],
     slow: boolean,
+    strictness?: DirectorStrictness,
   ): Promise<number> {
     // 建立臨時 ID 映射（生成的 c1, c2... 到實際評論 ID）
     const idMapping = new Map<string, string>();
@@ -263,6 +271,7 @@ export function useBatchComments() {
     }
 
     const times = slow ? spreadReplyTimes(comments.length, Date.now()) : [];
+    let removals = 0;
 
     // 按順序添加評論（保持回覆關係）
     for (const [index, genComment] of comments.entries()) {
@@ -290,6 +299,13 @@ export function useBatchComments() {
         }
       }
 
+      // 版主刪除：普通最多一則，角色的留言不刪
+      let moderation: QZoneComment["moderation"];
+      if (strictness && genComment.removed && isPasserby && (strictness === "hard" || removals === 0)) {
+        removals++;
+        moderation = { action: "delete", reason: genComment.removed, by: MODERATOR_NAME, at: times[index] ?? Date.now() };
+      }
+
       const newComment = await qzoneStore.addComment(
         postId,
         {
@@ -305,6 +321,7 @@ export function useBatchComments() {
           qualifier: genComment.qualifier,
           replyToId,
           replyToUsername,
+          moderation,
         },
         { timestamp: times[index] },
       );

@@ -39,7 +39,8 @@ export function getViewerIds(post: QZonePost, ctx: CastContext): string[] {
     const allowed = new Set(getPrivateTo(post));
     return ctx.allCharacterIds.filter((id) => allowed.has(id));
   }
-  return effectiveFriendIds(ctx);
+  // 偷偷說的本人不會來回自己的噗
+  return effectiveFriendIds(ctx).filter((id) => id !== post.anonOf);
 }
 
 export function allowsPasserby(post: QZonePost): boolean {

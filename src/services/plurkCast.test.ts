@@ -79,3 +79,9 @@ describe("pickResponders", () => {
     expect(pickResponders(post(), ctx, { max: 1, random: noRandom })).toHaveLength(1);
   });
 });
+
+describe("getViewerIds 偷偷說", () => {
+  it("偷偷說的本人不在看得到的名單", () => {
+    expect(getViewerIds(post({ audience: "anon", anonOf: "b" }), ctx)).toEqual(["a", "c", "d"]);
+  });
+});

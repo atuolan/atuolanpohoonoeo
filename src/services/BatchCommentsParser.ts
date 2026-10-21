@@ -61,6 +61,7 @@ export function parseBatchCommentsResponse(
         content: cleanedContent,
         replyTo: comment.replyTo || null,
         qualifier: isKnownQualifier(comment.qualifier) ? normalizeQualifier(comment.qualifier) : undefined,
+        removed: typeof comment.removed === "string" && comment.removed.trim() ? comment.removed.trim().slice(0, 8) : undefined,
       });
     }
 

@@ -19,7 +19,9 @@ import {
     buildExistingCommentsPrompt,
     parseBatchCommentsResponse,
 } from "./BatchCommentsParser";
+import type { DirectorStrictness } from "@/utils/plurkDirectorConfig";
 import { PLURK_QUALIFIERS } from "@/utils/plurkQualifiers";
+import { MODERATOR_NAME } from "@/utils/plurkSquare";
 
 /**
  * 批量評論生成參數
@@ -45,6 +47,7 @@ export interface BatchCommentsParams {
   toneHint?: string; // 單則重生的語氣要求
   onlyCharacterId?: string; // 只生這位角色的一則
   replyContext?: string; // 單則重生：原本那則在回覆誰、回覆什麼
+  moderation?: { strictness: DirectorStrictness }; // 廣場噗：版主可能刪留言
 }
 
 /**
@@ -77,6 +80,7 @@ export async function generateBatchComments(
     toneHint,
     onlyCharacterId,
     replyContext,
+    moderation,
   } = params;
 
   let streamingWindow: ReturnType<typeof useStreamingWindow> | null = null;
@@ -126,6 +130,7 @@ export async function generateBatchComments(
       toneHint,
       onlyCharacterId,
       replyContext,
+      moderation,
     });
 
     console.log("📤 批量評論 - 系統提示詞:");
@@ -316,6 +321,7 @@ export function buildBatchCommentsPrompt(params: {
   toneHint?: string;
   onlyCharacterId?: string;
   replyContext?: string;
+  moderation?: { strictness: DirectorStrictness };
 }): string {
   const {
     characters,
@@ -330,7 +336,18 @@ export function buildBatchCommentsPrompt(params: {
   } = params;
 
   const qualifierList = PLURK_QUALIFIERS.map((q) => q.label).join("、");
-  const qualifierFormatLine = `- qualifier: 噗浪發語詞，可省略（省略就是不加）；只能用：${qualifierList}`;
+  const strictness = params.moderation?.strictness;
+  const removedRule =
+    strictness === "hard"
+      ? "吵架、引戰、人身攻擊、洗版的留言"
+      : strictness === "mid"
+        ? "最多 1 則明顯人身攻擊或引戰的留言（大部分都不要加）"
+        : "";
+  const qualifierFormatLine =
+    `- qualifier: 噗浪發語詞，可省略（省略就是不加）；只能用：${qualifierList}` +
+    (removedRule
+      ? `\n- removed: 這是公開廣場，版主「${MODERATOR_NAME}」會刪掉${removedRule}。被刪的那則照樣寫出內容，另外加上 removed（原因 2–4 字，例如「人身攻擊」）；角色的留言不要被刪。`
+      : "");
 
   // 使用者在提示詞管理「噗浪評論」設定的評論風格
   const styleSection = buildCommentStyleSection(promptManagerStore);

@@ -52,3 +52,12 @@ describe("buildBatchCommentsPrompt", () => {
     expect(buildBatchCommentsPrompt(base)).toContain("qualifier");
   });
 });
+
+describe("buildBatchCommentsPrompt 版主", () => {
+  it("沒給或寬鬆就沒有 removed；普通、嚴格有", () => {
+    expect(buildBatchCommentsPrompt(base)).not.toContain("removed");
+    expect(buildBatchCommentsPrompt({ ...base, moderation: { strictness: "loose" } })).not.toContain("removed");
+    expect(buildBatchCommentsPrompt({ ...base, moderation: { strictness: "mid" } })).toContain("最多 1 則");
+    expect(buildBatchCommentsPrompt({ ...base, moderation: { strictness: "hard" }, passerbyOnly: true })).toContain("removed");
+  });
+});
