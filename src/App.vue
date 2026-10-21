@@ -2788,6 +2788,17 @@ function goBackFromTheater() {
 // 從噗浪導航到小劇場（記錄歷史，可帶指定 postId 直接打開內文）
 const pendingTheaterPostId = ref<string | undefined>(undefined);
 
+/** 噗浪：個人頁「偷看他的手機」、版務公告、偷偷說的線索 → 他的私聊的 PEEK */
+async function openPeekFromQzone(characterId: string) {
+  const chat = await resolvePreferredDirectChat(characterId);
+  if (!chat) {
+    alert("還沒跟他聊過，看不到他的手機");
+    return;
+  }
+  navigationHistory.value.push("qzone");
+  openPeekPhone(characterId, chat.id);
+}
+
 function navigateToTheaterFromQzone(theaterPostId?: string) {
   navigationHistory.value.push("qzone");
   pendingTheaterPostId.value = theaterPostId;
@@ -3049,6 +3060,8 @@ useSwipeBack(handleGlobalSwipeBack, swipeBackEnabled);
       ref="qzoneScreenRef"
       @back="goHome"
       @navigate-theater="navigateToTheaterFromQzone"
+      @open-chat="startChat"
+      @open-peek="openPeekFromQzone"
     />
 
     <!-- 使用者設定 -->

@@ -36,6 +36,8 @@ const props = withDefaults(
     posting: boolean;
     /** 今天還能發幾則偷偷說 */
     anonLeft?: number;
+    /** 廣場禁言中的提示（全員、偷偷說會改成只給好友） */
+    banNotice?: string;
   }>(),
   {
     anonLeft: 5,
@@ -493,6 +495,7 @@ defineExpose({ insertText });
 
         <div class="section">
           <span class="section-title">誰看得到</span>
+          <p v-if="props.banNotice" class="ban-notice">{{ props.banNotice }}</p>
           <div class="audience-grid">
             <div
               v-for="audience in audiences"
@@ -1078,6 +1081,17 @@ defineExpose({ insertText });
     border: 2px solid var(--color-text);
     background: var(--color-surface-hover);
   }
+}
+
+.ban-notice {
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: rgba(var(--color-primary-rgb), 0.08);
+  color: var(--color-error);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.5;
 }
 
 .aud-card.is-disabled {

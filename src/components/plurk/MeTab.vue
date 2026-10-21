@@ -22,14 +22,14 @@ type MeTabKey = "mine" | "responded" | "bookmarked";
 const props = withDefaults(
   defineProps<{
     persona: { name: string; avatar?: string; groupName?: string };
-    stats: { posts: number; responses: number; likes: number };
+    stats: { posts: number; responses: number; likes: number; karma: number };
     tab: MeTabKey;
     rows: MeListRow[];
     legacyAvatar: string;
   }>(),
   {
     persona: () => ({ name: "" }),
-    stats: () => ({ posts: 0, responses: 0, likes: 0 }),
+    stats: () => ({ posts: 0, responses: 0, likes: 0, karma: 50 }),
     tab: "mine",
     rows: () => [],
     legacyAvatar: "",
@@ -65,10 +65,11 @@ const statItems = computed(() => [
   { key: "posts", label: "噗", value: props.stats.posts },
   { key: "responses", label: "收到的回應", value: props.stats.responses },
   { key: "likes", label: "收到的喜歡", value: props.stats.likes },
+  { key: "karma", label: "卡馬", value: props.stats.karma },
 ]);
 
-function fmt(n: number): string {
-  return n.toLocaleString("en-US");
+function fmt(key: string, n: number): string {
+  return key === "karma" ? n.toFixed(1) : n.toLocaleString("en-US");
 }
 </script>
 
@@ -102,7 +103,7 @@ function fmt(n: number): string {
 
         <div class="stat-card">
           <div v-for="item in statItems" :key="item.key" class="stat-cell">
-            <span class="stat-value">{{ fmt(item.value) }}</span>
+            <span class="stat-value">{{ fmt(item.key, item.value) }}</span>
             <span class="stat-label">{{ item.label }}</span>
           </div>
         </div>
@@ -295,7 +296,7 @@ function fmt(n: number): string {
 /* ---------- 數字卡 ---------- */
 .stat-card {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   padding: 12px 0;
   border-radius: 16px;
   background: var(--color-surface);

@@ -5,6 +5,7 @@
  */
 import {
   ArrowUp,
+  Ban,
   Bell,
   BellOff,
   ChevronLeft,
@@ -47,6 +48,8 @@ const props = withDefaults(
     characterCount?: number;
     /** 噗主是路人時的好友狀態；null＝不顯示加好友 */
     opFollow?: boolean | null;
+    /** 有值時不能回應（例：廣場禁言中），輸入區換成這行字 */
+    inputDisabledText?: string;
   }>(),
   {
     busy: false,
@@ -61,6 +64,7 @@ const props = withDefaults(
     squareMode: false,
     characterCount: 0,
     opFollow: null,
+    inputDisabledText: undefined,
   },
 );
 
@@ -431,6 +435,10 @@ defineExpose({ insertText, scrollToResponse, focusInput });
 
     <!-- 底部固定區 -->
     <div class="thread-compose">
+      <p v-if="props.inputDisabledText" class="compose-blocked">
+        <Ban :size="16" aria-hidden="true" />{{ props.inputDisabledText }}
+      </p>
+      <template v-else>
       <div v-if="props.quickActions.length" class="quick-row">
         <button
           v-for="action in props.quickActions"
@@ -522,6 +530,7 @@ defineExpose({ insertText, scrollToResponse, focusInput });
           <ArrowUp :size="18" aria-hidden="true" />
         </button>
       </div>
+      </template>
     </div>
   </div>
 </template>
@@ -1013,6 +1022,18 @@ defineExpose({ insertText, scrollToResponse, focusInput });
   padding: 10px 12px calc(10px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom)));
   background: var(--color-surface);
   border-top: 1px solid var(--color-border);
+}
+
+.compose-blocked {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 44px;
+  margin: 0;
+  color: var(--color-error);
+  font-size: 13px;
+  font-weight: 600;
 }
 
 .quick-row {

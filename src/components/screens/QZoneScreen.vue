@@ -48,10 +48,13 @@
         v-if="tab === 'notice'"
         :rows="noticeRows"
         :filter="noticeFilter"
-        :filters="NOTICE_FILTERS"
+        :filters="noticeFilters"
+        :ban="banCard"
         @update:filter="noticeFilter = $event"
         @mark-all-read="qzoneStore.markAllSeen()"
-        @open="openNotice"
+        @open="openNoticeRow"
+        @open-peek="openPeek"
+        @send-appeal="submitAppeal"
       />
       <MeTab
         v-if="tab === 'me'"
@@ -109,6 +112,7 @@
         :square-mode="threadSquare"
         :character-count="threadCharacterCount"
         :op-follow="threadOpFollow"
+        :input-disabled-text="threadBlockedText"
         @back="closeThread"
         @toggle-follow="toggleNpcFriend"
         @toggle-mute="thread.toggleMute()"
@@ -126,6 +130,18 @@
       />
     </div>
 
+    <div v-if="profileData" class="plurk-profile-layer">
+      <ProfileView
+        :profile="profileData"
+        :impressions-busy="impressionsBusy"
+        @back="profileCharacterId = null"
+        @open-chat="emit('open-chat', profileData.id)"
+        @open-peek="openPeek(profileData.id)"
+        @open-post="openPostFromProfile"
+        @summarize="summarizeProfile"
+      />
+    </div>
+
     <ComposeSheet
       ref="composeRef"
       :open="composeOpen"
@@ -138,6 +154,7 @@
       :mention-candidates="mentionCandidates"
       :posting="posting"
       :anon-left="anonLeft"
+      :ban-notice="composeBanNotice"
       @close="composeOpen = false"
       @submit="submitCompose"
       @switch-persona="switchComposePersona"
@@ -253,6 +270,7 @@ import NoticeTab from "@/components/plurk/NoticeTab.vue";
 import PlurkTabBar from "@/components/plurk/PlurkTabBar.vue";
 import RiverTab from "@/components/plurk/RiverTab.vue";
 import SquareTab from "@/components/plurk/SquareTab.vue";
+import ProfileView from "@/components/plurk/ProfileView.vue";
 import ThreadView from "@/components/plurk/ThreadView.vue";
 import CharacterPickerSheet from "@/components/plurk/sheets/CharacterPickerSheet.vue";
 import ImageLightbox from "@/components/plurk/sheets/ImageLightbox.vue";
@@ -265,7 +283,9 @@ import type {
   DirectorRosterItem,
   MeListRow,
   MentionCandidate,
-  NoticeRow,
+  BanCardData,
+  NoticeListRow,
+  ProfileData,
   PersonaOption,
   PickerCharacter,
   PlurkAction,
@@ -286,6 +306,31 @@ import { buildCastContext, effectiveFriendIds, getViewerIds, type CastContext } 
 import { buildPeekSummary, generateCharacterPlurk } from "@/services/plurkGeneration";
 import { getTypingNames, plurkActivity } from "@/services/plurkReveal";
 import { generateSquareBatch } from "@/services/plurkSquareGeneration";
+import { isReplyBlocked, submitAppeal } from "@/services/plurkModeration";
+import { summarizeImpressions } from "@/services/plurkProfile";
+import { avatarColor } from "@/components/peek-phone/peekPhoneView";
+import {
+  acquaintanceCount,
+  activityTimes,
+  averageReplyMinutes,
+  characterOwner,
+  computeKarma,
+  hourHistogram,
+  interactionCount,
+  peakLabel,
+  peakStart,
+  USER_OWNER,
+} from "@/utils/plurkKarma";
+import {
+  BAN_IMPACT,
+  banDays,
+  banRemaining,
+  COMMUNITY_RULES,
+  groupLikeNotices,
+  isBanActive,
+  appealStage,
+} from "@/utils/plurkModeration";
+import { MODERATOR_NAME } from "@/utils/plurkSquare";
 import { useUserStore } from "@/stores";
 import { useAIGenerationStore } from "@/stores/aiGeneration";
 import { useCharactersStore } from "@/stores/characters";
@@ -325,6 +370,8 @@ import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from
 const emit = defineEmits<{
   (e: "back"): void;
   (e: "navigate-theater", theaterPostId?: string): void;
+  (e: "open-chat", characterId: string): void;
+  (e: "open-peek", characterId: string): void;
 }>();
 
 const TABS: Array<{ id: PlurkTabId; label: string }> = [
@@ -339,10 +386,7 @@ const RIVER_FILTERS: Array<{ id: RiverFilter; label: string }> = [
   { id: "private", label: "私噗" },
   { id: "mine", label: "我的" },
 ];
-const NOTICE_FILTERS: Array<{ id: "all" | "reply"; label: string }> = [
-  { id: "all", label: "全部" },
-  { id: "reply", label: "回應" },
-];
+type NoticeFilter = "all" | "reply" | "like" | "sys";
 const ANONYMOUS_AVATAR = "https://api.dicebear.com/7.x/shapes/svg?seed=anonymous&backgroundColor=666666";
 
 const qzoneStore = useQzoneStore();
@@ -601,8 +645,11 @@ const riverTyping = computed(() =>
   }),
 );
 
-const noticeCount = computed(() =>
-  countUnreadPosts(followedPosts.value, now.value, qzoneStore.settings.unreadSince),
+const noticeCount = computed(
+  () =>
+    countUnreadPosts(followedPosts.value, now.value, qzoneStore.settings.unreadSince) +
+    unreadSystemCount.value +
+    likeNotices.value.filter((n) => n.at > (qzoneStore.settings.unreadSince ?? 0)).length,
 );
 const directorActive = computed(() => qzoneStore.directorConfig.mode !== "off");
 
@@ -672,11 +719,14 @@ function flashPost(id: string) {
 }
 
 function openProfileOfPost(id: string) {
-  // 角色個人頁是第 4 期；自己的噗先帶去「我」
   const post = findPost(id);
-  if (post?.authorType === "user") {
+  if (!post) return;
+  if (post.authorType === "user") {
+    // 自己的噗帶去「我」
     closeThread();
     tab.value = "me";
+  } else if (!isAnonPost(post) && charactersStore.getCharacterById(post.authorId)) {
+    profileCharacterId.value = post.authorId;
   } else {
     openThread(id);
   }
@@ -915,7 +965,9 @@ const threadRows = computed<ThreadResponseRow[]>(() => {
       regenerating: !!plurkActivity.regenerating[c.id],
       removedText: isRemoved(c)
         ? `這則回應因「${c.moderation!.reason}」已被廣場管理員 ${c.moderation!.by} 刪除`
-        : undefined,
+        : c.moderation?.action === "fold"
+          ? `你的回應已被廣場管理員 ${c.moderation.by} 摺疊（${c.moderation.reason}）：「${plurkPlainText(c.content, 40)}」`
+          : undefined,
     };
   });
 });
@@ -947,6 +999,14 @@ const replyingToName = computed(() => {
   const post = thread.post.value;
   const target = thread.replyingTo.value;
   return post && target ? commentAuthor(post, target).name : null;
+});
+
+const threadBlockedText = computed(() => {
+  const post = thread.post.value;
+  const ban = qzoneStore.settings.ban;
+  if (!post || !ban || !isReplyBlocked(post, now.value)) return undefined;
+  const left = banRemaining(ban, now.value);
+  return `你在廣場被禁言中，剩 ${left.days} 天 ${left.hours} 小時`;
 });
 
 async function toggleNpcFriend() {
@@ -1030,6 +1090,9 @@ const personaOptions = computed<PersonaOption[]>(() =>
 
 const viewerCandidates = computed(() => pickerList(visibleCharacterIds.value));
 const anonLeft = computed(() => anonQuotaLeft(qzoneStore.settings, now.value));
+const composeBanNotice = computed(() =>
+  isBanActive(qzoneStore.settings.ban, now.value) ? "你在廣場被禁言中：全員、偷偷說會改成只給好友。" : undefined,
+);
 const responderCandidates = computed(() => {
   if (!castCtx.value) return [];
   const draft = { audience: compose.state.audience, privateTo: compose.state.privateTo } as QZonePost;
@@ -1146,28 +1209,227 @@ const legacyOpen = ref(false);
 // 通知
 // ============================================================
 
-const noticeFilter = ref<"all" | "reply">("all");
-const noticeRows = computed<NoticeRow[]>(() =>
-  // 系統通知是第 4 期，目前「回應」與「全部」相同
+const noticeFilter = ref<NoticeFilter>("all");
+const unreadSince = computed(() => qzoneStore.settings.unreadSince ?? 0);
+const systemNotices = computed(() => (qzoneStore.settings.systemNotices ?? []).filter((n) => n.at <= now.value));
+const unreadSystemCount = computed(() => systemNotices.value.filter((n) => n.at > unreadSince.value).length);
+const likeNotices = computed(() => groupLikeNotices(basePosts.value, now.value));
+const noticeFilters = computed<Array<{ id: NoticeFilter; label: string; dot?: boolean }>>(() => [
+  { id: "all", label: "全部" },
+  { id: "reply", label: "回應" },
+  { id: "like", label: "讚" },
+  { id: "sys", label: "系統", dot: unreadSystemCount.value > 0 },
+]);
+
+const replyNoticeRows = computed(() =>
   buildNoticeList(basePosts.value, now.value, qzoneStore.settings.unreadSince).map((item) => {
     const post = findPost(item.postId);
     const anon = !!post && isAnonPost(post);
-    return {
-      postId: item.postId,
-      commentId: item.commentId,
-      authorName: anon ? anonHandle(item.postId, item.authorId) : authorName(item.authorId, item.username),
-      authorAvatar: anon ? ANON_AVATAR : authorAvatar(item.authorId, item.avatar),
-      text: item.text,
+    const row: NoticeListRow = {
+      id: `reply-${item.commentId}`,
+      kind: "reply",
+      title: anon ? anonHandle(item.postId, item.authorId) : authorName(item.authorId, item.username),
+      text: `${post?.authorType === "user" ? "回應了你的噗" : "回應了你回應過的噗"}：「${item.text}」`,
+      avatar: anon ? ANON_AVATAR : authorAvatar(item.authorId, item.avatar),
       timeText: formatTime(item.timestamp),
       unread: item.unread,
+      postId: item.postId,
+      commentId: item.commentId,
     };
+    return { at: item.timestamp, row };
   }),
 );
 
-async function openNotice(postId: string, commentId: string) {
+const likeNoticeRows = computed(() =>
+  likeNotices.value.map((n) => {
+    const post = findPost(n.postId);
+    const first = n.likerIds[0];
+    const title = post ? plurkPlainText(post.content || "", 12) : "";
+    const row: NoticeListRow = {
+      id: `like-${n.postId}`,
+      kind: "like",
+      title: nameOf(first),
+      text: `${n.likerIds.length > 1 ? `和另外 ${n.likerIds.length - 1} 人` : ""}讚了你的噗〈${title}〉`,
+      avatar: authorAvatar(first),
+      timeText: formatTime(n.at),
+      unread: n.at > unreadSince.value,
+      postId: n.postId,
+    };
+    return { at: n.at, row };
+  }),
+);
+
+const systemNoticeRows = computed(() =>
+  systemNotices.value.map((n) => {
+    const row: NoticeListRow = {
+      id: n.id,
+      kind: "system",
+      title: n.title,
+      text: n.text,
+      tone: n.kind === "announce" ? "neutral" : "alert",
+      timeText: formatTime(n.at),
+      unread: n.at > unreadSince.value,
+      peekCharacterId: n.kind === "announce" ? n.characterId : undefined,
+      peekText: n.kind === "announce" && n.characterId ? "他手機裡有一封寫到一半的申訴" : undefined,
+      postId: n.postId,
+      commentId: n.commentId,
+    };
+    return { at: n.at, row };
+  }),
+);
+
+const noticeRows = computed<NoticeListRow[]>(() => {
+  const groups = {
+    reply: replyNoticeRows.value,
+    like: likeNoticeRows.value,
+    sys: systemNoticeRows.value,
+  };
+  const list =
+    noticeFilter.value === "all"
+      ? [...groups.reply, ...groups.like, ...groups.sys]
+      : groups[noticeFilter.value];
+  return [...list].sort((a, b) => b.at - a.at).map((item) => item.row);
+});
+
+/** 通知分頁頂端的禁言卡：禁言中，或申訴剛被駁回還在禁言 */
+const banCard = computed<BanCardData | null>(() => {
+  const ban = qzoneStore.settings.ban;
+  if (!isBanActive(ban, now.value)) return null;
+  const left = banRemaining(ban, now.value);
+  const appeal = ban.appeal;
+  const stage = appeal ? appealStage(appeal, now.value) : 0;
+  return {
+    title: `你在廣場被禁言 ${banDays(ban)} 天`,
+    byText: `版主 ${ban.by} · ${formatTime(ban.at)}`,
+    reason: ban.reason,
+    remainDays: left.days,
+    remainHours: left.hours,
+    impact: BAN_IMPACT,
+    rules: COMMUNITY_RULES,
+    appeal: appeal
+      ? {
+          reason: appeal.reason,
+          stage,
+          resultText: appeal.status === "denied" ? `申訴沒有通過${appeal.reply ? `：「${appeal.reply}」` : "。"}` : undefined,
+          note: stage < 2 ? `${MODERATOR_NAME} 會在 24 小時內回覆。` : "處分維持，到期會自動解除。",
+        }
+      : null,
+  };
+});
+
+function openNoticeRow(row: NoticeListRow) {
+  if (row.postId) void openNotice(row.postId, row.commentId);
+}
+
+/** 開某位角色的 PEEK（App 會找他的私聊，沒有就提示） */
+function openPeek(characterId: string) {
+  emit("open-peek", characterId);
+}
+
+async function openNotice(postId: string, commentId?: string) {
   openThread(postId);
+  if (!commentId) return;
   await nextTick();
   window.setTimeout(() => threadRef.value?.scrollToResponse(commentId), 60);
+}
+
+// ============================================================
+// 角色個人頁
+// ============================================================
+
+const profileCharacterId = ref<string | null>(null);
+const impressionsBusy = ref(false);
+
+function joinedText(createdAt?: number): string {
+  if (!createdAt) return "噗浪老朋友";
+  const d = new Date(createdAt);
+  return `註冊於 ${d.getFullYear()} 年 ${d.getMonth() + 1} 月`;
+}
+
+function handleOf(name: string, id: string): string {
+  const ascii = name.replace(/\s+/g, "");
+  return /^[A-Za-z0-9_.]+$/.test(ascii) ? `@${ascii.toLowerCase()}` : `@${id.replace(/[^A-Za-z0-9]/g, "").slice(0, 6) || "plurker"}`;
+}
+
+function bioOf(personality: string, description: string): string {
+  const first = (personality || "").split(/[。！？\n]/)[0].trim();
+  return (first || description || "").slice(0, 40);
+}
+
+const profileData = computed<ProfileData | null>(() => {
+  const id = profileCharacterId.value;
+  const character = id ? charactersStore.getCharacterById(id) : undefined;
+  if (!id || !character) return null;
+  const name = character.nickname || character.data?.name || "角色";
+  const posts = basePosts.value;
+  const owner = characterOwner(id);
+  const ownPosts = posts.filter((p) => owner.ownsPost(p) && !p.anonOf && p.timestamp <= now.value);
+  const hours = hourHistogram(activityTimes(posts.filter((p) => !p.anonOf), owner, now.value));
+  const peak = peakStart(hours);
+  const avg = averageReplyMinutes(posts, id, now.value);
+  const responded = posts
+    .filter((p) => p.authorId !== id && !isAnonPost(p))
+    .map((p) => ({ post: p, comment: [...visibleComments(p, now.value)].reverse().find(owner.ownsComment) }))
+    .filter((x): x is { post: QZonePost; comment: QZoneComment } => !!x.comment)
+    .sort((a, b) => b.comment.timestamp - a.comment.timestamp);
+  const impressions = qzoneStore.settings.impressions?.[id];
+  return {
+    id,
+    name,
+    avatar: character.avatar || undefined,
+    coverColor: avatarColor(name),
+    handle: handleOf(character.data?.name || name, id),
+    joinedText: joinedText(character.createdAt),
+    bio: bioOf(character.data?.personality || "", character.data?.description || ""),
+    isFriend: !!castCtx.value?.friendIds.has(id),
+    stats: {
+      posts: ownPosts.length,
+      responses: posts.reduce((sum, p) => sum + visibleComments(p, now.value).filter(owner.ownsComment).length, 0),
+      friends: acquaintanceCount(posts, id, now.value),
+      karma: computeKarma(posts, owner, now.value),
+    },
+    interactions: interactionCount(posts, id, now.value),
+    hours,
+    peakText: peak === null ? null : peakLabel(peak),
+    avgReplyText: avg === null ? null : `回你的噗，平均 ${avg} 分鐘就回。`,
+    impressions: impressions ? impressions.tags : null,
+    // 有私聊才看得到手機
+    canPeek: !!castCtx.value?.friendIds.has(id),
+    posts: ownPosts
+      .filter((p) => getAudience(p) !== "private")
+      .map((p) => ({
+        postId: p.id,
+        qualifier: p.qualifier,
+        text: plurkPlainText(p.content || "", 80),
+        meta: `${formatTime(p.timestamp)} · ${visibleComments(p, now.value).length} 則回應`,
+      })),
+    responses: responded.slice(0, 50).map(({ post, comment }) => ({
+      postId: post.id,
+      qualifier: comment.qualifier,
+      text: plurkPlainText(comment.content, 80),
+      meta: `回應 ${post.authorId === id ? "自己" : postAuthor(post).name} 的噗 · ${formatTime(comment.timestamp)}`,
+    })),
+    privateCount: ownPosts.filter((p) => getAudience(p) === "private").length,
+  };
+});
+
+function openPostFromProfile(postId: string) {
+  profileCharacterId.value = null;
+  openThread(postId);
+}
+
+async function summarizeProfile() {
+  const id = profileCharacterId.value;
+  if (!id || impressionsBusy.value) return;
+  if (!hasPostApi()) return alert("請先配置 API");
+  impressionsBusy.value = true;
+  try {
+    await summarizeImpressions(id);
+  } catch (error) {
+    alert(error instanceof Error ? error.message : String(error));
+  } finally {
+    impressionsBusy.value = false;
+  }
 }
 
 // ============================================================
@@ -1192,6 +1454,7 @@ const meStats = computed(() => ({
     0,
   ),
   likes: myPosts.value.reduce((sum, p) => sum + getLikeTotal(p), 0),
+  karma: computeKarma(basePosts.value, USER_OWNER, now.value),
 }));
 
 const meRows = computed<MeListRow[]>(() => {
@@ -1297,6 +1560,7 @@ function handleBack(): boolean {
     [legacyOpen.value, () => (legacyOpen.value = false)],
     [composeOpen.value, () => (composeOpen.value = false)],
     [directorOpen.value, () => (directorOpen.value = false)],
+    [!!profileCharacterId.value, () => (profileCharacterId.value = null)],
     [!!threadPostId.value, closeThread],
   ];
   const top = layers.find(([open]) => open);
@@ -1382,6 +1646,13 @@ onUnmounted(() => {
   z-index: 40;
   box-sizing: border-box;
   padding-top: var(--safe-area-inset-top, env(safe-area-inset-top, 0px));
+  background: var(--color-background);
+}
+
+.plurk-profile-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
   background: var(--color-background);
 }
 

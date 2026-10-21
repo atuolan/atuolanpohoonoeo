@@ -9,6 +9,7 @@ import { useUserStore } from "@/stores/user";
 import type { PlurkComposeDefaults, QZonePost } from "@/types/qzone";
 import { compressImage, compressionPresets } from "@/utils/imageCompression";
 import { dayKey } from "@/utils/plurkDirectorConfig";
+import { isBanActive } from "@/utils/plurkModeration";
 import { anonQuotaLeft } from "@/utils/plurkSquare";
 import { computed, reactive } from "vue";
 
@@ -96,7 +97,10 @@ export function usePlurkCompose() {
 
   async function submit(): Promise<QZonePost | null> {
     if (!canPost.value) return null;
-    if (state.audience === "anon" && anonQuotaLeft(qzoneStore.settings, Date.now()) <= 0) return null;
+    // 廣場禁言中：全員、偷偷說改成只給好友
+    const banned = isBanActive(qzoneStore.settings.ban, Date.now());
+    const audience = banned && (state.audience === "all" || state.audience === "anon") ? "friends" : state.audience;
+    if (audience === "anon" && anonQuotaLeft(qzoneStore.settings, Date.now()) <= 0) return null;
     const persona = userStore.currentPersona;
     const images = state.media.filter((m) => m.type === "image").map((m) => m.url);
     const post = await qzoneStore.addPost({
@@ -111,14 +115,14 @@ export function usePlurkCompose() {
       visibility: "public",
       authorType: "user",
       authorPersonaId: persona?.id,
-      audience: state.audience,
-      privateTo: state.audience === "private" ? [...state.privateTo] : undefined,
+      audience,
+      privateTo: audience === "private" ? [...state.privateTo] : undefined,
       replyPolicy: state.replyPolicy,
       replyPickIds: state.replyPolicy === "pick" ? [...state.replyPickIds] : undefined,
       allowPasserby: state.allowPasserby,
       slowReplies: state.slowReplies,
     });
-    if (state.audience === "anon") {
+    if (audience === "anon") {
       const today = dayKey(Date.now());
       const quota = qzoneStore.settings.anonQuota;
       await qzoneStore.updateSettings({

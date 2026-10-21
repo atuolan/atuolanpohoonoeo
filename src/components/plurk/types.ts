@@ -131,16 +131,6 @@ export interface ComposeState {
   slowReplies: boolean;
 }
 
-export interface NoticeRow {
-  postId: string;
-  commentId: string;
-  authorName: string;
-  authorAvatar?: string;
-  text: string;
-  timeText: string;
-  unread: boolean;
-}
-
 export interface MeListRow {
   postId: string;
   qualifier?: string;
