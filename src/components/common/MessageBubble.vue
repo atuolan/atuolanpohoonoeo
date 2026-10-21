@@ -4601,28 +4601,25 @@ const showTextVoiceTranscript = ref(true);
           </button>
         </div>
 
-        <!-- 已編輯；被角色看到原文時可點開 -->
+        <!-- 已編輯：跟時間戳一樣的小字；被角色看到時多一個小眼睛，點了原地換成原文 -->
         <div v-if="isUser && isUserEdited && !isHtmlOnlyBubble" class="edit-mark">
           <button
             v-if="editNoticed && editOriginalContent"
             type="button"
-            class="edit-mark-btn"
+            class="edit-mark-toggle"
             :aria-expanded="editOriginalExpanded"
             @click.stop="editOriginalExpanded = !editOriginalExpanded"
           >
-            <svg viewBox="0 0 24 24" fill="currentColor" class="edit-mark-eye">
-              <path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z" />
-            </svg>
-            已編輯・被看到了
+            <span v-if="editOriginalExpanded" class="edit-mark-original">原文：{{ editOriginalContent }}</span>
+            <template v-else>
+              已編輯
+              <svg viewBox="0 0 24 24" fill="currentColor" class="edit-mark-eye" aria-hidden="true">
+                <path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z" />
+              </svg>
+            </template>
           </button>
-          <span v-else class="edit-mark-label">已編輯</span>
+          <span v-else>已編輯</span>
         </div>
-        <Transition name="char-recall-expand">
-          <div
-            v-if="isUser && isUserEdited && editNoticed && editOriginalExpanded && editOriginalContent"
-            class="edit-original-preview"
-          >原文：{{ editOriginalContent }}</div>
-        </Transition>
 
         <!-- 時間戳 -->
         <div v-if="showTime && timestamp && !isHtmlOnlyBubble" class="message-time">
@@ -8039,51 +8036,38 @@ const showTextVoiceTranscript = ref(true);
   padding: 0 4px;
 }
 
-// 已編輯小字（用戶訊息下方）
+// 已編輯小字（用戶訊息下方，樣式跟時間戳一致）
 .edit-mark {
   margin-top: 4px;
+  padding: 0 4px;
   font-size: 11px;
+  color: var(--color-text-muted);
+  text-align: right;
 
-  // 桌布可能很深：用 AI 泡泡底色墊著，才看得清楚
-  .edit-mark-label,
-  .edit-mark-btn {
+  .edit-mark-toggle {
     display: inline-flex;
     align-items: center;
-    gap: 3px;
-    padding: 1px 8px;
-    border: 1px solid var(--color-border, rgba(0, 0, 0, 0.12));
-    border-radius: var(--radius-full);
-    background: var(--bubble-ai-bg, #fff);
-    font-size: 11px;
-  }
-
-  .edit-mark-label {
-    color: var(--bubble-ai-content, #4a4a6a);
-    opacity: 0.7;
-  }
-
-  .edit-mark-btn {
-    padding-left: 5px;
-    color: var(--color-primary, #6c8ebf);
+    gap: 2px;
+    padding: 0;
+    border: none;
+    background: none;
+    font: inherit;
+    color: inherit;
+    text-align: right;
     cursor: pointer;
   }
 
-  .edit-mark-eye {
-    width: 12px;
-    height: 12px;
+  .edit-mark-original {
+    white-space: pre-wrap;
+    word-break: break-word;
   }
-}
 
-.edit-original-preview {
-  margin-top: 4px;
-  padding: 6px 12px;
-  border-radius: 10px;
-  background: var(--bubble-ai-bg, #fff);
-  font-size: 13px;
-  color: var(--bubble-ai-content, #4a4a6a);
-  opacity: 0.85;
-  word-break: break-word;
-  white-space: pre-wrap;
+  .edit-mark-eye {
+    width: 11px;
+    height: 11px;
+    flex-shrink: 0;
+    opacity: 0.7;
+  }
 }
 
 // 操作選單
