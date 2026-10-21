@@ -10530,7 +10530,6 @@ useChatCleanup({
             :recall-content="message.recallContent"
             :is-user-edited="message.isUserEdited && !chatFaceToFaceMode"
             :edit-noticed="message.editNoticed"
-            :edit-original-content="message.editOriginalContent"
             :is-private-message="message.isPrivateMessage"
             :is-group-action="message.isGroupAction"
             :group-action-type="message.groupActionType"

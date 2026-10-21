@@ -470,10 +470,9 @@ interface MessageBubbleProps {
   // 用戶撤回相關
   isUserRecalled?: boolean;
   userRecalledType?: 'seen' | 'unseen';
-  // 用戶改字：已編輯，被角色看到原文時可點開
+  // 用戶改字：已編輯；被角色看到原文時氣泡旁多一個小眼睛
   isUserEdited?: boolean;
   editNoticed?: boolean;
-  editOriginalContent?: string;
   // 角色撤回相關（線上模式）
   isCharRecall?: boolean;
   charRecallType?: 'seen' | 'hidden';
@@ -592,7 +591,6 @@ const props = withDefaults(defineProps<MessageBubbleProps>(), {
   userRecalledType: undefined,
   isUserEdited: false,
   editNoticed: false,
-  editOriginalContent: '',
   isCharRecall: false,
   charRecallType: undefined,
   charRecallContent: '',
@@ -662,9 +660,6 @@ const charRecallExpanded = ref(props.charRecallRevealed ?? false);
 
 // 群聊撤回內容展開狀態（不持久化，僅本次會話有效）
 const groupRecallExpanded = ref(false);
-
-// 改字被看到時的原文展開狀態
-const editOriginalExpanded = ref(false);
 
 // ===== 群聊紅包相關 computed =====
 const redpacketTypeLabel = computed(() => {
@@ -3948,6 +3943,19 @@ const showTextVoiceTranscript = ref(true);
           @click.stop="onBubbleClick"
           @aguaphone-audio-control.stop="handleInlineCardAudioControl"
         >
+          <!-- 改字被角色看到：氣泡左下角外側一個小眼睛，不顯示原文 -->
+          <svg
+            v-if="isUser && isUserEdited && editNoticed"
+            viewBox="0 0 24 24"
+            fill="currentColor"
+            class="edit-seen-eye"
+            role="img"
+            @click.stop
+            aria-label="對方看到了修改前的原文"
+          >
+            <title>對方看到了修改前的原文</title>
+            <path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z" />
+          </svg>
           <!-- 時空跳轉訊息 -->
           <div v-if="isTimetravel" class="timetravel-message">
             <div class="timetravel-icon">⏰</div>
@@ -4601,25 +4609,8 @@ const showTextVoiceTranscript = ref(true);
           </button>
         </div>
 
-        <!-- 已編輯：跟時間戳一樣的小字；被角色看到時多一個小眼睛，點了原地換成原文 -->
-        <div v-if="isUser && isUserEdited && !isHtmlOnlyBubble" class="edit-mark">
-          <button
-            v-if="editNoticed && editOriginalContent"
-            type="button"
-            class="edit-mark-toggle"
-            :aria-expanded="editOriginalExpanded"
-            @click.stop="editOriginalExpanded = !editOriginalExpanded"
-          >
-            <span v-if="editOriginalExpanded" class="edit-mark-original">原文：{{ editOriginalContent }}</span>
-            <template v-else>
-              已編輯
-              <svg viewBox="0 0 24 24" fill="currentColor" class="edit-mark-eye" aria-hidden="true">
-                <path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z" />
-              </svg>
-            </template>
-          </button>
-          <span v-else>已編輯</span>
-        </div>
+        <!-- 已編輯：跟時間戳一樣的小字 -->
+        <div v-if="isUser && isUserEdited && !isHtmlOnlyBubble" class="edit-mark">已編輯</div>
 
         <!-- 時間戳 -->
         <div v-if="showTime && timestamp && !isHtmlOnlyBubble" class="message-time">
@@ -8041,33 +8032,22 @@ const showTextVoiceTranscript = ref(true);
   margin-top: 4px;
   padding: 0 4px;
   font-size: 11px;
-  color: var(--color-text-muted);
-  text-align: right;
+  color: var(--color-text-muted, #8a8aa3);
+}
 
-  .edit-mark-toggle {
-    display: inline-flex;
-    align-items: center;
-    gap: 2px;
-    padding: 0;
-    border: none;
-    background: none;
-    font: inherit;
-    color: inherit;
-    text-align: right;
-    cursor: pointer;
-  }
+// 改字被看到：氣泡左下角外側的小眼睛
+.bubble:has(> .edit-seen-eye) {
+  position: relative;
+}
 
-  .edit-mark-original {
-    white-space: pre-wrap;
-    word-break: break-word;
-  }
-
-  .edit-mark-eye {
-    width: 11px;
-    height: 11px;
-    flex-shrink: 0;
-    opacity: 0.7;
-  }
+.edit-seen-eye {
+  position: absolute;
+  right: calc(100% + 6px);
+  bottom: 2px;
+  width: 12px;
+  height: 12px;
+  color: var(--color-text-muted, #8a8aa3);
+  opacity: 0.8;
 }
 
 // 操作選單
