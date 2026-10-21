@@ -141,3 +141,29 @@ export interface DirectorRosterItem {
   name: string;
   avatar?: string;
 }
+
+/** 廣場列表的一列 */
+export interface SquareCardData {
+  id: string;
+  /** 偷偷說時是「偷偷說 #4721」 */
+  authorName: string;
+  authorAvatar?: string;
+  /** 路人的頭像底色 */
+  avatarColor?: string;
+  /** 名字旁顯示「角色」小框 */
+  isCharacter: boolean;
+  /** 例：「18:12 · 全員」 */
+  metaText: string;
+  qualifier?: string;
+  /** 純文字內文 */
+  text: string;
+  replyCount: number;
+  /** 回應數泡泡用主色 */
+  fresh: boolean;
+  /** 角色的最新一則回應（沒有就不顯示） */
+  latestReply?: { name: string; text: string };
+  /** 「這個語氣，好像在哪見過」 */
+  peekHint: boolean;
+  /** 被版主摺疊：只顯示一行灰字 */
+  foldedReason?: string;
+}

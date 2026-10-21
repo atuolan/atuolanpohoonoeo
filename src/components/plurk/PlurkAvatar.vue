@@ -7,6 +7,8 @@ const props = defineProps<{
   src?: string;
   name: string;
   size?: number;
+  /** 指定底色（路人）；沒給就依名字算 */
+  color?: string;
 }>();
 
 const failed = ref(false);
@@ -21,7 +23,7 @@ watch(
 const px = computed(() => props.size ?? 40);
 const showImage = computed(() => !!props.src && !failed.value);
 const initial = computed(() => initialOf(props.name));
-const bg = computed(() => avatarColor(props.name));
+const bg = computed(() => props.color || avatarColor(props.name));
 const fontSize = computed(() => `${Math.round(px.value * 0.38)}px`);
 </script>
 

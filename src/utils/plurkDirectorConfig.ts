@@ -54,6 +54,16 @@ export const DEFAULT_DIRECTOR_CONFIG: PlurkDirectorConfig = {
 export const LIVELINESS_RATES = [0.06, 0.3, 1.5, 4, 8];
 export const LIVELINESS_LABELS = ["一天 1–2 則", "幾小時一則", "每小時 1–2 則", "每小時 3–5 則", "幾乎一直在聊"];
 
+/** 路人多寡 1–5 對應每小時生幾批路人噗（每批＝一次 AI 呼叫） */
+export const SQUARE_RATES = [0.04, 0.1, 0.25, 0.5, 1];
+export const NPC_LEVEL_LABELS = ["幾乎沒有路人", "偶爾有人", "普通", "熱鬧", "人山人海"];
+export const STRICTNESS_LABELS: Record<DirectorStrictness, string> = { loose: "寬鬆", mid: "普通", hard: "嚴格" };
+export const STRICTNESS_HINTS: Record<DirectorStrictness, string> = {
+  loose: "阿杏幾乎不管事。",
+  mid: "太過分的才會被摺疊或刪除。",
+  hard: "阿杏很嚴，吵架和洗版都會被處理。",
+};
+
 /** 作息時段 [開始, 結束)，結束小於開始代表跨夜 */
 export const ROUTINE_WINDOWS: Record<DirectorRoutine, [number, number] | null> = {
   any: null,
