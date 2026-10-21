@@ -113,8 +113,12 @@ const formData = ref<Lorebook>({
 // 搜尋條目
 const searchQuery = ref("");
 
-// 顯示設定區域
-const showSettings = ref(true);
+// 條目篩選（全部／已開啟／已關閉／常駐）
+const entryFilter = ref<"all" | "on" | "off" | "pin">("all");
+
+// 批量選取
+const selectingEntries = ref(false);
+const selectedEntryIds = ref<Set<string>>(new Set());
 
 // 是否為新建模式
 const isCreateMode = computed(() => props.isNew || !props.lorebookId);
@@ -126,16 +130,52 @@ const pageTitle = computed(() =>
 
 // 過濾後的條目
 const filteredEntries = computed(() => {
-  if (!searchQuery.value) return formData.value.entries;
-
   const query = searchQuery.value.toLowerCase();
-  return formData.value.entries.filter(
-    (entry) =>
-      entry.name.toLowerCase().includes(query) ||
-      entry.keys.some((key) => key.toLowerCase().includes(query)) ||
-      entry.content.toLowerCase().includes(query),
-  );
+  let result = formData.value.entries;
+
+  if (query) {
+    result = result.filter(
+      (entry) =>
+        entry.name.toLowerCase().includes(query) ||
+        entry.keys.some((key) => key.toLowerCase().includes(query)) ||
+        entry.content.toLowerCase().includes(query),
+    );
+  }
+
+  // 批量選取時不過濾，避免選到一半列表被篩掉
+  if (!selectingEntries.value) {
+    if (entryFilter.value === "on") {
+      result = result.filter((entry) => entry.enabled);
+    } else if (entryFilter.value === "off") {
+      result = result.filter((entry) => !entry.enabled);
+    } else if (entryFilter.value === "pin") {
+      result = result.filter((entry) => entry.constant);
+    }
+  }
+
+  return result;
 });
+
+// 各篩選狀態的條目數
+const entryCounts = computed(() => ({
+  all: formData.value.entries.length,
+  on: formData.value.entries.filter((entry) => entry.enabled).length,
+  off: formData.value.entries.filter((entry) => !entry.enabled).length,
+  pin: formData.value.entries.filter((entry) => entry.constant).length,
+}));
+
+// 篩選膠囊
+const filterChips = computed(() => [
+  { id: "all" as const, label: "全部", n: entryCounts.value.all },
+  { id: "on" as const, label: "已開啟", n: entryCounts.value.on },
+  { id: "off" as const, label: "已關閉", n: entryCounts.value.off },
+  { id: "pin" as const, label: "常駐", n: entryCounts.value.pin },
+]);
+
+// 已開啟條目數
+const onEntryCount = computed(
+  () => formData.value.entries.filter((entry) => entry.enabled).length,
+);
 
 // 漸進式渲染：初始只渲染少量條目，滾動到底部時載入更多
 const visibleCount = ref(20);
@@ -266,11 +306,6 @@ function handleDelete() {
   }
 }
 
-// 切換設定區域
-function toggleSettings() {
-  showSettings.value = !showSettings.value;
-}
-
 // 新增條目
 function addEntry() {
   const newEntry: LorebookEntry = {
@@ -317,6 +352,102 @@ async function toggleEntryEnabled(id: string) {
     // 立即自動保存，避免用戶切換後離開卻沒保存
     await autoSave();
   }
+}
+
+// ===== 批量選取 =====
+
+function startEntrySelect() {
+  selectingEntries.value = true;
+  selectedEntryIds.value = new Set();
+  formData.value.entries.forEach((entry) => {
+    entry.expanded = false;
+  });
+}
+
+function endEntrySelect() {
+  selectingEntries.value = false;
+  selectedEntryIds.value = new Set();
+}
+
+function toggleEntrySelected(id: string) {
+  const next = new Set(selectedEntryIds.value);
+  if (next.has(id)) {
+    next.delete(id);
+  } else {
+    next.add(id);
+  }
+  selectedEntryIds.value = next;
+}
+
+function quickSelect(kind: "all" | "on" | "off" | "pin" | "none") {
+  if (kind === "none") {
+    selectedEntryIds.value = new Set();
+    return;
+  }
+
+  const picked = filteredEntries.value.filter((entry) => {
+    if (kind === "on") return entry.enabled;
+    if (kind === "off") return !entry.enabled;
+    if (kind === "pin") return entry.constant;
+    return true;
+  });
+  selectedEntryIds.value = new Set(picked.map((entry) => entry.id));
+}
+
+const selectedEntries = computed(() =>
+  formData.value.entries.filter((entry) => selectedEntryIds.value.has(entry.id)),
+);
+
+const bulkAllOn = computed(
+  () =>
+    selectedEntries.value.length > 0 &&
+    selectedEntries.value.every((entry) => entry.enabled),
+);
+
+const bulkAllPinned = computed(
+  () =>
+    selectedEntries.value.length > 0 &&
+    selectedEntries.value.every((entry) => entry.constant),
+);
+
+const bulkHint = computed(() => {
+  const total = selectedEntries.value.length;
+  if (total === 0) return "先勾選要開關的條目";
+  if (bulkAllOn.value) return "已選的全部開著，點一下全關";
+  const on = selectedEntries.value.filter((entry) => entry.enabled).length;
+  return `已開 ${on}/${total}，點一下全開`;
+});
+
+async function bulkToggleEnabled() {
+  const next = !bulkAllOn.value;
+  selectedEntries.value.forEach((entry) => {
+    entry.enabled = next;
+  });
+  await autoSave();
+}
+
+async function bulkTogglePinned() {
+  const next = !bulkAllPinned.value;
+  selectedEntries.value.forEach((entry) => {
+    entry.constant = next;
+  });
+  await autoSave();
+}
+
+async function bulkDeleteEntries() {
+  const ids = selectedEntryIds.value;
+  if (ids.size === 0) return;
+  if (!confirm(`確定要刪除選取的 ${ids.size} 個條目嗎？`)) return;
+
+  formData.value.entries = formData.value.entries.filter(
+    (entry) => !ids.has(entry.id),
+  );
+  await autoSave();
+  endEntrySelect();
+}
+
+function setEntryConstant(entry: LorebookEntry, value: boolean) {
+  entry.constant = value;
 }
 
 // 自動保存（靜默保存當前表單到 DB）
@@ -704,135 +835,245 @@ function removeCondition(
 <template>
   <div class="screen-container lorebook-edit-screen">
     <!-- 標題欄 -->
-    <header class="soft-header gradient">
-      <button class="header-back" @click="handleBack">
-        <svg viewBox="0 0 24 24" fill="currentColor">
-          <path
-            d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"
-          />
-        </svg>
-      </button>
-
-      <h1 class="header-title">{{ pageTitle }}</h1>
-
-      <div class="header-actions">
-        <!-- 刪除按鈕 -->
+    <header class="lbe-header">
+      <template v-if="!selectingEntries">
         <button
-          v-if="!isCreateMode"
-          class="header-btn danger"
-          title="刪除世界書"
-          @click="handleDelete"
+          type="button"
+          class="lbe-back"
+          aria-label="返回世界書庫"
+          @click="handleBack"
         >
-          <svg viewBox="0 0 24 24" fill="currentColor">
-            <path
-              d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"
-            />
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M15 5l-7 7 7 7" />
           </svg>
         </button>
 
-        <!-- 儲存按鈕 -->
-        <button class="header-btn primary" title="儲存" @click="handleSave">
-          <svg viewBox="0 0 24 24" fill="currentColor">
-            <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
-          </svg>
+        <h1 class="lbe-title">{{ pageTitle }}</h1>
+
+        <button type="button" class="lbe-save" @click="handleSave">
+          儲存
         </button>
-      </div>
+      </template>
+
+      <template v-else>
+        <button type="button" class="lbe-done" @click="endEntrySelect">
+          完成
+        </button>
+        <span class="lbe-selected-count"
+          >已選 {{ selectedEntryIds.size }} 條</span
+        >
+        <span class="lbe-header-spacer"></span>
+      </template>
     </header>
 
     <!-- 編輯內容 -->
-    <main class="soft-content edit-content">
-      <!-- 基本資訊 -->
-      <section class="info-section">
-        <div class="form-group">
-          <label class="form-label">名稱 <span class="required">*</span></label>
+    <main class="soft-content edit-content" :class="{ 'is-selecting': selectingEntries }">
+      <!-- 世界書設定 -->
+      <section v-if="!selectingEntries" class="lbe-card">
+        <label class="lbe-field">
+          <span class="lbe-label"
+            >名稱 <span class="required">*</span></span
+          >
           <input
             v-model="formData.name"
             type="text"
             class="soft-input"
             placeholder="輸入世界書名稱"
           />
-        </div>
-      </section>
+        </label>
 
-      <!-- 設定區域 -->
-      <section class="settings-section">
-        <button class="section-header" @click="toggleSettings">
-          <span class="section-title">
-            <svg viewBox="0 0 24 24" fill="currentColor">
-              <path
-                d="M19.14 12.94c.04-.31.06-.63.06-.94 0-.31-.02-.63-.06-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"
-              />
-            </svg>
-            設定
-          </span>
-          <svg
-            class="chevron"
-            :class="{ open: showSettings }"
-            viewBox="0 0 24 24"
-            fill="currentColor"
-          >
-            <path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z" />
-          </svg>
-        </button>
-
-        <Transition name="slide">
-          <div v-if="showSettings" class="settings-content">
-            <!-- 遞迴掃描開關 -->
-            <div class="setting-item">
-              <div class="setting-info">
-                <span class="setting-label">遞迴掃描</span>
-                <span class="setting-desc">允許條目內容觸發其他條目</span>
-              </div>
-              <label class="toggle-switch">
-                <input type="checkbox" v-model="formData.recursive_scanning" />
-                <span class="toggle-slider"></span>
-              </label>
-            </div>
-
-            <!-- 最大遞迴深度 -->
-            <div
-              class="setting-item vertical"
-              v-if="formData.recursive_scanning"
-            >
-              <div class="setting-info">
-                <span class="setting-label">最大遞迴深度</span>
-                <span class="setting-value">{{
-                  formData.max_recursion_steps
-                }}</span>
-              </div>
-              <input
-                type="range"
-                v-model.number="formData.max_recursion_steps"
-                min="1"
-                max="20"
-                class="range-slider full"
-              />
-            </div>
+        <!-- 遞迴掃描 -->
+        <div class="lbe-row">
+          <div class="lbe-row-text">
+            <span class="lbe-row-title">遞迴掃描</span>
+            <span class="lbe-row-desc">條目內容可以再觸發其他條目</span>
           </div>
-        </Transition>
+          <button
+            type="button"
+            role="switch"
+            class="lbe-switch"
+            :class="{ on: formData.recursive_scanning }"
+            :aria-checked="formData.recursive_scanning"
+            aria-label="遞迴掃描"
+            @click="formData.recursive_scanning = !formData.recursive_scanning"
+          >
+            <span class="lbe-switch-knob"></span>
+          </button>
+        </div>
+
+        <!-- 最大遞迴深度 -->
+        <label
+          class="lbe-depth"
+          :class="{ dim: !formData.recursive_scanning }"
+        >
+          <span class="lbe-depth-head">
+            <span class="lbe-row-title">最大遞迴深度</span>
+            <span class="lbe-depth-value">{{
+              formData.max_recursion_steps
+            }}</span>
+          </span>
+          <input
+            type="range"
+            v-model.number="formData.max_recursion_steps"
+            min="1"
+            max="20"
+            class="lbe-range"
+            :disabled="!formData.recursive_scanning"
+          />
+        </label>
+
+        <button
+          v-if="!isCreateMode"
+          type="button"
+          class="lbe-delete-book"
+          @click="handleDelete"
+        >
+          刪除這本世界書
+        </button>
       </section>
 
       <!-- 條目區域 -->
       <section class="entries-section">
+        <!-- 條目標題列 -->
+        <div class="lbe-entries-title">
+          <span class="lbe-entries-title-text">
+            條目
+            <span class="lbe-entries-count"
+              >{{ onEntryCount }}/{{ formData.entries.length }} 已開</span
+            >
+          </span>
+          <button
+            v-if="!selectingEntries"
+            type="button"
+            class="lbe-select-btn"
+            @click="startEntrySelect"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2.2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <rect x="3" y="3" width="18" height="18" rx="5" />
+              <path d="M8 12l3 3 5-6" />
+            </svg>
+            批量選取
+          </button>
+        </div>
+
         <!-- 搜尋與新增 -->
         <div class="entries-header">
           <div class="soft-search">
-            <svg class="search-icon" viewBox="0 0 24 24" fill="currentColor">
-              <path
-                d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"
-              />
+            <svg
+              class="search-icon"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              aria-hidden="true"
+            >
+              <circle cx="11" cy="11" r="7" />
+              <path d="M20 20l-3.5-3.5" />
             </svg>
             <input
               v-model="searchQuery"
               type="text"
-              placeholder="搜尋條目..."
+              placeholder="搜尋標題或關鍵詞"
             />
           </div>
-          <button class="add-entry-btn" @click="addEntry">
-            <svg viewBox="0 0 24 24" fill="currentColor">
-              <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
+          <button
+            v-if="!selectingEntries"
+            type="button"
+            class="add-entry-btn"
+            aria-label="新增條目"
+            @click="addEntry"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2.2"
+              stroke-linecap="round"
+              aria-hidden="true"
+            >
+              <path d="M12 5v14M5 12h14" />
             </svg>
           </button>
+        </div>
+
+        <!-- 篩選膠囊 -->
+        <div
+          v-if="!selectingEntries"
+          class="lbe-chips"
+          role="tablist"
+          aria-label="篩選條目"
+        >
+          <button
+            v-for="c in filterChips"
+            :key="c.id"
+            type="button"
+            role="tab"
+            class="lbe-chip"
+            :class="{ active: entryFilter === c.id }"
+            :aria-selected="entryFilter === c.id"
+            @click="entryFilter = c.id"
+          >
+            {{ c.label }}<span class="lbe-chip-n">{{ c.n }}</span>
+          </button>
+        </div>
+
+        <!-- 快速選取 -->
+        <div v-if="selectingEntries" class="lbe-quick">
+          <span class="lbe-quick-label">快速選取</span>
+          <div class="lbe-quick-row">
+            <button
+              type="button"
+              class="lbe-quick-chip"
+              @click="quickSelect('all')"
+            >
+              全選
+            </button>
+            <button
+              type="button"
+              class="lbe-quick-chip"
+              @click="quickSelect('on')"
+            >
+              選已開啟
+            </button>
+            <button
+              type="button"
+              class="lbe-quick-chip"
+              @click="quickSelect('off')"
+            >
+              選已關閉
+            </button>
+            <button
+              type="button"
+              class="lbe-quick-chip"
+              @click="quickSelect('pin')"
+            >
+              選常駐
+            </button>
+            <button
+              type="button"
+              class="lbe-quick-chip"
+              @click="quickSelect('none')"
+            >
+              清除選取
+            </button>
+          </div>
         </div>
 
         <!-- 條目列表 -->
@@ -841,57 +1082,136 @@ function removeCondition(
             v-for="entry in visibleEntries"
             :key="entry.id"
             class="entry-card"
-            :class="{ expanded: entry.expanded, disabled: !entry.enabled }"
+            :class="{
+              expanded: entry.expanded,
+              disabled: !entry.enabled,
+              selected: selectingEntries && selectedEntryIds.has(entry.id),
+            }"
           >
             <!-- 條目標題列 -->
-            <div class="entry-header" @click="toggleEntry(entry.id)">
+            <div
+              class="entry-header"
+              @click="
+                selectingEntries
+                  ? toggleEntrySelected(entry.id)
+                  : toggleEntry(entry.id)
+              "
+            >
               <button
-                class="entry-toggle"
-                :class="{ enabled: entry.enabled }"
+                v-if="!selectingEntries"
+                type="button"
+                role="switch"
+                class="entry-switch"
+                :aria-checked="entry.enabled"
+                :aria-label="
+                  '開關 ' + (entry.comment || entry.name || '未命名條目')
+                "
                 @click.stop="toggleEntryEnabled(entry.id)"
               >
-                <svg
-                  v-if="entry.enabled"
-                  viewBox="0 0 24 24"
-                  fill="currentColor"
+                <span class="entry-switch-track" :class="{ on: entry.enabled }">
+                  <span class="entry-switch-knob"></span>
+                </span>
+              </button>
+              <button
+                v-else
+                type="button"
+                role="checkbox"
+                class="entry-check"
+                :aria-checked="selectedEntryIds.has(entry.id)"
+                :aria-label="
+                  '選取 ' + (entry.comment || entry.name || '未命名條目')
+                "
+                @click.stop="toggleEntrySelected(entry.id)"
+              >
+                <span
+                  class="entry-check-box"
+                  :class="{ checked: selectedEntryIds.has(entry.id) }"
                 >
-                  <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
-                </svg>
+                  <svg
+                    v-if="selectedEntryIds.has(entry.id)"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="3.5"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M5 12l5 5 9-10" />
+                  </svg>
+                </span>
               </button>
 
-              <div class="entry-info">
+              <div class="entry-info" :class="{ dim: !entry.enabled }">
                 <div class="entry-title-row">
-                  <span class="order-badge">{{ entry.insertion_order }}</span>
-                  <span class="entry-name">{{
-                    entry.comment || entry.name || "未命名條目"
-                  }}</span>
-                  <span
-                    v-if="entry.constant"
-                    class="constant-badge"
-                    title="始終激活"
-                    >📌</span
+                  <span v-if="entry.constant" class="entry-pin-badge"
+                    >常駐</span
+                  >
+                  <span class="entry-name"
+                    >{{ entry.comment || entry.name || "未命名條目" }}</span
                   >
                 </div>
                 <span class="entry-keys">{{
-                  entry.keys.join(", ") || "無關鍵詞"
+                  entry.constant
+                    ? "常駐，不需關鍵詞"
+                    : entry.keys.join("、") || "無關鍵詞"
                 }}</span>
               </div>
 
-              <svg
-                class="entry-chevron"
-                :class="{ open: entry.expanded }"
-                viewBox="0 0 24 24"
-                fill="currentColor"
-              >
-                <path
-                  d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z"
-                />
-              </svg>
+              <template v-if="selectingEntries">
+                <span class="entry-state" :class="{ on: entry.enabled }">{{
+                  entry.enabled ? "開" : "關"
+                }}</span>
+              </template>
+              <template v-else>
+                <span class="entry-order">#{{ entry.insertion_order }}</span>
+                <svg
+                  class="entry-chevron"
+                  :class="{ open: entry.expanded }"
+                  viewBox="0 0 24 24"
+                  fill="currentColor"
+                >
+                  <path
+                    d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z"
+                  />
+                </svg>
+              </template>
             </div>
 
             <!-- 條目內容（展開時顯示） -->
             <Transition name="slide">
-              <div v-if="entry.expanded" class="entry-content">
+              <div
+                v-if="entry.expanded && !selectingEntries"
+                class="entry-content"
+              >
+                <!-- 觸發方式 -->
+                <div
+                  class="lbe-trigger"
+                  role="radiogroup"
+                  aria-label="觸發方式"
+                >
+                  <button
+                    type="button"
+                    role="radio"
+                    class="lbe-trigger-btn"
+                    :class="{ active: !entry.constant }"
+                    :aria-checked="!entry.constant"
+                    @click="setEntryConstant(entry, false)"
+                  >
+                    關鍵詞觸發
+                  </button>
+                  <button
+                    type="button"
+                    role="radio"
+                    class="lbe-trigger-btn"
+                    :class="{ active: !!entry.constant }"
+                    :aria-checked="!!entry.constant"
+                    @click="setEntryConstant(entry, true)"
+                  >
+                    常駐
+                  </button>
+                </div>
+
                 <div class="form-group">
                   <label class="form-label">條目名稱/註釋</label>
                   <input
@@ -1284,14 +1604,6 @@ function removeCondition(
                 <div class="form-group">
                   <div class="checkbox-group">
                     <label class="checkbox-label">
-                      <input type="checkbox" v-model="entry.enabled" />
-                      <span>啟用此條目</span>
-                    </label>
-                    <label class="checkbox-label">
-                      <input type="checkbox" v-model="entry.constant" />
-                      <span>始終激活（不檢查關鍵詞）</span>
-                    </label>
-                    <label class="checkbox-label">
                       <input type="checkbox" v-model="entry.case_sensitive" />
                       <span>區分大小寫</span>
                     </label>
@@ -1300,10 +1612,24 @@ function removeCondition(
 
                 <div class="entry-actions">
                   <button
+                    type="button"
                     class="delete-entry-btn"
                     @click="deleteEntry(entry.id)"
                   >
-                    🗑️ 刪除條目
+                    <svg
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.9"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      aria-hidden="true"
+                    >
+                      <path
+                        d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"
+                      />
+                    </svg>
+                    刪除條目
                   </button>
                 </div>
               </div>
@@ -1332,6 +1658,68 @@ function removeCondition(
         </div>
       </section>
     </main>
+
+    <!-- 底部批量操作列 -->
+    <div v-if="selectingEntries" class="lbe-bulk-bar">
+      <button
+        type="button"
+        role="switch"
+        class="lbe-bulk-toggle"
+        :aria-checked="bulkAllOn"
+        aria-label="一鍵開關已選條目"
+        :disabled="selectedEntryIds.size === 0"
+        @click="bulkToggleEnabled"
+      >
+        <span class="lbe-bulk-text">
+          <span class="lbe-bulk-title">一鍵開關</span>
+          <span class="lbe-bulk-hint">{{ bulkHint }}</span>
+        </span>
+        <span class="lbe-bulk-track" :class="{ on: bulkAllOn }">
+          <span class="lbe-bulk-knob"></span>
+        </span>
+      </button>
+
+      <button
+        type="button"
+        class="lbe-bulk-action"
+        :disabled="selectedEntryIds.size === 0"
+        @click="bulkTogglePinned"
+      >
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.9"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <path
+            d="M14 3l7 7-3 1-4 4 1 5-2 1-4-5-5 5-1-1 5-5-5-4 1-2 5 1 4-4z"
+          />
+        </svg>
+        <span>{{ bulkAllPinned ? "取消常駐" : "設常駐" }}</span>
+      </button>
+
+      <button
+        type="button"
+        class="lbe-bulk-action danger"
+        :disabled="selectedEntryIds.size === 0"
+        @click="bulkDeleteEntries"
+      >
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.9"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" />
+        </svg>
+        <span>刪除</span>
+      </button>
+    </div>
   </div>
 </template>
 
@@ -2417,6 +2805,791 @@ body.is-night-mode {
 
   .add-group-btn {
     color: #c39bd3;
+  }
+}
+
+// ===== 改版樣式 =====
+.lorebook-edit-screen {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-background);
+}
+
+.lbe-header {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: calc(12px + var(--safe-top)) calc(16px + var(--safe-right)) 4px
+    calc(8px + var(--safe-left));
+  background: transparent;
+}
+
+.lbe-back {
+  width: 44px;
+  height: 44px;
+  border-radius: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text);
+
+  svg {
+    width: 22px;
+    height: 22px;
+  }
+}
+
+.lbe-title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-family: "Noto Serif TC", "Source Han Serif TC", serif;
+  font-size: 18px;
+  font-weight: 900;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--color-text);
+}
+
+.lbe-save {
+  height: 40px;
+  padding: 0 18px;
+  border-radius: 20px;
+  background: var(--color-primary);
+  color: var(--color-on-primary-contrast);
+  font-size: 14px;
+  font-weight: 700;
+  transition: transform var(--transition-fast);
+
+  &:active {
+    transform: scale(0.97);
+  }
+}
+
+.lbe-done {
+  height: 44px;
+  padding: 0 12px;
+  font-size: 14px;
+  color: var(--color-text);
+}
+
+.lbe-selected-count {
+  flex: 1;
+  text-align: center;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.lbe-header-spacer {
+  width: 60px;
+  flex-shrink: 0;
+}
+
+.edit-content {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 8px calc(16px + var(--safe-right)) calc(32px + var(--safe-bottom))
+    calc(16px + var(--safe-left));
+
+  &.is-selecting {
+    padding-bottom: calc(112px + var(--safe-bottom));
+  }
+}
+
+.lbe-card {
+  background: var(--color-surface);
+  border-radius: 18px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+
+  .soft-input {
+    min-height: 46px;
+    border-radius: 12px;
+    background: var(--color-background);
+    border: 1px solid var(--color-border);
+    color: var(--color-text);
+  }
+}
+
+.lbe-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.lbe-label {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.lbe-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.lbe-row-text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.lbe-row-title {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.lbe-row-desc {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.lbe-switch {
+  width: 52px;
+  height: 32px;
+  border-radius: 16px;
+  padding: 3px;
+  border: none;
+  background: var(--color-border);
+  display: flex;
+  justify-content: flex-start;
+  transition: background var(--transition-fast);
+
+  &.on {
+    background: var(--color-primary);
+    justify-content: flex-end;
+  }
+}
+
+.lbe-switch-knob {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.lbe-depth {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+
+  &.dim {
+    opacity: 0.4;
+  }
+}
+
+.lbe-depth-head {
+  display: flex;
+  justify-content: space-between;
+}
+
+.lbe-depth-value {
+  font-weight: 700;
+  color: var(--color-primary);
+}
+
+.lbe-range {
+  width: 100%;
+  margin: 0;
+  accent-color: var(--color-primary);
+}
+
+.lbe-delete-book {
+  align-self: flex-start;
+  height: 40px;
+  padding: 0;
+  background: transparent;
+  color: var(--color-error);
+  font-size: 14px;
+}
+
+.entries-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.lbe-entries-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 4px 0;
+}
+
+.lbe-entries-title-text {
+  flex: 1;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.lbe-entries-count {
+  font-weight: 500;
+  color: var(--color-text-secondary);
+}
+
+.lbe-select-btn {
+  height: 36px;
+  padding: 0 14px;
+  border: 1px solid var(--color-text);
+  border-radius: 18px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: 13px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+
+  svg {
+    width: 15px;
+    height: 15px;
+  }
+}
+
+.entries-header {
+  display: flex;
+  gap: 8px;
+  padding: 0;
+  background: transparent;
+
+  .soft-search {
+    flex: 1;
+    height: 46px;
+    border-radius: 14px;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    padding: 0 14px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+
+    input {
+      flex: 1;
+      min-width: 0;
+      border: none;
+      outline: none;
+      background: transparent;
+      font-size: 15px;
+      color: var(--color-text);
+    }
+
+    .search-icon {
+      width: 18px;
+      height: 18px;
+      color: var(--color-text-secondary);
+    }
+  }
+}
+
+.add-entry-btn {
+  width: 46px;
+  height: 46px;
+  flex: none;
+  border-radius: 14px;
+  background: var(--color-text);
+  color: var(--color-surface);
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  svg {
+    width: 20px;
+    height: 20px;
+    color: var(--color-surface);
+  }
+}
+
+.lbe-chips {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+.lbe-chip {
+  flex: none;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 16px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: 13px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+
+  &.active {
+    background: var(--color-text);
+    color: var(--color-surface);
+    border-color: var(--color-text);
+    font-weight: 700;
+  }
+}
+
+.lbe-chip-n {
+  font-size: 12px;
+  opacity: 0.75;
+}
+
+.lbe-quick {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.lbe-quick-label {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  padding-left: 2px;
+}
+
+.lbe-quick-row {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+}
+
+.lbe-quick-chip {
+  flex: none;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 16px;
+  border: 1px dashed var(--color-primary);
+  background: var(--color-surface);
+  color: var(--color-primary);
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.entries-list {
+  background: var(--color-surface);
+  border-radius: 18px;
+  overflow: hidden;
+  display: block;
+  gap: 0;
+}
+
+.entry-card {
+  border-radius: 0;
+  margin: 0;
+  border: none;
+  border-bottom: 1px solid var(--color-border);
+  box-shadow: none;
+  background: transparent;
+
+  &.selected {
+    background: color-mix(in srgb, var(--color-primary) 10%, var(--color-surface));
+  }
+
+  &.disabled {
+    opacity: 1;
+  }
+}
+
+.entry-header {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 6px 4px 4px;
+  cursor: pointer;
+}
+
+.entry-switch {
+  flex: none;
+  width: 52px;
+  height: 52px;
+  border: none;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.entry-switch-track {
+  width: 38px;
+  height: 24px;
+  border-radius: 12px;
+  padding: 2px;
+  box-sizing: border-box;
+  background: var(--color-border);
+  display: flex;
+  justify-content: flex-start;
+
+  &.on {
+    background: var(--color-primary);
+    justify-content: flex-end;
+  }
+}
+
+.entry-switch-knob {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+.entry-check {
+  flex: none;
+  width: 48px;
+  height: 52px;
+  border: none;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.entry-check-box {
+  width: 24px;
+  height: 24px;
+  border-radius: 8px;
+  background: var(--color-surface);
+  box-shadow: inset 0 0 0 2px var(--color-border);
+  color: var(--color-on-primary-contrast);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  svg {
+    width: 14px;
+    height: 14px;
+  }
+
+  &.checked {
+    background: var(--color-primary);
+    box-shadow: none;
+  }
+}
+
+.entry-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px 6px 8px 2px;
+
+  &.dim {
+    opacity: 0.55;
+  }
+
+  .entry-title-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+  }
+
+  .entry-pin-badge {
+    flex: none;
+    height: 20px;
+    padding: 0 6px;
+    border-radius: 6px;
+    background: color-mix(in srgb, var(--color-primary) 20%, var(--color-surface));
+    color: var(--color-text);
+    font-size: 11px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+  }
+
+  .entry-name {
+    font-size: 14px;
+    font-weight: 700;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--color-text);
+  }
+
+  .entry-keys {
+    font-size: 12px;
+    color: var(--color-text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
+
+.entry-order {
+  flex: none;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 6px;
+  background: var(--color-background);
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  display: flex;
+  align-items: center;
+}
+
+.entry-chevron {
+  width: 16px;
+  height: 16px;
+  color: var(--color-text-secondary);
+  transition: transform var(--transition-fast);
+
+  &.open {
+    transform: rotate(180deg);
+  }
+}
+
+.entry-state {
+  flex: none;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 11px;
+  font-size: 11px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  background: var(--color-background);
+  color: var(--color-text-secondary);
+
+  &.on {
+    color: var(--color-success);
+    background: color-mix(
+      in srgb,
+      var(--color-success) 16%,
+      var(--color-surface)
+    );
+  }
+}
+
+.entry-content {
+  padding: 2px 16px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  border-top: none;
+  background: transparent;
+
+  .soft-input {
+    min-height: 44px;
+    border-radius: 12px;
+    background: var(--color-background);
+    border: 1px solid var(--color-border);
+    color: var(--color-text);
+  }
+}
+
+.lbe-trigger {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  background: var(--color-background);
+  border-radius: 12px;
+  padding: 3px;
+}
+
+.lbe-trigger-btn {
+  height: 36px;
+  border: none;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--color-text);
+  font-size: 13px;
+  font-weight: 700;
+
+  &.active {
+    background: var(--color-surface);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+  }
+}
+
+.delete-entry-btn {
+  height: 44px;
+  padding: 0 14px;
+  border: 1px solid color-mix(in srgb, var(--color-error) 40%, transparent);
+  border-radius: 12px;
+  background: var(--color-surface);
+  color: var(--color-error);
+  font-size: 14px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+
+  svg {
+    width: 18px;
+    height: 18px;
+  }
+}
+
+.lbe-bulk-bar {
+  position: absolute;
+  left: calc(12px + var(--safe-left));
+  right: calc(12px + var(--safe-right));
+  bottom: calc(16px + var(--safe-bottom));
+  z-index: 20;
+  border-radius: 26px;
+  background: var(--color-text);
+  color: var(--color-surface);
+  padding: 8px;
+  box-sizing: border-box;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.3);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.lbe-bulk-toggle {
+  flex: 1;
+  min-width: 0;
+  height: 60px;
+  border: none;
+  border-radius: 20px;
+  background: color-mix(in srgb, var(--color-surface) 12%, var(--color-text));
+  color: inherit;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 12px 0 16px;
+  text-align: left;
+
+  &:disabled {
+    opacity: 0.45;
+  }
+}
+
+.lbe-bulk-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.lbe-bulk-title {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.lbe-bulk-hint {
+  font-size: 11px;
+  opacity: 0.7;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.lbe-bulk-track {
+  flex: none;
+  width: 56px;
+  height: 34px;
+  border-radius: 17px;
+  padding: 3px;
+  box-sizing: border-box;
+  background: color-mix(in srgb, var(--color-surface) 30%, var(--color-text));
+  display: flex;
+  justify-content: flex-start;
+
+  &.on {
+    background: var(--color-primary);
+    justify-content: flex-end;
+  }
+}
+
+.lbe-bulk-knob {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #fff;
+}
+
+.lbe-bulk-action {
+  flex: none;
+  width: 64px;
+  height: 60px;
+  border: none;
+  border-radius: 20px;
+  background: transparent;
+  color: inherit;
+  font-size: 11px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+
+  svg {
+    width: 20px;
+    height: 20px;
+  }
+
+  &.danger {
+    color: var(--color-error);
+    font-weight: 700;
+    width: 56px;
+  }
+
+  &:disabled {
+    opacity: 0.45;
+  }
+}
+
+// 夜晚模式：把上面寫死底色的容器再用主題變數蓋一次，避免被舊規則蓋回去。
+body.is-night-mode {
+  .entry-card {
+    background: transparent;
+
+    &.selected {
+      background: color-mix(in srgb, var(--color-primary) 14%, var(--color-surface));
+    }
+  }
+
+  .entries-list {
+    background: var(--color-surface);
+  }
+
+  .entries-header {
+    background: transparent;
+  }
+
+  .entries-header .soft-search {
+    background: var(--color-surface);
+    border-color: var(--color-border);
+  }
+
+  .entries-header .soft-search input {
+    background: transparent;
+    color: var(--color-text);
+  }
+
+  .add-entry-btn {
+    background: var(--color-text);
+    color: var(--color-surface);
+
+    svg {
+      color: var(--color-surface);
+    }
+  }
+
+  .lbe-card .soft-input,
+  .entry-content .soft-input {
+    background: var(--color-background);
+    border-color: var(--color-border);
+    color: var(--color-text);
   }
 }
 </style>
