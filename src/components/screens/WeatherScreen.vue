@@ -502,7 +502,7 @@ const isCurrentCityCustom = computed(() => {
   text-align: left;
   transition: all 0.18s;
 
-  &:hover { background: var(--color-hover, #f0f0f0); }
+  &:hover { background: var(--color-surface-hover, #f0f0f0); }
 
   &.active {
     border-color: var(--color-primary, #7dd3a8);
@@ -604,7 +604,7 @@ const isCurrentCityCustom = computed(() => {
   border: 1.5px solid transparent;
   transition: all 0.18s;
 
-  &:hover { background: var(--color-hover, #f0f0f0); }
+  &:hover { background: var(--color-surface-hover, #f0f0f0); }
 
   &.active {
     border-color: var(--color-primary, #7dd3a8);
@@ -663,6 +663,36 @@ const isCurrentCityCustom = computed(() => {
 @keyframes spin {
   from { transform: rotate(0deg); }
   to   { transform: rotate(360deg); }
+}
+
+// ── 夜晚模式覆蓋 ─────────────────────────────────────────
+// PrimeVue 只在 html.app-dark 時切暗色，夜晚模式不會加這個 class，
+// 卡片與輸入框會維持白底、文字卻跟著主題變淺；這裡把頁內的 PrimeVue token 換成夜晚配色。
+body.is-night-mode {
+  .weather-screen {
+    --p-card-background: var(--color-surface);
+    --p-card-color: var(--color-text);
+    --p-card-subtitle-color: var(--color-text-secondary);
+    --p-inputtext-background: var(--color-background);
+    --p-inputtext-color: var(--color-text);
+    --p-inputtext-border-color: var(--color-border);
+    --p-inputnumber-button-background: var(--color-surface-hover);
+    --p-inputnumber-button-hover-background: rgba(255, 255, 255, 0.08);
+    --p-inputnumber-button-border-color: var(--color-border);
+    --p-inputnumber-button-color: var(--color-text-secondary);
+    --p-inputnumber-button-hover-color: var(--color-text);
+    --p-select-background: var(--color-background);
+    --p-select-color: var(--color-text);
+    --p-select-border-color: var(--color-border);
+    --p-select-dropdown-color: var(--color-text-muted);
+  }
+
+  .mode-option,
+  .saved-city-row {
+    &.active {
+      background: rgba(125, 211, 168, 0.15);
+    }
+  }
 }
 
 </style>

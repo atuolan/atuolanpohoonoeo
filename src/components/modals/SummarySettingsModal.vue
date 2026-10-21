@@ -875,4 +875,34 @@ function saveSettings() {
   opacity: 0;
   transform: translateY(-8px);
 }
+
+// ===== 夜晚模式覆蓋 =====
+// 寫死的淺色提示框在夜晚模式的深色面板裡太刺眼，改成半透明色調。
+body.is-night-mode {
+  .count-hint {
+    background: rgba(251, 191, 36, 0.12);
+    color: #fcd34d;
+  }
+
+  .tips-section {
+    background: rgba(56, 189, 248, 0.08);
+    border-color: rgba(56, 189, 248, 0.25);
+
+    .tips-header {
+      color: #7dd3fc;
+
+      svg {
+        color: #38bdf8;
+      }
+    }
+
+    .tips-list li {
+      color: #bae6fd;
+
+      strong {
+        color: #e0f2fe;
+      }
+    }
+  }
+}
 </style>

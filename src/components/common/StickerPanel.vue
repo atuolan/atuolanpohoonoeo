@@ -983,7 +983,7 @@ onMounted(() => {
   padding: 8px 12px;
   overflow-x: auto;
   border-bottom: 1px solid var(--color-border, #f0f0f0);
-  background: var(--color-surface-variant, #fafafa);
+  background: var(--color-surface-hover, #fafafa);
   
   &::-webkit-scrollbar {
     height: 0;
@@ -1449,6 +1449,16 @@ onMounted(() => {
       opacity: 0.5;
       cursor: not-allowed;
     }
+  }
+}
+
+// ===== 夜晚模式覆蓋 =====
+// body.is-night-mode 由 theme store 同步切換，保持巢狀讓 scoped 附在內層元素上。
+body.is-night-mode {
+  .batch-delete-bar {
+    background: rgba(255, 193, 7, 0.15);
+    border-bottom-color: rgba(255, 193, 7, 0.3);
+    color: var(--color-text);
   }
 }
 </style>

@@ -4321,7 +4321,7 @@ watch(newPromptInsertMode, (mode) => {
     }
 
     &:not(:last-child) {
-      border-bottom: 1px solid var(--color-border-light);
+      border-bottom: 1px solid var(--color-border);
     }
   }
 
@@ -5188,7 +5188,7 @@ watch(newPromptInsertMode, (mode) => {
   padding: 16px;
   border-radius: var(--radius-md);
   border: 2px solid var(--color-border);
-  background: var(--color-bg);
+  background: var(--color-background);
   cursor: pointer;
   transition: all var(--transition-fast);
 
@@ -5203,13 +5203,13 @@ watch(newPromptInsertMode, (mode) => {
 
   &:hover {
     border-color: var(--color-primary);
-    background: var(--color-bg-alt);
+    background: var(--color-surface-hover);
   }
 
   &.active {
     border-color: var(--color-primary);
     background: var(--color-primary-light);
-    box-shadow: 0 4px 12px rgba(var(--color-primary-rgb), 0.1);
+    box-shadow: 0 4px 12px rgba(var(--color-primary-rgb, 125, 211, 168), 0.1);
   }
 }
 
@@ -5255,7 +5255,7 @@ watch(newPromptInsertMode, (mode) => {
   padding: 6px 12px;
   border-radius: 999px;
   border: 1px solid var(--color-border);
-  background: var(--color-bg);
+  background: var(--color-background);
   color: var(--color-text);
   font-size: 12px;
   font-weight: 500;
@@ -5448,6 +5448,214 @@ watch(newPromptInsertMode, (mode) => {
 .preset-desc {
   font-size: 12px;
   color: var(--color-text-muted);
+}
+
+// ===== 夜晚模式覆蓋 =====
+// 選單按鈕、分類分頁、模式說明與標籤寫死了白色與淺色漸層，夜晚模式下會很刺眼；
+// body.is-night-mode 由 theme store 同步切換，保持巢狀讓 scoped 附在內層元素上。
+body.is-night-mode {
+  .header-actions-menu::after {
+    background: color-mix(in srgb, var(--color-surface) 85%, transparent);
+  }
+
+  .header-menu-group-title {
+    color: var(--color-text-secondary);
+  }
+
+  .header-menu-divider {
+    background: var(--color-border);
+  }
+
+  .header-menu-item {
+    background: var(--color-surface-hover);
+    color: var(--color-text);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+
+    &:hover {
+      background: rgba(255, 255, 255, 0.1);
+    }
+
+    &.danger {
+      color: var(--color-error);
+
+      &:hover {
+        background: rgba(255, 123, 123, 0.15);
+      }
+    }
+  }
+
+  .char-tab {
+    &.diary-tab {
+      background: rgba(245, 158, 11, 0.15);
+      border-color: rgba(245, 158, 11, 0.4);
+      color: #fcd34d;
+
+      &:hover {
+        background: rgba(245, 158, 11, 0.22);
+      }
+    }
+
+    &.summary-tab {
+      background: rgba(59, 130, 246, 0.15);
+      border-color: rgba(59, 130, 246, 0.4);
+      color: #93c5fd;
+
+      &:hover {
+        background: rgba(59, 130, 246, 0.22);
+      }
+    }
+
+    &.events-tab {
+      background: rgba(236, 72, 153, 0.15);
+      border-color: rgba(236, 72, 153, 0.4);
+      color: #f9a8d4;
+
+      &:hover {
+        background: rgba(236, 72, 153, 0.22);
+      }
+    }
+
+    &.plurk-post-tab {
+      background: rgba(16, 185, 129, 0.15);
+      border-color: rgba(16, 185, 129, 0.4);
+      color: #6ee7b7;
+
+      &:hover {
+        background: rgba(16, 185, 129, 0.22);
+      }
+    }
+
+    &.plurk-comment-tab {
+      background: rgba(99, 102, 241, 0.15);
+      border-color: rgba(99, 102, 241, 0.4);
+      color: #a5b4fc;
+
+      &:hover {
+        background: rgba(99, 102, 241, 0.22);
+      }
+    }
+
+    &.group-chat-tab {
+      background: rgba(233, 30, 99, 0.15);
+      border-color: rgba(233, 30, 99, 0.4);
+      color: #f48fb1;
+
+      &:hover {
+        background: rgba(233, 30, 99, 0.22);
+      }
+    }
+
+    // 選中狀態維持白天的實心漸層
+    &.diary-tab.active {
+      background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+      border-color: #d97706;
+      color: white;
+    }
+
+    &.summary-tab.active {
+      background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+      border-color: #2563eb;
+      color: white;
+    }
+
+    &.events-tab.active {
+      background: linear-gradient(135deg, #ec4899 0%, #db2777 100%);
+      border-color: #db2777;
+      color: white;
+    }
+
+    &.plurk-post-tab.active {
+      background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+      border-color: #059669;
+      color: white;
+    }
+
+    &.plurk-comment-tab.active {
+      background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+      border-color: #4f46e5;
+      color: white;
+    }
+
+    &.group-chat-tab.active {
+      background: linear-gradient(135deg, #e91e63 0%, #c2185b 100%);
+      border-color: #c2185b;
+      color: white;
+    }
+  }
+
+  .mode-info {
+    &.diary-mode-info {
+      background: rgba(245, 158, 11, 0.12);
+      color: #fcd34d;
+    }
+
+    &.summary-mode-info {
+      background: rgba(59, 130, 246, 0.12);
+      color: #93c5fd;
+    }
+
+    &.events-mode-info {
+      background: rgba(236, 72, 153, 0.12);
+      color: #f9a8d4;
+    }
+
+    &.plurk-post-mode-info {
+      background: rgba(16, 185, 129, 0.12);
+      color: #6ee7b7;
+    }
+
+    &.plurk-comment-mode-info {
+      background: rgba(99, 102, 241, 0.12);
+      color: #a5b4fc;
+    }
+
+    &.group-chat-mode-info {
+      background: rgba(233, 30, 99, 0.12);
+      color: #f48fb1;
+    }
+  }
+
+  .prompt-tag {
+    &.marker {
+      background: rgba(25, 118, 210, 0.2);
+      color: #90caf9;
+    }
+
+    &.system,
+    &.role-system {
+      background: rgba(123, 31, 162, 0.22);
+      color: #ce93d8;
+    }
+
+    &.custom {
+      background: rgba(56, 142, 60, 0.2);
+      color: #a5d6a7;
+    }
+
+    &.locked {
+      background: rgba(198, 40, 40, 0.22);
+      color: #ef9a9a;
+    }
+
+    &.role-user {
+      background: rgba(230, 81, 0, 0.2);
+      color: #ffcc80;
+    }
+
+    &.role-assistant {
+      background: rgba(0, 105, 92, 0.25);
+      color: #80cbc4;
+    }
+
+    &.position-depth {
+      background: rgba(194, 24, 91, 0.2);
+      color: #f48fb1;
+    }
+  }
+
+  .select-field {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23a0a0a0' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+  }
 }
 
 </style>

@@ -1803,4 +1803,271 @@ select.soft-input {
 .slide-leave-to {
   opacity: 0;
 }
+
+// ===== 夜晚模式覆蓋 =====
+// 上面寫死的淺色在夜晚模式下會跟全域深色輸入框混在一起；
+// body.is-night-mode 由 theme store 同步切換，保持巢狀讓 scoped 附在內層元素上。
+body.is-night-mode {
+  .user-profile-screen {
+    background: var(--color-background);
+  }
+
+  .persona-list {
+    &::-webkit-scrollbar-track {
+      background: rgba(255, 255, 255, 0.05);
+    }
+
+    &::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.15);
+
+      &:hover {
+        background: rgba(255, 255, 255, 0.25);
+      }
+    }
+  }
+
+  .persona-item {
+    &:hover {
+      background: rgba(255, 255, 255, 0.05);
+    }
+
+    &.active {
+      background: var(--color-surface);
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    }
+  }
+
+  .persona-avatar-small,
+  .character-avatar {
+    background: var(--color-surface-hover);
+
+    svg {
+      color: var(--color-text-muted);
+    }
+  }
+
+  .persona-name-small {
+    color: var(--color-text-secondary);
+  }
+
+  .add-persona-btn {
+    border-color: var(--color-border);
+
+    svg {
+      color: var(--color-text-muted);
+    }
+  }
+
+  .avatar-preview {
+    border-color: var(--color-surface);
+  }
+
+  .avatar-placeholder {
+    background: var(--color-surface);
+    border-color: var(--color-border);
+
+    svg {
+      color: var(--color-text-muted);
+    }
+  }
+
+  .avatar-edit-badge {
+    border-color: var(--color-background);
+  }
+
+  .avatar-hint {
+    color: var(--color-text-secondary);
+  }
+
+  .default-persona-btn {
+    border-color: var(--color-border);
+    background: var(--color-surface);
+    color: var(--color-text-secondary);
+
+    svg {
+      color: var(--color-text-muted);
+    }
+
+    &:hover {
+      background: var(--color-surface-hover);
+    }
+
+    &.active {
+      background: rgba(255, 183, 77, 0.15);
+      border-color: #f59e0b;
+      color: #ffb74d;
+
+      svg {
+        color: #ffb74d;
+      }
+    }
+  }
+
+  .avatar-cache-hint,
+  .no-characters,
+  .no-lorebooks,
+  .form-hint {
+    color: var(--color-text-muted);
+  }
+
+  .edit-section {
+    background: var(--color-surface);
+  }
+
+  .section-header:hover {
+    background: var(--color-surface-hover);
+  }
+
+  .section-title,
+  .character-name {
+    color: var(--color-text);
+  }
+
+  .section-chevron {
+    color: var(--color-text-muted);
+  }
+
+  .character-item {
+    background: var(--color-surface-hover);
+
+    &:hover {
+      background: rgba(255, 255, 255, 0.08);
+    }
+
+    &.bound {
+      background: rgba(125, 211, 168, 0.15);
+    }
+  }
+
+  .character-checkbox {
+    border-color: var(--color-border);
+  }
+
+  .visibility-option {
+    background: var(--color-surface-hover);
+
+    .vis-icon {
+      color: var(--color-text-muted);
+    }
+
+    span {
+      color: var(--color-text-secondary);
+    }
+
+    &:hover {
+      background: rgba(255, 255, 255, 0.08);
+    }
+
+    &.active {
+      background: rgba(125, 211, 168, 0.15);
+
+      .vis-icon,
+      span {
+        color: var(--color-primary, #7dd3a8);
+      }
+    }
+  }
+
+  .form-label {
+    color: var(--color-text-secondary);
+
+    .label-icon {
+      color: var(--color-text-muted);
+    }
+  }
+
+  .soft-input {
+    border-color: var(--color-border);
+
+    &:focus {
+      border-color: var(--color-primary, #7dd3a8);
+    }
+
+    &::placeholder {
+      color: var(--color-text-muted);
+    }
+  }
+
+  .lorebook-item {
+    background: var(--color-surface-hover);
+    color: var(--color-text);
+
+    .lorebook-remove svg {
+      color: var(--color-text-muted);
+    }
+  }
+
+  .add-lorebook-btn {
+    background: var(--color-surface-hover);
+    border-color: var(--color-border);
+    color: var(--color-text-secondary);
+
+    &:hover {
+      background: rgba(255, 255, 255, 0.08);
+      border-color: var(--color-text-muted);
+    }
+  }
+
+  .lorebook-picker {
+    background: var(--color-background);
+    color: var(--color-text);
+  }
+
+  .lorebook-option:hover {
+    background: var(--color-surface-hover);
+  }
+
+  .action-btn {
+    background: var(--color-surface-hover);
+    color: var(--color-text-secondary);
+
+    &:hover {
+      background: rgba(255, 255, 255, 0.08);
+    }
+
+    &.danger {
+      background: rgba(255, 123, 123, 0.15);
+      color: #ff7b7b;
+
+      &:hover {
+        background: rgba(255, 123, 123, 0.22);
+      }
+    }
+
+    &.import {
+      background: rgba(100, 181, 246, 0.15);
+      color: #90caf9;
+
+      &:hover {
+        background: rgba(100, 181, 246, 0.22);
+      }
+    }
+
+    &.export {
+      background: rgba(125, 211, 168, 0.15);
+      color: #7dd3a8;
+
+      &:hover {
+        background: rgba(125, 211, 168, 0.22);
+      }
+    }
+  }
+
+  .style-tag {
+    border-color: var(--color-border);
+    background: var(--color-surface-hover);
+    color: var(--color-text-secondary);
+
+    &:hover {
+      background: rgba(255, 255, 255, 0.08);
+      border-color: var(--color-text-muted);
+    }
+
+    &.active {
+      background: rgba(125, 211, 168, 0.16);
+      border-color: var(--color-primary, #7dd3a8);
+      color: #a8e6cf;
+    }
+  }
+}
 </style>

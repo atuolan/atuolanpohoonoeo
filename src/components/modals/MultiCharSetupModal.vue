@@ -330,7 +330,7 @@ function confirm() {
     border-radius: 6px;
 
     &:hover {
-      background: var(--color-hover, #f0f0f0);
+      background: var(--color-surface-hover, #f0f0f0);
     }
   }
 }
@@ -420,7 +420,7 @@ function confirm() {
     overflow: hidden;
     border: 1px dashed var(--color-border, #ccc);
     border-radius: 50%;
-    background: var(--color-input-bg, #fafafa);
+    background: var(--color-surface-hover, #fafafa);
     color: var(--color-text-secondary, #999);
     font-size: 12px;
     cursor: pointer;
@@ -443,7 +443,7 @@ function confirm() {
     border: 1px solid var(--color-border, #ddd);
     border-radius: 8px;
     font-size: 14px;
-    background: var(--color-input-bg, #fafafa);
+    background: var(--color-surface-hover, #fafafa);
     color: var(--color-text, #333);
 
     &::placeholder {
@@ -458,7 +458,7 @@ function confirm() {
     border: 1px solid var(--color-border, #ddd);
     border-radius: 8px;
     font-size: 13px;
-    background: var(--color-input-bg, #fafafa);
+    background: var(--color-surface-hover, #fafafa);
     color: var(--color-text, #333);
 
     &::placeholder {
@@ -584,7 +584,7 @@ function confirm() {
   }
 
   .btn-cancel {
-    background: var(--color-hover, #f0f0f0);
+    background: var(--color-surface-hover, #f0f0f0);
     color: var(--color-text, #333);
   }
 

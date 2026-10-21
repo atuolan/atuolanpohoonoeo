@@ -634,4 +634,20 @@ function handleDone() {
     transform: scale(0.9) translateY(20px);
   }
 }
+
+// ===== 夜晚模式覆蓋 =====
+// 寫死的淺色提示框在夜晚模式的深色面板裡太刺眼，改成半透明色調。
+body.is-night-mode {
+  .error-message {
+    background: rgba(255, 123, 123, 0.15);
+
+    svg {
+      color: #ff7b7b;
+    }
+
+    span {
+      color: #ff9b9b;
+    }
+  }
+}
 </style>

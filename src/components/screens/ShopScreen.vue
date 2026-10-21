@@ -876,7 +876,7 @@ onMounted(async () => {
     border-radius: 8px;
 
     &:active {
-      background: var(--color-hover, #f0f0f0);
+      background: var(--color-surface-hover, #f0f0f0);
     }
   }
 
@@ -1689,6 +1689,226 @@ onMounted(async () => {
 
   .purchase-modal {
     transform: scale(0.95);
+  }
+}
+
+// ===== 夜晚模式覆蓋 =====
+// 頁面本體跟著主題變數變深，但分類標籤、價格、購買彈窗寫死淺色；
+// body.is-night-mode 由 theme store 同步切換，保持巢狀讓 scoped 附在內層元素上。
+body.is-night-mode {
+  .screen-header .balance-display,
+  .item-price {
+    background: rgba(255, 183, 77, 0.15);
+    color: #ffb74d;
+  }
+
+  .item-price.insufficient {
+    background: rgba(255, 123, 123, 0.15);
+    color: #ff7b7b;
+  }
+
+  .category-tab {
+    background: var(--color-surface-hover);
+    color: var(--color-text-secondary);
+
+    &.active {
+      background: #7dd3a8;
+      color: #1a1a2e;
+    }
+  }
+
+  .rarity-badge,
+  .modal-rarity {
+    &.rarity-common {
+      background: rgba(255, 255, 255, 0.1);
+      color: var(--color-text-secondary);
+    }
+
+    &.rarity-uncommon {
+      background: rgba(52, 211, 153, 0.15);
+      color: #6ee7b7;
+    }
+
+    &.rarity-rare {
+      background: rgba(96, 165, 250, 0.15);
+      color: #93c5fd;
+    }
+
+    &.rarity-epic {
+      background: rgba(167, 139, 250, 0.18);
+      color: #c4b5fd;
+    }
+
+    &.rarity-legendary {
+      background: linear-gradient(135deg, rgba(251, 191, 36, 0.2) 0%, rgba(248, 113, 113, 0.2) 100%);
+      color: #fcd34d;
+    }
+  }
+
+  .rod-stats span,
+  .consumable-effect span {
+    background: rgba(255, 255, 255, 0.06);
+  }
+
+  .purchase-modal {
+    background: var(--color-surface);
+
+    .close-btn {
+      background: var(--color-surface-hover);
+      color: var(--color-text-secondary);
+
+      &:active {
+        background: rgba(255, 255, 255, 0.12);
+      }
+    }
+  }
+
+  .modal-item-name,
+  .purchase-result .result-message {
+    color: var(--color-text);
+  }
+
+  .modal-item-desc,
+  .modal-balance {
+    color: var(--color-text-secondary);
+  }
+
+  .variant-selector,
+  .modal-rod-stats,
+  .quantity-selector {
+    background: var(--color-surface-hover);
+  }
+
+  .variant-selector {
+    .variant-label,
+    .variant-description {
+      color: var(--color-text-secondary);
+    }
+
+    .variant-description {
+      border-top-color: var(--color-border);
+    }
+
+    .variant-option {
+      background: var(--color-surface);
+      border-color: var(--color-border);
+
+      &:hover:not(:disabled) {
+        border-color: var(--color-text-muted);
+        background: var(--color-surface);
+      }
+
+      &.selected {
+        border-color: #7dd3a8;
+        background: rgba(125, 211, 168, 0.12);
+      }
+
+      &.owned {
+        background: var(--color-surface);
+      }
+
+      .variant-color {
+        border-color: rgba(255, 255, 255, 0.15);
+      }
+
+      .variant-info {
+        .variant-name {
+          color: var(--color-text);
+        }
+
+        .variant-owned {
+          color: var(--color-text-muted);
+        }
+      }
+
+      .variant-check {
+        color: #7dd3a8;
+      }
+    }
+  }
+
+  .modal-rod-stats .stat-row {
+    &:not(:last-child) {
+      border-bottom-color: var(--color-border);
+    }
+
+    .stat-label {
+      color: var(--color-text-secondary);
+    }
+
+    .stat-value {
+      color: var(--color-text);
+    }
+  }
+
+  .modal-consumable-effect {
+    background: rgba(125, 211, 168, 0.12);
+
+    .effect-type {
+      color: #6ee7b7;
+    }
+
+    .effect-value {
+      color: #7dd3a8;
+    }
+  }
+
+  .quantity-selector {
+    .quantity-label {
+      color: var(--color-text-secondary);
+    }
+
+    .quantity-controls {
+      .qty-btn {
+        background: rgba(255, 255, 255, 0.1);
+        color: var(--color-text);
+
+        &:active:not(:disabled) {
+          background: rgba(255, 255, 255, 0.16);
+        }
+      }
+
+      .qty-value {
+        color: var(--color-text);
+      }
+    }
+
+    .quantity-hint {
+      color: var(--color-text-muted);
+    }
+  }
+
+  .modal-price {
+    .price-label {
+      color: var(--color-text-muted);
+    }
+
+    .price-value {
+      color: #ffb74d;
+    }
+  }
+
+  .modal-actions {
+    .cancel-btn {
+      background: var(--color-surface-hover);
+      color: var(--color-text);
+    }
+
+    .confirm-btn:disabled {
+      background: #3a3a5a;
+    }
+  }
+
+  .purchase-result {
+    .result-icon {
+      background: rgba(255, 123, 123, 0.15);
+      color: #ff7b7b;
+    }
+
+    &.success .result-icon {
+      background: rgba(125, 211, 168, 0.15);
+      color: #7dd3a8;
+    }
   }
 }
 </style>

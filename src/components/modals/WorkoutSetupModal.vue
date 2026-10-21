@@ -717,4 +717,12 @@ function reset() {
   opacity: 0;
   .exercise-picker { transform: translateY(100%); }
 }
+
+// ===== 夜晚模式覆蓋 =====
+// 關閉狀態的開關底色是半透明黑，疊在夜晚深色面板上幾乎看不見
+body.is-night-mode {
+  .toggle-input:not(:checked) + .toggle-switch {
+    background: rgba(255, 255, 255, 0.18);
+  }
+}
 </style>

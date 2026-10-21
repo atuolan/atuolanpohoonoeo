@@ -264,7 +264,7 @@ onUnmounted(() => {
     margin: 0;
     font-size: 16px;
     font-weight: 600;
-    color: var(--color-text-primary, #222);
+    color: var(--color-text, #222);
   }
 
   .close-btn {
@@ -296,7 +296,7 @@ onUnmounted(() => {
     border-radius: 8px;
     font-size: 14px;
     background: var(--color-input-bg, var(--color-surface, #f5f5f5));
-    color: var(--color-text-primary, #222);
+    color: var(--color-text, #222);
     outline: none;
 
     &:focus {

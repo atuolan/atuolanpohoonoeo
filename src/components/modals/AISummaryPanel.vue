@@ -4653,7 +4653,7 @@ onMounted(async () => {
     padding: 8px 12px;
     border-radius: 8px;
     border: 1px solid var(--color-border, rgba(255, 255, 255, 0.1));
-    background: var(--color-bg, #111);
+    background: var(--color-background, #111);
     color: var(--color-text, #e5e7eb);
     font-size: 13px;
     outline: none;
@@ -4690,7 +4690,7 @@ onMounted(async () => {
     }
 
     .btn-cancel {
-      background: var(--color-bg, #111);
+      background: var(--color-background, #111);
       color: var(--color-text-secondary, #6b7280);
       border: 1px solid var(--color-border, rgba(255, 255, 255, 0.1));
     }
@@ -4948,5 +4948,19 @@ onMounted(async () => {
   word-break: break-word;
 
   svg { color: #f87171; }
+}
+
+// ===== 夜晚模式覆蓋 =====
+// 上面寫死的淺色底在夜晚模式下會配上淺色字；
+// body.is-night-mode 由 theme store 同步切換，保持巢狀讓 scoped 附在內層元素上。
+body.is-night-mode {
+  .count-hint {
+    background: rgba(251, 191, 36, 0.12);
+  }
+
+  .diary-card.favorite {
+    background: linear-gradient(135deg, rgba(251, 191, 36, 0.1) 0%, rgba(251, 191, 36, 0.18) 100%);
+    border-color: rgba(252, 211, 77, 0.45);
+  }
 }
 </style>

@@ -874,4 +874,125 @@ function sendToCharacter(characterId: string, characterName: string) {
 .fade-leave-to {
   opacity: 0;
 }
+
+// ===== 夜晚模式覆蓋 =====
+// 頂欄與頁面底色跟著主題變數變深，但分頁、商品卡與底部彈窗寫死淺色；
+// body.is-night-mode 由 theme store 同步切換，保持巢狀讓 scoped 附在內層元素上。
+body.is-night-mode {
+  .screen-header .back-btn:active {
+    background: rgba(255, 255, 255, 0.08);
+  }
+
+  .section-tabs .section-tab {
+    border-color: var(--color-border);
+    background: var(--color-surface-hover);
+
+    .tab-label {
+      color: var(--color-text);
+    }
+
+    .tab-subtitle {
+      color: var(--color-text-secondary);
+    }
+
+    &.active {
+      border-color: #818cf8;
+      background: rgba(129, 140, 248, 0.15);
+    }
+  }
+
+  .item-card {
+    border-color: var(--color-border);
+    background: var(--color-surface);
+
+    .item-meta {
+      .store-row,
+      .item-desc {
+        color: var(--color-text-secondary);
+      }
+
+      .item-name {
+        color: var(--color-text);
+      }
+
+      .item-footer .tags span {
+        background: rgba(255, 255, 255, 0.08);
+        color: var(--color-text-secondary);
+      }
+
+      .item-footer .price {
+        color: #ff7b7b;
+      }
+    }
+  }
+
+  .detail-sheet,
+  .picker-sheet {
+    background: var(--color-surface);
+  }
+
+  .detail-sheet {
+    .close-btn {
+      background: rgba(255, 255, 255, 0.1);
+      color: var(--color-text);
+    }
+
+    .detail-store {
+      color: var(--color-text-secondary);
+    }
+
+    .detail-name {
+      color: var(--color-text);
+    }
+
+    .detail-desc {
+      color: var(--color-text-secondary);
+    }
+
+    .detail-tags span {
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--color-text-secondary);
+    }
+
+    .detail-price {
+      color: #ff7b7b;
+    }
+  }
+
+  .picker-sheet {
+    h3 {
+      color: var(--color-text);
+    }
+
+    p {
+      color: var(--color-text-secondary);
+    }
+  }
+
+  .detail-sheet .detail-actions .action-btn,
+  .picker-btn {
+    &.secondary {
+      background: rgba(129, 140, 248, 0.15);
+      color: #c7d2fe;
+    }
+
+    &.primary {
+      background: var(--color-text);
+      color: #1a1a2e;
+    }
+  }
+
+  .character-item {
+    border-color: var(--color-border);
+    background: var(--color-surface-hover);
+
+    span {
+      color: var(--color-text);
+    }
+
+    small {
+      color: var(--color-text-secondary);
+    }
+  }
+}
 </style>

@@ -2411,4 +2411,59 @@ const isDarkBackground = computed(() =>
 .fade-leave-to {
   opacity: 0;
 }
+
+// ===== 夜晚模式覆蓋（文字轉語音卡片） =====
+// 卡片底色寫死白色，但輸入框文字吃 --color-text，夜晚會變成淺字配白底；
+// 卡片 Teleport 到 body，body.is-night-mode 仍可命中。
+body.is-night-mode {
+  .card {
+    background: linear-gradient(130deg, #7209d450, var(--color-surface) 33%, #00a5b250);
+  }
+
+  .card::before {
+    background: var(--color-surface);
+  }
+
+  .inner-card {
+    outline-color: rgba(255, 255, 255, 0.12);
+  }
+
+  .inner-card::before {
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.08), #7209d425 25%, #0000);
+  }
+
+  .inner-card::after {
+    background: linear-gradient(135deg, #0000, #00a6b225 66%, rgba(255, 255, 255, 0.08));
+  }
+
+  .trigger-wrap {
+    outline-color: rgba(255, 255, 255, 0.15);
+    --shadow-wrap: rgba(255, 255, 255, 0.12) 0 0 20px 4px inset,
+      rgba(0, 0, 0, 0.35) 0 10px 80px 2px inset,
+      rgba(0, 0, 0, 0.2) 0px 18px 36px -18px inset;
+  }
+
+  .content {
+    background: rgba(255, 255, 255, 0.05);
+    outline-color: rgba(255, 255, 255, 0.08);
+  }
+
+  .text-voice-input-new {
+    background: var(--color-background);
+    border-color: var(--color-border);
+    color: var(--color-text);
+
+    &::placeholder {
+      color: var(--color-text-muted);
+    }
+
+    &:focus {
+      background: var(--color-background);
+    }
+  }
+
+  .hint-text {
+    color: var(--color-text-secondary);
+  }
+}
 </style>

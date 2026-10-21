@@ -694,7 +694,7 @@ function placementLabel(script: RegexScript): string {
   display: flex;
   flex-direction: column;
   height: 100%;
-  background: var(--color-bg, #f5f5f5);
+  background: var(--color-background, #f5f5f5);
   overflow: hidden;
 }
 
@@ -1027,7 +1027,7 @@ function placementLabel(script: RegexScript): string {
   border: 1px solid var(--color-border, #ddd);
   border-radius: 10px;
   font-size: 14px;
-  background: var(--color-bg, #f9f9f9);
+  background: var(--color-background, #f9f9f9);
   color: var(--color-text, #333);
   box-sizing: border-box;
 }
@@ -1056,7 +1056,7 @@ function placementLabel(script: RegexScript): string {
   width: 26px;
   height: 26px;
   border: none;
-  background: var(--color-bg, #f0f0f0);
+  background: var(--color-background, #f0f0f0);
   border-radius: 6px;
   cursor: pointer;
   color: var(--color-text-secondary, #888);
@@ -1153,7 +1153,7 @@ function placementLabel(script: RegexScript): string {
 
 .preview-result {
   padding: 10px 12px;
-  background: var(--color-bg, #f0f0f0);
+  background: var(--color-background, #f0f0f0);
   border-radius: 10px;
   font-size: 13px;
   word-break: break-all;

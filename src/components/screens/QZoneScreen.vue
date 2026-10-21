@@ -2135,6 +2135,7 @@ import { useSettingsStore } from "@/stores/settings";
 import { useUserStore } from "@/stores";
 import { useAIGenerationStore } from "@/stores/aiGeneration";
 import { useStickerStore } from "@/stores/sticker";
+import { useThemeStore } from "@/stores/theme";
 import type { StoredCharacter } from "@/types/character";
 import type { Chat } from "@/types/chat";
 import type {
@@ -2167,6 +2168,7 @@ const qzoneStore = useQzoneStore();
 const charactersStore = useCharactersStore();
 const settingsStore = useSettingsStore();
 const stickerStore = useStickerStore();
+const themeStore = useThemeStore();
 const promptManagerStore = usePromptManagerStore();
 const userStore = useUserStore();
 const aiGenerationStore = useAIGenerationStore();
@@ -3965,9 +3967,10 @@ function setThemeMode(mode: ThemeMode) {
 
 function updateDisplayTheme() {
   if (themeMode.value === "auto") {
-    isDarkMode.value = window.matchMedia(
-      "(prefers-color-scheme: dark)",
-    ).matches;
+    // 自動：App 開了夜晚模式，或系統是深色，就用深色
+    isDarkMode.value =
+      themeStore.nightMode ||
+      window.matchMedia("(prefers-color-scheme: dark)").matches;
   } else {
     isDarkMode.value = themeMode.value === "dark";
   }
@@ -4063,6 +4066,16 @@ onMounted(async () => {
 onUnmounted(() => {
   window.visualViewport?.removeEventListener('resize', handleDetailViewportResize);
 });
+
+// App 夜晚模式切換時，自動模式跟著變
+watch(
+  () => themeStore.nightMode,
+  () => {
+    if (themeMode.value === "auto") {
+      updateDisplayTheme();
+    }
+  },
+);
 
 // 監聽設定變化
 watch(

@@ -434,4 +434,10 @@ onUnmounted(() => {
     accent-color: var(--color-primary, #ff7eb3);
   }
 }
+
+// ===== 夜晚模式覆蓋 =====
+// 關閉狀態的開關底色是半透明黑，疊在夜晚深色面板上幾乎看不見
+body.is-night-mode .f2f-switch input:not(:checked) + .f2f-switch-slider {
+  background: rgba(255, 255, 255, 0.18);
+}
 </style>

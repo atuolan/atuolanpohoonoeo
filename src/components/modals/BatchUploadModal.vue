@@ -921,4 +921,21 @@ async function handleBatchUpload() {
     filter: brightness(0.9);
   }
 }
+
+// ===== 夜晚模式覆蓋 =====
+// 貼圖名稱輸入框寫死白底，夜晚模式改成深色半透明。
+body.is-night-mode {
+  .sticker-name-input {
+    background: rgba(22, 33, 62, 0.92);
+    color: var(--color-text);
+
+    &:focus {
+      background: var(--color-surface);
+    }
+
+    &::placeholder {
+      color: var(--color-text-muted);
+    }
+  }
+}
 </style>

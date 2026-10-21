@@ -738,4 +738,14 @@ watch(
 .modal-leave-to {
   opacity: 0;
 }
+
+// ===== 夜晚模式覆蓋 =====
+// 停用按鈕寫死淺灰底，夜晚模式改成半透明。
+body.is-night-mode {
+  .buy-btn:disabled,
+  .add-btn:disabled {
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--color-text-muted);
+  }
+}
 </style>

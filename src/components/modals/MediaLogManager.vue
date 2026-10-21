@@ -661,4 +661,18 @@ function formatDate(timestamp: number): string {
     cursor: pointer;
   }
 }
+
+// ===== 夜晚模式覆蓋 =====
+// 刪除鈕 hover 寫死淺粉底，夜晚模式改成半透明紅；搜尋框沒設底色會留著瀏覽器預設白底。
+body.is-night-mode {
+  .delete-btn:hover {
+    background: rgba(255, 123, 123, 0.15);
+    color: #ff7b7b;
+  }
+
+  .search-input {
+    background: var(--color-background);
+    color: var(--color-text);
+  }
+}
 </style>

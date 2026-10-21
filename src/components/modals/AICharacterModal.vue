@@ -921,4 +921,24 @@ function handleClose() {
     transform: scale(0.9) translateY(20px);
   }
 }
+
+// ===== 夜晚模式覆蓋 =====
+// 寫死的淺色提示框在夜晚模式的深色面板裡太刺眼，改成半透明色調。
+body.is-night-mode {
+  .warning-box {
+    background: rgba(255, 183, 77, 0.15);
+    color: #ffb74d;
+  }
+
+  .error-box {
+    background: rgba(255, 123, 123, 0.15);
+    color: #ff7b7b;
+  }
+
+  // 原生 textarea 沒設底色，會留著瀏覽器預設白底
+  .prompt-input {
+    background: var(--color-background);
+    color: var(--color-text);
+  }
+}
 </style>

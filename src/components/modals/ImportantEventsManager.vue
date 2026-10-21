@@ -1689,4 +1689,18 @@ onMounted(async () => {
 .expand-fade-leave-to {
   opacity: 0;
 }
+
+// ===== 夜晚模式覆蓋 =====
+// 寫死的淺色提示框在夜晚模式的深色面板裡太刺眼，改成半透明色調。
+body.is-night-mode {
+  .btn-danger {
+    background: rgba(255, 123, 123, 0.15);
+    color: #ff7b7b;
+    border-color: rgba(255, 123, 123, 0.3);
+
+    &:hover:not(:disabled) {
+      background: rgba(255, 123, 123, 0.22);
+    }
+  }
+}
 </style>

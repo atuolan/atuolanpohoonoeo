@@ -1956,7 +1956,7 @@ function removeCondition(
 .mode-toggle {
   display: flex;
   gap: 2px;
-  background: var(--color-bg-secondary, #f0f0f0);
+  background: var(--color-surface-hover, #f0f0f0);
   border-radius: 6px;
   padding: 2px;
 }
@@ -1991,7 +1991,7 @@ function removeCondition(
   gap: 8px;
   padding: 6px 10px;
   border-radius: 8px;
-  background: var(--color-bg-secondary, #f5f5f5);
+  background: var(--color-surface-hover, #f5f5f5);
   font-size: 13px;
   flex-wrap: wrap;
 
@@ -2021,7 +2021,7 @@ function removeCondition(
   .char-bar-metric-count {
     margin-left: auto;
     font-size: 11px;
-    color: var(--color-text-tertiary, #bbb);
+    color: var(--color-text-muted, #bbb);
     background: var(--color-primary-light, rgba(125, 211, 168, 0.15));
     padding: 2px 8px;
     border-radius: 10px;
@@ -2032,7 +2032,7 @@ function removeCondition(
   border: 1px solid var(--color-border, #e0e0e0);
   border-radius: 10px;
   padding: 12px;
-  background: var(--color-bg, #fff);
+  background: var(--color-surface, #fff);
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.05);
 }
 
@@ -2060,7 +2060,7 @@ function removeCondition(
   height: 24px;
   border: none;
   border-radius: 4px;
-  background: var(--color-bg-tertiary, #e8e8e8);
+  background: var(--color-surface-hover, #e8e8e8);
   color: var(--color-text-secondary, #666);
   font-size: 12px;
   cursor: pointer;
@@ -2070,7 +2070,7 @@ function removeCondition(
   transition: background 0.15s;
 
   &:hover {
-    background: var(--color-bg-hover, #ddd);
+    background: var(--color-border, #ddd);
   }
   &.danger {
     color: var(--color-error, #e74c3c);
@@ -2086,7 +2086,7 @@ function removeCondition(
   border: none;
   border-radius: 3px;
   background: transparent;
-  color: var(--color-text-tertiary, #bbb);
+  color: var(--color-text-muted, #bbb);
   font-size: 11px;
   cursor: pointer;
   display: flex;
@@ -2096,7 +2096,7 @@ function removeCondition(
   transition: all 0.15s;
 
   &:hover {
-    background: var(--color-bg-tertiary, #eee);
+    background: var(--color-surface-hover, #eee);
   }
   &.danger {
     color: var(--color-error, #e74c3c);
@@ -2145,7 +2145,7 @@ function removeCondition(
   border: 1px solid var(--color-border, #e0e0e0);
   border-radius: 8px;
   padding: 8px;
-  background: var(--color-bg-secondary, #f9f9f9);
+  background: var(--color-surface-hover, #f9f9f9);
 }
 
 .group-header {
@@ -2368,6 +2368,55 @@ function removeCondition(
 
   &:hover {
     opacity: 0.9;
+  }
+}
+
+// ===== 夜晚模式覆蓋 =====
+// 條件積木與積木內的下拉／輸入框寫死了淺色底，夜晚模式下會浮成一塊塊亮色；
+// body.is-night-mode 由 theme store 同步切換，保持巢狀讓 scoped 附在內層元素上。
+body.is-night-mode {
+  .condition-block {
+    &.block-number {
+      background: rgba(102, 126, 234, 0.15);
+    }
+
+    &.block-string {
+      background: rgba(93, 211, 179, 0.12);
+    }
+  }
+
+  .block-select,
+  .block-input {
+    background: rgba(255, 255, 255, 0.06);
+    border-color: rgba(255, 255, 255, 0.12);
+    color: var(--color-text);
+
+    &:focus {
+      border-color: rgba(255, 255, 255, 0.3);
+    }
+  }
+
+  .block-select option {
+    background: var(--color-surface);
+    color: var(--color-text);
+  }
+
+  .add-cond-btn {
+    border-color: rgba(255, 255, 255, 0.2);
+  }
+
+  .or-divider .or-label {
+    color: #c39bd3;
+    background: rgba(155, 89, 182, 0.15);
+  }
+
+  .and-connector .and-label {
+    color: #7fb8e6;
+    background: rgba(52, 152, 219, 0.15);
+  }
+
+  .add-group-btn {
+    color: #c39bd3;
   }
 }
 </style>
