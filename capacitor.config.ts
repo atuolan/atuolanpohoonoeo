@@ -28,6 +28,10 @@ const config: CapacitorConfig = {
       // index.html 本來就是 viewport-fit=cover，一開始就照滿版排，免得載入時先縮後撐
       initialViewportFitValueHint: "cover",
     },
+    // 系統通知（src/native/notifications.ts）：Android 狀態列小圖示，要白色剪影，在 res/drawable
+    LocalNotifications: {
+      smallIcon: "ic_stat_notify",
+    },
     // 熱更新（src/native/liveUpdate.ts）：自己判斷何時下載、套用，不連 Capgo 的伺服器
     CapacitorUpdater: {
       autoUpdate: false,

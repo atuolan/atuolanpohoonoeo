@@ -23,6 +23,8 @@ export const LIVE_UPDATE_RAW_DIR = `${LIVE_UPDATE_DIR}/raw`;
  *
  * ⚠️ 網頁開始用到新的原生功能（新的 Capacitor 插件、權限）時，
  * 要把 versionCode、CURRENT_PROJECT_VERSION 和這個數字一起加一，舊 App 才不會更新成用不了的網頁。
+ * 加這個數字會讓舊 App 收不到任何新網頁；新功能能在網頁裡用 Capacitor.isPluginAvailable 判斷、
+ * 舊 App 當成沒有這功能時，只加 versionCode 和 CURRENT_PROJECT_VERSION 就好（例如系統通知）。
  */
 export const LIVE_UPDATE_MIN_NATIVE_BUILD = 2;
 

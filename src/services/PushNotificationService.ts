@@ -7,9 +7,18 @@
  * 1. 優先透過 Service Worker 發送（後台更可靠）
  * 2. SW 不可用時 fallback 到 new Notification()
  * 3. 後台時透過 postMessage 通知 SW 發送，避免主線程被節流
+ * 4. App（APK／IPA）裡沒有 Notification API，改用原生本機通知（src/native/notifications.ts）
  */
 
+import { hasNativeNotifications, isNativeApp } from "@/native/platform";
 import type { NotificationItem } from "@/types/notification";
+
+/** App 裡的原生通知模組，網頁版不會載入 */
+let nativeModule: Promise<typeof import("@/native/notifications")> | null = null;
+function loadNative() {
+  nativeModule ??= import("@/native/notifications");
+  return nativeModule;
+}
 
 /** 通知類型對應的圖示 emoji（用於系統通知的 badge） */
 const TYPE_BADGES: Record<string, string> = {
@@ -32,8 +41,22 @@ class PushNotificationService {
 
   /** 同步最新通知權限（處理權限在其他模組被請求的情況） */
   private syncPermission(): void {
-    if (!this.isSupported) return;
+    if (isNativeApp() || !this.isSupported) return;
     this._permission = Notification.permission;
+  }
+
+  /** 重新讀取權限（App 裡要問原生端，是非同步的） */
+  async refreshPermission(): Promise<NotificationPermission> {
+    if (hasNativeNotifications()) {
+      try {
+        this._permission = await (await loadNative()).checkNativeNotificationPermission();
+      } catch (error) {
+        console.warn("[PushNotification] 讀取 App 通知權限失敗:", error);
+      }
+    } else {
+      this.syncPermission();
+    }
+    return this._permission;
   }
 
   /** 當前權限狀態 */
@@ -43,7 +66,7 @@ class PushNotificationService {
 
   /** 是否支援通知 */
   get isSupported(): boolean {
-    return "Notification" in window;
+    return isNativeApp() ? hasNativeNotifications() : "Notification" in window;
   }
 
   /** 是否已授權 */
@@ -53,6 +76,10 @@ class PushNotificationService {
 
   /** 初始化：同步當前權限狀態 + 預取 SW registration */
   init(): void {
+    if (isNativeApp()) {
+      void this.refreshPermission();
+      return;
+    }
     if (this.isSupported) {
       this._permission = Notification.permission;
     }
@@ -80,7 +107,9 @@ class PushNotificationService {
     }
 
     try {
-      const result = await Notification.requestPermission();
+      const result = isNativeApp()
+        ? await (await loadNative()).requestNativeNotificationPermission()
+        : await Notification.requestPermission();
       this._permission = result;
       console.log("[PushNotification] 權限狀態:", result);
       return result;
@@ -97,6 +126,10 @@ class PushNotificationService {
   send(item: NotificationItem): void {
     if (!this.isSupported) {
       console.warn("[PushNotification] 瀏覽器不支援 Notification API，跳過");
+      return;
+    }
+    if (isNativeApp()) {
+      void this.sendNative(item);
       return;
     }
 
@@ -120,8 +153,7 @@ class PushNotificationService {
       return;
     }
 
-    const badge = TYPE_BADGES[item.type] || "🔔";
-    const title = `${badge} ${item.title}`;
+    const title = notificationTitle(item);
     const body = item.message;
 
     console.log("[PushNotification] 準備發送通知:", {
@@ -147,14 +179,9 @@ class PushNotificationService {
     item: NotificationItem,
   ): void {
     try {
-      const tag =
-        item.type === "incoming_call" && item.chatId
-          ? `incoming-call-${item.chatId}`
-          : item.id;
-
       const notification = new Notification(title, {
         body,
-        tag,
+        tag: notificationTag(item),
         icon: item.characterAvatar || undefined,
         silent: false,
         requireInteraction: item.type === "incoming_call",
@@ -186,14 +213,9 @@ class PushNotificationService {
     const reg = this._swReg || (await navigator.serviceWorker?.ready);
     if (!reg) throw new Error("SW not available");
 
-    const tag =
-      item.type === "incoming_call" && item.chatId
-        ? `incoming-call-${item.chatId}`
-        : item.id;
-
     const notificationOptions = {
       body,
-      tag,
+      tag: notificationTag(item),
       icon: item.characterAvatar || "/icons/icon-192x192.png",
       silent: false,
       renotify: true,
@@ -220,6 +242,64 @@ class PushNotificationService {
     // 前台或 SW 不活躍時直接用 showNotification
     await reg.showNotification(title, notificationOptions);
   }
+
+  /** App 裡用原生本機通知發送；App 在前景時只有來電會發 */
+  private async sendNative(item: NotificationItem): Promise<void> {
+    try {
+      const native = await loadNative();
+      this._permission = await native.checkNativeNotificationPermission();
+      if (!this.isGranted) {
+        console.warn("[PushNotification] App 通知權限未授權，當前狀態:", this._permission);
+        return;
+      }
+      if (item.type !== "incoming_call" && native.isAppInForeground()) {
+        console.log("[PushNotification] App 在前景，跳過系統通知");
+        return;
+      }
+      await native.showNativeNotification({
+        tag: notificationTag(item),
+        title: notificationTitle(item),
+        body: item.message,
+        extra: {
+          type: item.type,
+          chatId: item.chatId,
+          characterId: item.characterId,
+          navigateTo: item.navigateTo,
+          reason: item.data?.reason,
+        },
+      });
+    } catch (error) {
+      console.warn("[PushNotification] App 通知發送失敗:", error);
+    }
+  }
+
+  /** 不管前景背景直接跳一則通知（設定頁的權限確認、測試通知用） */
+  async showDirect(title: string, body: string): Promise<void> {
+    if (isNativeApp()) {
+      await (await loadNative()).showNativeNotification({ tag: `direct-${Date.now()}`, title, body });
+      return;
+    }
+    if ("serviceWorker" in navigator) {
+      const reg = await navigator.serviceWorker.getRegistration();
+      if (reg) {
+        await reg.showNotification(title, { body, silent: false });
+        return;
+      }
+    }
+    new Notification(title, { body, silent: false });
+  }
+}
+
+function notificationTitle(item: NotificationItem): string {
+  const badge = TYPE_BADGES[item.type] || "🔔";
+  return `${badge} ${item.title}`;
+}
+
+/** 同一通來電用同一個 tag，新的通知蓋掉舊的 */
+function notificationTag(item: NotificationItem): string {
+  return item.type === "incoming_call" && item.chatId
+    ? `incoming-call-${item.chatId}`
+    : item.id;
 }
 
 /** 單例 */
