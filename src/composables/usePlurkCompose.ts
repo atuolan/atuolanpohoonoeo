@@ -8,6 +8,8 @@ import { useQzoneStore } from "@/stores/qzone";
 import { useUserStore } from "@/stores/user";
 import type { PlurkComposeDefaults, QZonePost } from "@/types/qzone";
 import { compressImage, compressionPresets } from "@/utils/imageCompression";
+import { dayKey } from "@/utils/plurkDirectorConfig";
+import { anonQuotaLeft } from "@/utils/plurkSquare";
 import { computed, reactive } from "vue";
 
 const MAX_LENGTH = 360;
@@ -54,7 +56,9 @@ export function usePlurkCompose() {
     state.content = "";
     state.qualifier = "說";
     state.media = [];
-    state.audience = groupOnly ? "private" : d.audience;
+    // 上次用偷偷說、今天的額度又用完了：改回全員
+    const anonBlocked = d.audience === "anon" && anonQuotaLeft(settings, Date.now()) <= 0;
+    state.audience = groupOnly ? "private" : anonBlocked ? "all" : d.audience;
     state.privateTo = [...(persona?.boundCharacterIds ?? [])];
     state.replyPolicy = d.replyPolicy;
     state.replyPickIds = [];
@@ -92,6 +96,7 @@ export function usePlurkCompose() {
 
   async function submit(): Promise<QZonePost | null> {
     if (!canPost.value) return null;
+    if (state.audience === "anon" && anonQuotaLeft(qzoneStore.settings, Date.now()) <= 0) return null;
     const persona = userStore.currentPersona;
     const images = state.media.filter((m) => m.type === "image").map((m) => m.url);
     const post = await qzoneStore.addPost({
@@ -113,6 +118,13 @@ export function usePlurkCompose() {
       allowPasserby: state.allowPasserby,
       slowReplies: state.slowReplies,
     });
+    if (state.audience === "anon") {
+      const today = dayKey(Date.now());
+      const quota = qzoneStore.settings.anonQuota;
+      await qzoneStore.updateSettings({
+        anonQuota: { day: today, count: (quota?.day === today ? quota.count : 0) + 1 },
+      });
+    }
     await qzoneStore.updateSettings({
       composeDefaults: {
         audience: state.audience,

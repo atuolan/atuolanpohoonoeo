@@ -28,6 +28,22 @@
         @open-theater="openTheaterOfPost"
         @compose="openCompose"
       />
+      <SquareTab
+        v-show="tab === 'square'"
+        ref="squareRef"
+        :cards="squareCards"
+        :tab="squareTab"
+        :tabs="SQUARE_TABS"
+        :qualifier="squareQualifier"
+        :filters="SQUARE_FILTERS"
+        :query="squareQuery"
+        :busy="plurkActivity.square"
+        @update:tab="squareTab = $event"
+        @update:qualifier="squareQualifier = $event"
+        @update:query="squareQuery = $event"
+        @open="(id) => openThread(id, true)"
+        @fill="fillSquare"
+      />
       <NoticeTab
         v-if="tab === 'notice'"
         :rows="noticeRows"
@@ -53,7 +69,13 @@
       />
     </div>
 
-    <button v-if="tab === 'river'" type="button" class="plurk-fab" aria-label="發噗" @click="openCompose">
+    <button
+      v-if="tab === 'river' || tab === 'square'"
+      type="button"
+      class="plurk-fab"
+      aria-label="發噗"
+      @click="openCompose"
+    >
       <PenLine :size="20" aria-hidden="true" />
       <span>發噗</span>
     </button>
@@ -75,16 +97,20 @@
         :response-count="thread.responses.value.length"
         :participant-count="thread.participantCount.value"
         :rows="threadRows"
-        :typing-names="typingMap[threadPostId] ?? []"
-        :quick-actions="thread.quickActions.value"
+        :typing-names="threadTyping"
+        :quick-actions="threadQuickActions"
         :busy="thread.busy.value"
-        :replying-to-name="thread.replyingTo.value?.username ?? null"
+        :replying-to-name="replyingToName"
         :input-avatar="threadInput.avatar"
         :input-name="threadInput.name"
         :qualifier="threadQualifier"
         :mention-candidates="mentionCandidates"
         :height="threadHeight"
+        :square-mode="threadSquare"
+        :character-count="threadCharacterCount"
+        :op-follow="threadOpFollow"
         @back="closeThread"
+        @toggle-follow="toggleNpcFriend"
         @toggle-mute="thread.toggleMute()"
         @open-profile="openProfileOfPost(threadPostId)"
         @open-image="(i) => openLightbox(threadPostData?.images ?? [], i)"
@@ -111,6 +137,7 @@
       :responder-candidates="responderCandidates"
       :mention-candidates="mentionCandidates"
       :posting="posting"
+      :anon-left="anonLeft"
       @close="composeOpen = false"
       @submit="submitCompose"
       @switch-persona="switchComposePersona"
@@ -132,6 +159,7 @@
       @post-now="postNowRandom"
       @post-now-pick="pickerMode = 'postAs'"
       @reply-now="replyNow"
+      @fill-square="fillSquare"
     />
 
     <PlurkActionSheet
@@ -224,6 +252,7 @@ import MeTab from "@/components/plurk/MeTab.vue";
 import NoticeTab from "@/components/plurk/NoticeTab.vue";
 import PlurkTabBar from "@/components/plurk/PlurkTabBar.vue";
 import RiverTab from "@/components/plurk/RiverTab.vue";
+import SquareTab from "@/components/plurk/SquareTab.vue";
 import ThreadView from "@/components/plurk/ThreadView.vue";
 import CharacterPickerSheet from "@/components/plurk/sheets/CharacterPickerSheet.vue";
 import ImageLightbox from "@/components/plurk/sheets/ImageLightbox.vue";
@@ -243,6 +272,7 @@ import type {
   PlurkCardData,
   PlurkTabId,
   RiverBubbleData,
+  SquareCardData,
   ThreadPostData,
   ThreadQuickAction,
   ThreadResponseRow,
@@ -255,6 +285,7 @@ import { publishCharacterPlurk } from "@/services/PlurkPostService";
 import { buildCastContext, effectiveFriendIds, getViewerIds, type CastContext } from "@/services/plurkCast";
 import { buildPeekSummary, generateCharacterPlurk } from "@/services/plurkGeneration";
 import { getTypingNames, plurkActivity } from "@/services/plurkReveal";
+import { generateSquareBatch } from "@/services/plurkSquareGeneration";
 import { useUserStore } from "@/stores";
 import { useAIGenerationStore } from "@/stores/aiGeneration";
 import { useCharactersStore } from "@/stores/characters";
@@ -262,10 +293,10 @@ import { usePromptManagerStore } from "@/stores/promptManager";
 import { useQzoneStore } from "@/stores/qzone";
 import { useSettingsStore } from "@/stores/settings";
 import { useStickerStore } from "@/stores/sticker";
-import type { QZonePost } from "@/types/qzone";
+import type { QZoneComment, QZonePost } from "@/types/qzone";
 import { renderPlurkContent, plurkPlainText } from "@/utils/plurkContent";
 import { getRole, LIVELINESS_RATES } from "@/utils/plurkDirectorConfig";
-import { audienceLabel, getLikeTotal, getTheaterPostId } from "@/utils/plurkPost";
+import { audienceLabel, getAudience, getLikeTotal, getTheaterPostId } from "@/utils/plurkPost";
 import {
   buildNoticeList,
   countUnreadPosts,
@@ -276,6 +307,18 @@ import {
   visibleComments,
   type RiverFilter,
 } from "@/utils/plurkRiver";
+import {
+  anonHandle,
+  anonKey,
+  anonQuotaLeft,
+  hasFreshReplies,
+  isRiverPost,
+  isSquarePost,
+  SQUARE_FILTERS,
+  SQUARE_TABS,
+  squareFeed,
+  type SquareTab as SquareTabId,
+} from "@/utils/plurkSquare";
 import { PenLine, X } from "lucide-vue-next";
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from "vue";
 
@@ -286,6 +329,7 @@ const emit = defineEmits<{
 
 const TABS: Array<{ id: PlurkTabId; label: string }> = [
   { id: "river", label: "河道" },
+  { id: "square", label: "廣場" },
   { id: "notice", label: "通知" },
   { id: "me", label: "我" },
 ];
@@ -420,6 +464,42 @@ function theaterBody(post: QZonePost): string {
   return (post.content || "").split("\n").slice(1).join("\n");
 }
 
+const ANON_AVATAR =
+  "data:image/svg+xml;utf8," +
+  encodeURIComponent(
+    "<svg xmlns='http://www.w3.org/2000/svg' width='80' height='80'><rect width='80' height='80' fill='#6E6E74'/>" +
+      "<text x='40' y='54' font-size='38' font-family='sans-serif' font-weight='700' fill='#ffffff' text-anchor='middle'>?</text></svg>",
+  );
+
+function isAnonPost(post: QZonePost): boolean {
+  return getAudience(post) === "anon";
+}
+
+/** 噗主怎麼顯示：偷偷說只給代號、路人用自己的顏色 */
+function postAuthor(post: QZonePost): { name: string; avatar?: string; color?: string } {
+  if (isAnonPost(post)) {
+    return { name: `偷偷說 ${anonHandle(post.id, anonKey(post.authorType, post.authorId))}`, avatar: ANON_AVATAR };
+  }
+  if (post.npc) return { name: post.npc.name, color: post.npc.color };
+  return { name: authorName(post.authorId, post.username), avatar: authorAvatar(post.authorId, post.avatar) };
+}
+
+/** 回應者怎麼顯示：偷偷說的噗裡每個人都只有代號 */
+function commentAuthor(post: QZonePost, c: QZoneComment): { name: string; avatar?: string; isMe: boolean } {
+  if (isAnonPost(post)) {
+    return { name: anonHandle(post.id, anonKey(c.authorType, c.authorId)), avatar: ANON_AVATAR, isMe: c.authorType === "user" };
+  }
+  return { name: authorName(c.authorId, c.username), avatar: authorAvatar(c.authorId, c.avatar), isMe: false };
+}
+
+function isCharacterAuthor(c: QZoneComment): boolean {
+  return c.authorType === "ai" && !!charactersStore.getCharacterById(c.authorId);
+}
+
+function isRemoved(c: QZoneComment): boolean {
+  return c.moderation?.action === "delete";
+}
+
 function findPost(id: string): QZonePost | undefined {
   return qzoneStore.posts.find((p) => p.id === id);
 }
@@ -435,18 +515,24 @@ const highlightPostId = ref<string | null>(null);
 let highlightTimer: number | null = null;
 
 const basePosts = computed(() =>
-  qzoneStore.sortedPosts.filter((post) => !hiddenIds.value.has(post.authorId)),
+  qzoneStore.sortedPosts.filter(
+    (post) => !hiddenIds.value.has(post.authorId) && !(post.anonOf && hiddenIds.value.has(post.anonOf)),
+  ),
 );
+const npcFriendIds = computed(() => new Set((qzoneStore.settings.npcFriends ?? []).map((n) => n.id)));
+/** 河道：路人噗加了好友才有、角色的偷偷說不進來 */
+const riverBase = computed(() => basePosts.value.filter((post) => isRiverPost(post, npcFriendIds.value)));
 const followedPosts = computed(() => basePosts.value.filter((p) => !p.muted && isPostFollowed(p)));
 
 function toCard(post: QZonePost): PlurkCardData {
   const visible = visibleComments(post, now.value);
   const op = post.originalPost;
   const theaterId = getTheaterPostId(post);
+  const author = postAuthor(post);
   return {
     id: post.id,
-    authorName: authorName(post.authorId, post.username),
-    authorAvatar: authorAvatar(post.authorId, post.avatar),
+    authorName: author.name,
+    authorAvatar: author.avatar,
     metaText: `${formatTime(post.timestamp)} · ${audienceLabel(post, nameOf)}`,
     qualifier: post.qualifier,
     html: render(theaterId ? theaterBody(post) : post.content, post.timestamp),
@@ -462,11 +548,14 @@ function toCard(post: QZonePost): PlurkCardData {
         }
       : undefined,
     theater: theaterId ? { title: theaterTitle(post) } : undefined,
-    latestResponses: visible.slice(-2).map((c) => ({
-      id: c.id,
-      username: authorName(c.authorId, c.username),
-      html: render(c.content, c.timestamp),
-    })),
+    latestResponses: visible
+      .filter((c) => !isRemoved(c))
+      .slice(-2)
+      .map((c) => ({
+        id: c.id,
+        username: commentAuthor(post, c).name,
+        html: render(c.content, c.timestamp),
+      })),
     responseCount: visible.length,
     hasUnread: unreadComments(post, now.value, qzoneStore.settings.unreadSince).length > 0,
     likeCount: getLikeTotal(post),
@@ -477,19 +566,20 @@ function toCard(post: QZonePost): PlurkCardData {
   };
 }
 
-const riverPosts = computed(() => filterRiverPosts(basePosts.value, riverFilter.value, riverQuery.value));
+const riverPosts = computed(() => filterRiverPosts(riverBase.value, riverFilter.value, riverQuery.value));
 const riverCards = computed(() => riverPosts.value.map(toCard));
-const timelinePosts = computed(() => filterRiverPosts(basePosts.value, riverFilter.value));
+const timelinePosts = computed(() => filterRiverPosts(riverBase.value, riverFilter.value));
 const riverLayout = computed(() => layoutRiverTimeline(timelinePosts.value, new Date(now.value)));
 const riverBubbles = computed<Record<string, RiverBubbleData>>(() => {
   const result: Record<string, RiverBubbleData> = {};
   for (const bubble of riverLayout.value.bubbles) {
     const post = findPost(bubble.postId);
     if (!post) continue;
+    const author = postAuthor(post);
     result[post.id] = {
       postId: post.id,
-      authorName: authorName(post.authorId, post.username),
-      authorAvatar: authorAvatar(post.authorId, post.avatar),
+      authorName: author.name,
+      authorAvatar: author.avatar,
       qualifier: post.qualifier,
       text: plurkPlainText(post.content || "", 25),
       unread: unreadComments(post, now.value, qzoneStore.settings.unreadSince).length > 0,
@@ -500,12 +590,15 @@ const riverBubbles = computed<Record<string, RiverBubbleData>>(() => {
 
 const typingMap = computed(() => getTypingNames(basePosts.value, now.value, plurkActivity.generating));
 const riverTyping = computed(() =>
-  followedPosts.value.flatMap((post) =>
-    (typingMap.value[post.id] ?? []).map((name) => {
+  followedPosts.value.flatMap((post) => {
+    const names = typingMap.value[post.id] ?? [];
+    // 偷偷說不能洩漏是誰
+    if (isAnonPost(post)) return names.length ? [{ postId: post.id, name: "有人", avatar: ANON_AVATAR }] : [];
+    return names.map((name) => {
       const c = charactersStore.characters.find((ch) => (ch.nickname || ch.data?.name) === name);
       return { postId: post.id, name, avatar: c?.avatar || undefined };
-    }),
-  ),
+    });
+  }),
 );
 
 const noticeCount = computed(() =>
@@ -515,7 +608,58 @@ const directorActive = computed(() => qzoneStore.directorConfig.mode !== "off");
 
 function selectTab(id: PlurkTabId) {
   if (id === tab.value && id === "river") riverRef.value?.scrollToTop();
+  if (id === tab.value && id === "square") squareRef.value?.scrollToTop();
   tab.value = id;
+}
+
+// ============================================================
+// 廣場
+// ============================================================
+
+const squareTab = ref<SquareTabId>("hot");
+const squareQualifier = ref("");
+const squareQuery = ref("");
+const squareRef = ref<InstanceType<typeof SquareTab> | null>(null);
+
+function toSquareCard(post: QZonePost): SquareCardData {
+  const author = postAuthor(post);
+  const visible = visibleComments(post, now.value).filter((c) => !isRemoved(c));
+  const latestChar = [...visible].reverse().find(isCharacterAuthor);
+  const followed = isPostFollowed(post);
+  return {
+    id: post.id,
+    authorName: author.name,
+    authorAvatar: author.avatar,
+    avatarColor: author.color,
+    isCharacter: !isAnonPost(post) && post.authorType === "ai" && !!charactersStore.getCharacterById(post.authorId),
+    metaText: `${formatTime(post.timestamp)} · ${isAnonPost(post) ? "偷偷說" : post.npc ? "全員 · 路人" : "全員"}`,
+    qualifier: post.qualifier,
+    text: plurkPlainText(post.content || "", 200),
+    replyCount: visible.length,
+    fresh: followed
+      ? unreadComments(post, now.value, qzoneStore.settings.unreadSince).length > 0
+      : hasFreshReplies(post, now.value),
+    latestReply: latestChar
+      ? { name: commentAuthor(post, latestChar).name, text: plurkPlainText(latestChar.content, 60) }
+      : undefined,
+    peekHint: !!post.anonOf && !!castCtx.value && effectiveFriendIds(castCtx.value).includes(post.anonOf),
+    foldedReason: post.moderation?.action === "fold" ? post.moderation.reason : undefined,
+  };
+}
+
+const squareCards = computed(() =>
+  squareFeed(basePosts.value, {
+    tab: squareTab.value,
+    qualifier: squareQualifier.value,
+    query: squareQuery.value,
+    now: now.value,
+  }).map(toSquareCard),
+);
+
+async function fillSquare() {
+  if (!hasPostApi()) return alert("請先配置 API");
+  const result = await generateSquareBatch();
+  if (!result.success) alert(result.error || "生成失敗");
 }
 
 function flashPost(id: string) {
@@ -626,9 +770,10 @@ const repostTarget = ref<QZonePost | null>(null);
 const repostPreview = computed(() => {
   const post = repostTarget.value;
   if (!post) return null;
+  const author = postAuthor(post);
   return {
-    authorName: authorName(post.authorId, post.username),
-    authorAvatar: authorAvatar(post.authorId, post.avatar),
+    authorName: author.name,
+    authorAvatar: author.avatar,
     qualifier: post.qualifier,
     text: plurkPlainText(post.content || "", 120),
   };
@@ -700,8 +845,10 @@ const threadPersonaId = ref<string | null>(null);
 const threadAnonymous = ref(false);
 const threadQualifier = ref("");
 const threadHeight = ref<string | undefined>(undefined);
+/** 從廣場點進來的：回應串用廣場模式 */
+const threadFromSquare = ref(false);
 
-function openThread(id: string) {
+function openThread(id: string, fromSquare = false) {
   const post = findPost(id);
   if (!post) return;
   const theaterId = getTheaterPostId(post);
@@ -710,6 +857,7 @@ function openThread(id: string) {
     return;
   }
   threadPostId.value = id;
+  threadFromSquare.value = fromSquare;
   threadPersonaId.value = null;
   threadAnonymous.value = false;
   threadQualifier.value = "";
@@ -728,9 +876,13 @@ function closeThread() {
 const threadPostData = computed<ThreadPostData | null>(() => {
   const post = thread.post.value;
   if (!post) return null;
+  const author = postAuthor(post);
+  const fold = post.moderation?.action === "fold" ? post.moderation : null;
   return {
-    authorName: authorName(post.authorId, post.username),
-    authorAvatar: authorAvatar(post.authorId, post.avatar),
+    authorName: author.name,
+    authorAvatar: author.avatar,
+    authorColor: author.color,
+    notice: fold ? `這則噗已被廣場管理員 ${fold.by} 摺疊（${fold.reason}）` : undefined,
     metaText: `${formatTime(post.timestamp)} · ${audienceLabel(post, nameOf)}`,
     qualifier: post.qualifier,
     html: render(post.content, post.timestamp),
@@ -744,19 +896,65 @@ const threadPostData = computed<ThreadPostData | null>(() => {
 const threadRows = computed<ThreadResponseRow[]>(() => {
   const post = thread.post.value;
   if (!post) return [];
-  return thread.responses.value.map((c) => ({
-    id: c.id,
-    authorName: authorName(c.authorId, c.username),
-    authorAvatar: authorAvatar(c.authorId, c.avatar),
-    isOp: c.authorId === post.authorId,
-    timeText: formatTime(c.timestamp),
-    qualifier: c.qualifier,
-    replyToName: c.replyToUsername,
-    html: render(c.content, c.timestamp),
-    canRegenerate: thread.isCharacterComment(c),
-    regenerating: !!plurkActivity.regenerating[c.id],
-  }));
+  const anon = isAnonPost(post);
+  return thread.responses.value.map((c) => {
+    const author = commentAuthor(post, c);
+    const target = c.replyToId ? post.comments.find((x) => x.id === c.replyToId) : undefined;
+    return {
+      id: c.id,
+      authorName: author.name,
+      authorAvatar: author.avatar,
+      isMe: author.isMe,
+      isOp: anon ? anonKey(c.authorType, c.authorId) === anonKey(post.authorType, post.authorId) : c.authorId === post.authorId,
+      isCharacter: !anon && isCharacterAuthor(c),
+      timeText: formatTime(c.timestamp),
+      qualifier: c.qualifier,
+      replyToName: target ? commentAuthor(post, target).name : c.replyToUsername,
+      html: render(c.content, c.timestamp),
+      canRegenerate: thread.isCharacterComment(c),
+      regenerating: !!plurkActivity.regenerating[c.id],
+      removedText: isRemoved(c)
+        ? `這則回應因「${c.moderation!.reason}」已被廣場管理員 ${c.moderation!.by} 刪除`
+        : undefined,
+    };
+  });
 });
+
+const threadSquare = computed(() => {
+  const post = thread.post.value;
+  return !!post && isSquarePost(post) && (threadFromSquare.value || !!post.npc || isAnonPost(post));
+});
+const threadCharacterCount = computed(
+  () => new Set(thread.responses.value.filter(isCharacterAuthor).map((c) => c.authorId)).size,
+);
+const threadOpFollow = computed(() => {
+  const npc = thread.post.value?.npc;
+  return npc ? npcFriendIds.value.has(npc.id) : null;
+});
+/** 偷偷說裡不顯示誰在輸入、接話快捷只留「找新角色」，免得洩漏身分 */
+const threadTyping = computed(() => {
+  const post = thread.post.value;
+  const names = post ? (typingMap.value[post.id] ?? []) : [];
+  return post && isAnonPost(post) ? names.slice(0, 1).map(() => "有人") : names;
+});
+const threadQuickActions = computed(() => {
+  const post = thread.post.value;
+  const actions = thread.quickActions.value;
+  return post && isAnonPost(post) ? actions.filter((a) => a.id === "newcomer") : actions;
+});
+const replyingToName = computed(() => {
+  const post = thread.post.value;
+  const target = thread.replyingTo.value;
+  return post && target ? commentAuthor(post, target).name : null;
+});
+
+async function toggleNpcFriend() {
+  const npc = thread.post.value?.npc;
+  if (!npc) return;
+  const list = qzoneStore.settings.npcFriends ?? [];
+  const next = npcFriendIds.value.has(npc.id) ? list.filter((n) => n.id !== npc.id) : [...list, { ...npc }];
+  await qzoneStore.updateSettings({ npcFriends: next });
+}
 
 const threadInput = computed(() => {
   if (threadAnonymous.value) return { name: "匿名噗友", avatar: ANONYMOUS_AVATAR };
@@ -830,6 +1028,7 @@ const personaOptions = computed<PersonaOption[]>(() =>
 );
 
 const viewerCandidates = computed(() => pickerList(visibleCharacterIds.value));
+const anonLeft = computed(() => anonQuotaLeft(qzoneStore.settings, now.value));
 const responderCandidates = computed(() => {
   if (!castCtx.value) return [];
   const draft = { audience: compose.state.audience, privateTo: compose.state.privateTo } as QZonePost;
@@ -854,8 +1053,14 @@ async function submitCompose() {
     const post = await compose.submit();
     if (!post) return;
     composeOpen.value = false;
-    tab.value = "river";
-    riverRef.value?.scrollToTop();
+    if (isAnonPost(post)) {
+      tab.value = "square";
+      squareTab.value = "anon";
+      squareRef.value?.scrollToTop();
+    } else {
+      tab.value = "river";
+      riverRef.value?.scrollToTop();
+    }
   } finally {
     posting.value = false;
   }
@@ -943,15 +1148,19 @@ const legacyOpen = ref(false);
 const noticeFilter = ref<"all" | "reply">("all");
 const noticeRows = computed<NoticeRow[]>(() =>
   // 系統通知是第 4 期，目前「回應」與「全部」相同
-  buildNoticeList(basePosts.value, now.value, qzoneStore.settings.unreadSince).map((item) => ({
-    postId: item.postId,
-    commentId: item.commentId,
-    authorName: authorName(item.authorId, item.username),
-    authorAvatar: authorAvatar(item.authorId, item.avatar),
-    text: item.text,
-    timeText: formatTime(item.timestamp),
-    unread: item.unread,
-  })),
+  buildNoticeList(basePosts.value, now.value, qzoneStore.settings.unreadSince).map((item) => {
+    const post = findPost(item.postId);
+    const anon = !!post && isAnonPost(post);
+    return {
+      postId: item.postId,
+      commentId: item.commentId,
+      authorName: anon ? anonHandle(item.postId, item.authorId) : authorName(item.authorId, item.username),
+      authorAvatar: anon ? ANON_AVATAR : authorAvatar(item.authorId, item.avatar),
+      text: item.text,
+      timeText: formatTime(item.timestamp),
+      unread: item.unread,
+    };
+  }),
 );
 
 async function openNotice(postId: string, commentId: string) {
@@ -1005,7 +1214,10 @@ const meRows = computed<MeListRow[]>(() => {
 const directorOpen = ref(false);
 const directorWorking = ref(false);
 const directorBusy = computed(
-  () => directorWorking.value || aiGenerationStore.isTaskGenerating("qzone", "qzone-comments"),
+  () =>
+    directorWorking.value ||
+    plurkActivity.square ||
+    aiGenerationStore.isTaskGenerating("qzone", "qzone-comments"),
 );
 
 const callsPerHourText = computed(() => {
