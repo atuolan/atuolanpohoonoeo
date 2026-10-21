@@ -20,36 +20,12 @@ import type { ProfileData } from "@/components/plurk/types";
 
 type ProfileTabKey = "posts" | "responses" | "private";
 
-function emptyProfile(): ProfileData {
-  return {
-    id: "",
-    name: "",
-    avatar: undefined,
-    coverColor: "var(--color-primary)",
-    handle: "",
-    joinedText: "",
-    bio: "",
-    isFriend: false,
-    stats: { posts: 0, responses: 0, friends: 0, karma: 0 },
-    interactions: 0,
-    hours: [],
-    peakText: null,
-    avgReplyText: null,
-    impressions: null,
-    canPeek: false,
-    posts: [],
-    responses: [],
-    privateCount: 0,
-  };
-}
-
 const props = withDefaults(
   defineProps<{
     profile: ProfileData;
     impressionsBusy: boolean;
   }>(),
   {
-    profile: emptyProfile,
     impressionsBusy: false,
   },
 );
