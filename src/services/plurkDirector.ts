@@ -14,14 +14,18 @@ import { useQzoneStore } from "@/stores/qzone";
 import { useSettingsStore } from "@/stores/settings";
 import { dayKey, getMutedIds } from "@/utils/plurkDirectorConfig";
 import { pickPoster, pickReplyTarget, pickSquareVisitTarget, planDirectorEvents } from "@/utils/plurkDirectorPlan";
+import { needsSquareRefill } from "@/utils/plurkSquareSchedule";
 
 const CHECK_MS = 5 * 60_000;
 /** 回應事件改成「角色去逛廣場」的機會 */
 const VISIT_SHARE = 0.35;
+/** 廣場補貨失敗後隔多久才再試，免得每次檢查都白花一次呼叫 */
+const SQUARE_RETRY_MS = 20 * 60_000;
 
 class PlurkDirectorService {
   private timer: number | null = null;
   private running = false;
+  private lastSquareTry = 0;
 
   start(): void {
     if (this.timer !== null) return;
@@ -51,7 +55,8 @@ class PlurkDirectorService {
       const charactersStore = useCharactersStore();
       if (charactersStore.characters.length === 0) await charactersStore.loadCharacters();
 
-      const events = planDirectorEvents({ cfg, now });
+      const squareRefill = now - this.lastSquareTry > SQUARE_RETRY_MS && needsSquareRefill(qzoneStore.posts, now);
+      const events = planDirectorEvents({ cfg, now, squareRefill });
       let done = 0;
       if (events.length > 0) {
         const ctx = await buildCastContext();
@@ -61,7 +66,8 @@ class PlurkDirectorService {
         const { generateCommentsForPost } = useBatchComments();
         for (const event of events) {
           if (event.kind === "square") {
-            const result = await generateSquareBatch();
+            this.lastSquareTry = now;
+            const result = await generateSquareBatch({ manual: false });
             if (result.success) done++;
           } else if (event.kind === "post") {
             const id = pickPoster(cfg, friends, event.at);

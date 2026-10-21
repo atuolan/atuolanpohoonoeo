@@ -10,7 +10,6 @@ import {
   getRole,
   isInRoutine,
   LIVELINESS_RATES,
-  SQUARE_RATES,
   type PlurkDirectorConfig,
 } from "@/utils/plurkDirectorConfig";
 
@@ -35,7 +34,13 @@ export function remainingToday(cfg: PlurkDirectorConfig, now: number): number {
   return Math.max(0, cfg.dailyCap - used);
 }
 
-export function planDirectorEvents(input: { cfg: PlurkDirectorConfig; now: number; random?: () => number }): DirectorEvent[] {
+export function planDirectorEvents(input: {
+  cfg: PlurkDirectorConfig;
+  now: number;
+  /** 廣場排好的路人噗快出完了 */
+  squareRefill?: boolean;
+  random?: () => number;
+}): DirectorEvent[] {
   const { cfg, now } = input;
   const random = input.random ?? Math.random;
   if (cfg.mode === "off" || cfg.lastRunAt <= 0 || now <= cfg.lastRunAt) return [];
@@ -54,17 +59,9 @@ export function planDirectorEvents(input: { cfg: PlurkDirectorConfig; now: numbe
     events.push({ kind: random() < POST_SHARE ? "post" : "reply", at: Math.min(at, now) });
   }
 
-  // 廣場路人：另外算，一次檢查最多一批，一樣吃每日上限
-  const squareExpected = (estimateSquarePerHour(cfg) * elapsed) / H;
-  if (events.length < budget && random() < Math.min(1, squareExpected)) {
-    const at = catchUp ? cfg.lastRunAt + Math.round(random() * elapsed) : now;
-    events.push({ kind: "square", at: Math.min(at, now) });
-  }
+  // 廣場路人：排好的快出完才補一批，一樣吃每日上限
+  if (input.squareRefill && events.length < budget) events.push({ kind: "square", at: now });
   return events.sort((a, b) => a.at - b.at);
-}
-
-export function estimateSquarePerHour(cfg: PlurkDirectorConfig): number {
-  return SQUARE_RATES[Math.min(Math.max(cfg.npcLevel, 1), 5) - 1];
 }
 
 /** 角色去逛廣場：24 小時內、沒被摺疊、角色回應還少於 2 則的路人噗，新的優先 */
@@ -100,7 +97,7 @@ export function pickPoster(
 
 export function pickReplyTarget(posts: QZonePost[], now: number): QZonePost | null {
   const recent = posts.filter(
-    (p) => now - p.timestamp <= 24 * H && !getTheaterPostId(p) && p.type !== "repost" && visibleComments(p, now).length < 3,
+    (p) => p.timestamp <= now && now - p.timestamp <= 24 * H && !getTheaterPostId(p) && p.type !== "repost" && visibleComments(p, now).length < 3,
   );
   recent.sort((a, b) => {
     const mine = Number(b.authorType === "user") - Number(a.authorType === "user");

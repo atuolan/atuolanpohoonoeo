@@ -1,6 +1,6 @@
 /**
- * 廣場路人噗：一次 AI 呼叫生 3–5 則路人噗（附路人回應、喜歡數、版主摺疊），
- * 也可能讓一位好友角色偷偷說心裡話
+ * 廣場路人噗：一次 AI 呼叫生一批路人噗（附路人回應、喜歡數、版主摺疊），
+ * 先排好時間再存，時間到才出現在廣場；也可能讓一位好友角色偷偷說心裡話
  */
 
 import { extractJsonObject, generatePlurkText, hasPlurkApi } from "@/services/plurkAI";
@@ -13,6 +13,14 @@ import { getMutedIds, type DirectorStrictness } from "@/utils/plurkDirectorConfi
 import { plurkPlainText } from "@/utils/plurkContent";
 import { isKnownQualifier, normalizeQualifier, PLURK_QUALIFIERS } from "@/utils/plurkQualifiers";
 import { isSquarePost, MODERATOR_NAME } from "@/utils/plurkSquare";
+import {
+  latestSquareAt,
+  moderationDelayAt,
+  normalizeSquareBatch,
+  planSquareTimes,
+  squarePostsPerHour,
+} from "@/utils/plurkSquareSchedule";
+import { salvageArrayItems } from "@/utils/jsonSalvage";
 
 export interface SquareCharacterBrief {
   id: string;
@@ -22,7 +30,8 @@ export interface SquareCharacterBrief {
 }
 
 export interface SquarePromptInput {
-  count: number;
+  /** 這批噗依序的發文時間，則數＝長度 */
+  times: number[];
   strictness: DirectorStrictness;
   /** 可以偷偷說的好友角色；空陣列＝這次不要角色 */
   characters: SquareCharacterBrief[];
@@ -71,9 +80,14 @@ export function npcColorFor(name: string): string {
 
 const STRICTNESS_RULES: Record<DirectorStrictness, string> = {
   loose: "版主很寬鬆，不要輸出 fold。",
-  mid: "最多 1 則明顯引戰、人身攻擊或洗版的噗可以加 \"fold\": \"原因（2–4 字）\"，大部分噗都不要加。",
+  mid: "每 10 則最多 1 則明顯引戰、人身攻擊或洗版的噗可以加 \"fold\": \"原因（2–4 字）\"，大部分噗都不要加。",
   hard: "版主很嚴格：吵架、引戰、洗版、偏激的噗都加 \"fold\": \"原因（2–4 字）\"，可以不只一則。",
 };
+
+function formatSlot(ts: number): string {
+  const d = new Date(ts);
+  return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
 
 export function buildSquarePrompt(input: SquarePromptInput): string {
   const qualifiers = PLURK_QUALIFIERS.map((q) => q.label).join("、");
@@ -96,7 +110,12 @@ ${input.characters.map((c) => `- id: ${c.id}｜${c.name}｜個性：${c.personal
 這種噗用 "kind": "anon"，並給 "characterId"。
 `
     : "";
-  return `你是社群「噗浪」廣場的模擬器。現在是 ${time}。請生成 ${input.count} 則陌生路人在廣場發的噗。
+  const slots = input.times.map((t, i) => `${i + 1}. ${formatSlot(t)}`).join("\n");
+  return `你是社群「噗浪」廣場的模擬器。現在是 ${time}。請生成 ${input.times.length} 則陌生路人在廣場發的噗。
+
+# 發文時間
+這批噗會依序在下面這些時間發出，posts 陣列照這個順序輸出，內容要配合各自的時間（深夜多是心事和失眠、早上通勤上課、中午吃什麼、晚上下班追劇）：
+${slots}
 
 # 規則
 1. 路人是素不相識的一般網友，生活感要強：求助、分享好物、曬小孩寵物、吐槽工作、二手轉讓、隨口抱怨、深夜心事都可以，題材彼此不同。
@@ -152,21 +171,15 @@ export function parseSquareResponse(
   raw: string,
   opts: { characterIds: Set<string>; strictness: DirectorStrictness },
 ): ParsedSquarePost[] {
-  const match = raw.replace(/```(?:json)?/gi, "").match(/\{[\s\S]*\}/);
-  if (!match) return [];
-  let data: { posts?: unknown };
-  try {
-    data = JSON.parse(match[0]);
-  } catch {
-    return [];
-  }
-  if (!Array.isArray(data.posts)) return [];
+  // 回覆被截斷時，前面完整的幾則照樣收
+  const items = salvageArrayItems(raw, "posts");
+  const foldLimit =
+    opts.strictness === "hard" ? Infinity : opts.strictness === "mid" ? Math.max(1, Math.floor(items.length / 10)) : 0;
 
   const result: ParsedSquarePost[] = [];
   let folds = 0;
   let anonUsed = false;
-  for (const item of data.posts as Array<Record<string, unknown>>) {
-    if (!item || typeof item !== "object") continue;
+  for (const item of items) {
     const content = cleanText(item.content);
     if (!content) continue;
     const isAnon = item.kind === "anon";
@@ -184,7 +197,7 @@ export function parseSquareResponse(
       .slice(0, 3);
 
     let fold = cleanText(item.fold, 8) || undefined;
-    if (fold && (opts.strictness === "loose" || (opts.strictness === "mid" && folds >= 1))) fold = undefined;
+    if (fold && folds >= foldLimit) fold = undefined;
     if (fold) folds++;
 
     result.push({
@@ -214,10 +227,22 @@ function shuffle<T>(list: T[]): T[] {
   return copy;
 }
 
-/** 生一批廣場路人噗並存起來；回傳新增幾則 */
-export async function generateSquareBatch(): Promise<{ success: boolean; added: number; error?: string }> {
-  if (plurkActivity.square) return { success: false, added: 0, error: "廣場正在生成中" };
-  if (!hasPlurkApi()) return { success: false, added: 0, error: "請先配置 API" };
+export interface SquareBatchResult {
+  success: boolean;
+  added: number;
+  /** 其中排到之後才出現的則數 */
+  scheduled: number;
+  error?: string;
+}
+
+/**
+ * 生一批廣場路人噗並排好時間存起來。
+ * manual（按按鈕）：約三分之一馬上出現，其餘接在排好的後面；
+ * 自動補貨：接在最後一則後面，離開太久就從 3 小時前開始補
+ */
+export async function generateSquareBatch(opts: { manual?: boolean } = {}): Promise<SquareBatchResult> {
+  if (plurkActivity.square) return { success: false, added: 0, scheduled: 0, error: "廣場正在生成中" };
+  if (!hasPlurkApi()) return { success: false, added: 0, scheduled: 0, error: "請先配置 API" };
 
   plurkActivity.square = true;
   try {
@@ -242,13 +267,22 @@ export async function generateSquareBatch(): Promise<{ success: boolean; added: 
           description: c.data?.description || "",
         }));
     }
+    // 排隊中還沒出現的也算，免得題材重複
     const recentTexts = qzoneStore.posts
       .filter((p) => isSquarePost(p) && now - p.timestamp < 48 * 3600_000)
-      .slice(0, 12)
+      .sort((a, b) => b.timestamp - a.timestamp)
+      .slice(0, 20)
       .map((p) => plurkPlainText(p.content || "", 24));
 
+    const times = planSquareTimes({
+      count: normalizeSquareBatch(cfg.squareBatch),
+      perHour: squarePostsPerHour(cfg.npcLevel),
+      now,
+      lastAt: latestSquareAt(qzoneStore.posts),
+      manual: opts.manual ?? true,
+    });
     const prompt = buildSquarePrompt({
-      count: 3 + Math.floor(Math.random() * 3),
+      times,
       strictness: cfg.strictness,
       characters,
       recentTexts,
@@ -258,11 +292,10 @@ export async function generateSquareBatch(): Promise<{ success: boolean; added: 
     const parsed = parseSquareResponse(raw, {
       characterIds: new Set(characters.map((c) => c.id)),
       strictness: cfg.strictness,
-    });
-    if (parsed.length === 0) return { success: false, added: 0, error: "這次沒有生成內容" };
+    }).slice(0, times.length);
+    if (parsed.length === 0) return { success: false, added: 0, scheduled: 0, error: "這次沒有生成內容" };
 
-    // 時間錯開到過去 40 分鐘內，舊的先存
-    const times = parsed.map(() => now - Math.round(Math.random() * 40 * 60_000)).sort((a, b) => a - b);
+    // 照排好的時間存；版主在噗出現後 10–90 分鐘才處理
     for (const [index, item] of parsed.entries()) {
       const at = times[index];
       const base: Omit<QZonePost, "id" | "timestamp" | "comments" | "likes"> = {
@@ -274,7 +307,7 @@ export async function generateSquareBatch(): Promise<{ success: boolean; added: 
         authorType: "ai",
         allowPasserby: true,
         crowdLikes: item.likes,
-        moderation: item.fold ? { action: "fold", reason: item.fold, by: MODERATOR_NAME, at } : undefined,
+        moderation: item.fold ? { action: "fold", reason: item.fold, by: MODERATOR_NAME, at: moderationDelayAt(at) } : undefined,
       };
       const post =
         item.kind === "anon"
@@ -303,7 +336,7 @@ export async function generateSquareBatch(): Promise<{ success: boolean; added: 
             );
       let replyAt = at;
       for (const reply of item.replies) {
-        replyAt = Math.min(now, replyAt + (1 + Math.floor(Math.random() * 6)) * 60_000);
+        replyAt += (1 + Math.floor(Math.random() * 6)) * 60_000;
         await qzoneStore.addComment(
           post.id,
           {
@@ -335,10 +368,11 @@ export async function generateSquareBatch(): Promise<{ success: boolean; added: 
         characterId: announce.characterId,
       });
     }
-    return { success: true, added: parsed.length };
+    const scheduled = parsed.filter((_, index) => times[index] > now).length;
+    return { success: true, added: parsed.length, scheduled };
   } catch (error) {
     console.warn("[PlurkSquare] 生成路人噗失敗:", error);
-    return { success: false, added: 0, error: error instanceof Error ? error.message : String(error) };
+    return { success: false, added: 0, scheduled: 0, error: error instanceof Error ? error.message : String(error) };
   } finally {
     plurkActivity.square = false;
   }

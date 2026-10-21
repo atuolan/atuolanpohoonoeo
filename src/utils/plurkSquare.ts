@@ -7,6 +7,7 @@ import { dayKey } from "@/utils/plurkDirectorConfig";
 import { getAudience, getLikeTotal, getTheaterPostId } from "@/utils/plurkPost";
 import { normalizeQualifier } from "@/utils/plurkQualifiers";
 import { visibleComments } from "@/utils/plurkRiver";
+import { isModerationShown } from "@/utils/plurkSquareSchedule";
 
 export type SquareTab = "hot" | "anon" | "new";
 
@@ -47,7 +48,9 @@ export function isRiverPost(post: QZonePost, npcFriendIds: Set<string>): boolean
 
 /** 熱門分數：沒被刪的回應×2＋喜歡 */
 export function hotScore(post: QZonePost, now: number): number {
-  const replies = visibleComments(post, now).filter((c) => c.moderation?.action !== "delete").length;
+  const replies = visibleComments(post, now).filter(
+    (c) => !(c.moderation?.action === "delete" && isModerationShown(c.moderation, now)),
+  ).length;
   return replies * 2 + getLikeTotal(post);
 }
 

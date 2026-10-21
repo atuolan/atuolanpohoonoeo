@@ -84,18 +84,22 @@ describe("pickReplyTarget", () => {
     expect(pickReplyTarget(posts.filter((x) => x.id !== "mine"), now)?.id).toBe("char");
     expect(pickReplyTarget([posts[0]], now)).toBeNull();
   });
+  it("還沒到時間的噗不挑", () => {
+    expect(pickReplyTarget([p("later", now + 30 * 60_000)], now)).toBeNull();
+  });
 });
 
 describe("廣場事件", () => {
-  it("路人多寡越高越常發生，一次最多一批", () => {
-    const quiet = cfg({ liveliness: 1, npcLevel: 1, lastRunAt: now - 60 * 60_000 });
-    expect(planDirectorEvents({ cfg: quiet, now, random: () => 0.5 }).some((e) => e.kind === "square")).toBe(false);
-    const busy = cfg({ liveliness: 1, npcLevel: 5, lastRunAt: now - 10 * H });
-    expect(planDirectorEvents({ cfg: busy, now, random: () => 0.5 }).filter((e) => e.kind === "square")).toHaveLength(1);
+  it("排好的快出完才補一批，時間是現在", () => {
+    const quiet = cfg({ liveliness: 1, lastRunAt: now - 10 * 60_000 });
+    expect(planDirectorEvents({ cfg: quiet, now, random: () => 0.5 })).toEqual([]);
+    expect(planDirectorEvents({ cfg: quiet, now, squareRefill: true, random: () => 0.5 })).toEqual([{ kind: "square", at: now }]);
+    const away = cfg({ lastRunAt: now - 10 * H });
+    expect(planDirectorEvents({ cfg: away, now, squareRefill: true, random: () => 0.5 }).filter((e) => e.kind === "square")).toHaveLength(1);
   });
   it("每日上限用完就沒有", () => {
-    const full = cfg({ npcLevel: 5, lastRunAt: now - 10 * H, dailyCap: 5, todayKey: "2026-10-21", todayCount: 5 });
-    expect(planDirectorEvents({ cfg: full, now, random: () => 0.5 })).toEqual([]);
+    const full = cfg({ lastRunAt: now - 10 * H, dailyCap: 5, todayKey: "2026-10-21", todayCount: 5 });
+    expect(planDirectorEvents({ cfg: full, now, squareRefill: true, random: () => 0.5 })).toEqual([]);
   });
 });
 

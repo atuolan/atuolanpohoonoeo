@@ -25,7 +25,7 @@ import type {
     QZoneSettings,
 } from "@/types/qzone";
 import { DEFAULT_AUTO_INTERACTION_CONFIG } from "@/types/qzone";
-import { migrateDirectorConfig, type PlurkDirectorConfig } from "@/utils/plurkDirectorConfig";
+import { DEFAULT_DIRECTOR_CONFIG, migrateDirectorConfig, type PlurkDirectorConfig } from "@/utils/plurkDirectorConfig";
 import { isPostFollowed } from "@/utils/plurkRiver";
 import { makeNoticeId, withNotice } from "@/utils/plurkModeration";
 import { defineStore } from "pinia";
@@ -69,9 +69,11 @@ export const useQzoneStore = defineStore("qzone", () => {
   // 動態數量
   const postCount = computed(() => posts.value.length);
 
-  /** AI 導演設定（沒有時從舊設定組出來） */
-  const directorConfig = computed<PlurkDirectorConfig>(
-    () => settings.value.director ?? migrateDirectorConfig(settings.value, autoInteractionConfig.value),
+  /** AI 導演設定（沒有時從舊設定組出來；之後才加的欄位用預設補上） */
+  const directorConfig = computed<PlurkDirectorConfig>(() =>
+    settings.value.director
+      ? { ...DEFAULT_DIRECTOR_CONFIG, ...settings.value.director }
+      : migrateDirectorConfig(settings.value, autoInteractionConfig.value),
   );
 
   // ============================================================

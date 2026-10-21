@@ -18,6 +18,7 @@ import type { GeneratedComment, QZoneComment } from "@/types/qzone";
 import type { DirectorStrictness } from "@/utils/plurkDirectorConfig";
 import { spreadReplyTimes } from "@/utils/plurkReplyTiming";
 import { isSquarePost, MODERATOR_NAME } from "@/utils/plurkSquare";
+import { moderationDelayAt } from "@/utils/plurkSquareSchedule";
 import { computed } from "vue";
 
 export interface GenerateCommentsOptions {
@@ -309,11 +310,12 @@ export function useBatchComments() {
         }
       }
 
-      // 版主刪除：普通最多一則，角色的留言不刪
+      // 版主刪除：普通最多一則，角色的留言不刪；回應出現後 10–90 分鐘才刪
       let moderation: QZoneComment["moderation"];
       if (strictness && genComment.removed && isPasserby && (strictness === "hard" || removals === 0)) {
         removals++;
-        moderation = { action: "delete", reason: genComment.removed, by: MODERATOR_NAME, at: times[index] ?? Date.now() };
+        const at = moderationDelayAt(times[index] ?? Date.now());
+        moderation = { action: "delete", reason: genComment.removed, by: MODERATOR_NAME, at };
       }
 
       const newComment = await qzoneStore.addComment(
