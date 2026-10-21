@@ -2,6 +2,8 @@
  * 噗浪空間（QZone/Plurk）類型定義
  */
 
+import type { PlurkDirectorConfig } from "@/utils/plurkDirectorConfig";
+
 /** 誰看得到：全員／好友／私噗／偷偷說 */
 export type PlurkAudience = "all" | "friends" | "private" | "anon";
 /** 誰會來回應：讓 AI 挑／我指定／不要回應 */
@@ -108,7 +110,7 @@ export interface QZoneSettings {
   chatContextCount?: number; // 讀取對話條數
   composeDefaults?: PlurkComposeDefaults; // 發噗面板記住的選擇
   unreadSince?: number; // 比這個時間舊的回應一律當已讀
-  director?: unknown; // AI 導演設定（之後定型）
+  director?: PlurkDirectorConfig; // AI 導演設定
 }
 
 // 自動互動配置

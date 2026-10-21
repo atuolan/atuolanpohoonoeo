@@ -8,6 +8,7 @@ import { useCharactersStore } from "@/stores/characters";
 import { useQzoneStore } from "@/stores/qzone";
 import type { Chat } from "@/types/chat";
 import type { QZonePost } from "@/types/qzone";
+import { getMutedIds } from "@/utils/plurkDirectorConfig";
 import { getAudience, getPrivateTo } from "@/utils/plurkPost";
 
 export interface CastContext {
@@ -103,6 +104,6 @@ export async function buildCastContext(): Promise<CastContext> {
   return {
     allCharacterIds: charactersStore.characters.map((c) => c.id).filter((id) => !hiddenIds.has(id)),
     friendIds,
-    mutedIds: new Set(qzoneStore.autoInteractionConfig.characterSelection.blacklist),
+    mutedIds: getMutedIds(qzoneStore.directorConfig),
   };
 }

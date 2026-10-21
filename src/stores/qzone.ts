@@ -23,6 +23,7 @@ import type {
     QZoneSettings,
 } from "@/types/qzone";
 import { DEFAULT_AUTO_INTERACTION_CONFIG } from "@/types/qzone";
+import { migrateDirectorConfig, type PlurkDirectorConfig } from "@/utils/plurkDirectorConfig";
 import { defineStore } from "pinia";
 import { computed, ref } from "vue";
 import { useNotificationStore } from "./notification";
@@ -63,6 +64,11 @@ export const useQzoneStore = defineStore("qzone", () => {
 
   // 動態數量
   const postCount = computed(() => posts.value.length);
+
+  /** AI 導演設定（沒有時從舊設定組出來） */
+  const directorConfig = computed<PlurkDirectorConfig>(
+    () => settings.value.director ?? migrateDirectorConfig(settings.value, autoInteractionConfig.value),
+  );
 
   // ============================================================
   // 載入方法
@@ -363,6 +369,10 @@ export const useQzoneStore = defineStore("qzone", () => {
     scheduleSelfHostedAutoSync();
   }
 
+  async function updateDirector(updates: Partial<PlurkDirectorConfig>): Promise<void> {
+    await updateSettings({ director: { ...directorConfig.value, ...updates } });
+  }
+
   /**
    * 更新設定
    */
@@ -425,6 +435,9 @@ export const useQzoneStore = defineStore("qzone", () => {
     if (!settings.value.unreadSince) {
       await updateSettings({ unreadSince: Date.now() });
     }
+    if (!settings.value.director) {
+      await updateSettings({ director: directorConfig.value });
+    }
   }
 
   return {
@@ -436,6 +449,7 @@ export const useQzoneStore = defineStore("qzone", () => {
     autoInteractionConfig,
 
     // 計算屬性
+    directorConfig,
     sortedPosts,
     postCount,
 
@@ -456,6 +470,7 @@ export const useQzoneStore = defineStore("qzone", () => {
     setPostMuted,
     updateSettings,
     updateAutoInteractionConfig,
+    updateDirector,
     savePosts,
     getPostsByAuthor,
     init,

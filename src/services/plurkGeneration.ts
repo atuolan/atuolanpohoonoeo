@@ -23,10 +23,10 @@ export interface ChatContextOptions {
   count: number;
 }
 
-/** 讀聊天記錄的設定（之後改由 AI 導演設定提供） */
+/** 讀聊天記錄的設定（AI 導演的「記得私聊」） */
 export function getChatContextOptions(): ChatContextOptions {
-  const settings = useQzoneStore().settings;
-  return { enabled: settings.enableChatContext ?? true, count: settings.chatContextCount ?? 15 };
+  const director = useQzoneStore().directorConfig;
+  return { enabled: director.memoryEnabled, count: director.memoryCount };
 }
 
 /**
