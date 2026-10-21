@@ -24,6 +24,7 @@ import type {
 } from "@/types/qzone";
 import { DEFAULT_AUTO_INTERACTION_CONFIG } from "@/types/qzone";
 import { migrateDirectorConfig, type PlurkDirectorConfig } from "@/utils/plurkDirectorConfig";
+import { isPostFollowed } from "@/utils/plurkRiver";
 import { defineStore } from "pinia";
 import { computed, ref } from "vue";
 import { useNotificationStore } from "./notification";
@@ -155,8 +156,8 @@ export const useQzoneStore = defineStore("qzone", () => {
     }
     console.log("[QZone] 新增動態:", newPost.id, "內容:", newPost.content?.substring(0, 50));
 
-    // 如果是 AI 角色發文，發送通知
-    if (post.authorType === "ai") {
+    // AI 角色發文才通知；廣場路人、角色的偷偷說不通知
+    if (post.authorType === "ai" && !post.onSquare && !post.anonOf) {
       try {
         const notificationStore = useNotificationStore();
         notificationStore.notifyQzonePost(
@@ -292,8 +293,8 @@ export const useQzoneStore = defineStore("qzone", () => {
     scheduleSelfHostedAutoSync();
     console.log("[QZone] 新增評論:", newComment.id);
 
-    // AI 回應立刻出現時才通知；排到之後的由 plurkReveal 到點再通知
-    if (comment.authorType === "ai" && newComment.timestamp <= now && !post.muted) {
+    // 追蹤中的噗、AI 回應立刻出現時才通知；排到之後的由 plurkReveal 到點再通知
+    if (comment.authorType === "ai" && newComment.timestamp <= now && !post.muted && isPostFollowed(post)) {
       try {
         const notificationStore = useNotificationStore();
         notificationStore.notifyQzoneComment(

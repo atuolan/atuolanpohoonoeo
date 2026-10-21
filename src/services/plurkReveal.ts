@@ -13,7 +13,9 @@ export const plurkActivity = reactive<{
   generating: Record<string, string[]>;
   /** commentId → 正在單則重生 */
   regenerating: Record<string, boolean>;
-}>({ generating: {}, regenerating: {} });
+  /** 廣場路人噗生成中 */
+  square: boolean;
+}>({ generating: {}, regenerating: {}, square: false });
 
 export function setGenerating(postId: string, names: string[]): void {
   plurkActivity.generating[postId] = names;
