@@ -17,6 +17,21 @@ export interface PlurkComposeDefaults {
   slowReplies: boolean;
 }
 
+/** 廣場路人（噗主） */
+export interface PlurkNpc {
+  id: string;
+  name: string;
+  color: string;
+}
+
+/** 廣場版主的處置：摺疊噗、刪除回應 */
+export interface PlurkModeration {
+  action: "fold" | "delete";
+  reason: string;
+  by: string;
+  at: number;
+}
+
 // 媒體項目（圖片/視頻）
 export interface MediaItem {
   type: "image" | "video";
@@ -35,6 +50,7 @@ export interface QZoneComment {
   replyToId?: string; // 回覆的評論 ID
   replyToUsername?: string; // 回覆的評論作者名稱（顯示用）
   qualifier?: string; // 回應的發語詞，沒有＝自由發揮
+  moderation?: PlurkModeration; // 被版主刪除
 }
 
 // 批量評論生成結果（單條）
@@ -45,6 +61,7 @@ export interface GeneratedComment {
   content: string;
   replyTo: string | null; // 回覆的評論 ID，null 表示直接評論貼文
   qualifier?: string; // 發語詞（可省略）
+  removed?: string; // 廣場：版主刪除這則的原因
 }
 
 // 批量評論生成結果
@@ -97,6 +114,12 @@ export interface QZonePost {
   theaterPostId?: string; // 小劇場連結
   seenAt?: number; // 最後一次打開回應串的時間
   muted?: boolean; // 消音：不再通知
+  // 廣場（第 3 期）
+  npc?: PlurkNpc; // 路人發的噗
+  onSquare?: boolean; // 只在廣場（路人噗）
+  anonOf?: string; // 角色的偷偷說：真正的角色 ID（畫面不顯示）
+  crowdLikes?: number; // 廣場上路人給的喜歡
+  moderation?: PlurkModeration; // 被版主摺疊
 }
 
 // 噗浪空間設定
@@ -111,6 +134,8 @@ export interface QZoneSettings {
   composeDefaults?: PlurkComposeDefaults; // 發噗面板記住的選擇
   unreadSince?: number; // 比這個時間舊的回應一律當已讀
   director?: PlurkDirectorConfig; // AI 導演設定
+  npcFriends?: PlurkNpc[]; // 加了好友的路人（他們的噗會進河道）
+  anonQuota?: { day: string; count: number }; // 今天發了幾則偷偷說
 }
 
 // 自動互動配置
