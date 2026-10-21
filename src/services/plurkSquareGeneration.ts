@@ -3,7 +3,7 @@
  * 先排好時間再存，時間到才出現在廣場；也可能讓一位好友角色偷偷說心裡話
  */
 
-import { extractJsonObject, generatePlurkText, hasPlurkApi } from "@/services/plurkAI";
+import { abortedPartial, extractJsonObject, generatePlurkText, hasPlurkApi, isPlurkAbort } from "@/services/plurkAI";
 import { buildCastContext, effectiveFriendIds } from "@/services/plurkCast";
 import { plurkActivity } from "@/services/plurkReveal";
 import { useCharactersStore } from "@/stores/characters";
@@ -233,6 +233,8 @@ export interface SquareBatchResult {
   /** 其中排到之後才出現的則數 */
   scheduled: number;
   error?: string;
+  /** 使用者在串流視窗按了停止 */
+  aborted?: boolean;
 }
 
 /**
@@ -288,12 +290,25 @@ export async function generateSquareBatch(opts: { manual?: boolean } = {}): Prom
       recentTexts,
       now,
     });
-    const raw = await generatePlurkText(prompt);
+    // 按按鈕的才開串流視窗，自動補貨在背景跑；按停止時留下已經寫完的幾則
+    let raw: string;
+    let aborted = false;
+    try {
+      raw = await generatePlurkText(prompt, { window: opts.manual ?? true, label: "廣場路人噗" });
+    } catch (error) {
+      if (!isPlurkAbort(error)) throw error;
+      raw = abortedPartial(error);
+      aborted = true;
+    }
     const parsed = parseSquareResponse(raw, {
       characterIds: new Set(characters.map((c) => c.id)),
       strictness: cfg.strictness,
     }).slice(0, times.length);
-    if (parsed.length === 0) return { success: false, added: 0, scheduled: 0, error: "這次沒有生成內容" };
+    if (parsed.length === 0) {
+      return aborted
+        ? { success: false, added: 0, scheduled: 0, aborted: true }
+        : { success: false, added: 0, scheduled: 0, error: "這次沒有生成內容" };
+    }
 
     // 照排好的時間存；版主在噗出現後 10–90 分鐘才處理
     for (const [index, item] of parsed.entries()) {
@@ -351,7 +366,7 @@ export async function generateSquareBatch(opts: { manual?: boolean } = {}): Prom
         );
       }
     }
-    const announce = parseSquareAnnounce(raw, new Set(characters.map((c) => c.id)));
+    const announce = aborted ? null : parseSquareAnnounce(raw, new Set(characters.map((c) => c.id)));
     if (announce && cfg.strictness !== "loose") {
       const name = characters.find((c) => c.id === announce.characterId)?.name ?? "某位用戶";
       const until = now + announce.days * 86_400_000;

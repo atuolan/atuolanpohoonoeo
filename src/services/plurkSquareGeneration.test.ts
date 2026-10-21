@@ -163,4 +163,29 @@ describe("generateSquareBatch", () => {
     expect(folded.moderation!.at).toBeGreaterThan(folded.timestamp);
     expect(comments[0].timestamp).toBeGreaterThan(added[0].timestamp);
   });
+
+  it("按停止：已經寫完的幾則照樣存；一則都沒寫完就安靜結束", async () => {
+    const { generateSquareBatch } = await import("./plurkSquareGeneration");
+    const { generatePlurkText, hasPlurkApi } = await import("@/services/plurkAI");
+    const { useQzoneStore } = await import("@/stores/qzone");
+    const addPost = vi.fn(async () => ({ id: "p" }));
+    vi.mocked(hasPlurkApi).mockReturnValue(true);
+    vi.mocked(useQzoneStore).mockReturnValue({
+      posts: [],
+      settings: {},
+      directorConfig: { squareBatch: 10, npcLevel: 3, strictness: "mid", roles: {} },
+      addPost,
+      addComment: vi.fn(),
+    } as never);
+    const abort = (partial: string) => Object.assign(new Error("已停止生成"), { name: "AbortError", partial });
+    const random = vi.spyOn(Math, "random").mockReturnValue(0.9);
+
+    vi.mocked(generatePlurkText).mockRejectedValueOnce(abort('{"posts": [{"name": "a", "content": "1"}, {"name": "b", "content": "2"}, {"name": "c", "con'));
+    expect(await generateSquareBatch()).toMatchObject({ success: true, added: 2 });
+    expect(addPost).toHaveBeenCalledTimes(2);
+
+    vi.mocked(generatePlurkText).mockRejectedValueOnce(abort(""));
+    expect(await generateSquareBatch()).toEqual({ success: false, added: 0, scheduled: 0, aborted: true });
+    random.mockRestore();
+  });
 });
