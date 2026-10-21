@@ -2373,6 +2373,7 @@ function onTouchStart(e: TouchEvent) {
     x: e.touches[0].clientX,
     y: e.touches[0].clientY,
   };
+  onSwipeStart(e);
   longPressTimer = window.setTimeout(() => {
     menuFromLongPress = true;
     menuOpenedAt = Date.now();
@@ -2383,6 +2384,7 @@ function onTouchStart(e: TouchEvent) {
 }
 
 function onTouchMove(e: TouchEvent) {
+  onSwipeMove(e);
   // 手指移動超過 10px 就取消長按（用戶在滑動，不是長按）
   const moveX = Math.abs(e.touches[0].clientX - touchStartPos.x);
   const moveY = Math.abs(e.touches[0].clientY - touchStartPos.y);
@@ -2395,6 +2397,7 @@ function onTouchMove(e: TouchEvent) {
 }
 
 function onTouchEnd() {
+  onSwipeEnd();
   if (longPressTimer) {
     clearTimeout(longPressTimer);
     longPressTimer = null;
@@ -2590,6 +2593,97 @@ function onContextMenu(e: MouseEvent) {
   showMenu.value = true;
   scrollIntoViewForMenu();
 }
+
+// ===== 往左滑快速回覆 =====
+// 手指往左拖，氣泡跟著移、右側浮出回覆圖示；拖過門檻放開就引用這則訊息。
+const SWIPE_REPLY_THRESHOLD = 56;
+const SWIPE_REPLY_MAX = 80;
+// 這些區域裡的橫向拖動另有用途（程式碼橫捲、語音進度、HTML 卡片），不當成回覆手勢
+const SWIPE_REPLY_IGNORE =
+  "pre, input, textarea, .audio-waveform, aguaphone-inline-card, iframe, .message-menu, [data-no-swipe-reply]";
+const swipeOffset = ref(0);
+const isSwipingForReply = ref(false);
+const isSwipeReturning = ref(false);
+// idle：還沒判斷方向；horizontal：正在往左拖；ignore：這次觸控不處理
+let swipeState: "idle" | "horizontal" | "ignore" = "ignore";
+let swipeStartX = 0;
+let swipeStartY = 0;
+let swipeCrossed = false;
+let swipeReturnTimer: number | null = null;
+
+const canSwipeReply = computed(
+  () =>
+    !isSystem.value &&
+    !props.isRecall &&
+    !props.isGroupAction &&
+    !props.isStreaming &&
+    !props.isEditing,
+);
+
+function onSwipeStart(e: TouchEvent) {
+  swipeState = "ignore";
+  if (!canSwipeReply.value || showMenu.value || e.touches.length > 1) return;
+  const target = e.target as Element | null;
+  if (target?.closest?.(SWIPE_REPLY_IGNORE)) return;
+  swipeStartX = e.touches[0].clientX;
+  swipeStartY = e.touches[0].clientY;
+  swipeCrossed = false;
+  swipeState = "idle";
+}
+
+function onSwipeMove(e: TouchEvent) {
+  if (swipeState === "ignore") return;
+  const dx = e.touches[0].clientX - swipeStartX;
+  const dy = e.touches[0].clientY - swipeStartY;
+
+  if (swipeState === "idle") {
+    if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
+    // 明顯偏橫向且往左才算回覆手勢，其餘交給頁面捲動
+    swipeState = dx < 0 && Math.abs(dx) > Math.abs(dy) * 1.2 ? "horizontal" : "ignore";
+    if (swipeState === "ignore") return;
+    if (swipeReturnTimer) {
+      clearTimeout(swipeReturnTimer);
+      swipeReturnTimer = null;
+    }
+    isSwipeReturning.value = false;
+    isSwipingForReply.value = true;
+  }
+
+  // 超過門檻後加阻力，最多拖到 SWIPE_REPLY_MAX
+  const pull = Math.max(0, -dx);
+  const eased =
+    pull <= SWIPE_REPLY_THRESHOLD
+      ? pull
+      : SWIPE_REPLY_THRESHOLD + (pull - SWIPE_REPLY_THRESHOLD) * 0.35;
+  swipeOffset.value = -Math.min(SWIPE_REPLY_MAX, eased);
+
+  const crossed = pull >= SWIPE_REPLY_THRESHOLD;
+  if (crossed && !swipeCrossed) navigator.vibrate?.(12);
+  swipeCrossed = crossed;
+}
+
+function onSwipeEnd() {
+  if (swipeState !== "horizontal") {
+    swipeState = "ignore";
+    return;
+  }
+  swipeState = "ignore";
+  if (swipeCrossed) emit("reply", props.id);
+  swipeCrossed = false;
+
+  // 彈回原位：transition 期間保留位移 class，結束後再拿掉 transform
+  isSwipeReturning.value = true;
+  swipeOffset.value = 0;
+  swipeReturnTimer = window.setTimeout(() => {
+    isSwipingForReply.value = false;
+    isSwipeReturning.value = false;
+    swipeReturnTimer = null;
+  }, 220);
+}
+
+onUnmounted(() => {
+  if (swipeReturnTimer) clearTimeout(swipeReturnTimer);
+});
 
 // 委派處理 bubble-text 內部的 TTS 行內按鈕點擊 & 相機展示點擊
 function onBubbleTextClick(e: MouseEvent) {
@@ -3088,8 +3182,19 @@ const showTextVoiceTranscript = ref(true);
       'html-only': isHtmlOnlyBubble,
       [`seq-${groupPosition}`]: !isSystem,
       'layout-classic': layout === 'classic',
+      'swipe-reply-enabled': canSwipeReply,
+      'swiping-for-reply': isSwipingForReply,
+      'swipe-returning': isSwipeReturning,
     }"
     :data-message-id="id"
+    :style="
+      isSwipingForReply
+        ? {
+            '--swipe-offset': `${swipeOffset}px`,
+            '--swipe-progress': Math.min(1, -swipeOffset / SWIPE_REPLY_THRESHOLD),
+          }
+        : undefined
+    "
     @click="handleClick"
     @touchstart.passive="onTouchStart"
     @touchmove.passive="onTouchMove"
@@ -3097,6 +3202,13 @@ const showTextVoiceTranscript = ref(true);
     @touchcancel="onTouchEnd"
     @contextmenu.prevent="onContextMenu"
   >
+    <!-- 往左滑時從右側浮出的回覆圖示 -->
+    <div v-if="isSwipingForReply" class="swipe-reply-action" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M9 14 4 9l5-5" />
+        <path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11" />
+      </svg>
+    </div>
     <!-- 系統訊息 -->
     <template v-if="isSystem">
       <!-- 跳轉魔法消息 -->
@@ -4819,6 +4931,47 @@ const showTextVoiceTranscript = ref(true);
   gap: 10px;
   padding: 4px 0;
   position: relative;
+
+  // 往左滑回覆：橫向拖動由 JS 處理，直向仍交給頁面捲動
+  &.swipe-reply-enabled {
+    touch-action: pan-y;
+  }
+
+  // 只在拖動與彈回期間加 transform，平常不加，免得替內部 fixed 元素建立包含區塊
+  &.swiping-for-reply > :not(.swipe-reply-action) {
+    transform: translateX(var(--swipe-offset, 0px));
+  }
+
+  &.swipe-returning > :not(.swipe-reply-action) {
+    transition: transform 0.2s ease-out;
+  }
+
+  > .swipe-reply-action {
+    position: absolute;
+    top: 50%;
+    right: 6px;
+    width: 32px;
+    height: 32px;
+    margin-top: -16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    color: var(--color-primary, #6366f1);
+    background: color-mix(in srgb, var(--color-primary, #6366f1) 14%, transparent);
+    opacity: var(--swipe-progress, 0);
+    transform: scale(calc(0.6 + 0.4 * var(--swipe-progress, 0)));
+    pointer-events: none;
+
+    svg {
+      width: 18px;
+      height: 18px;
+    }
+  }
+
+  &.swipe-returning > .swipe-reply-action {
+    transition: opacity 0.2s, transform 0.2s;
+  }
 
   &.user {
     justify-content: flex-end;
