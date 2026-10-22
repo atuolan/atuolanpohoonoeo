@@ -1513,6 +1513,11 @@ async function loadAppData() {
   // characters 已載入，立即啟動主動發訊息服務
   proactiveMessageService.start();
 
+  // 角色暫時離開：時間到自動回來
+  import("@/services/charAwayRuntime")
+    .then(({ startCharAwayRuntime }) => startCharAwayRuntime())
+    .catch((err) => console.warn("[App] 角色暫離排程啟動失敗:", err));
+
   // 噗浪：慢慢回的回應到點時通知
   import("@/services/plurkReveal")
     .then(({ startPlurkRevealTicker }) => startPlurkRevealTicker())
