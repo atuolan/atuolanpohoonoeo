@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { buildCaughtNote, peekSecretEventContent, rollInterrupt, rollStealth, stealthDC } from "@/utils/peekLinks";
+import {
+  buildCaughtNote,
+  buildSuspiciousNote,
+  parsePeekNote,
+  peekSecretEventContent,
+  rollInterrupt,
+  rollStealth,
+  stealthDC,
+} from "@/utils/peekLinks";
 
 const found = (n: number) =>
   Array.from({ length: n }, (_, i) => ({ key: `k${i}`, label: `秘密${i}`, detail: i === 0 ? "" : `內容${i}` }));
@@ -21,6 +29,46 @@ describe("被他發現的那筆", () => {
     expect(peekSecretEventContent({ key: "k", label: "鎖屏密碼 0912", detail: "第一次見面" }, "小栩", "沈既白")).toBe(
       "小栩偷看沈既白的手機，知道了「鎖屏密碼 0912」：第一次見面",
     );
+  });
+});
+
+describe("聊天裡那筆拆回來", () => {
+  it("放下後被發現：誰、看到什麼、還有幾個", () => {
+    expect(parsePeekNote(buildCaughtNote(found(7), "使用者", "Krueger"))).toEqual({
+      kind: "caught",
+      charName: "Krueger",
+      found: [
+        { label: "秘密0", detail: "" },
+        { label: "秘密1", detail: "內容1" },
+        { label: "秘密2", detail: "內容2" },
+        { label: "秘密3", detail: "內容3" },
+        { label: "秘密4", detail: "內容4" },
+      ],
+      more: 2,
+    });
+  });
+
+  it("偷看到一半被撞見、什麼都沒看到", () => {
+    expect(parsePeekNote(buildCaughtNote([], "小栩", "沈既白", "mid"))).toEqual({
+      kind: "interrupted",
+      charName: "沈既白",
+      found: [],
+      more: 0,
+    });
+  });
+
+  it("內容有冒號、有換行都照原樣", () => {
+    const note = buildCaughtNote([{ key: "k", label: "鎖屏密碼 0421", detail: "0421：第一天\n第二行" }], "小栩", "沈既白");
+    expect(parsePeekNote(note)?.found).toEqual([{ label: "鎖屏密碼 0421", detail: "0421：第一天\n第二行" }]);
+  });
+
+  it("起疑", () => {
+    expect(parsePeekNote(buildSuspiciousNote("沈既白"))).toEqual({ kind: "suspicious", charName: "沈既白", found: [], more: 0 });
+  });
+
+  it("不是偷看的那筆、被改過就認不出來", () => {
+    expect(parsePeekNote("你已解除封鎖")).toBeNull();
+    expect(parsePeekNote("小栩剛剛偷看了沈既白的手機，被沈既白發現了。後面亂改")).toBeNull();
   });
 });
 

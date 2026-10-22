@@ -52,6 +52,49 @@ export function buildSuspiciousNote(charName: string): string {
   return `${charName}拿起手機時覺得哪裡怪怪的，好像被人動過，但不確定是誰、看了什麼。`;
 }
 
+/** 聊天裡那筆拆回來給畫面用：caught 放下後被發現、interrupted 偷看到一半被撞見、suspicious 起疑 */
+export interface PeekNoteView {
+  kind: "caught" | "interrupted" | "suspicious";
+  charName: string;
+  found: { label: string; detail: string }[];
+  /** 列出來的之外還有幾個 */
+  more: number;
+}
+
+const CAUGHT_HEAD = /^.*?剛剛偷看了(.+)的手機，被\1發現了。/;
+const INTERRUPTED_HEAD = /^.*?偷看(.+)的手機時被\1當場撞見，手機被拿回去了。/;
+const SUSPICIOUS_NOTE = /^(.+)拿起手機時覺得哪裡怪怪的，好像被人動過，但不確定是誰、看了什麼。$/;
+
+/** 認不出來（不是偷看的那筆、被改過）回傳 null，畫面照一般系統訊息顯示 */
+export function parsePeekNote(content: string): PeekNoteView | null {
+  const text = content.trim();
+  const suspicious = SUSPICIOUS_NOTE.exec(text);
+  if (suspicious) return { kind: "suspicious", charName: suspicious[1], found: [], more: 0 };
+  const caught = CAUGHT_HEAD.exec(text);
+  const interrupted = caught ? null : INTERRUPTED_HEAD.exec(text);
+  const head = caught ?? interrupted;
+  if (!head) return null;
+  const view: PeekNoteView = { kind: caught ? "caught" : "interrupted", charName: head[1], found: [], more: 0 };
+  const rest = text.slice(head[0].length);
+  if (!rest) return view;
+  if (!rest.startsWith("看到了：\n")) return null;
+  for (const line of rest.slice("看到了：\n".length).split("\n")) {
+    const more = /^……還有 (\d+) 個$/.exec(line);
+    const last = view.found[view.found.length - 1];
+    if (more) {
+      view.more = Number(more[1]);
+    } else if (line.startsWith("・")) {
+      const item = line.slice(1);
+      const cut = item.indexOf("：");
+      view.found.push(cut < 0 ? { label: item, detail: "" } : { label: item.slice(0, cut), detail: item.slice(cut + 1) });
+    } else if (last) {
+      // 內容本身有換行
+      last.detail = last.detail ? `${last.detail}\n${line}` : line;
+    }
+  }
+  return view;
+}
+
 // ===== 隱匿檢定：像跑團一樣擲骰 =====
 // 放下手機時擲 d20 看他有沒有發現；偷看中每打開一個 App 擲 d100，擲到 3 以下他剛好回來
 
