@@ -9,6 +9,7 @@
  */
 import { db, DB_STORES } from "@/db/database";
 import { deleteChatCascade, loadChatsByCharacter } from "@/storage/chatStorage";
+import { deleteDiaryBook } from "@/services/diaryBook";
 
 /** 角色庫和編輯頁共用的刪除確認文字 */
 export const CHARACTER_DELETE_CONFIRM =
@@ -82,6 +83,7 @@ export async function deleteCharacterRelatedData(
   );
   await db.delete(DB_STORES.CHARACTER_AFFECTIONS, characterId);
   await db.delete(DB_STORES.SETTINGS, `lastActiveChatId_${characterId}`);
+  await deleteDiaryBook(characterId);
 
   return {
     deletedChatCount: targetChats.length,
