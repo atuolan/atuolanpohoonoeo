@@ -120,10 +120,7 @@ import {
   type PromptDebugMessage,
 } from "@/composables/useStreamingWindow";
 import { db, DB_STORES } from "@/db/database";
-import {
-  getChatImage,
-  isChatImageRef,
-} from "@/db/operations";
+import { readImageNote, resolveImageBase64 } from "@/services/imageNoteReader";
 import {
   createChatRecord,
   deleteChatCascade,
@@ -2480,6 +2477,32 @@ const onMessageCopy = (...args: any[]) => handleMessageCopy(args[0] as string);
 const onMessageRegenerate = (...args: any[]) => handleRegenerate(args[0] as string);
 const onMessageRegenerateImage = (...args: any[]) =>
   handleRegenerateImage(args[0] as string);
+
+// ===== 圖片備註：點開 user 傳的圖按「讀圖」，讓模型重新看圖寫備註（回覆時忘了寫 <pic-note> 用） =====
+const readingImageNoteId = ref<string | null>(null);
+
+async function handleReadImageNote(messageId: string) {
+  if (readingImageNoteId.value) return;
+  const message = messages.value.find((m) => m.id === messageId);
+  if (!message?.imageData || !message.imageMimeType) return;
+  readingImageNoteId.value = messageId;
+  try {
+    const base64 = await resolveImageBase64(message.imageData);
+    if (!base64) throw new Error("讀不到這張圖片的資料");
+    const note = await readImageNote(base64, message.imageMimeType, message.imageCaption);
+    // 讀圖期間可能換了聊天，重新找一次
+    const target = messages.value.find((m) => m.id === messageId);
+    if (!target) return;
+    target.imageNote = note;
+    await saveChatImmediate();
+    showToast("已寫入圖片備註");
+  } catch (error) {
+    showToast(`讀圖失敗：${error instanceof Error ? error.message : String(error)}`);
+  } finally {
+    readingImageNoteId.value = null;
+  }
+}
+const onMessageReadImageNote = (...args: any[]) => handleReadImageNote(args[0] as string);
 const onMessageRegenerateVoice = async (...args: any[]) => {
   const messageId = args[0] as string;
   if (!chatMinimaxTTSEnabled.value) {
@@ -5305,25 +5328,6 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
       notificationStore.notifySystem("聊天歷史未送出", budgetMessage);
     }
 
-    const resolveImageDataForApi = async (
-      imageData: string | undefined,
-    ): Promise<string | null> => {
-      if (!imageData) return null;
-
-      const source = isChatImageRef(imageData)
-        ? await getChatImage(imageData)
-        : imageData;
-
-      if (!source) return null;
-
-      if (source.startsWith("data:")) {
-        const commaIndex = source.indexOf(",");
-        return commaIndex >= 0 ? source.slice(commaIndex + 1).replace(/\s+/g, "") : null;
-      }
-
-      return source.replace(/\s+/g, "");
-    };
-
     const formatImageMessageAsText = (message: any) => ({
       role: message.role,
       content: describeImageForPrompt(message.content || "", message),
@@ -5376,7 +5380,7 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
       if (msgWithImage.imageData && msgWithImage.imageMimeType) {
         if (index === lastImageMsgIndex) {
           // 最後一條帶圖片的用戶訊息：保留 base64 給 Vision API
-          const resolvedImageBase64 = await resolveImageDataForApi(msgWithImage.imageData);
+          const resolvedImageBase64 = await resolveImageBase64(msgWithImage.imageData);
           if (resolvedImageBase64) {
             const apiMessage = createImageMessage(
               m.content,
@@ -10406,6 +10410,8 @@ useChatCleanup({
             message.isUserRecalled,
             message.isCharRecall,
             message.isTransactionClaimNotice,
+            message.imageNote,
+            readingImageNoteId === message.id,
             groupMemberAvatarVersion,
             removedMembersVersion,
             getGroupPosition(index),
@@ -10533,6 +10539,9 @@ useChatCleanup({
             :message-type="message.messageType"
             :image-url="message.imageUrl"
             :image-caption="message.imageCaption"
+            :image-note="message.imageNote"
+            :can-read-image="message.role === 'user' && !!message.imageData && !!message.imageMimeType"
+            :image-note-reading="readingImageNoteId === message.id"
             :image-prompt="message.imagePrompt"
             :is-gift="message.isGift"
             :gift-name="message.giftName"
@@ -10638,6 +10647,7 @@ useChatCleanup({
             @regenerate="onMessageRegenerate"
             @regenerate-voice="onMessageRegenerateVoice"
             @regenerate-image="onMessageRegenerateImage"
+            @read-image-note="onMessageReadImageNote"
             @swipe="onMessageSwipe"
             @round-swipe="onMessageRoundSwipe"
             @reply="onMessageReply"

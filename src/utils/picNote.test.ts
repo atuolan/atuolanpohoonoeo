@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildReadImagePrompt,
+  cleanImageNoteReply,
   describeImageForPrompt,
   extractPicNote,
   findTurnImageMessage,
@@ -79,5 +81,23 @@ describe("describeImageForPrompt", () => {
 
   it("什麼都沒有時寫圖片", () => {
     expect(describeImageForPrompt("", {})).toBe("[圖片：圖片]");
+  });
+});
+
+describe("cleanImageNoteReply", () => {
+  it("拿掉思考、標籤和引號，收成一行", () => {
+    expect(cleanImageNoteReply("<think>先看看</think>\n「一隻橘貓\n趴在沙發上」")).toBe("一隻橘貓 趴在沙發上");
+    expect(cleanImageNoteReply('<pic-note text="招牌寫著營業中"/>')).toBe("招牌寫著營業中");
+  });
+
+  it("什麼都沒寫時回傳空字串", () => {
+    expect(cleanImageNoteReply("<think>嗯</think>  ")).toBe("");
+  });
+});
+
+describe("buildReadImagePrompt", () => {
+  it("有說明時一起附上", () => {
+    expect(buildReadImagePrompt("我的新髮型")).toContain("傳圖的人附上的說明：「我的新髮型」");
+    expect(buildReadImagePrompt()).not.toContain("說明：");
   });
 });

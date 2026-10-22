@@ -69,3 +69,27 @@ export function describeImageForPrompt(
   if (!text || text === "[圖片]") return `[圖片：${desc}]`;
   return `${content}\n[圖片：${desc}]`;
 }
+
+/** 點開圖片「讀圖」時給模型的指示 */
+export function buildReadImagePrompt(caption?: string): string {
+  return [
+    "請看這張圖片，用一兩句客觀寫下圖片裡有什麼（主體、場景、看得到的文字），60 字內。",
+    caption?.trim() ? `傳圖的人附上的說明：「${caption.trim()}」` : "",
+    "只輸出描述本身，不要加開頭、引號或任何標籤。",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+/** 整理「讀圖」的回覆：拿掉思考、模型自己包的 <pic-note> 與引號，收成一行 */
+export function cleanImageNoteReply(reply: string): string {
+  const { content, note } = extractPicNote(
+    reply.replace(/<think(?:ing)?>[\s\S]*?<\/think(?:ing)?>/gi, ""),
+  );
+  return (note ?? content)
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/^["「『]+|["」』]+$/g, "")
+    .trim()
+    .slice(0, PIC_NOTE_MAX_LENGTH);
+}

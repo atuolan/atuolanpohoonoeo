@@ -350,6 +350,10 @@ interface MessageBubbleProps {
     | "audio";
   imageUrl?: string;
   imageCaption?: string;
+  // 模型看圖時寫的圖片備註，點開圖片時顯示；canReadImage 時可以按「讀圖」重寫
+  imageNote?: string;
+  canReadImage?: boolean;
+  imageNoteReading?: boolean;
   // AI 文生圖原始 prompt（descriptive-image 失敗時用於重新生成）
   imagePrompt?: string;
   // 音頻相關
@@ -615,6 +619,7 @@ const emit = defineEmits<{
   (e: "regenerate", id: string): void;
   (e: "regenerateVoice", id: string): void;
   (e: "regenerateImage", id: string): void;
+  (e: "readImageNote", id: string): void;
   (e: "swipe", id: string, direction: "prev" | "next"): void;
   (e: "roundSwipe", id: string, direction: "prev" | "next"): void;
   (e: "reply", id: string): void;
@@ -4885,7 +4890,11 @@ const showTextVoiceTranscript = ref(true);
     :caption="imageCaption"
     :date="formattedPhotoDate"
     :can-regenerate="canRegenerateImage"
+    :note="imageNote"
+    :can-read-image="canReadImage"
+    :reading-image="imageNoteReading"
     @regenerate="handleRegenerateImage"
+    @read-image="emit('readImageNote', id)"
     @update:visible="showPhotoPreview = $event"
   />
 
