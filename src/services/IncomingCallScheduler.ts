@@ -13,6 +13,14 @@ import type {
 } from "@/types/incomingCall";
 
 /**
+ * 聊天勿擾設定：已經知道的聊天用 Map；
+ * 或傳查詢函式，只在有來電到期時才查那個聊天（不用每次都讀全部聊天）
+ */
+export type ChatDoNotDisturbLookup =
+  | Map<string, boolean>
+  | ((chatId: string) => boolean | Promise<boolean>);
+
+/**
  * 角色資訊（用於建立待處理來電）
  */
 export interface CharacterInfo {
@@ -196,12 +204,12 @@ export class IncomingCallScheduler {
    * 返回第一個已到期的待處理來電
    *
    * @param globalDoNotDisturb - 全域勿擾模式是否開啟
-   * @param chatDoNotDisturbMap - 每個聊天的勿擾設定 Map (chatId -> doNotDisturb)
+   * @param chatDoNotDisturb - 每個聊天的勿擾設定（Map 或查詢函式）
    * @returns 已到期的待處理來電，如果沒有或勿擾模式開啟則返回 null
    */
   async checkPendingCalls(
     globalDoNotDisturb: boolean = false,
-    chatDoNotDisturbMap?: Map<string, boolean>,
+    chatDoNotDisturb?: ChatDoNotDisturbLookup,
   ): Promise<PendingCall | null> {
     // 全域勿擾模式開啟時不觸發來電
     if (globalDoNotDisturb) {
@@ -231,7 +239,6 @@ export class IncomingCallScheduler {
       }
 
       // 找出所有已到期的來電，按建立時間排序
-      // 同時過濾掉該聊天開啟勿擾模式的來電
       const overdueCalls = allPendingCalls
         .filter((call) => {
           // 已被清除的過期來電跳過
@@ -239,23 +246,24 @@ export class IncomingCallScheduler {
             return false;
           }
           // 檢查是否已到期
-          if (call.triggerTime > now) {
-            return false;
-          }
-          // 檢查該聊天是否開啟勿擾模式
-          if (chatDoNotDisturbMap?.get(call.chatId)) {
-            console.log(
-              "[IncomingCallScheduler] 聊天勿擾模式開啟，跳過來電:",
-              call.chatId,
-            );
-            return false;
-          }
-          return true;
+          return call.triggerTime <= now;
         })
         .sort((a, b) => a.createdAt - b.createdAt);
 
-      if (overdueCalls.length > 0) {
-        return overdueCalls[0];
+      // 跳過該聊天開啟勿擾模式的來電（到期了才查，平常不讀聊天）
+      for (const call of overdueCalls) {
+        const chatDnd =
+          chatDoNotDisturb instanceof Map
+            ? chatDoNotDisturb.get(call.chatId)
+            : await chatDoNotDisturb?.(call.chatId);
+        if (chatDnd) {
+          console.log(
+            "[IncomingCallScheduler] 聊天勿擾模式開啟，跳過來電:",
+            call.chatId,
+          );
+          continue;
+        }
+        return call;
       }
 
       return null;

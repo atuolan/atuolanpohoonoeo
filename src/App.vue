@@ -98,7 +98,6 @@ import { useGlobalLanguage } from "@/composables/useGlobalLanguage";
 import { db, DB_STORES } from "@/db/database";
 import {
   createChatRecord,
-  loadAllChats,
   loadChatById,
   loadChatsByCharacter,
   resolvePreferredDirectChat,
@@ -1146,23 +1145,18 @@ async function checkPendingCallsAtAppLevel() {
     return;
   }
 
-  // 獲取所有聊天的勿擾設定
-  const chatDoNotDisturbMap = new Map<string, boolean>();
-  try {
-    const allChats = await loadAllChats();
-    for (const chat of allChats) {
-      if (chat.doNotDisturb) {
-        chatDoNotDisturbMap.set(chat.id, true);
-      }
-    }
-  } catch (e) {
-    console.error("[App] 獲取聊天勿擾設定失敗:", e);
-  }
-
-  // 傳入全域勿擾模式和聊天勿擾設定
+  // 傳入全域勿擾模式；聊天勿擾等有來電到期才查那個聊天
+  // （以前每 5 秒讀全部聊天，連自訂桌布圖片一起讀，背景運行時很耗電）
   const pendingCall = await incomingCallScheduler.checkPendingCalls(
     settingsStore.doNotDisturb,
-    chatDoNotDisturbMap,
+    async (chatId) => {
+      try {
+        return Boolean((await loadChatById(chatId))?.doNotDisturb);
+      } catch (e) {
+        console.error("[App] 獲取聊天勿擾設定失敗:", e);
+        return false;
+      }
+    },
   );
   if (pendingCall) {
     console.log("[App] 發現待處理來電:", pendingCall);
