@@ -1,6 +1,11 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, ref } from "vue";
 import { useCanvasStore } from "@/stores/canvas";
+import DiaryViewModal from "@/components/modals/DiaryViewModal.vue";
+import { db, DB_STORES, type DiaryEntry } from "@/db/database";
+import { loadDiaryBook } from "@/services/diaryBook";
+import { scheduleSelfHostedAutoSync } from "@/services/selfHostedSyncState";
+import type { DiaryBook } from "@/utils/diaryStyle";
 import { useWidgetCharacter } from "@/composables/useWidgetCharacter";
 import { useCharJournal, type JournalView } from "@/composables/useCharJournal";
 import type { WidgetCustomStyle } from "@/types";
@@ -57,18 +62,47 @@ const containerStyle = computed(() => {
   return style;
 });
 
+// ===== 點組件直接打開那一頁日記（不跳去聊天或頭盔TA）=====
+const viewingIndex = ref<number | null>(null);
+const diaryBook = ref<DiaryBook | null>(null);
+const pages = computed(() => journal.value?.pages ?? []);
+const viewingPage = computed(() =>
+  viewingIndex.value === null ? null : (pages.value[viewingIndex.value] ?? null),
+);
+
+async function openDiary() {
+  const page = journal.value?.page;
+  if (!page || !characterId.value) return;
+  diaryBook.value = await loadDiaryBook(characterId.value).catch(() => null);
+  viewingIndex.value = Math.max(0, pages.value.findIndex((p) => p.id === page.id));
+}
+
+function turnPage(step: number) {
+  if (viewingIndex.value === null) return;
+  const next = viewingIndex.value + step;
+  if (next >= 0 && next < pages.value.length) viewingIndex.value = next;
+}
+
+/** 收藏只有聊天日記能存；頭盔TA 的日記不在日記表裡 */
+async function toggleFavorite() {
+  const page = viewingPage.value;
+  if (!page || journal.value?.source !== "diary") return;
+  const entry = await db.get<DiaryEntry>(DB_STORES.DIARIES, page.id);
+  if (!entry) return;
+  const isFavorite = !entry.isFavorite;
+  await db.put(DB_STORES.DIARIES, { ...entry, isFavorite, updatedAt: Date.now() });
+  scheduleSelfHostedAutoSync();
+  page.isFavorite = isFavorite;
+}
+
 function handleClick() {
   if (isEditMode.value) return;
   if (!character.value) {
     emit("navigate", { type: "chat" });
-  } else if (journal.value?.source === "diary") {
-    emit("navigate", {
-      type: "chat",
-      characterId: character.value.id,
-      chatId: chatId.value || undefined,
-    });
+  } else if (journal.value?.page) {
+    void openDiary();
   } else {
-    // 手帳來自頭盔TA，或還沒有內容：都帶去頭盔TA
+    // 只有行程、或還沒有內容：帶去頭盔TA
     emit("navigate", "peek-phone");
   }
 }
@@ -116,6 +150,21 @@ function handleClick() {
       <span class="emoji">📔</span>
       <span class="hint-text">{{ displayName }} 還沒寫手帳 · 去頭盔TA 看看</span>
     </div>
+
+    <Teleport to="body">
+      <DiaryViewModal
+        v-if="viewingPage"
+        :diary-data="viewingPage"
+        :char-name="displayName"
+        :book="diaryBook"
+        :page-index="(viewingIndex ?? 0) + 1"
+        :page-total="pages.length"
+        @close="viewingIndex = null"
+        @prev="turnPage(-1)"
+        @next="turnPage(1)"
+        @toggle-favorite="toggleFavorite"
+      />
+    </Teleport>
   </div>
 </template>
 

@@ -52,6 +52,26 @@ describe("pickJournalFromPeek", () => {
     expect(view?.schedule.map((s) => s.id)).toEqual(["s3", "s2"]);
   });
 
+  it("點組件要打開的那一頁：心情換成文字、配貼紙，只有這一篇", () => {
+    const view = pickJournalFromPeek(
+      peek({ diary: [{ id: "d2", date: "2026-10-10", mood: "sad", content: "下雨", weather: "雨" }] }),
+    );
+    expect(view?.page).toMatchObject({
+      id: "peek-d2",
+      content: "下雨",
+      page: { weather: "雨", mood: "難過", stickers: ["raindrop"] },
+    });
+    expect(view?.pages).toHaveLength(1);
+  });
+
+  it("只有行程沒有日記時沒有可打開的頁", () => {
+    const view = pickJournalFromPeek(
+      peek({ schedule: [{ id: "s1", time: "09:00", title: "早餐", done: false }] }),
+    );
+    expect(view?.page).toBeNull();
+    expect(view?.pages).toEqual([]);
+  });
+
   it("沒有日記也沒有行程時回傳 null，讓呼叫端退回聊天日記", () => {
     expect(pickJournalFromPeek(peek({}))).toBeNull();
     expect(pickJournalFromPeek(null)).toBeNull();
@@ -73,6 +93,14 @@ describe("pickLatestChatDiary", () => {
       content: "新 今天很好",
       schedule: [],
     });
+  });
+
+  it("點組件打開最新一篇，能往前翻該角色寫好的日記（舊到新）", () => {
+    const view = pickLatestChatDiary(diaries, "c1");
+    expect(view?.pages.map((p) => p.id)).toEqual(["a", "b"]);
+    expect(view?.page?.id).toBe("b");
+    // 打開的頁保留原文，記號交給日記本畫面處理
+    expect(view?.page?.content).toBe("# 新\n\n今天*很*好");
   });
 
   it("該角色沒有日記時回傳 null", () => {
