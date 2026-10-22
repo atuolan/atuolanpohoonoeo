@@ -10,6 +10,12 @@ export type BgGenerationErrorHandler = (
 ) => void | Promise<void>;
 
 type ClientFactory = () => SelfHostedSyncClient | Promise<SelfHostedSyncClient>;
+/** 包住每次呼叫，access token 過期時刷新後重試（每次重試都要重新建 client 才會拿到新 token） */
+type ActionRunner = <T>(action: () => Promise<T>) => Promise<T>;
+
+/** 伺服器重啟、或完成超過保留時間（預設一小時），任務就不在了 */
+const TASK_GONE_MESSAGE =
+  "HF 後台生成任務已不存在（伺服器可能重啟過，或完成超過一小時沒取回），請重新生成";
 
 interface WatchedTaskRecord {
   taskId: string;
@@ -43,8 +49,9 @@ function writeJson(key: string, value: unknown): void {
   }
 }
 
-class BgGenerationPoller {
+export class BgGenerationPoller {
   private clientFactory: ClientFactory | null = null;
+  private runAction: ActionRunner | null = null;
   private readonly watchedTasks = new Map<string, WatchedTaskRecord>();
   private readonly seenTaskIds = new Set<string>();
   private readonly completionHandlers = new Set<BgGenerationCompletionHandler>();
@@ -65,15 +72,21 @@ class BgGenerationPoller {
     }
   }
 
-  configure(clientFactory: ClientFactory): void {
+  configure(clientFactory: ClientFactory, runAction?: ActionRunner): void {
     this.clientFactory = clientFactory;
+    this.runAction = runAction ?? null;
     this.startLifecycleListeners();
     if (this.watchedTasks.size > 0) this.start();
   }
 
+  /** 聊天頁打開時註冊；沒有人接的時候不輪詢，任務留著等下次打開聊天頁再寫入 */
   onCompleted(handler: BgGenerationCompletionHandler): () => void {
     this.completionHandlers.add(handler);
-    return () => this.completionHandlers.delete(handler);
+    if (this.watchedTasks.size > 0) this.start();
+    return () => {
+      this.completionHandlers.delete(handler);
+      if (this.completionHandlers.size === 0) this.stop();
+    };
   }
 
   onError(handler: BgGenerationErrorHandler): () => void {
@@ -122,8 +135,9 @@ class BgGenerationPoller {
   }
 
   async recoverPendingForChat(chatId: string, lastMessageHash?: string): Promise<BgGenerationTaskView | null> {
-    const client = await this.getClient();
-    const result = await client.findPendingGenerationByChat(chatId, lastMessageHash);
+    const result = await this.callClient((client) =>
+      client.findPendingGenerationByChat(chatId, lastMessageHash),
+    );
     const task = result.task;
     if (!task || this.seenTaskIds.has(task.taskId)) return null;
     if (["pending", "running", "done", "error"].includes(task.status)) {
@@ -136,11 +150,14 @@ class BgGenerationPoller {
     return task;
   }
 
-  async recoverActiveTasks(): Promise<void> {
-    const client = await this.getClient();
-    const result = await client.listGenerationTasks(["pending", "running", "done", "error"]);
+  /** 傳入自己的 deviceId：只接這台裝置開的任務，別台的由它自己接，避免同一則回覆寫兩次 */
+  async recoverActiveTasks(deviceId?: string): Promise<void> {
+    const result = await this.callClient((client) =>
+      client.listGenerationTasks(["pending", "running", "done", "error"]),
+    );
     for (const task of result.tasks || []) {
       if (this.seenTaskIds.has(task.taskId)) continue;
+      if (deviceId && task.deviceId && task.deviceId !== deviceId) continue;
       this.watchTask({
         taskId: task.taskId,
         chatId: task.chatId,
@@ -150,7 +167,7 @@ class BgGenerationPoller {
   }
 
   start(): void {
-    if (this.timer !== null || typeof window === "undefined") return;
+    if (this.timer !== null || typeof window === "undefined" || this.completionHandlers.size === 0) return;
     this.timer = window.setInterval(() => void this.pollOnce(), this.pollIntervalMs);
   }
 
@@ -161,10 +178,10 @@ class BgGenerationPoller {
   }
 
   async pollOnce(): Promise<void> {
-    if (this.polling || this.watchedTasks.size === 0) return;
+    // 沒有聊天頁在接（completionHandlers 空）就不查：查到完成也寫不進聊天，等打開聊天頁再說
+    if (this.polling || this.watchedTasks.size === 0 || this.completionHandlers.size === 0) return;
     this.polling = true;
     try {
-      const client = await this.getClient();
       const watched = Array.from(this.watchedTasks.values());
       for (const record of watched) {
         if (this.seenTaskIds.has(record.taskId)) {
@@ -173,7 +190,7 @@ class BgGenerationPoller {
         }
 
         try {
-          const task = await client.getGenerationStatus(record.taskId);
+          const task = await this.callClient((client) => client.getGenerationStatus(record.taskId));
           if (task.status === "done") {
             await this.emitCompleted(task);
           } else if (task.status === "error" || task.status === "canceled") {
@@ -187,8 +204,17 @@ class BgGenerationPoller {
               chatId: record.chatId,
               error: message,
             });
-            this.markSeen(record.taskId);
-            this.unwatchTask(record.taskId);
+            // 不默默丟掉：讓聊天頁顯示錯誤，使用者才知道要重新生成
+            await this.emitError({
+              taskId: record.taskId,
+              chatId: record.chatId,
+              taskType: "chat",
+              status: "error",
+              content: "",
+              error: TASK_GONE_MESSAGE,
+              lastMessageHash: record.lastMessageHash,
+              createdAt: record.startedAt,
+            });
             continue;
           }
           throw error;
@@ -203,7 +229,8 @@ class BgGenerationPoller {
   }
 
   private async emitCompleted(task: BgGenerationTaskView): Promise<void> {
-    if (this.seenTaskIds.has(task.taskId)) return;
+    // 沒有人接就不要標成已處理，不然結果會被丟掉
+    if (this.seenTaskIds.has(task.taskId) || this.completionHandlers.size === 0) return;
     for (const handler of Array.from(this.completionHandlers)) {
       await handler(task);
     }
@@ -212,7 +239,7 @@ class BgGenerationPoller {
   }
 
   private async emitError(task: BgGenerationTaskView): Promise<void> {
-    if (this.seenTaskIds.has(task.taskId)) return;
+    if (this.seenTaskIds.has(task.taskId) || this.errorHandlers.size === 0) return;
     for (const handler of Array.from(this.errorHandlers)) {
       await handler(task);
     }
@@ -225,6 +252,11 @@ class BgGenerationPoller {
       throw new Error("HF 後台生成尚未設定同步伺服器 client");
     }
     return await this.clientFactory();
+  }
+
+  private async callClient<T>(call: (client: SelfHostedSyncClient) => Promise<T>): Promise<T> {
+    const action = async () => call(await this.getClient());
+    return this.runAction ? this.runAction(action) : action();
   }
 
   private persistWatchedTasks(): void {

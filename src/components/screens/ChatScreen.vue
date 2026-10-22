@@ -53,7 +53,7 @@ import {
 } from "@/composables/useChatGeneration";
 import { bgGenerationPoller } from "@/services/BgGenerationPoller";
 import { useSelfHostedSyncStore } from "@/stores/selfHostedSync";
-import type { BgGenerationTaskView } from "@/types/bgGeneration";
+import type { BgGenerationTaskView, StartGenerationRequest } from "@/types/bgGeneration";
 import { useChatRegeneration } from "@/composables/useChatRegeneration";
 import { useChatAppearance } from "@/composables/useChatAppearance";
 import { useChatAudioRecording } from "@/composables/useChatAudioRecording";
@@ -5817,7 +5817,7 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
       } catch (error) {
         console.warn("[ChatScreen] 取得雲端推送 userId 失敗，HF 後台生成將不發送離線推送", error);
       }
-      const remoteResult = await selfHostedSyncStore.createClient().startRemoteGeneration({
+      const remoteRequest: StartGenerationRequest = {
         deviceId,
         chatId: currentChatId.value,
         taskType: "chat",
@@ -5831,7 +5831,11 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
         cloudPushCharacterName:
           currentCharacter.value?.data?.name || props.characterName || "角色",
         cloudPushCharacterId: props.characterId || currentCharacter.value?.id,
-      });
+      };
+      // access token 一小時就過期：過期時先刷新再送，不然 App 開久了會 401
+      const remoteResult = await selfHostedSyncStore.runSyncActionWithRetry(() =>
+        selfHostedSyncStore.createClient().startRemoteGeneration(remoteRequest),
+      );
 
       remoteGenerationStarted = true;
       markRemoteChatGenerationTask(remoteResult.taskId, lastMessageHash);
@@ -7250,9 +7254,9 @@ function stopAIGeneration() {
   pendingToolConfirmation.value = null;
   const task = getChatGenerationTask();
   if (task?.isRemote && task.remoteTaskId) {
+    const remoteTaskId = task.remoteTaskId;
     selfHostedSyncStore
-      .createClient()
-      .abortGenerationTask(task.remoteTaskId)
+      .runSyncActionWithRetry(() => selfHostedSyncStore.createClient().abortGenerationTask(remoteTaskId))
       .catch((error) => console.warn("[ChatScreen] 中止 HF 後台生成失敗", error));
     bgGenerationPoller.unwatchTask(task.remoteTaskId);
   }
@@ -9809,7 +9813,10 @@ const cleanupBgGenerationPollerHandlers: Array<() => void> = [];
 
 // 檢查待處理來電
 onMounted(async () => {
-  bgGenerationPoller.configure(() => selfHostedSyncStore.createClient());
+  bgGenerationPoller.configure(
+    () => selfHostedSyncStore.createClient(),
+    (action) => selfHostedSyncStore.runSyncActionWithRetry(action),
+  );
   cleanupBgGenerationPollerHandlers.push(
     bgGenerationPoller.onCompleted((task) => landRemoteGenerationTask(task)),
     bgGenerationPoller.onError((task) => handleRemoteGenerationError(task)),
@@ -9823,9 +9830,13 @@ onMounted(async () => {
 
   await initializeChatScreen();
 
-  bgGenerationPoller
-    .recoverActiveTasks()
-    .catch((error) => console.warn("[ChatScreen] 恢復 HF 後台生成任務失敗", error));
+  // 沒登入同步帳號就不用問伺服器；只接這台裝置開的任務
+  if (selfHostedSyncStore.isAuthenticated) {
+    selfHostedSyncStore
+      .ensureDeviceId()
+      .then((deviceId) => bgGenerationPoller.recoverActiveTasks(deviceId))
+      .catch((error) => console.warn("[ChatScreen] 恢復 HF 後台生成任務失敗", error));
+  }
 });
 
 onUnmounted(() => {
