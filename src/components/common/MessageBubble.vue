@@ -2163,6 +2163,7 @@ const showSideTime = computed(
     props.showTime &&
     props.layout !== "classic" &&
     !!props.timestamp &&
+    !props.isStreaming &&
     !isHtmlOnlyBubble.value &&
     !props.isRecall &&
     !props.isGroupAction,
@@ -5151,6 +5152,14 @@ const showTextVoiceTranscript = ref(true);
   // 固定寬度的卡片比訊息欄寬時會撐出去蓋住時間：訊息欄至少跟卡片一樣寬，
   // 但要留下頭像和時間的位置；螢幕太窄時卡片跟著縮
   &:has(> .message-side-time) > .message-content {
+    // 回覆引用不撐寬訊息欄，寬度跟著泡泡，時間才會貼著泡泡；
+    // 泡泡太短時引用至少 120px，多出來的往外側（遠離頭像）凸出去
+    > .reply-quote-floating {
+      contain: inline-size;
+      width: max(100%, 120px);
+      max-width: none;
+    }
+
     > .weather-share-card,
     > .friend-request-card,
     > .location-bubble-card {
