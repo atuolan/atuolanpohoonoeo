@@ -12,13 +12,30 @@ import { watch } from "vue";
 //    - 使用者在音樂欄按暫停：回到 App 或按播放之前都不接
 //    - 被打斷（來電、別的 App 放音樂）：等一下再接；剛接回又被停就加倍等待，最長 5 分鐘
 //    - 畫面在前台時最多搶回兩次，回到 App 才重新計算
-// 5. 回到前台、頁面從凍結恢復：重新確認並接回
+// 5. Worker 心跳（每 30 秒）：背景時主程式的計時器會被系統放慢，Worker 的比較準，
+//    心跳叫醒主程式做一次跟輪詢一樣的檢查；只傳訊息、不連網路（以前每次心跳都連網路，耗電發熱）
+// 6. 回到前台、頁面從凍結恢復：重新確認並接回
 // 所有聲音都等使用者第一次觸摸/點擊後才啟動，避免被瀏覽器自動播放策略攔截
 
 /** 5 分鐘單聲道靜音，循環播放（Android 要超過 5 秒才會出現在音樂欄、保活才有效） */
 const KEEPALIVE_AUDIO_URL = `${import.meta.env.BASE_URL}keepalive-5min.mp3`;
 
 const POLL_INTERVAL_MS = 10_000;
+const HEARTBEAT_INTERVAL_MS = 30_000;
+/** Worker 掛掉後隔多久重開 */
+const HEARTBEAT_RESTART_MS = 1_000;
+
+/** Worker 只負責定時傳 ping 回來，不做別的事 */
+export const HEARTBEAT_WORKER_CODE = `let t = null;
+self.onmessage = (e) => {
+  if (e.data && e.data.type === "start") {
+    clearInterval(t);
+    t = setInterval(() => self.postMessage("ping"), e.data.intervalMs);
+  } else if (e.data && e.data.type === "stop") {
+    clearInterval(t);
+    t = null;
+  }
+};`;
 /** 被打斷後第一次等多久再接回 */
 const BASE_RETRY_MS = 10_000;
 const MAX_RETRY_MS = 5 * 60_000;
@@ -42,6 +59,9 @@ let gainNode: GainNode | null = null;
 let silentAudioEl: HTMLAudioElement | null = null;
 let webLockAbortController: AbortController | null = null;
 let pollTimer: ReturnType<typeof setInterval> | null = null;
+let heartbeatWorker: Worker | null = null;
+let heartbeatWorkerUrl: string | null = null;
+let heartbeatRestartTimer: ReturnType<typeof setTimeout> | null = null;
 /** App 裡回到前景的原生事件（WKWebView 切回來不一定有 visibilitychange） */
 let nativeResumeListener: { remove: () => Promise<void> } | null = null;
 let isActive = false;
@@ -358,6 +378,44 @@ function stopPoll() {
   }
 }
 
+// ---------- Worker 心跳 ----------
+function startHeartbeat() {
+  if (heartbeatWorker || typeof Worker === "undefined") return;
+  try {
+    heartbeatWorkerUrl = URL.createObjectURL(
+      new Blob([HEARTBEAT_WORKER_CODE], { type: "application/javascript" }),
+    );
+    const worker = new Worker(heartbeatWorkerUrl);
+    worker.onmessage = () => tryResume("poll");
+    worker.onerror = () => {
+      console.warn("[KeepAlive] 心跳 Worker 終止，重開中");
+      stopHeartbeat();
+      if (!isActive || heartbeatRestartTimer) return;
+      heartbeatRestartTimer = setTimeout(() => {
+        heartbeatRestartTimer = null;
+        if (isActive) startHeartbeat();
+      }, HEARTBEAT_RESTART_MS);
+    };
+    worker.postMessage({ type: "start", intervalMs: HEARTBEAT_INTERVAL_MS });
+    heartbeatWorker = worker;
+  } catch (e) {
+    console.warn("[KeepAlive] 心跳 Worker 啟動失敗:", e);
+    stopHeartbeat();
+  }
+}
+
+function stopHeartbeat() {
+  if (heartbeatWorker) {
+    heartbeatWorker.postMessage({ type: "stop" });
+    heartbeatWorker.terminate();
+    heartbeatWorker = null;
+  }
+  if (heartbeatWorkerUrl) {
+    URL.revokeObjectURL(heartbeatWorkerUrl);
+    heartbeatWorkerUrl = null;
+  }
+}
+
 // ---------- 用戶互動偵測 ----------
 function onUserInteraction() {
   userInteracted = true;
@@ -399,6 +457,7 @@ function handleReturnToApp() {
   pausedByUser = false;
   resetRetryState();
   startPoll();
+  startHeartbeat();
   tryResume("return");
 }
 
@@ -430,6 +489,7 @@ function handlePageResume() {
   // 頁面從凍結恢復（Page Lifecycle resume 事件）
   if (!isActive) return;
   startPoll();
+  startHeartbeat();
   tryResume("poll");
 }
 
@@ -442,6 +502,7 @@ export function startKeepAlive() {
 
   acquireWebLock();
   startPoll();
+  startHeartbeat();
   if (userInteracted) {
     tryResume("user");
   } else {
@@ -460,6 +521,11 @@ export function stopKeepAlive() {
   isActive = false;
 
   stopPoll();
+  stopHeartbeat();
+  if (heartbeatRestartTimer) {
+    clearTimeout(heartbeatRestartTimer);
+    heartbeatRestartTimer = null;
+  }
   releaseWebLock();
   stopSilentOscillator();
   stopSilentAudio();
