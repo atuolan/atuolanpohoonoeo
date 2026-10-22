@@ -576,6 +576,125 @@ describe("背景運行模式：回到 App", () => {
   });
 });
 
+describe("背景運行模式：僅生成時保活", () => {
+  async function setupGenerationMode(idleStopMs = 20 * SEC) {
+    await setup();
+    keepAlive.setKeepAliveOptions({ trigger: "generation", idleStopMs, pauseForcesPlay: false });
+    const audio = await startAndTouch();
+    return audio;
+  }
+
+  function aliveWorkers() {
+    return FakeWorker.instances.filter((w) => !w.terminated);
+  }
+
+  it("沒在生成時不播、音樂欄是空的、不跑心跳", async () => {
+    const audio = await setupGenerationMode();
+    await vi.advanceTimersByTimeAsync(5 * MIN);
+
+    expect(audio?.paused ?? true).toBe(true);
+    expect(nav.mediaSession.metadata).toBeNull();
+    expect(aliveWorkers()).toHaveLength(0);
+  });
+
+  it("開始生成就播，生成結束後等設定的秒數才停", async () => {
+    await setupGenerationMode();
+    keepAlive.setGenerating(true);
+    await vi.advanceTimersByTimeAsync(0);
+    const audio = FakeAudio.instances[0];
+    expect(audio.paused).toBe(false);
+    expect(nav.mediaSession.metadata).not.toBeNull();
+    expect(aliveWorkers()).toHaveLength(1);
+
+    keepAlive.setGenerating(false);
+    await vi.advanceTimersByTimeAsync(15 * SEC);
+    expect(audio.paused).toBe(false);
+
+    await vi.advanceTimersByTimeAsync(6 * SEC);
+    expect(audio.paused).toBe(true);
+    expect(nav.mediaSession.metadata).toBeNull();
+    expect(aliveWorkers()).toHaveLength(0);
+  });
+
+  it("停止秒數可以改成 10 秒", async () => {
+    await setupGenerationMode(10 * SEC);
+    keepAlive.setGenerating(true);
+    keepAlive.setGenerating(false);
+    await vi.advanceTimersByTimeAsync(11 * SEC);
+    expect(FakeAudio.instances[0].paused).toBe(true);
+  });
+
+  it("結束後又開始生成（重骰），不會停", async () => {
+    await setupGenerationMode();
+    keepAlive.setGenerating(true);
+    keepAlive.setGenerating(false);
+    await vi.advanceTimersByTimeAsync(10 * SEC);
+    keepAlive.setGenerating(true);
+    await vi.advanceTimersByTimeAsync(2 * MIN);
+    expect(FakeAudio.instances[0].paused).toBe(false);
+  });
+
+  it("停住時被別的 App 打斷也不搶，下一次生成自己接回", async () => {
+    await setupGenerationMode();
+    keepAlive.setGenerating(true);
+    await vi.advanceTimersByTimeAsync(0);
+    const audio = FakeAudio.instances[0];
+
+    // 生成中被影片打斷，生成結束、保活停住
+    audio.pause();
+    keepAlive.setGenerating(false);
+    await vi.advanceTimersByTimeAsync(5 * MIN);
+    expect(audio.paused).toBe(true);
+
+    keepAlive.setGenerating(true);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(audio.paused).toBe(false);
+  });
+
+  it("改回一直保活就馬上開始播", async () => {
+    await setupGenerationMode();
+    keepAlive.setKeepAliveOptions({ trigger: "always", idleStopMs: 20 * SEC, pauseForcesPlay: false });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(FakeAudio.instances.some((a) => !a.paused)).toBe(true);
+  });
+
+  it("改成僅生成時，沒在生成的話等秒數到了就停", async () => {
+    await setup();
+    const audio = await startAndTouch();
+    keepAlive.setKeepAliveOptions({ trigger: "generation", idleStopMs: 10 * SEC, pauseForcesPlay: false });
+    await vi.advanceTimersByTimeAsync(11 * SEC);
+    expect(audio.paused).toBe(true);
+  });
+});
+
+describe("背景運行模式：暫停鍵強制繼續播", () => {
+  it("開了以後，音樂欄按暫停還是繼續播", async () => {
+    await setup();
+    keepAlive.setKeepAliveOptions({ trigger: "always", idleStopMs: 20 * SEC, pauseForcesPlay: true });
+    const audio = await startAndTouch();
+
+    // 系統先停了元素、再通知暫停鍵
+    audio.pause();
+    nav.mediaSession.handlers.pause?.();
+    await vi.advanceTimersByTimeAsync(SEC);
+
+    expect(audio.paused).toBe(false);
+    expect(nav.mediaSession.playbackState).toBe("playing");
+    await vi.advanceTimersByTimeAsync(5 * MIN);
+    expect(audio.paused).toBe(false);
+  });
+
+  it("沒開的話照舊真的暫停", async () => {
+    await setup();
+    keepAlive.setKeepAliveOptions({ trigger: "always", idleStopMs: 20 * SEC, pauseForcesPlay: false });
+    const audio = await startAndTouch();
+
+    nav.mediaSession.handlers.pause?.();
+    await vi.advanceTimersByTimeAsync(MIN);
+    expect(audio.paused).toBe(true);
+  });
+});
+
 describe("背景運行模式：關閉", () => {
   it("關掉後聲音、音樂欄、Web Lock、輪詢都停掉", async () => {
     await setup(ANDROID_UA);
