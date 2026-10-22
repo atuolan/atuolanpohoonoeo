@@ -25,6 +25,8 @@ import { deleteVectorEmbedding, markVectorStale } from "@/db/vectorStore";
 import { extractSummaryKeywords } from "@/utils/summaryKeywordExtractor";
 import { isGenerationErrorMessage, sliceMessagesByTurns } from "@/utils/chatScreenHelpers";
 import { resolveStoryTime } from "@/utils/fakeTime";
+import { buildDiaryBookPrompt, parseDiaryOutput, type DiaryBook, type DiaryPage } from "@/utils/diaryStyle";
+import { loadDiaryBook, saveDiaryBook } from "@/services/diaryBook";
 import { isActiveSummary, summaryTimelineKey } from "@/utils/summarySelection";
 
 /** 總結/日記要用的時間脈絡，跟著聊天的「感知現實時間」與時間模式走 */
@@ -179,6 +181,7 @@ type DiaryItem = {
   messageCount: number;
   isFavorite?: boolean;
   status: "writing" | "ready";
+  page?: DiaryPage;
 };
 
 interface StreamingWindow {
@@ -241,6 +244,8 @@ export function useChatSummaryDiary(deps: {
   getChatNow?: () => Date;
   /** 舊訊息（沒有 storyTime）換算劇情時間的偏移；未提供時用「聊天時間 - 現實時間」 */
   getLegacyOffsetMs?: () => number;
+  /** 角色這篇第一次挑好日記本 */
+  onDiaryBookSaved?: (book: DiaryBook) => void;
 }) {
   const aiGenerationStore = useAIGenerationStore();
   const settingsStore = useSettingsStore();
@@ -843,6 +848,10 @@ ${sourceText}
         char.data.name,
       );
 
+      // 角色的日記本：還沒挑就請他這篇順便挑（群聊共同日記不挑）
+      const diaryBook = isGroupSummaryMode() ? null : await loadDiaryBook(char.id).catch(() => null);
+      const diaryBookPrompt = buildDiaryBookPrompt(diaryBook);
+
       const diaryPromptDefs = promptManagerStore.diaryPrompts;
       const diaryPromptOrder = promptManagerStore.diaryPromptOrder;
 
@@ -864,6 +873,7 @@ ${sourceText}
           if (!promptDef) continue;
 
           let content = promptDef.content
+            .replace(/\{\{diaryBook\}\}/g, diaryBookPrompt)
             .replace(/\{\{char\}\}/g, char.data.name)
             .replace(/\{\{user\}\}/g, deps.effectivePersona.value?.name || "User")
             .replace(/\{\{charDescription\}\}/g, char.data.description || "")
@@ -959,9 +969,19 @@ ${recentMessagesText}
         aiGenerationStore.updateContent(chatId, diaryContent, "diary");
       }
 
+      // 拆出頁首與日記本標籤；第一次挑的日記本存起來
+      const parsed = parseDiaryOutput(stripOutputTags(diaryContent));
+      if (parsed.book && !diaryBook && !isGroupSummaryMode()) {
+        await saveDiaryBook(char.id, parsed.book).catch((e) =>
+          console.warn("📔 日記本保存失敗:", e),
+        );
+        deps.onDiaryBookSaved?.(parsed.book);
+      }
+
       const newDiary: DiaryItem = {
         id: `diary_${Date.now()}`,
-        content: stripOutputTags(diaryContent),
+        content: parsed.content,
+        page: parsed.page,
         summary: "",
         createdAt: Date.now(),
         messageCount: messagesToUse.length,

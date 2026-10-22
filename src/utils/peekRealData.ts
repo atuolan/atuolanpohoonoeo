@@ -16,6 +16,7 @@ import type {
 } from "@/types/peekPhone";
 import { summarizeForwardContent } from "@/utils/chatForward";
 import { toDateString } from "@/utils/charPlanner";
+import { stripDiaryMarkup } from "@/utils/diaryStyle";
 
 export interface PeekRealData {
   /** 跟使用者那串的真訊息（角色的角度：角色傳的是 isSelf），最近的在後面 */
@@ -253,7 +254,7 @@ function buildDiary(diaries: DiaryEntry[]): PeekDiaryEntry[] {
       id: `real-${d.id}`,
       date: toDateString(new Date(d.createdAt)),
       mood: "neutral" as const,
-      content: d.content.replace(/^#+\s*/gm, "").replace(/[*_`>]/g, "").trim(),
+      content: stripDiaryMarkup(d.content).replace(/^#+\s*/gm, "").replace(/[*_`>]/g, "").trim(),
     }));
 }
 

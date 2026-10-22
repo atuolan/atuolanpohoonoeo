@@ -11,6 +11,7 @@ import type {
   QZonePost,
   ThemeConfig,
 } from "@/types";
+import type { DiaryPage } from "@/utils/diaryStyle";
 import type { AuthState } from "@/types/auth";
 import type { BookReadingProgress, StoredBook } from "@/types/book";
 import type { CalendarEvent } from "@/types/calendar";
@@ -69,6 +70,8 @@ export interface DiaryEntry {
   messageCount: number;
   isFavorite?: boolean;
   status: "writing" | "ready";
+  /** 頁首（天氣、心情）與貼紙；舊日記沒有 */
+  page?: DiaryPage;
 }
 
 // ============================================================

@@ -21,6 +21,9 @@ import AISummaryPanel from "@/components/modals/AISummaryPanel.vue";
 import AffinityPanel from "@/components/modals/AffinityPanel.vue";
 import ChatInfoModal from "@/components/modals/ChatInfoModal.vue";
 import DiaryViewModal from "@/components/modals/DiaryViewModal.vue";
+import DiarySticker from "@/components/diary/DiarySticker.vue";
+import type { DiaryBook, DiaryPage, DiaryStickerId } from "@/utils/diaryStyle";
+import { loadDiaryBook } from "@/services/diaryBook";
 import GroupMemberVoices from "@/components/modals/GroupMemberVoices.vue";
 import CharPlannerSheet from "@/components/modals/CharPlannerSheet.vue";
 import FaceToFacePanel from "@/components/modals/f2f-panel/FaceToFacePanel.vue";
@@ -1634,11 +1637,33 @@ const chatDiaries = ref<
     messageCount: number;
     isFavorite?: boolean;
     status: "writing" | "ready";
+    page?: DiaryPage;
   }>
 >([]);
 
 // ===== 日記查看 =====
 const viewingDiary = ref<(typeof chatDiaries.value)[number] | null>(null);
+/** 角色挑的日記本；還沒挑是 null（用預設樣式） */
+const diaryBook = ref<DiaryBook | null>(null);
+/** 能翻頁的日記：寫好的，舊到新 */
+const readyDiaries = computed(() =>
+  chatDiaries.value
+    .filter((d) => d.status === "ready")
+    .sort((a, b) => a.createdAt - b.createdAt),
+);
+const viewingDiaryIndex = computed(() =>
+  viewingDiary.value ? readyDiaries.value.findIndex((d) => d.id === viewingDiary.value!.id) : -1,
+);
+
+function turnDiaryPage(step: number) {
+  const next = readyDiaries.value[viewingDiaryIndex.value + step];
+  if (next) viewingDiary.value = next;
+}
+
+/** 聊天提示的圖示：這篇日記的第一張貼紙 */
+function getDiaryNoticeSticker(diaryId: string): DiaryStickerId | undefined {
+  return chatDiaries.value.find((d) => d.id === diaryId)?.page?.stickers[0];
+}
 
 function handleViewDiary(diary: any) {
   viewingDiary.value = diary;
@@ -3453,6 +3478,9 @@ const {
   getRealTimeAwareness: () => chatEnableRealTimeAwareness.value,
   getChatNow: fakeTime.getChatNow,
   getLegacyOffsetMs: fakeTime.getLegacyOffsetMs,
+  onDiaryBookSaved: (book) => {
+    diaryBook.value = book;
+  },
 });
 
 // 是否有 AI 訊息（用於顯示重新生成按鈕）
@@ -8848,6 +8876,7 @@ async function loadSummariesAndDiaries() {
   chatDiaries.value = [];
   lastSummaryTime.value = 0;
   lastDiaryTime.value = 0;
+  diaryBook.value = null;
 
   try {
     // 載入總結 — 同時按 chatId 和 characterId 過濾
@@ -8905,6 +8934,7 @@ async function loadSummariesAndDiaries() {
       messageCount: number;
       isFavorite?: boolean;
       status: "writing" | "ready";
+      page?: DiaryPage;
     }>(DB_STORES.DIARIES);
 
     chatDiaries.value = allDiaries
@@ -8924,7 +8954,9 @@ async function loadSummariesAndDiaries() {
         messageCount: d.messageCount,
         isFavorite: d.isFavorite,
         status: d.status,
+        page: d.page,
       }));
+    diaryBook.value = charId ? await loadDiaryBook(charId).catch(() => null) : null;
 
     // 初始化上次總結/日記時間（用於觸發檢查）
     lastSummaryTime.value = resolveLastSummaryTime(chatSummaries.value);
@@ -10547,7 +10579,13 @@ useChatCleanup({
             "
             @contextmenu.prevent="handleMessageDelete(message.id)"
           >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="diary-notice-icon">
+            <DiarySticker
+              v-if="getDiaryNoticeSticker(message.diaryNoticeId)"
+              :id="getDiaryNoticeSticker(message.diaryNoticeId)!"
+              :size="20"
+              class="diary-notice-sticker"
+            />
+            <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="diary-notice-icon">
               <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20" />
             </svg>
             <span class="system-notification-text">{{ message.content }}</span>
@@ -11050,6 +11088,11 @@ useChatCleanup({
         :diary-data="viewingDiary"
         :char-name="characterName"
         :user-name="effectivePersona?.name || 'User'"
+        :book="isGroupChat ? null : diaryBook"
+        :page-index="viewingDiaryIndex >= 0 ? viewingDiaryIndex + 1 : undefined"
+        :page-total="viewingDiaryIndex >= 0 ? readyDiaries.length : undefined"
+        @prev="turnDiaryPage(-1)"
+        @next="turnDiaryPage(1)"
         @close="viewingDiary = null"
         @toggle-favorite="
           () => {
@@ -14167,6 +14210,11 @@ useChatCleanup({
   align-items: center;
   gap: 4px;
   cursor: pointer;
+}
+
+.diary-notice-sticker {
+  flex-shrink: 0;
+  transform: rotate(-8deg);
 }
 
 .diary-notice-icon {

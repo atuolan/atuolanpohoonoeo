@@ -1163,11 +1163,7 @@
                 class="diary-preview"
                 @click="viewDiary(diary)"
               >
-                {{
-                  diary.content.length > 100
-                    ? diary.content.substring(0, 100) + "..."
-                    : diary.content
-                }}
+                {{ diaryPreview(diary.content) }}
               </div>
               <div v-else class="diary-writing-hint">
                 <div class="loading-dots">
@@ -1506,6 +1502,7 @@
 
 <script setup lang="ts">
 import { db, DB_STORES } from "@/db/database";
+import { stripDiaryMarkup } from "@/utils/diaryStyle";
 import {
     createDefaultSummarySettings,
     type SummarySettings,
@@ -1607,6 +1604,12 @@ const emit = defineEmits<{
   "delete-selected": [ids: string[]];
   "refresh-summaries": [];
 }>();
+
+/** 列表預覽：拿掉劃掉、螢光、頁邊記號，取前 100 字 */
+function diaryPreview(content: string): string {
+  const text = stripDiaryMarkup(content);
+  return text.length > 100 ? text.substring(0, 100) + "..." : text;
+}
 
 const activeTab = ref<"history" | "settings" | "events" | "diary" | "batch">("history");
 const settingsSubTab = ref<'trigger' | 'read' | 'vector' | 'batch'>('trigger');

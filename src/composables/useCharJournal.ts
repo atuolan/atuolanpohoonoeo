@@ -7,6 +7,7 @@
 import { ref, watch, type Ref } from "vue";
 import dayjs from "dayjs";
 import { db, DB_STORES, type DiaryEntry } from "@/db/database";
+import { stripDiaryMarkup } from "@/utils/diaryStyle";
 import { usePeekPhoneStore } from "@/stores/peekPhone";
 import type {
   PeekDiaryEntry,
@@ -70,7 +71,7 @@ export function pickLatestChatDiary(
     source: "diary",
     dateLabel: formatJournalDate(latest.createdAt),
     // 日記常有 Markdown 標題與多段落，卡片只取純文字
-    content: latest.content.replace(/[#*_>`]/g, "").replace(/\s+/g, " ").trim(),
+    content: stripDiaryMarkup(latest.content).replace(/[#*_>`]/g, "").replace(/\s+/g, " ").trim(),
     schedule: [],
   };
 }
