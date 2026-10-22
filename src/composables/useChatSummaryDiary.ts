@@ -507,6 +507,27 @@ ${sourceText}
     console.log("[SummaryDiary] 日記已保存:", diary.id);
   }
 
+  /**
+   * 日記寫好後在聊天裡留一行提示，點了直接打開那篇（原本只收在頭像裡，很多人找不到）。
+   * 不送進提示詞：日記是角色的私人視角。正在串流時插在回覆前面，免得夾在同一輪的泡泡中間。
+   */
+  function leaveDiaryNotice(chatId: string, diaryId: string, charName: string) {
+    if (deps.currentChatId.value !== chatId) return;
+    const notice: Message = {
+      id: `msg_diary_${diaryId}`,
+      role: "system",
+      content: isGroupSummaryMode() ? "群裡寫了一篇共同日記" : `${charName} 寫了一篇日記`,
+      timestamp: Date.now(),
+      isSystemNotification: true,
+      diaryNoticeId: diaryId,
+    };
+    const list = deps.messages.value;
+    const streamingIndex = list.findIndex((m) => m.isStreaming);
+    if (streamingIndex >= 0) list.splice(streamingIndex, 0, notice);
+    else list.push(notice);
+    deps.saveChat();
+  }
+
   async function deleteDiaryFromDB(id: string) {
     const existing = await db.get(DB_STORES.DIARIES, id);
     if (!existing) {
@@ -950,6 +971,7 @@ ${recentMessagesText}
 
       deps.chatDiaries.value.push(newDiary);
       await saveDiary(newDiary);
+      leaveDiaryNotice(chatId, newDiary.id, char.nickname || char.data?.name || "角色");
 
       // 日記不參與向量化（日記是角色私人視角，不在 char 感知範圍內）
 

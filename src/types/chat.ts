@@ -639,6 +639,8 @@ export interface ChatMessage {
   isFoodRecord?: boolean;
   /** 這則通知記下的那一筆，換掉那一輪回覆時拿來收回 */
   foodRecordData?: FoodRecordRef;
+  /** 「寫了一篇日記」提示對應的日記 ID，點了打開那篇；不送進提示詞 */
+  diaryNoticeId?: string;
   /** 是否為繼續生成的隱藏提示（不顯示在聊天畫面上） */
   isContinuePrompt?: boolean;
   /** 是否為好友申請訊息（用戶封鎖角色後，角色想重新加好友的系統訊息卡片） */

@@ -414,6 +414,7 @@ export function convertToStorableMessage(m: any, charName: string): ChatMessage 
     isSystemNotification: m.isSystemNotification,
     isFoodRecord: m.isFoodRecord,
     foodRecordData: m.foodRecordData ? { ...m.foodRecordData } : undefined,
+    diaryNoticeId: m.diaryNoticeId,
     isTransactionClaimNotice: m.isTransactionClaimNotice,
     isFriendRequest: m.isFriendRequest,
     friendRequestId: m.friendRequestId,

@@ -211,6 +211,7 @@ export interface ChatScreenMessage {
   isTransactionClaimNotice?: boolean;
   isFoodRecord?: boolean;
   foodRecordData?: FoodRecordRef;
+  diaryNoticeId?: string;
   isContinuePrompt?: boolean;
   isCharBlockedNotification?: boolean;
   charBlockedReason?: string;

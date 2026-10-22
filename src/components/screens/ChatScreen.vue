@@ -1644,6 +1644,15 @@ function handleViewDiary(diary: any) {
   viewingDiary.value = diary;
 }
 
+/** 聊天裡「寫了一篇日記」的提示：群聊不會載入日記列表，找不到就直接讀資料庫 */
+async function openDiaryFromNotice(diaryId: string) {
+  const diary =
+    chatDiaries.value.find((d) => d.id === diaryId) ??
+    (await db.get<(typeof chatDiaries.value)[number]>(DB_STORES.DIARIES, diaryId).catch(() => undefined));
+  if (diary) viewingDiary.value = diary;
+  else showToast("這篇日記已經刪掉了");
+}
+
 // ===== 訊息多選（刪除 / 截圖 / 轉發共用） =====
 const isSelectingMessages = ref(false);
 const selectedMessageIds = ref<string[]>([]);
@@ -4677,7 +4686,8 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
     // 先過濾掉尚未到達排程時間的物流進度訊息，避免角色「看到未來」；生成失敗的錯誤氣泡也不送
     const now = Date.now();
     const eligibleMessages = getMessageHistory().filter(
-      (m) => !(m.isWaimaiProgress && m.timestamp > now) && !isGenerationErrorMessage(m),
+      (m) =>
+        !(m.isWaimaiProgress && m.timestamp > now) && !isGenerationErrorMessage(m) && !m.diaryNoticeId,
     );
 
     let messagesToUse: Message[];
@@ -10522,9 +10532,31 @@ useChatCleanup({
             :entries="message.toolActivity"
           />
 
+          <!-- 角色寫了日記：點了直接打開那篇 -->
+          <div
+            v-if="message.diaryNoticeId"
+            class="system-notification diary-notice"
+            :class="{
+              'is-selected':
+                isSelectingMessages && selectedMessageIds.includes(message.id),
+            }"
+            @click="
+              isSelectingMessages
+                ? toggleMessageSelection(message.id)
+                : openDiaryFromNotice(message.diaryNoticeId)
+            "
+            @contextmenu.prevent="handleMessageDelete(message.id)"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="diary-notice-icon">
+              <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20" />
+            </svg>
+            <span class="system-notification-text">{{ message.content }}</span>
+            <span class="diary-notice-action">偷偷看看</span>
+          </div>
+
           <!-- 系統通知（封鎖/解封等）；交易領取通知資料上仍算 user role，但畫面使用系統通知樣式 -->
           <div
-            v-if="message.isSystemNotification || message.isTransactionClaimNotice"
+            v-else-if="message.isSystemNotification || message.isTransactionClaimNotice"
             class="system-notification"
             :class="{
               'is-selected':
@@ -14129,6 +14161,25 @@ useChatCleanup({
 .user-recalled-notification {
   align-items: center;
   gap: 4px;
+}
+
+.diary-notice {
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+
+.diary-notice-icon {
+  width: 14px;
+  height: 14px;
+  color: var(--color-text-muted, #999);
+  flex-shrink: 0;
+}
+
+.diary-notice-action {
+  font-size: 11px;
+  color: var(--color-primary, #7dd3a8);
+  padding: 2px 6px;
 }
 
 .recall-undo-btn {
