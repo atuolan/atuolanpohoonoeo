@@ -8,7 +8,7 @@
 import { describeAntiTruncation } from "@/services/antiTruncation";
 import { useStreamingWindow } from "@/composables/useStreamingWindow";
 import { marked } from "marked";
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
+import { computed, nextTick, ref, watch } from "vue";
 
 // 配置 marked
 marked.setOptions({
@@ -264,22 +264,6 @@ watch(content, () => {
     nextTick(() => {
       scrollToBottom();
     });
-  }
-});
-
-// 更新經過時間的定時器
-let elapsedTimer: number | null = null;
-
-onMounted(() => {
-  // 定時更新經過時間顯示
-  elapsedTimer = window.setInterval(() => {
-    // 觸發重新計算
-  }, 100);
-});
-
-onUnmounted(() => {
-  if (elapsedTimer) {
-    clearInterval(elapsedTimer);
   }
 });
 </script>
