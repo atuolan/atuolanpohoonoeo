@@ -69,6 +69,7 @@ import type {
 } from "@/types/chat";
 import { cleanTTSTags } from "@/utils/ttsTagCleaner";
 import { injectTTSInlineButtons } from "@/utils/ttsInlineButtons";
+import { stripPicNote } from "@/utils/picNote";
 import { marked } from "marked";
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import GroupCallHistoryModal from "../modals/GroupCallHistoryModal.vue";
@@ -1702,9 +1703,11 @@ const renderedContent = computed(() => {
     // 串流中佔位氣泡會先拿到原始模型輸出；此處只做顯示層清理，避免把
     // <thinking>/<UpdateVariable>/<horae> 等控制區塊或「結果:」鏡像內容渲染給用戶。
     // 先剝離 <think>/<thinking> 區塊，再提取 <content>，避免 thinking 內的 <content> 被誤捕
-    processedContent = stripStateThinking(processedContent, true)
-      .replace(/<think(?:ing)?>[\s\S]*?(?:<\/think(?:ing)?>|$)/gi, "")
-      .replace(/^[\s\S]*?<\/think(?:ing)?>/gis, "");
+    processedContent = stripPicNote(
+      stripStateThinking(processedContent, true)
+        .replace(/<think(?:ing)?>[\s\S]*?(?:<\/think(?:ing)?>|$)/gi, "")
+        .replace(/^[\s\S]*?<\/think(?:ing)?>/gis, ""),
+    );
     const firstContentMatch = processedContent.match(/<content>\s*([\s\S]*?)\s*<\/content>/i);
     if (firstContentMatch) {
       processedContent = firstContentMatch[1].trim();

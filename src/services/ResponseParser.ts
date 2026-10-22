@@ -8,6 +8,7 @@ import type { GroupActionType } from "@/types/chat";
 import type { ScheduleCallData } from "@/types/incomingCall";
 import { normalizeEventTime } from "@/utils/calendarEventFormat";
 import { CHAR_PLANNER_TAG_REGEX } from "@/utils/charPlanner";
+import { stripPicNote } from "@/utils/picNote";
 import { PLURK_BLOCK_PATTERN, PLURK_BLOCK_STRIP_PATTERN } from "@/utils/plurkFormat";
 import { repairXmlTags } from "./XmlFuzzyRepair";
 
@@ -1265,10 +1266,10 @@ export function parseAIResponse(rawResponse: string): ParsedResponse {
   // <content> 外的文字不會進入 outputContent，因此這類系統控制標籤需要從 rawResponse 額外轉成卡片訊息。
   appendTopLevelModeRequestMessages(result.messages, rawResponse);
 
-  // 從所有訊息中移除 char-location、char-status、sticky-note、mood-reply 與時間控制標籤（模型偶爾會寫在 <content> 裡）
+  // 從所有訊息中移除 char-location、char-status、sticky-note、mood-reply、pic-note 與時間控制標籤（模型偶爾會寫在 <content> 裡）
   for (const msg of result.messages) {
     if (msg.content) {
-      msg.content = msg.content
+      msg.content = stripPicNote(msg.content)
         .replace(/<char-location\s+[^>]*?\s*\/?>(?:<\/char-location>)?/gi, "")
         .replace(CHAR_STATUS_TAG_REGEX, "")
         .replace(STICKY_NOTE_TAG_REGEX, "")

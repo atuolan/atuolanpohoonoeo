@@ -237,6 +237,13 @@ import { buildChatMetadataFromState } from "@/utils/chatMetadataBuilder";
 import { clampEditNoticeChance, DEFAULT_EDIT_NOTICE_CHANCE } from "@/utils/editNotice";
 import { saveCharStatus } from "@/services/charStatus";
 import {
+  buildPicNoteInstruction,
+  describeImageForPrompt,
+  extractPicNote,
+  findTurnImageMessage,
+  stripPicNote,
+} from "@/utils/picNote";
+import {
   applyCharPlannerOps,
   CHAR_PLANNER_CHANGED_EVENT,
   loadCharPlanner,
@@ -4639,6 +4646,8 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
       // 按消息數讀取
       messagesToUse = eligibleMessages.slice(-actualCount);
     }
+    // 這一輪 user 傳的圖：只有它會送給模型看，模型回覆時順手寫的 <pic-note> 存回這則訊息
+    const turnImageMessage = findTurnImageMessage(messagesToUse);
 
     // 永久診斷：實際發送的輪數 / 消息數。
     // 1) console.log：debug overlay 攔截後存入滾動日誌（含時間戳，可回溯歷史）。
@@ -4688,6 +4697,7 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
       imageData: m.imageData,
       imageMimeType: m.imageMimeType,
       imageCaption: m.imageCaption,
+      imageNote: m.imageNote,
       // 時間跳轉 / 小劇場相關
       isTimetravel: m.isTimetravel,
       timetravelContent: m.timetravelContent,
@@ -5314,21 +5324,14 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
       return source.replace(/\s+/g, "");
     };
 
-    const formatImageMessageAsText = (message: any) => {
-      const caption = message.imageCaption || "";
-      const prompt = message.imagePrompt || "";
-      const desc = caption || prompt || "圖片";
-      return {
-        role: message.role,
-        content: message.content
-          ? `${message.content}\n[圖片：${desc}]`
-          : `[圖片：${desc}]`,
-      };
-    };
+    const formatImageMessageAsText = (message: any) => ({
+      role: message.role,
+      content: describeImageForPrompt(message.content || "", message),
+    });
 
     // 將消息轉換為 API 格式（處理圖片訊息）
-    // 只保留最後一條帶圖片的用戶訊息的 base64 數據，歷史圖片用文字描述替代
-    // 避免大量 base64 數據導致請求 body 過大（nginx 413 錯誤）
+    // PromptBuilder 只讓這一輪使用者訊息帶圖片資料（更早的已換成文字），
+    // 這裡再只送最後一張的 base64，其餘用文字描述替代，避免請求 body 過大（nginx 413 錯誤）
     const reversedIndices = promptResult.messages.map((_, i) => i).reverse();
     const lastImageMsgIndex = reversedIndices.find((i) => {
       const msg = promptResult.messages[i] as any;
@@ -5336,6 +5339,7 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
     });
 
     const apiMessages = [] as Array<any>;
+    let sentTurnImage = false;
     const promptDebugMessages: PromptDebugMessage[] = [];
     const stringifyDebugContent = (content: unknown): string =>
       typeof content === "string" ? content : JSON.stringify(content);
@@ -5382,6 +5386,7 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
             );
             apiMessages.push(apiMessage);
             promptDebugMessages.push(toPromptDebugMessage(m, apiMessage));
+            sentTurnImage = true;
           } else {
             console.warn("[ChatScreen] 圖片訊息無法解析為可送出的 base64，已降級為文字描述", {
               messageId: msgWithImage.id,
@@ -5445,6 +5450,11 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
     // 📞 如果是來電後反應，附加 postCallPrompt（不存入聊天記錄）
     if (options?.postCallPrompt) {
       appendedUserPrompts.push(options.postCallPrompt);
+    }
+
+    // 🖼️ 這一輪送了圖、還沒有備註：請模型順手寫 <pic-note>，之後的回合用它代替重送圖片
+    if (sentTurnImage && turnImageMessage && !turnImageMessage.imageNote) {
+      appendedUserPrompts.push(buildPicNoteInstruction(activeUserName));
     }
 
     // 👉 群聊點名：這一輪使用者訊息 @ 了誰，就要求被 @ 的角色先回覆（不存入聊天記錄）
@@ -5975,7 +5985,14 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
           ? ownedWindowContent
           : fullContent;
       fullContent = rawFullContent;
-      const finalContent = processAiOutputTemplate(applyAIOutputRegex(fullContent));
+      // 圖片備註只存進那則圖片訊息，不進聊天內容
+      const { content: finalContent, note: picNote } = extractPicNote(
+        processAiOutputTemplate(applyAIOutputRegex(fullContent)),
+      );
+      if (picNote && turnImageMessage) {
+        const imageMessage = messages.value.find((m) => m.id === turnImageMessage.id);
+        if (imageMessage) imageMessage.imageNote = picNote;
+      }
       latestFinalContent = finalContent;
       generationDiagnostics.apiContentLength = fullContent.length;
       generationDiagnostics.finalContentLength = finalContent.length;
@@ -7058,8 +7075,8 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
       : "";
     if (!persistedGenerationContent && finallyOwnContent) {
       try {
-        persistedGenerationContent = processAiOutputTemplate(
-          applyAIOutputRegex(finallyOwnContent),
+        persistedGenerationContent = stripPicNote(
+          processAiOutputTemplate(applyAIOutputRegex(finallyOwnContent)),
         );
       } catch {
         persistedGenerationContent = finallyOwnContent;
@@ -7102,8 +7119,8 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
     ) {
       const lastAI = [...messages.value].reverse().find((m) => m.role === "ai");
       if (lastAI && lastAI.isStreaming && !lastAI.content) {
-        const windowContent = processAiOutputTemplate(
-          applyAIOutputRegex(finallyOwnContent),
+        const windowContent = stripPicNote(
+          processAiOutputTemplate(applyAIOutputRegex(finallyOwnContent)),
         );
         if (windowContent) {
           console.warn(
@@ -7306,8 +7323,8 @@ async function handleStreamingClose() {
   // 取得目前仍在流式中的 AI 訊息，避免被隱藏的 [繼續] 提示干擾
   const lastMsg = getActiveStreamingAIMessage();
   const closeTurnId = lastMsg?.turnId || currentTurnId.value || "";
-  const windowContent = processAiOutputTemplate(
-    applyAIOutputRegex(ownedCloseContent),
+  const windowContent = stripPicNote(
+    processAiOutputTemplate(applyAIOutputRegex(ownedCloseContent)),
   );
 
   // 只有當最後一條訊息還在流式狀態時，才需要處理
@@ -9677,7 +9694,9 @@ function toStoredRemoteMessage(message: Message, fallbackName: string): ChatMess
 }
 
 async function landRemoteGenerationTask(task: BgGenerationTaskView): Promise<void> {
-  const finalContent = processAiOutputTemplate(applyAIOutputRegex(task.content || ""));
+  const { content: finalContent, note: picNote } = extractPicNote(
+    processAiOutputTemplate(applyAIOutputRegex(task.content || "")),
+  );
   const landedAt = Date.now();
   const baseId = `msg_${landedAt}_${task.taskId}`;
   const characterName = currentCharacter.value?.data?.name || props.characterName || "角色";
@@ -9739,6 +9758,12 @@ async function landRemoteGenerationTask(task: BgGenerationTaskView): Promise<voi
       messages.value.splice(firstPlaceholderIndex, 0, ...remoteMessages);
     } else {
       messages.value.push(...remoteMessages);
+    }
+    // 圖片備註存回這批回覆之前、這一輪 user 傳的圖
+    if (picNote) {
+      const beforeReply = messages.value.slice(0, Math.max(0, messages.value.indexOf(remoteMessages[0])));
+      const imageMessage = findTurnImageMessage(beforeReply);
+      if (imageMessage) imageMessage.imageNote = picNote;
     }
 
     await applyRemoteParsedMessageSideEffects(remoteMessages);
