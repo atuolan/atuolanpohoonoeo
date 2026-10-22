@@ -174,6 +174,7 @@ describe("isGeneratedSquarePost／squareStock／latestSquareAt／needsSquareRefi
   it("路人噗與偷偷說算廣場生成的噗，一般角色噗不算", () => {
     expect(isGeneratedSquarePost(npcPost)).toBe(true);
     expect(isGeneratedSquarePost(anonPost)).toBe(true);
+    expect(isGeneratedSquarePost({ ...normalPost, audience: "anon", onSquare: true })).toBe(true);
     expect(isGeneratedSquarePost(normalPost)).toBe(false);
     expect(latestSquareAt([npcPost, anonPost, normalPost])).toBe(NOW - 2 * H);
     expect(latestSquareAt([normalPost])).toBeNull();

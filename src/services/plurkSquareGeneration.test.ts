@@ -33,6 +33,14 @@ describe("buildSquarePrompt", () => {
     expect(withChar).toContain("id: c1｜譚尧");
     expect(withChar).toContain("版主很嚴格");
   });
+
+  it("偷偷說分頁：整批要偷偷說；平常偶爾混幾則", () => {
+    const anon = buildSquarePrompt({ times: [now, now], strictness: "mid", characters: [], recentTexts: [], now, anon: true });
+    expect(anon).toContain("請生成 2 則廣場上的「偷偷說」");
+    expect(anon).toContain('每則都用 "kind": "anon"');
+    const normal = buildSquarePrompt({ times: [now], strictness: "mid", characters: [], recentTexts: [], now });
+    expect(normal).toContain("大約每 5 則可以有 1 則改用偷偷說");
+  });
 });
 
 describe("parseSquareResponse", () => {
@@ -64,6 +72,36 @@ describe("parseSquareResponse", () => {
       opts,
     );
     expect(list).toEqual([expect.objectContaining({ kind: "anon", characterId: "c1", name: "偷偷說", content: "第一則" })]);
+  });
+
+  it("沒給 characterId 的是路人的偷偷說，不限則數", () => {
+    const list = parseSquareResponse(
+      raw([
+        { kind: "anon", content: "路人一" },
+        { kind: "anon", content: "路人二" },
+        { kind: "npc", name: "小魚", content: "一般噗" },
+      ]),
+      opts,
+    );
+    expect(list.map((p) => [p.kind, p.characterId, p.content])).toEqual([
+      ["anon", undefined, "路人一"],
+      ["anon", undefined, "路人二"],
+      ["npc", undefined, "一般噗"],
+    ]);
+  });
+
+  it("偷偷說分頁按的：整批都當偷偷說", () => {
+    const list = parseSquareResponse(
+      raw([
+        { kind: "npc", name: "小魚", content: "模型忘了改" },
+        { kind: "anon", characterId: "c1", content: "角色的" },
+      ]),
+      { ...opts, anon: true },
+    );
+    expect(list.map((p) => [p.kind, p.name, p.characterId])).toEqual([
+      ["anon", "偷偷說", undefined],
+      ["anon", "偷偷說", "c1"],
+    ]);
   });
 
   it("摺疊：寬鬆全丟、普通最多一則、嚴格都留", () => {
@@ -162,6 +200,40 @@ describe("generateSquareBatch", () => {
     const folded = added.find((p) => p.moderation)!;
     expect(folded.moderation!.at).toBeGreaterThan(folded.timestamp);
     expect(comments[0].timestamp).toBeGreaterThan(added[0].timestamp);
+  });
+
+  it("偷偷說分頁按的：存成偷偷說，路人的只在廣場、角色的記下是誰", async () => {
+    const { generateSquareBatch } = await import("./plurkSquareGeneration");
+    const { generatePlurkText, hasPlurkApi } = await import("@/services/plurkAI");
+    const { buildCastContext, effectiveFriendIds } = await import("@/services/plurkCast");
+    const { useQzoneStore } = await import("@/stores/qzone");
+    const { useCharactersStore } = await import("@/stores/characters");
+    const added: Array<Record<string, unknown>> = [];
+    vi.mocked(hasPlurkApi).mockReturnValue(true);
+    vi.mocked(buildCastContext).mockResolvedValue({} as never);
+    vi.mocked(effectiveFriendIds).mockReturnValue(["c1"]);
+    vi.mocked(useCharactersStore).mockReturnValue({ characters: [{ id: "c1", nickname: "陸晏", data: {} }] } as never);
+    vi.mocked(useQzoneStore).mockReturnValue({
+      posts: [],
+      settings: {},
+      directorConfig: { squareBatch: 5, npcLevel: 3, strictness: "mid", roles: {} },
+      addPost: vi.fn(async (data: Record<string, unknown>) => {
+        added.push(data);
+        return { id: `p${added.length}` };
+      }),
+      addComment: vi.fn(),
+    } as never);
+    vi.mocked(generatePlurkText).mockResolvedValue(
+      JSON.stringify({ posts: [{ kind: "anon", content: "路人的" }, { kind: "anon", characterId: "c1", content: "角色的" }] }),
+    );
+
+    expect(await generateSquareBatch({ anon: true })).toMatchObject({ success: true, added: 2 });
+    const calls = vi.mocked(generatePlurkText).mock.calls;
+    expect(calls[calls.length - 1][0]).toContain("id: c1｜陸晏");
+    expect(added.map((p) => [p.audience, p.onSquare, p.anonOf])).toEqual([
+      ["anon", true, undefined],
+      ["anon", undefined, "c1"],
+    ]);
   });
 
   it("按停止：已經寫完的幾則照樣存；一則都沒寫完就安靜結束", async () => {

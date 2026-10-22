@@ -38,6 +38,8 @@ export interface SquarePromptInput {
   /** 最近的廣場噗，避免重複 */
   recentTexts: string[];
   now: number;
+  /** 在「偷偷說」分頁按的：整批都是偷偷說 */
+  anon?: boolean;
 }
 
 export interface ParsedSquareReply {
@@ -111,16 +113,30 @@ ${input.characters.map((c) => `- id: ${c.id}｜${c.name}｜個性：${c.personal
 `
     : "";
   const slots = input.times.map((t, i) => `${i + 1}. ${formatSlot(t)}`).join("\n");
-  return `你是社群「噗浪」廣場的模擬器。現在是 ${time}。請生成 ${input.times.length} 則陌生路人在廣場發的噗。
+  const intro = input.anon
+    ? `請生成 ${input.times.length} 則廣場上的「偷偷說」：匿名發的噗，不顯示名字。`
+    : `請生成 ${input.times.length} 則陌生路人在廣場發的噗。`;
+  const topicRule = input.anon
+    ? "1. 偷偷說是匿名的，大家會說平常不敢具名講的話：暗戀告白、對另一半或家人的不滿、職場黑特、說不出口的秘密、深夜心事、匿名求助，題材彼此不同。"
+    : "1. 路人是素不相識的一般網友，生活感要強：求助、分享好物、曬小孩寵物、吐槽工作、二手轉讓、隨口抱怨、深夜心事都可以，題材彼此不同。";
+  const nameRule = input.anon
+    ? '3. 每則都用 "kind": "anon"，不用給 name。'
+    : '3. 暱稱要像真的網友暱稱（例：考研第三年的小魚、芒果媽、今天也想離職、代購阿May），不要用真名。大約每 5 則可以有 1 則改用偷偷說（"kind": "anon"，不給 name），內容是不敢具名講的心事或八卦。';
+  const example = input.anon
+    ? `{"kind": "anon", "qualifier": "想", "content": "暗戀的同事今天說他下個月要離職了，我連一句話都沒說出口", "likes": 34,
+     "replies": [{"name": "路人", "content": "最後一天約他吃飯吧"}]}`
+    : `{"kind": "npc", "name": "考研第三年的小魚", "qualifier": "問", "content": "市立醫院附近哪裡能停車？", "likes": 12,
+     "replies": [{"name": "台北通勤人", "content": "正門別想了"}]}`;
+  return `你是社群「噗浪」廣場的模擬器。現在是 ${time}。${intro}
 
 # 發文時間
 這批噗會依序在下面這些時間發出，posts 陣列照這個順序輸出，內容要配合各自的時間（深夜多是心事和失眠、早上通勤上課、中午吃什麼、晚上下班追劇）：
 ${slots}
 
 # 規則
-1. 路人是素不相識的一般網友，生活感要強：求助、分享好物、曬小孩寵物、吐槽工作、二手轉讓、隨口抱怨、深夜心事都可以，題材彼此不同。
+${topicRule}
 2. 每則 15–120 字，繁體中文口語，純文字，不要動作描述、不要 hashtag。
-3. 暱稱要像真的網友暱稱（例：考研第三年的小魚、芒果媽、今天也想離職、代購阿May），不要用真名。
+${nameRule}
 4. 每則附 0–3 則其他路人的回應（replies），像真的留言串；也給一個喜歡數 likes（0–200 的整數，大部分在 50 以下）。
 5. qualifier 是噗浪發語詞，可省略；只能用：${qualifiers}
 6. 版主：${STRICTNESS_RULES[input.strictness]}
@@ -130,8 +146,7 @@ ${characterSection}${announceSection}${recent}
 \`\`\`json
 {
   "posts": [
-    {"kind": "npc", "name": "考研第三年的小魚", "qualifier": "問", "content": "市立醫院附近哪裡能停車？", "likes": 12,
-     "replies": [{"name": "台北通勤人", "content": "正門別想了"}]}
+    ${example}
   ]
 }
 \`\`\``;
@@ -169,7 +184,7 @@ export function parseSquareAnnounce(raw: string, characterIds: Set<string>): Par
 
 export function parseSquareResponse(
   raw: string,
-  opts: { characterIds: Set<string>; strictness: DirectorStrictness },
+  opts: { characterIds: Set<string>; strictness: DirectorStrictness; anon?: boolean },
 ): ParsedSquarePost[] {
   // 回覆被截斷時，前面完整的幾則照樣收
   const items = salvageArrayItems(raw, "posts");
@@ -182,10 +197,12 @@ export function parseSquareResponse(
   for (const item of items) {
     const content = cleanText(item.content);
     if (!content) continue;
-    const isAnon = item.kind === "anon";
-    const characterId = typeof item.characterId === "string" ? item.characterId : undefined;
-    if (isAnon && (anonUsed || !characterId || !opts.characterIds.has(characterId))) continue;
-    if (isAnon) anonUsed = true;
+    // 偷偷說分頁按的：整批都當偷偷說；沒給 characterId 的是路人的偷偷說
+    const isAnon = opts.anon || item.kind === "anon";
+    const characterId = isAnon && typeof item.characterId === "string" && item.characterId ? item.characterId : undefined;
+    // 角色的偷偷說只收名單裡的、一批最多一則
+    if (characterId && (anonUsed || !opts.characterIds.has(characterId))) continue;
+    if (characterId) anonUsed = true;
 
     const replies = (Array.isArray(item.replies) ? item.replies : [])
       .map((r: Record<string, unknown>) => ({
@@ -242,7 +259,7 @@ export interface SquareBatchResult {
  * manual（按按鈕）：約三分之一馬上出現，其餘接在排好的後面；
  * 自動補貨：接在最後一則後面，離開太久就從 3 小時前開始補
  */
-export async function generateSquareBatch(opts: { manual?: boolean } = {}): Promise<SquareBatchResult> {
+export async function generateSquareBatch(opts: { manual?: boolean; anon?: boolean } = {}): Promise<SquareBatchResult> {
   if (plurkActivity.square) return { success: false, added: 0, scheduled: 0, error: "廣場正在生成中" };
   if (!hasPlurkApi()) return { success: false, added: 0, scheduled: 0, error: "請先配置 API" };
 
@@ -253,9 +270,9 @@ export async function generateSquareBatch(opts: { manual?: boolean } = {}): Prom
     const cfg = qzoneStore.directorConfig;
     const now = Date.now();
 
-    // 偷偷說：一半機會讓好友角色加入候選
+    // 偷偷說：一半機會讓好友角色加入候選；在偷偷說分頁按的一定給
     let characters: SquareCharacterBrief[] = [];
-    if (Math.random() < 0.5) {
+    if (opts.anon || Math.random() < 0.5) {
       const ctx = await buildCastContext();
       const muted = getMutedIds(cfg);
       characters = shuffle(effectiveFriendIds(ctx).filter((id) => !muted.has(id)))
@@ -289,12 +306,13 @@ export async function generateSquareBatch(opts: { manual?: boolean } = {}): Prom
       characters,
       recentTexts,
       now,
+      anon: opts.anon,
     });
     // 按按鈕的才開串流視窗，自動補貨在背景跑；按停止時留下已經寫完的幾則
     let raw: string;
     let aborted = false;
     try {
-      raw = await generatePlurkText(prompt, { window: opts.manual ?? true, label: "廣場路人噗" });
+      raw = await generatePlurkText(prompt, { window: opts.manual ?? true, label: opts.anon ? "廣場偷偷說" : "廣場路人噗" });
     } catch (error) {
       if (!isPlurkAbort(error)) throw error;
       raw = abortedPartial(error);
@@ -303,6 +321,7 @@ export async function generateSquareBatch(opts: { manual?: boolean } = {}): Prom
     const parsed = parseSquareResponse(raw, {
       characterIds: new Set(characters.map((c) => c.id)),
       strictness: cfg.strictness,
+      anon: opts.anon,
     }).slice(0, times.length);
     if (parsed.length === 0) {
       return aborted
@@ -333,7 +352,8 @@ export async function generateSquareBatch(opts: { manual?: boolean } = {}): Prom
                 username: "偷偷說",
                 avatar: "",
                 audience: "anon",
-                anonOf: item.characterId,
+                // 角色的記下是誰；路人的只在廣場
+                ...(item.characterId ? { anonOf: item.characterId } : { onSquare: true }),
               },
               { timestamp: at },
             )
