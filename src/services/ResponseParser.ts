@@ -10,6 +10,13 @@ import type { ScheduleCallData } from "@/types/incomingCall";
 import { normalizeEventTime } from "@/utils/calendarEventFormat";
 import { CHAR_PLANNER_TAG_REGEX } from "@/utils/charPlanner";
 import { stripPicNote } from "@/utils/picNote";
+import {
+  CHAR_AWAY_BACK_MAX,
+  CHAR_AWAY_MAX_MINUTES,
+  CHAR_AWAY_MIN_MINUTES,
+  CHAR_AWAY_REASON_MAX,
+  type ParsedCharAway,
+} from "@/services/charAway";
 import { PLURK_BLOCK_PATTERN, PLURK_BLOCK_STRIP_PATTERN } from "@/utils/plurkFormat";
 import { repairXmlTags } from "./XmlFuzzyRepair";
 
@@ -136,6 +143,10 @@ export interface ParsedResponse {
   hasCharStatus?: boolean;
   /** 角色狀態更新資料 */
   charStatusData?: { text: string };
+  /** 是否有暫時離開 */
+  hasCharAway?: boolean;
+  /** 暫時離開資料 */
+  charAwayData?: ParsedCharAway;
   /** 是否有便利貼 */
   hasStickyNote?: boolean;
   /** 便利貼資料（顯示在主畫面的心情便籤上） */
@@ -1251,6 +1262,13 @@ export function parseAIResponse(rawResponse: string): ParsedResponse {
     result.charStatusData = charStatusResult;
   }
 
+  // 11b2. 檢查暫時離開標籤
+  const charAwayResult = parseCharAwayTag(rawResponse);
+  if (charAwayResult) {
+    result.hasCharAway = true;
+    result.charAwayData = charAwayResult;
+  }
+
   // 11c. 檢查便利貼標籤
   const stickyNoteResult = parseStickyNoteTag(rawResponse);
   if (stickyNoteResult) {
@@ -1269,12 +1287,13 @@ export function parseAIResponse(rawResponse: string): ParsedResponse {
   // <content> 外的文字不會進入 outputContent，因此這類系統控制標籤需要從 rawResponse 額外轉成卡片訊息。
   appendTopLevelModeRequestMessages(result.messages, rawResponse);
 
-  // 從所有訊息中移除 char-location、char-status、sticky-note、mood-reply、pic-note 與時間控制標籤（模型偶爾會寫在 <content> 裡）
+  // 從所有訊息中移除 char-location、char-status、char-away、sticky-note、mood-reply、pic-note 與時間控制標籤（模型偶爾會寫在 <content> 裡）
   for (const msg of result.messages) {
     if (msg.content) {
       msg.content = stripPicNote(msg.content)
         .replace(/<char-location\s+[^>]*?\s*\/?>(?:<\/char-location>)?/gi, "")
         .replace(CHAR_STATUS_TAG_REGEX, "")
+        .replace(CHAR_AWAY_TAG_REGEX, "")
         .replace(STICKY_NOTE_TAG_REGEX, "")
         .replace(MOOD_REPLY_TAG_REGEX, "")
         .replace(CHAR_PLANNER_TAG_REGEX, "")
@@ -1954,6 +1973,7 @@ function noteTagRegex(name: string): RegExp {
 
 const STICKY_NOTE_TAG_REGEX = noteTagRegex("sticky-note");
 const MOOD_REPLY_TAG_REGEX = noteTagRegex("mood-reply");
+const CHAR_AWAY_TAG_REGEX = noteTagRegex("char-away");
 
 /** 取出引號包住的屬性值；跟 extractAttr 不同，值裡可以有另一種引號 */
 function extractQuotedAttr(attrs: string, name: string): string | undefined {
@@ -1997,6 +2017,43 @@ export function parseMoodReplyTag(
   if (texts.length === 0) return null;
   const withText = texts.filter(Boolean);
   return { text: withText[withText.length - 1] ?? "" };
+}
+
+/**
+ * 解析 char-away 標籤（角色暫時離開）
+ * 同一則回覆有多個時取最後一個；minutes 不是有限數字的那個標籤直接略過
+ *
+ * @param rawResponse - 原始 AI 回覆
+ * @returns 解析後的暫時離開，沒有有效標籤則返回 null
+ */
+export function parseCharAwayTag(
+  rawResponse: string,
+): ParsedCharAway | null {
+  let latest: ParsedCharAway | null = null;
+  for (const match of rawResponse.matchAll(CHAR_AWAY_TAG_REGEX)) {
+    const attrs = match[1] ?? "";
+    const rawMinutes = extractAttr(attrs, "minutes");
+    const minutesValue = rawMinutes === undefined ? Number.NaN : parseFloat(rawMinutes);
+    if (!Number.isFinite(minutesValue)) continue;
+
+    const minutes = Math.min(
+      CHAR_AWAY_MAX_MINUTES,
+      Math.max(CHAR_AWAY_MIN_MINUTES, Math.round(minutesValue)),
+    );
+    const reason =
+      (extractAttr(attrs, "reason") ?? "")
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(0, CHAR_AWAY_REASON_MAX) || "有事";
+    const backText =
+      (extractAttr(attrs, "back") ?? "")
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(0, CHAR_AWAY_BACK_MAX) || "我回來了";
+
+    latest = { minutes, reason, backText };
+  }
+  return latest;
 }
 
 /** 取屬性值；屬性名前面要是開頭或空白，date 才不會抓到 end-date 的值 */
@@ -2423,7 +2480,7 @@ export function parseAffinityUpdateTags(
  */
 export function needsParsing(content: string): boolean {
   // 檢查是否包含任何需要解析的標籤
-  return /<think>|<[^<>]*state[^<>]*>|<content>|<msg>|<update>|<UpdateVariable>|<timetravel>|<redpacket|<location>|<schedule-call|<calendar-event|<food-record|<time-jump|<time-advance|<送禮物>|<pay>|<transfer\s|<refund>|<avatar-change|<couple-avatar-|<voice>|<waimai-pay|<waimai-delivery|<face-to-face-request|<online-mode-request|<affinity-update|<char-status|<sticky-note|<mood-reply|<plurk[\s>]|<!DOCTYPE\s|<html[\s>]/i.test(
+  return /<think>|<[^<>]*state[^<>]*>|<content>|<msg>|<update>|<UpdateVariable>|<timetravel>|<redpacket|<location>|<schedule-call|<calendar-event|<food-record|<time-jump|<time-advance|<送禮物>|<pay>|<transfer\s|<refund>|<avatar-change|<couple-avatar-|<voice>|<waimai-pay|<waimai-delivery|<face-to-face-request|<online-mode-request|<affinity-update|<char-status|<char-away|<sticky-note|<mood-reply|<plurk[\s>]|<!DOCTYPE\s|<html[\s>]/i.test(
     content,
   );
 }

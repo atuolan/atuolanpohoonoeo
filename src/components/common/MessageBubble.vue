@@ -456,7 +456,7 @@ interface MessageBubbleProps {
   calendarEventData?: CalendarCardData;
   // 通話通知卡片
   isCallNotification?: boolean;
-  callNotificationType?: "declined" | "missed";
+  callNotificationType?: "declined" | "missed" | "unanswered";
   callReason?: string;
   // MiniMax TTS 語音合成
   ttsAudioUrl?: string;
