@@ -1061,6 +1061,7 @@ export const useSelfHostedSyncStore = defineStore("selfHostedSync", () => {
     saveSettings,
     ensureDeviceId,
     createClient,
+    runSyncActionWithRetry,
     refreshMeta,
     testConnection,
     refreshStatus,
