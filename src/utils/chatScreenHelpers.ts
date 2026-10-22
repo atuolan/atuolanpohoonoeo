@@ -63,6 +63,14 @@ export function sliceMessagesByTurns<T extends { role: string }>(
   return msgs.slice(startIndex);
 }
 
+/** 生成失敗時寫進聊天的錯誤氣泡開頭 */
+export const GENERATION_ERROR_PREFIX = "[錯誤] ";
+
+/** 生成失敗的錯誤氣泡：只給使用者看，不送進提示詞、總結、跨聊天記憶 */
+export function isGenerationErrorMessage(m: { role: string; content?: string }): boolean {
+  return m.role === "ai" && typeof m.content === "string" && m.content.startsWith(GENERATION_ERROR_PREFIX);
+}
+
 /**
  * 統計訊息列表中包含的「對話輪次」數量。
  * 一輪 = 一段連續的 AI 氣泡，與 sliceMessagesByTurns 採同一套規則，

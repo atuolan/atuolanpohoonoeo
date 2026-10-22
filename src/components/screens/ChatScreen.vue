@@ -37,7 +37,7 @@ import ForwardTargetPickerModal from "@/components/modals/ForwardTargetPickerMod
 import VideoCallModal from "@/components/modals/VideoCallModal.vue";
 import ToolConfirmationModal from "@/components/modals/ToolConfirmationModal.vue";
 import ImageSearchPanel from "@/components/panels/ImageSearchPanel.vue";
-import { _delay, _escapeRegex, _messageRenderDelay, countTurns, formatClaimAmount, getPreviewText, hashString, isShadowBubbleOf, sliceMessagesByTurns } from "@/utils/chatScreenHelpers";
+import { _delay, _escapeRegex, _messageRenderDelay, countTurns, formatClaimAmount, GENERATION_ERROR_PREFIX, getPreviewText, hashString, isGenerationErrorMessage, isShadowBubbleOf, sliceMessagesByTurns } from "@/utils/chatScreenHelpers";
 import { findQuotedMessage } from "@/utils/replyQuote";
 import { setDebugInfoLine } from "@/utils/debugOverlay";
 import { pickGenerationToggles } from "@/utils/generationToggles";
@@ -4674,10 +4674,10 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
     const actualCount = chatSummarySettings.value.actualMessageCount;
     const actualMode = chatSummarySettings.value.actualMessageMode;
 
-    // 先過濾掉尚未到達排程時間的物流進度訊息，避免角色「看到未來」
+    // 先過濾掉尚未到達排程時間的物流進度訊息，避免角色「看到未來」；生成失敗的錯誤氣泡也不送
     const now = Date.now();
     const eligibleMessages = getMessageHistory().filter(
-      (m) => !(m.isWaimaiProgress && m.timestamp > now),
+      (m) => !(m.isWaimaiProgress && m.timestamp > now) && !isGenerationErrorMessage(m),
     );
 
     let messagesToUse: Message[];
@@ -7087,13 +7087,13 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
     // 檢查是否已有 AI 訊息佔位符
     const lastMsg = getActiveStreamingAIMessage();
     if (lastMsg && lastMsg.role === "ai" && lastMsg.isStreaming) {
-      lastMsg.content = `[錯誤] ${errorMsg}`;
+      lastMsg.content = `${GENERATION_ERROR_PREFIX}${errorMsg}`;
       lastMsg.isStreaming = false;
     } else {
       const aiMessage: Message = {
         id: `msg_${Date.now()}`,
         role: "ai",
-        content: `[錯誤] ${errorMsg}`,
+        content: `${GENERATION_ERROR_PREFIX}${errorMsg}`,
         timestamp: Date.now(),
         turnId: generationTurnId || undefined,
       };
@@ -9874,13 +9874,13 @@ async function handleRemoteGenerationError(
           (message.content.includes("HF 後台生成") || !message.content.trim()))),
   );
   if (placeholder) {
-    placeholder.content = `[錯誤] ${errorText}`;
+    placeholder.content = `${GENERATION_ERROR_PREFIX}${errorText}`;
     placeholder.isStreaming = false;
   } else {
     messages.value.push({
       id: `msg_${Date.now()}_${task.taskId}`,
       role: "ai",
-      content: `[錯誤] ${errorText}`,
+      content: `${GENERATION_ERROR_PREFIX}${errorText}`,
       timestamp: Date.now(),
     });
   }

@@ -11,7 +11,7 @@ import {
   RECORD_ITEM_MAX_CHARS,
   summarizeForwardContent,
 } from "@/utils/chatForward";
-import { sliceMessagesByTurns } from "@/utils/chatScreenHelpers";
+import { isGenerationErrorMessage, sliceMessagesByTurns } from "@/utils/chatScreenHelpers";
 
 /** 第一次開啟互通時的原文輪數上限 */
 export const DEFAULT_MAX_RAW_TURNS = 15;
@@ -130,7 +130,8 @@ export function isLinkableMessage(m: ChatScreenMessage): boolean {
     !m.isPrivateMessage &&
     !m.isRecall &&
     !m.isGroupAction &&
-    !m.isGroupChatHistory
+    !m.isGroupChatHistory &&
+    !isGenerationErrorMessage(m)
   );
 }
 

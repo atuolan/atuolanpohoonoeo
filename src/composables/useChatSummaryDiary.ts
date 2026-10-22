@@ -23,7 +23,7 @@ import { useNotificationStore } from "@/stores/notification";
 import { MemoryRetrieverService } from "@/services/memoryRetriever";
 import { deleteVectorEmbedding, markVectorStale } from "@/db/vectorStore";
 import { extractSummaryKeywords } from "@/utils/summaryKeywordExtractor";
-import { sliceMessagesByTurns } from "@/utils/chatScreenHelpers";
+import { isGenerationErrorMessage, sliceMessagesByTurns } from "@/utils/chatScreenHelpers";
 import { resolveStoryTime } from "@/utils/fakeTime";
 import { isActiveSummary, summaryTimelineKey } from "@/utils/summarySelection";
 
@@ -561,6 +561,7 @@ ${sourceText}
     actualMessageCount: number,
     actualMessageMode: "message" | "turn",
   ): Message[] {
+    msgs = msgs.filter((m) => !isGenerationErrorMessage(m));
     if (actualMessageMode === "turn") {
       // 一輪 = 一個完整回合（用戶發言 + AI 整段回覆）。
       // 同一輪 AI 即使被拆成多條氣泡（共享 turnId 或 shadow segment），只計為一輪。
