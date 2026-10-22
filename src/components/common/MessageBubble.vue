@@ -5148,6 +5148,24 @@ const showTextVoiceTranscript = ref(true);
     margin-left: -6px;
   }
 
+  // 固定寬度的卡片比訊息欄寬時會撐出去蓋住時間：訊息欄至少跟卡片一樣寬，
+  // 但要留下頭像和時間的位置；螢幕太窄時卡片跟著縮
+  &:has(> .message-side-time) > .message-content {
+    > .weather-share-card,
+    > .friend-request-card,
+    > .location-bubble-card {
+      max-width: 100%;
+    }
+
+    &:has(> .weather-share-card, > .friend-request-card) {
+      min-width: min(280px, calc(100% - var(--avatar-size, 40px) - 52px));
+    }
+
+    &:has(> .location-bubble-card) {
+      min-width: min(260px, calc(100% - var(--avatar-size, 40px) - 52px));
+    }
+  }
+
   // 改字被看到的小眼睛和時間同在 user 泡泡左下，眼睛往上移一行
   &:has(> .message-side-time) .edit-seen-eye {
     bottom: 18px;
