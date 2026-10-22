@@ -6014,7 +6014,7 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
       }
 
       // 串流本身已結束（所有 token 已收到），立刻把窗口標為完成，
-      // 讓「停止」按鈕 / spinner 停下來。後續的逐條氣泡渲染延遲（_delay 2000ms × N 條）
+      // 讓「停止」按鈕 / spinner 停下來。後續的逐條氣泡渲染延遲（每條依字數 0.8～3 秒）
       // 是純 UX 修飾、與 API 生成無關，不應該繼續顯示 streaming 狀態。
       // setComplete 冪等，後面失敗/正常路徑仍會再呼叫一次（無副作用）。
       if (useWindow) {
@@ -6122,12 +6122,12 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
             messages.value.splice(msgIndex, 1);
           }
 
-          // 群聊逐條顯示節奏：當有多條訊息時，每條之間根據訊息總數動態延遲
+          // 群聊逐條顯示節奏：有多條訊息時，每條依自己的字數延遲
           const _totalGc = parsed.messages.length;
           let _shownGc = 0;
-          const _gcDelayIfNeeded = async () => {
+          const _gcDelayIfNeeded = async (parsedMsg: ParsedGroupMessage) => {
             if (_totalGc > 1 && _shownGc > 0) {
-              await _delay(_messageRenderDelay(_totalGc));
+              await _delay(_messageRenderDelay(parsedMsg));
             }
             _shownGc++;
             scrollToBottom();
@@ -6148,7 +6148,7 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
                 applyGroupActionToMetadata(parsedMsg),
               );
               if (actionMsg) {
-                await _gcDelayIfNeeded();
+                await _gcDelayIfNeeded(parsedMsg);
                 messages.value.push(actionMsg);
               }
               continue;
@@ -6166,7 +6166,7 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
                 senderCharacterId: senderCharId,
                 senderCharacterName: senderName,
               };
-              await _gcDelayIfNeeded();
+              await _gcDelayIfNeeded(parsedMsg);
               messages.value.push(recallMsg);
               continue;
             }
@@ -6185,7 +6185,7 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
                 senderCharacterName: senderName,
                 senderCharacterAvatar: senderAvatar,
               };
-              await _gcDelayIfNeeded();
+              await _gcDelayIfNeeded(parsedMsg);
               messages.value.push(dmNotice);
 
               // 嘗試找到對應角色的 1v1 聊天並插入訊息，找不到則自動建立
@@ -6396,7 +6396,7 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
                     ...target.redpacketState!,
                     claims: [...target.redpacketState!.claims],
                   };
-                  await _gcDelayIfNeeded();
+                  await _gcDelayIfNeeded(parsedMsg);
                   messages.value.push(
                     createTransactionClaimNoticeMessage({
                       claimerName,
@@ -6507,7 +6507,7 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
               );
             }
 
-            await _gcDelayIfNeeded();
+            await _gcDelayIfNeeded(parsedMsg);
             messages.value.push(newMessage);
 
             // 如果文生圖已開啟且有英文 prompt 或中文描述，觸發生圖
@@ -6748,7 +6748,7 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
               messageIds: messages.value.map((message) => message.id),
             });
 
-            // 為每個解析後的訊息創建獨立的聊天訊息（逐條顯示：多條訊息時每條間隔 800ms）
+            // 為每個解析後的訊息創建獨立的聊天訊息（逐條顯示：多條訊息時每條依字數間隔 0.8～3 秒）
             let _firstNewAiMsgId: string | undefined;
             const _totalMsgs1 = parsed.messages.filter(
               (pm) =>
@@ -6910,7 +6910,7 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
               );
 
               if (_totalMsgs1 > 1) {
-                await _delay(_messageRenderDelay(_totalMsgs1));
+                await _delay(_messageRenderDelay(parsedMsg));
               }
               _shownMsgs1++;
               chatPerfMark("generation:messageReadyToPush", {
@@ -7711,7 +7711,7 @@ async function handleStreamingClose() {
             messages.value.splice(lastMsgIndex, 1);
           }
 
-          // 為每個解析後的訊息創建獨立的聊天訊息（逐條顯示：多條訊息時每條間隔 800ms）
+          // 為每個解析後的訊息創建獨立的聊天訊息（逐條顯示：多條訊息時每條依字數間隔 0.8～3 秒）
           let _firstNewAiMsgId3: string | undefined;
           const _totalMsgs3 = parsed.messages.length;
           let _shownMsgs3 = 0;
@@ -7832,9 +7832,9 @@ async function handleStreamingClose() {
               messages.value,
             );
 
-            // 逐條顯示延遲：多條訊息時，根據訊息總數動態調整間隔
+            // 逐條顯示延遲：多條訊息時，依這則的字數決定間隔
             if (_totalMsgs3 > 1) {
-              await _delay(_messageRenderDelay(_totalMsgs3));
+              await _delay(_messageRenderDelay(parsedMsg));
             }
             _shownMsgs3++;
             if (parsedMsg.isCharRecall) {

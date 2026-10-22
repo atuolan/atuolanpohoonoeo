@@ -113,9 +113,22 @@ export function hexToRgba(hex: string, alpha: number): string {
 export const _delay = (ms: number) =>
   new Promise<void>((resolve) => setTimeout(resolve, ms));
 
-export function _messageRenderDelay(_total: number): number {
-  // 逐條顯示節奏：統一每條間隔 800ms（不再依訊息總數動態縮短）
-  return 800;
+/**
+ * 逐條顯示節奏：依這則訊息的字數決定等多久才冒出來，像對方真的在打字。
+ * 每字 60ms，最短 800ms（貼圖、卡片等沒字的訊息也用這個），最長 3 秒。
+ */
+export function _messageRenderDelay(msg: {
+  content?: string;
+  isVoice?: boolean;
+  voiceContent?: string;
+  isHtmlBlock?: boolean;
+}): number {
+  if (msg.isHtmlBlock) return 800;
+  const text = ((msg.isVoice ? msg.voiceContent : msg.content) || "")
+    .replace(/\[(img|sticker):.*?\]/g, "")
+    .replace(/<[^>]*>/g, "")
+    .replace(/\s+/g, "");
+  return Math.min(3000, Math.max(800, Array.from(text).length * 60));
 }
 
 export function extractModeRequestReason(attrs: string): string | undefined {
