@@ -1,5 +1,7 @@
 <script setup lang="ts">
 /** 通知：系統推播（權限、測試）、雲端推送鬧鐘（Discord / 瀏覽器推送）。 */
+import { isIosApp, isNativeApp } from "@/native/platform";
+import { pushNotificationService } from "@/services/PushNotificationService";
 import { useNotificationStore } from "@/stores";
 import { useCloudPushStore } from "@/stores/cloudPush";
 import { onActivated, onMounted, ref } from "vue";
@@ -10,36 +12,31 @@ import SettingsSwitchRow from "../ui/SettingsSwitchRow.vue";
 
 const notificationStore = useNotificationStore();
 const cloudPushStore = useCloudPushStore();
+/** App 裡通知走原生本機通知；瀏覽器推送（Web Push）在 App 裡用不了 */
+const inApp = isNativeApp();
 
 // ===== 系統推播 =====
 const permission = ref<NotificationPermission>("default");
 const showDeniedGuide = ref(false);
 
-function readPermission() {
-  if ("Notification" in window) permission.value = Notification.permission;
-}
-
-async function showNotification(title: string, options: NotificationOptions) {
-  if ("serviceWorker" in navigator) {
-    const reg = await navigator.serviceWorker.getRegistration();
-    if (reg) {
-      await reg.showNotification(title, options);
-      return;
-    }
-  }
-  new Notification(title, options);
+async function readPermission() {
+  permission.value = await pushNotificationService.refreshPermission();
 }
 
 async function requestPermission() {
-  if (!("Notification" in window)) {
-    alert("此瀏覽器不支援系統通知。\niOS 需「加入主畫面」作為 PWA 運行才支援。");
+  if (!pushNotificationService.isSupported) {
+    alert(
+      inApp
+        ? "這個版本的 App 還不能發系統通知，請安裝最新版 App。"
+        : "此瀏覽器不支援系統通知。\niOS 需「加入主畫面」作為 PWA 運行才支援。",
+    );
     return;
   }
   const result = await notificationStore.requestPushPermission();
   permission.value = result;
   if (result === "granted") {
     try {
-      await showNotification("Aguaphone", { body: "通知權限已開啟 ✓" });
+      await pushNotificationService.showDirect("Aguaphone", "通知權限已開啟 ✓");
     } catch {
       /* ignore */
     }
@@ -48,10 +45,7 @@ async function requestPermission() {
 
 async function testNotification() {
   try {
-    await showNotification("Aguaphone 測試", {
-      body: "如果你看到這條通知，代表系統推播正常運作！",
-      silent: false,
-    });
+    await pushNotificationService.showDirect("Aguaphone 測試", "如果你看到這條通知，代表系統推播正常運作！");
   } catch (e) {
     alert(`通知發送失敗：${e instanceof Error ? e.message : String(e)}`);
   }
@@ -85,7 +79,10 @@ onActivated(readPermission);
 
 <template>
   <div class="st-page">
-    <SettingsGroup title="系統推播">
+    <SettingsGroup
+      title="系統推播"
+      :footer="inApp ? 'App 切到背景一陣子後會被系統暫停，之後的新訊息要靠下面的雲端推送（Discord）提醒。' : undefined"
+    >
       <SettingsSwitchRow
         v-model="notificationStore.settings.pushEnabled"
         label="系統推播通知"
@@ -121,7 +118,11 @@ onActivated(readPermission);
       </SettingsRow>
       <div v-if="permission === 'denied' && showDeniedGuide" class="st-pad">
         <p class="st-hint">通知權限已被拒絕，要手動重新開啟：</p>
-        <ul class="notify-guide">
+        <ul v-if="inApp" class="notify-guide">
+          <li v-if="isIosApp()">iPhone：設定 → 通知 → 203 Phone → 允許通知</li>
+          <li v-else>Android：設定 → 應用程式 → 203 Phone → 通知 → 允許</li>
+        </ul>
+        <ul v-else class="notify-guide">
           <li>iOS Safari：先「加入主畫面」以 PWA 執行，再到 設定 → 通知 → 找到本 App 開啟</li>
           <li>Android Chrome：點網址列左側鎖頭 → 通知 → 允許</li>
           <li>電腦瀏覽器：點網址列左側圖示 → 網站設定 → 通知 → 重置為「詢問」</li>
@@ -132,7 +133,7 @@ onActivated(readPermission);
     <SettingsGroup
       title="雲端推送鬧鐘"
       :footer="
-        cloudPushStore.enabled
+        cloudPushStore.enabled && !inApp
           ? 'Chrome 的瀏覽器推送靠 Google FCM，在中國大陸要開全局代理；Safari、Firefox 可以直接用。'
           : undefined
       "
@@ -171,6 +172,7 @@ onActivated(readPermission);
           </div>
         </div>
         <SettingsSwitchRow
+          v-if="!inApp"
           :model-value="cloudPushStore.enabledChannels.includes('webpush')"
           label="瀏覽器推送"
           description="直接由瀏覽器跳出通知"
@@ -215,7 +217,7 @@ onActivated(readPermission);
         @click="cloudPushStore.testPushNotification()"
       />
       <SettingsRow
-        v-if="cloudPushStore.enabledChannels.includes('webpush')"
+        v-if="!inApp && cloudPushStore.enabledChannels.includes('webpush')"
         clickable
         tone="accent"
         label="測試 Web Push"

@@ -3,6 +3,7 @@
  */
 import { App } from "@capacitor/app";
 import { resumeAutoBackup } from "@/services/AutoBackupService";
+import { pushNotificationService } from "@/services/PushNotificationService";
 import { installNativeDownloadShim } from "./downloadShim";
 import { initLiveUpdate } from "./liveUpdate";
 import { handleOAuthReturnUrl } from "./oauth";
@@ -19,6 +20,11 @@ export function initNativeApp(): void {
   // 背景中定時器不會跑，回到前景時補上自動備份
   App.addListener("resume", () => {
     resumeAutoBackup().catch((err) => console.warn("[NativeApp] 補自動備份失敗:", err));
+  });
+
+  // 網頁版一開就問通知權限（storagePersistence），App 裡沒有 Notification API，改問原生的
+  void pushNotificationService.refreshPermission().then((permission) => {
+    if (permission === "default") void pushNotificationService.requestPermission();
   });
 
   // Discord 授權完導回 App 的專屬連結

@@ -116,6 +116,7 @@ import {
   updateRuntimeSessionStage,
 } from "@/utils/runtimeDiagnostics";
 import { applyServiceWorkerUpdate } from "@/utils/storagePersistence";
+import { isNativeApp } from "@/native/platform";
 import { getIncomingCallScheduler } from "./services/IncomingCallScheduler";
 import { PendingCall } from "./types";
 
@@ -1756,19 +1757,29 @@ onMounted(async () => {
   window.addEventListener("sw:update-available", handleSwUpdate);
   window.addEventListener("popstate", handleBrowserPopState);
 
+  const openNotificationTarget = (data: ServiceWorkerMessageData) => {
+    const navigateTo = data.navigateTo || "";
+    if (data.chatId || navigateTo.startsWith("/chat/")) {
+      void handleNotificationNavigate("chat", {
+        chatId: data.chatId,
+        characterId: data.characterId || undefined,
+      });
+    }
+  };
+
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker.addEventListener("message", (event: MessageEvent) => {
       const data = event.data as ServiceWorkerMessageData | undefined;
       if (data?.type !== "notification-click") return;
-
-      const navigateTo = data.navigateTo || "";
-      if (data.chatId || navigateTo.startsWith("/chat/")) {
-        void handleNotificationNavigate("chat", {
-          chatId: data.chatId,
-          characterId: data.characterId || undefined,
-        });
-      }
+      openNotificationTarget(data);
     });
+  }
+
+  // App 裡點原生通知（含點通知冷啟動 App）
+  if (isNativeApp()) {
+    void import("@/native/notifications").then(({ onNativeNotificationTap }) =>
+      onNativeNotificationTap((extra) => openNotificationTarget(extra as ServiceWorkerMessageData)),
+    );
   }
 });
 

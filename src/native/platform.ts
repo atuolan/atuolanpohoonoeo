@@ -12,6 +12,14 @@ export function isNativeApp(): boolean {
   return Capacitor.isNativePlatform();
 }
 
+/**
+ * App 外殼有原生通知插件（versionCode／CURRENT_PROJECT_VERSION 3 起）。
+ * 舊 App 熱更新到新網頁時沒有，系統通知當成不支援，不擋熱更新。
+ */
+export function hasNativeNotifications(): boolean {
+  return isNativeApp() && Capacitor.isPluginAvailable("LocalNotifications");
+}
+
 /** 在 iOS App 裡：備份位置、解除安裝會不會刪檔都跟 Android 不同 */
 export function isIosApp(): boolean {
   return isNativeApp() && Capacitor.getPlatform() === "ios";
