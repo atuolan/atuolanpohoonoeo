@@ -127,3 +127,39 @@ describe("saveChatMetadata 角色狀態", () => {
     expect(dbPut.mock.calls[0][1].charStatus).toEqual({ text: "起床了", updatedAt: 300 });
   });
 });
+
+describe("saveChatMetadata 的角色暫時離開", () => {
+  const away = (updatedAt: number, endedAt?: number) => ({
+    id: "away_1",
+    reason: "開會",
+    backText: "我回來了",
+    startedAt: 100,
+    returnAt: 1000,
+    urgeCount: 0,
+    callCount: 0,
+    endedAt,
+    updatedAt,
+  });
+
+  beforeEach(() => {
+    dbGet.mockReset();
+    dbPut.mockReset();
+  });
+
+  it("畫面上較舊的快照（或沒帶暫離）不會蓋掉背景寫入的", async () => {
+    dbGet.mockResolvedValue({ ...createChat(), charAway: away(200, 1000) });
+
+    await saveChatMetadata({ ...createChat(), charAway: away(100) });
+    expect(dbPut.mock.calls[0][1].charAway).toEqual(away(200, 1000));
+
+    await saveChatMetadata(createChat());
+    expect(dbPut.mock.calls[1][1].charAway).toEqual(away(200, 1000));
+  });
+
+  it("較新的暫離會寫進去", async () => {
+    dbGet.mockResolvedValue({ ...createChat(), charAway: away(200) });
+
+    await saveChatMetadata({ ...createChat(), charAway: away(300, 1000) });
+    expect(dbPut.mock.calls[0][1].charAway).toEqual(away(300, 1000));
+  });
+});

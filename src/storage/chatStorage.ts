@@ -80,6 +80,13 @@ export async function saveChatMetadata(chat: Chat): Promise<void> {
   ) {
     nextChat.charStatus = existing.charStatus;
   }
+  // 角色暫時離開由背景排程與聊天頁分別寫入，同樣保留較新的一筆
+  if (
+    existing?.charAway &&
+    (existing.charAway.updatedAt || 0) > (nextChat.charAway?.updatedAt || 0)
+  ) {
+    nextChat.charAway = existing.charAway;
+  }
   await db.put(DB_STORES.CHATS, nextChat);
   scheduleSelfHostedAutoSync();
 }
