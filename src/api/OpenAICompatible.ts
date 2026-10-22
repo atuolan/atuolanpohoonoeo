@@ -13,6 +13,7 @@ import type {
 } from "@/types/chat";
 import type { APISettings } from "@/types/settings";
 import { aiProxyHost } from "@/native/platform";
+import { buildNetworkDiagnosis, isNetworkErrorMessage } from "./networkErrorDiagnosis";
 import { postProcessPrompt, type PromptPostProcessingType } from "@/utils/promptPostProcessor";
 import { applyTextToolProtocol } from "@/services/toolCalling/textToolPrompt";
 import {
@@ -1510,6 +1511,7 @@ export class OpenAICompatibleClient {
       params,
     );
 
+    const requestStartedAt = Date.now();
     const response = await fetch(this.getAnthropicEndpoint(), {
       method: "POST",
       headers: {
@@ -1674,7 +1676,14 @@ export class OpenAICompatibleClient {
         yield { type: "done", content: fullContent };
       } else {
         const errMsg = e instanceof Error ? e.message : String(e);
-        yield { type: "error", error: errMsg };
+        const diagnosis = isNetworkErrorMessage(errMsg)
+          ? buildNetworkDiagnosis({
+              endpoint: this.getAnthropicEndpoint(),
+              startedAt: requestStartedAt,
+              receivedChars: fullContent.length,
+            })
+          : "";
+        yield { type: "error", error: `${errMsg}${diagnosis}` };
       }
     } finally {
       reader.releaseLock();
@@ -1699,6 +1708,7 @@ export class OpenAICompatibleClient {
     const toolAccumulator = protocolAdapter.createAccumulator();
     let parsedToolCalls: ToolCall[] = [];
 
+    const requestStartedAt = Date.now();
     const response = await fetch(this.getEndpoint(), {
       method: "POST",
       headers: {
@@ -2278,15 +2288,14 @@ export class OpenAICompatibleClient {
       } else {
         const errMsg = e instanceof Error ? e.message : String(e);
         // 網路錯誤附加診斷
-        let diagnosis = '';
-        if (errMsg.includes('NetworkError') || errMsg.includes('Failed to fetch') || errMsg.includes('network')) {
-          diagnosis = `\n[診斷] 網路中斷（已收到 ${chunkCount} chunks / ${totalBytes} bytes / ${totalTime}ms）。`;
-          if (chunkCount > 0) {
-            diagnosis += ' 串流中途斷開，可能是代理層超時或用戶網路不穩。';
-          } else {
-            diagnosis += ' 完全無法連接代理服務器，請檢查網路。';
-          }
-        }
+        const diagnosis = isNetworkErrorMessage(errMsg)
+          ? buildNetworkDiagnosis({
+              endpoint: this.getEndpoint(),
+              startedAt: requestStartedAt,
+              chunkCount,
+              totalBytes,
+            })
+          : "";
         yield { type: "error", error: `${errMsg}${diagnosis}` };
       }
     } finally {
@@ -2301,6 +2310,12 @@ export class OpenAICompatibleClient {
     params: GenerationParams,
   ): AsyncGenerator<StreamingEvent> {
     let hasYieldedTokens = false;
+    let attemptStartedAt = Date.now();
+    const endpoint = this.shouldUseAnthropicNative() ? this.getAnthropicEndpoint() : this.getEndpoint();
+    const withDiagnosis = (errMsg: string, retried: boolean) =>
+      isNetworkErrorMessage(errMsg)
+        ? `${errMsg}${buildNetworkDiagnosis({ endpoint, startedAt: attemptStartedAt, retried })}`
+        : errMsg;
 
     try {
       for await (const event of this._generateStreamInternal(params)) {
@@ -2316,15 +2331,11 @@ export class OpenAICompatibleClient {
       }
 
       const errMsg = e instanceof Error ? e.message : String(e);
-      const isNetworkError =
-        errMsg.includes("NetworkError") ||
-        errMsg.includes("Failed to fetch") ||
-        errMsg.includes("network") ||
-        errMsg.includes("ERR_CONNECTION");
 
-      // 只在尚未收到任何 token 且是 NetworkError 時重試一次
-      if (isNetworkError && !hasYieldedTokens && !params.signal?.aborted) {
+      // 只在尚未收到任何 token 且是網路錯誤時重試一次
+      if (isNetworkErrorMessage(errMsg) && !hasYieldedTokens && !params.signal?.aborted) {
         console.warn(`[API Stream] NetworkError detected, retrying once... (${errMsg})`);
+        attemptStartedAt = Date.now();
         try {
           for await (const event of this._generateStreamInternal(params)) {
             yield event;
@@ -2336,12 +2347,12 @@ export class OpenAICompatibleClient {
           } else {
             yield {
               type: "error",
-              error: retryErr instanceof Error ? retryErr.message : String(retryErr),
+              error: withDiagnosis(retryErr instanceof Error ? retryErr.message : String(retryErr), true),
             };
           }
         }
       } else {
-        yield { type: "error", error: errMsg };
+        yield { type: "error", error: withDiagnosis(errMsg, false) };
       }
     }
   }
