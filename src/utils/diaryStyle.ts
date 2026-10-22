@@ -310,12 +310,13 @@ export function diaryFontFamily(hand: DiaryHand, script: ChineseScript): string 
     const main = script === "hans" ? "'ZCOOL KuaiLe'" : "'Iansui'";
     return `${main}, 'Yuanti TC', 'Yuanti SC', system-ui, sans-serif`;
   }
+  // 簡體潦草原本用志莽行書，正文大小幾乎認不出來，改龍藏體
   if (hand === "scrawl") {
-    const main = script === "hans" ? "'Zhi Mang Xing'" : "'Iansui'";
+    const main = script === "hans" ? "'Long Cang'" : "'Iansui'";
     return `${main}, 'Xingkai SC', 'STXingkai', cursive`;
   }
-  const main = script === "hans" ? "'Ma Shan Zheng'" : "'LXGW WenKai TC'";
-  return `${main}, 'Kaiti TC', 'Kaiti SC', 'STKaiti', 'KaiTi', serif`;
+  // 霞鶩文楷 TC 也有簡體字，比馬善政的毛筆字好讀，繁簡共用
+  return "'LXGW WenKai TC', 'Kaiti TC', 'Kaiti SC', 'STKaiti', 'KaiTi', serif";
 }
 
 const FONT_LINK_ID = "diary-hand-fonts";
@@ -327,13 +328,23 @@ export function ensureDiaryFonts(): void {
   link.id = FONT_LINK_ID;
   link.rel = "stylesheet";
   link.href =
-    "https://fonts.googleapis.com/css2?family=Iansui&family=LXGW+WenKai+TC:wght@400;700&family=Ma+Shan+Zheng&family=ZCOOL+KuaiLe&family=Zhi+Mang+Xing&display=swap";
+    "https://fonts.googleapis.com/css2?family=Iansui&family=LXGW+WenKai+TC:wght@400;700&family=Long+Cang&family=ZCOOL+KuaiLe&display=swap";
   document.head.appendChild(link);
+}
+
+/** 牛皮紙、泛黃舊紙底色深，墨水照原色對比不到 4.5:1，往黑色調深 */
+const DARK_PAPERS: ReadonlySet<DiaryPaper> = new Set(["kraft", "aged"]);
+
+function darkenHex(hex: string, amount: number): string {
+  const n = parseInt(hex.slice(1), 16);
+  const ch = (shift: number) => Math.round(((n >> shift) & 255) * (1 - amount));
+  return `#${[16, 8, 0].map((s) => ch(s).toString(16).padStart(2, "0")).join("")}`;
 }
 
 /** 日記本：回傳色碼，套用紙／墨水規則 */
 export function resolveInk(book: DiaryBook): string {
-  return DIARY_INKS[fitInk(book.paper, book.ink)].color;
+  const color = DIARY_INKS[fitInk(book.paper, book.ink)].color;
+  return DARK_PAPERS.has(book.paper) ? darkenHex(color, 0.45) : color;
 }
 
 const FIRST_BOOK_PROMPT = [

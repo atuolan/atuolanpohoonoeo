@@ -128,7 +128,10 @@
               </div>
             </header>
 
-            <div class="diary-body" :class="{ 'is-scrawl': isScrawlHant }">
+            <div
+              class="diary-body"
+              :class="{ 'is-scrawl': isScrawlHant, 'is-scrawl-hans': isScrawlHans }"
+            >
               <p v-for="(para, index) in paragraphs" :key="index" class="diary-para">
                 <span
                   v-for="(segment, segIndex) in para.segments"
@@ -324,6 +327,7 @@ const script = computed(() => detectChineseScript(props.diaryData.content));
 const fontFamily = computed(() => diaryFontFamily(book.value.hand, script.value));
 const ink = computed(() => resolveInk(book.value));
 const isScrawlHant = computed(() => book.value.hand === "scrawl" && script.value === "hant");
+const isScrawlHans = computed(() => book.value.hand === "scrawl" && script.value === "hans");
 
 const paperVars = computed(() => ({
   "--diary-ink": ink.value,
@@ -655,6 +659,14 @@ onMounted(() => {
   }
 }
 
+// 牛皮紙、泛黃舊紙底色深：頁邊小字也要調深才看得清楚
+.paper--kraft,
+.paper--aged {
+  .diary-margin {
+    color: #3d3768;
+  }
+}
+
 // 黑卡紙：黃色螢光筆蓋在金字上看不見，改淡白；頁邊小字調亮
 .paper--black {
   .diary-mark {
@@ -840,6 +852,11 @@ onMounted(() => {
   // 繁體潦草沒有行書字型：每個字斜寫（整塊 skew 會讓第一行看起來縮排）
   &.is-scrawl {
     font-style: oblique 10deg;
+  }
+
+  // 龍藏體字面小，放大一點才看得清楚
+  &.is-scrawl-hans {
+    font-size: 22px;
   }
 }
 

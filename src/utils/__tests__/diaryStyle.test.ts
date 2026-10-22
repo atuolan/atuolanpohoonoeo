@@ -113,6 +113,8 @@ describe("resolveInk", () => {
   it("回傳墨水色碼，白墨水配一般紙退回黑", () => {
     expect(resolveInk(book({ paper: "lined", ink: "white" }))).toBe("#1d2126");
     expect(resolveInk(book({ paper: "black", ink: "gold" }))).toBe("#d8b45a");
+    // 深色紙的墨水會調深
+    expect(resolveInk(book({ paper: "kraft", ink: "green" }))).toBe("#1a3b2b");
   });
 });
 
