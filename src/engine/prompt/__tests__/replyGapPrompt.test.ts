@@ -48,14 +48,24 @@ describe("時間資訊帶上距離角色上次回覆多久", () => {
     expect(text).not.toContain("{{char}}");
   });
 
-  it("不到一小時只提醒別一直交代剛剛做了什麼", async () => {
-    for (const minutesAgo of [3, 50]) {
+  it("才過幾分鐘：講明時間幾乎沒走，不准換地方、換新動作", async () => {
+    for (const minutesAgo of [0, 3]) {
       const text = await timeInfo({
-        messages: [msg(false, minutesAgo, "嗯"), msg(true, 1, "然後呢")],
+        messages: [msg(false, minutesAgo, "剛回到飯店"), msg(true, 0, "你路程是否有點快")],
       });
-      expect(text).toContain("你不需要一直強調自己剛剛做了甚麼，保持自然");
-      expect(text).not.toContain("上一次回覆在");
+      expect(text).toContain("時間幾乎沒走");
+      expect(text).toContain("不用交代自己剛剛做了什麼");
+      expect(text).not.toContain("{{user}}");
     }
+    const justNow = await timeInfo({ messages: [msg(false, 0, "嗯")] });
+    expect(justNow).toContain("到現在才過了 不到 1 分鐘");
+  });
+
+  it("十幾分鐘到一小時：給經過時間，有變化才提", async () => {
+    const text = await timeInfo({ messages: [msg(false, 50, "嗯"), msg(true, 1, "然後呢")] });
+    expect(text).toContain("角色 上一次回覆在 22:50，到現在過了 50 分鐘");
+    expect(text).toContain("近況有明顯變化才順口提一句");
+    expect(text).not.toContain("時間幾乎沒走");
   });
 
   it("跨日時帶上日期", async () => {

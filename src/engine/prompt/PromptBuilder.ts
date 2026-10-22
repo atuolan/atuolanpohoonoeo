@@ -2680,6 +2680,8 @@ ${PHONE_CALL_BILINGUAL_REMINDER}`
 
   /** 距離上次回覆超過這個時間，才提醒角色這段時間生活照常在走 */
   private static readonly REPLY_GAP_NUDGE_MS = 60 * 60 * 1000;
+  /** 距離上次回覆不到這個時間，當作還在同一段對話裡，角色的狀況不會變 */
+  private static readonly REPLY_GAP_SHORT_MS = 15 * 60 * 1000;
 
   /**
    * 線上聊天：角色上一次回覆到現在過了多久。
@@ -2704,15 +2706,28 @@ ${PHONE_CALL_BILINGUAL_REMINDER}`
     // 循環時間模式繞回起點時會是負的，這時算不出有意義的間隔
     if (!Number.isFinite(gapMs) || gapMs < 0) return null;
 
-    // 不到門檻不給經過時間，只提醒別每則都在交代剛剛做了什麼
-    if (gapMs < PromptBuilder.REPLY_GAP_NUDGE_MS) {
-      return ["[距離上次回覆]", "你不需要一直強調自己剛剛做了甚麼，保持自然"].join("\n");
-    }
-
     const hm = `${lastAt.getHours().toString().padStart(2, "0")}:${lastAt.getMinutes().toString().padStart(2, "0")}`;
     const sameDay = lastAt.toDateString() === now.toDateString();
     const lastAtText = sameDay ? hm : `${lastAt.getMonth() + 1}/${lastAt.getDate()} ${hm}`;
     const gap = formatGap(gapMs);
+
+    // 只說「別一直強調」沒用：模型不知道才過一兩分鐘，照樣每輪換地方、換新動作，
+    // 所以短間隔也要把經過時間講明白
+    if (gapMs < PromptBuilder.REPLY_GAP_SHORT_MS) {
+      return [
+        "[距離上次回覆]",
+        `{{char}} 上一次回覆在 ${lastAtText}，到現在才過了 ${gap}，時間幾乎沒走：`,
+        "- {{char}} 還在上次說的地方、做上次說的事；這麼短的時間不會又做完什麼、到了哪裡、開始新的事",
+        "- 這輪專心回 {{user}} 說的話，不用交代自己剛剛做了什麼、現在在做什麼，也不用換 <char-status>",
+      ].join("\n");
+    }
+    if (gapMs < PromptBuilder.REPLY_GAP_NUDGE_MS) {
+      return [
+        "[距離上次回覆]",
+        `{{char}} 上一次回覆在 ${lastAtText}，到現在過了 ${gap}。`,
+        "近況有明顯變化才順口提一句，沒有就專心聊天，不用每輪交代自己剛剛做了什麼",
+      ].join("\n");
+    }
 
     return [
       "[距離上次回覆]",
