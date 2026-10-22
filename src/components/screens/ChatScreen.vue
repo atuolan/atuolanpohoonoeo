@@ -3244,6 +3244,7 @@ const {
   showChatSettingsMenu,
   settingsStore,
   saveChat,
+  resolveSpeakerId: (name) => resolveGroupMemberByName(name).characterId,
 });
 /** 全域音色混合實際會送出的音色數（0 表示沒在用混合） */
 const globalTimbreMixCount = computed(
@@ -12698,7 +12699,7 @@ useChatCleanup({
                   :tts-settings="settingsStore.minimaxTTS"
                 />
                 <span v-if="!useGroupChatParser" class="setting-hint"
-                  >面對面模式一則訊息裡會有好幾個人說話，分不出是誰，這時都用群組預設音色。</span
+                  >面對面模式一則訊息裡有好幾個人說話，AI 會在每句台詞標出是誰說的；沒標到或名字對不上的台詞用群組預設音色。</span
                 >
               </template>
 

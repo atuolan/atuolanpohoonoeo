@@ -100,6 +100,8 @@ export interface TTSSegment {
   emotion: string;
   /** 語速 0.5~2.0 */
   speed: number;
+  /** 多人卡面對面：這句台詞是誰說的（[emotion=...;speaker=名字]），用來挑成員音色 */
+  speaker?: string;
   /** 帶語氣標籤的原文（直接送 TTS API） */
   text: string;
   /** 去標籤的乾淨文字（純閱讀顯示） */
@@ -109,17 +111,19 @@ export interface TTSSegment {
 }
 
 /**
- * 解析 [emotion=...] 裡 `emotion=` 後面的部分，例如 "sad;speed=0.9"。
+ * 解析 [emotion=...] 裡 `emotion=` 後面的部分，例如 "sad;speed=0.9;speaker=阿明"。
  * 第一段就是情緒本身（沒有 key），後面才是 key=value。
  */
-function parseEmotionParams(raw: string): { emotion: string; speed: number } {
+function parseEmotionParams(raw: string): { emotion: string; speed: number; speaker?: string } {
   const [emotion, ...rest] = raw.split(';');
   let speed = 1.0;
+  let speaker: string | undefined;
   for (const part of rest) {
-    const [k, v] = part.split('=');
+    const [k, v = ''] = part.split('=');
     if (k?.trim() === 'speed') speed = parseFloat(v) || 1.0;
+    if (k?.trim() === 'speaker') speaker = v.trim() || undefined;
   }
-  return { emotion: emotion.trim() || 'neutral', speed };
+  return { emotion: emotion.trim() || 'neutral', speed, ...(speaker && { speaker }) };
 }
 
 /**
@@ -145,10 +149,8 @@ export function parseTTSSegments(novel: string): TTSSegment[] {
   while ((m = quotedRe.exec(novel)) !== null) {
     const rawText = m[1] ?? m[3] ?? m[5] ?? '';
     const emotionStr = m[2] ?? m[4] ?? m[6] ?? '';
-    const { emotion, speed } = parseEmotionParams(emotionStr);
     out.push({
-      emotion,
-      speed,
+      ...parseEmotionParams(emotionStr),
       text: rawText.trim(),
       clean: rawText
         .replace(/\([a-z-]+\)/gi, '')
@@ -170,13 +172,11 @@ export function parseTTSSegments(novel: string): TTSSegment[] {
     // 取得這個 [emotion=...] 之前的文字段落
     const segText = novel.slice(lastEnd, m.index).trim();
     const emotionStr = m[1] ?? '';
-    const { emotion, speed } = parseEmotionParams(emotionStr);
 
     // 只有當前段落確實有文字才加入
     if (segText) {
       out.push({
-        emotion,
-        speed,
+        ...parseEmotionParams(emotionStr),
         text: segText,
         clean: segText
           .replace(/\([a-z-]+\)/gi, '')

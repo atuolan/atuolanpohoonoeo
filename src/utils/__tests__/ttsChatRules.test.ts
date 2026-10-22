@@ -26,6 +26,17 @@ describe("線上與群聊語音規則的寫法解析得出語音", () => {
     ]);
   });
 
+  it("多人卡面對面的台詞讀得到說話者", () => {
+    expect(
+      parseTTSSegments("「走啦[emotion=happy;speaker=阿晴]」「嗯[emotion=calm;speed=0.8;speaker= 小澈 ]」「好[emotion=sad]」"),
+    ).toMatchObject([
+      { emotion: "happy", speed: 1, speaker: "阿晴", text: "走啦" },
+      { emotion: "calm", speed: 0.8, speaker: "小澈", text: "嗯" },
+      { emotion: "sad", text: "好" },
+    ]);
+    expect(parseTTSSegments("「好[emotion=sad]」")[0]).not.toHaveProperty("speaker");
+  });
+
   it("群聊訊息", () => {
     const [msg] = parseGroupChatResponse(`<content>\n<msg name="阿明">${LINE}</msg>\n</content>`).messages;
     expect(msg.senderName).toBe("阿明");

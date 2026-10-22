@@ -3344,6 +3344,22 @@ ${speakLine}
       };
     }
 
+    // 多人卡面對面整段只有一則訊息，要靠台詞自己標說話者才能用各自的成員音色
+    const speakerNames = this.options.isMultiCharCard
+      ? (this.options.multiCharMembers ?? []).map((m) => m.name.trim()).filter(Boolean)
+      : [];
+    const [firstSpeaker, secondSpeaker = firstSpeaker] = speakerNames;
+    const speakerRule = speakerNames.length
+      ? `
+
+4. 說話者——這裡有好幾個角色，每個人用自己的聲音念。台詞的 [emotion=...] 裡要加上是誰說的：
+[emotion=情緒;speaker=角色名] 或 [emotion=情緒;speed=語速;speaker=角色名]
+角色名只能用這些：${speakerNames.join("、")}
+示例：
+${firstSpeaker}回頭看了一眼。"走啦，再不走要遲到了[emotion=happy;speaker=${firstSpeaker}]"
+${secondSpeaker}慢吞吞地跟上。"知道了……<#0.4#>走慢一點啦[emotion=calm;speed=0.9;speaker=${secondSpeaker}]"`
+      : "";
+
     const content = `【語音合成標記規則】
 你的對話文字將被語音合成引擎朗讀。只有角色真正「說出口」的台詞需要加語音標記，敘述、動作、心理活動、場景描寫都不要加標記。
 
@@ -3380,13 +3396,13 @@ speed：0.5~2.0，正常時省略
 她眼睛一亮。"真的嗎(laughs)？太好了！[emotion=happy]"
 他沉默了很久。"算了(sighs)……<#1.2#>有些事強求不來。[emotion=sad;speed=0.85]"
 她把聲音放輕。"沒事的，慢慢來，我在聽。[emotion=calm]"
-他停了一下，像是在整理措辭。"我不是不在乎，只是不知道該怎麼說。[emotion=neutral]"
+他停了一下，像是在整理措辭。"我不是不在乎，只是不知道該怎麼說。[emotion=neutral]"${speakerRule}
 
 硬性要求：
 - [emotion=...] 始終放在引號關閉前的最末尾
 - 一段台詞最多只放一個 [emotion=...]
 - 敘述旁白正常寫，不加任何標記
-- 沒有明顯情緒時，寧可少標，也不要亂標
+- 沒有明顯情緒時，寧可少標，也不要亂標${speakerNames.length ? "\n- 有 [emotion=...] 的台詞都要帶 speaker=角色名，名字照上面寫，不要寫綽號或代稱" : ""}
 - 優先保證台詞自然，其次才是語音表演效果`;
 
     return {

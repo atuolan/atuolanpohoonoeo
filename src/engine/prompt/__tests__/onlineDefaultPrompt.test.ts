@@ -137,4 +137,20 @@ describe("線上模式預設提示詞分區", () => {
     expect(text).not.toContain("引號關閉前");
     expect((await build()).map((m) => m.content).join("\n")).not.toContain("語音合成標記規則");
   });
+
+  it("多人卡面對面的語音規則要求台詞標說話者，名字用子角色的", async () => {
+    const join = async (extra: Record<string, unknown>) =>
+      (await build([], { minimaxTTSEnabled: true, faceToFaceMode: true, ...extra })).map((m) => m.content).join("\n");
+    const multi = await join({
+      isMultiCharCard: true,
+      multiCharMembers: [
+        { id: "m-a", name: "阿晴", source: "manual" },
+        { id: "m-b", name: "小澈", source: "manual" },
+      ],
+    });
+    expect(multi).toContain("引號關閉前");
+    expect(multi).toContain("角色名只能用這些：阿晴、小澈");
+    expect(multi).toContain("[emotion=happy;speaker=阿晴]");
+    expect(await join({})).not.toContain("speaker=");
+  });
 });

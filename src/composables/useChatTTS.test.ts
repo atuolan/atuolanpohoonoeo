@@ -256,6 +256,30 @@ describe("useChatTTS manual regeneration", () => {
       ]);
   });
 
+  it("多人卡面對面：每句台詞照標的說話者用成員音色，對不上的用群組音色", async () => {
+    vi.mocked(synthesizeSpeech).mockResolvedValue({ success: false, error: "test" });
+    const context = {
+      ...createContext(),
+      resolveSpeakerId: (name: string) => ({ 阿晴: "m-a", 小澈: "m-b", 路人: "m-c" })[name],
+    };
+    const { chatMinimaxTTSOverride, processMessageTTS } = useChatTTS(context);
+    chatMinimaxTTSOverride.value = { voiceId: "group-voice", memberVoices: { "m-a": "voice-a", "m-b": "voice-b" } };
+
+    await processMessageTTS(
+      aiMessage.id,
+      "「走啦[emotion=happy;speaker=阿晴]」「嗯[emotion=calm;speaker=小澈]」「喂[emotion=angry;speaker=路人]」「好[emotion=sad;speaker=不認識]」「哦[emotion=calm]」",
+    );
+
+    expect(vi.mocked(synthesizeSpeech).mock.calls.map(([text, s]) => [text, s.voiceId, s.timberWeightsEnabled]))
+      .toEqual([
+        ["走啦", "voice-a", false],
+        ["嗯", "voice-b", false],
+        ["喂", "group-voice", false],
+        ["好", "group-voice", false],
+        ["哦", "group-voice", false],
+      ]);
+  });
+
   it("雙語訊息的情緒標記在翻譯那行：自動合成和重新生成都念原文、帶情緒", async () => {
     vi.mocked(synthesizeSpeech).mockResolvedValue({ success: false, error: "test" });
     const content = "How are you?<br>你最近好嗎？[emotion=happy]";

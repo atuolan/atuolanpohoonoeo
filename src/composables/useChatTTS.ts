@@ -47,6 +47,8 @@ export function useChatTTS(context: {
   showChatSettingsMenu: Ref<boolean>;
   settingsStore: any;
   saveChat: () => void | Promise<void>;
+  /** 群聊：把台詞標的說話者名字對到成員 id（對不到回 undefined） */
+  resolveSpeakerId?: (name: string) => string | undefined;
 }) {
   const chatMinimaxTTSOverride = ref<ChatMinimaxTTSOverride>({});
   const showMinimaxTTSSettingsModal = ref(false);
@@ -130,13 +132,11 @@ export function useChatTTS(context: {
     try {
       const { synthesizeSpeech } = await import("@/api/MiniMaxTTSApi");
       const override = chatMinimaxTTSOverride.value;
+      const memberVoice = (id: string | undefined) => (id && override.memberVoices?.[id]?.trim()) || undefined;
       // 群聊：說話的成員有自己的音色就用它，其次才是這個聊天的音色
-      const senderId = context.messages.value[idx].senderCharacterId;
-      const voiceId = (senderId && override.memberVoices?.[senderId]?.trim()) || override.voiceId;
+      const senderVoice = memberVoice(context.messages.value[idx].senderCharacterId);
       const baseSettings = {
         ...context.settingsStore.minimaxTTS,
-        // 成員或聊天自己指定的音色優先於全域的音色混合
-        ...(voiceId && { voiceId, timberWeightsEnabled: false }),
         ...(override.pitch !== undefined && { pitch: override.pitch }),
         ...(override.languageBoost !== undefined && { languageBoost: override.languageBoost }),
       };
@@ -146,9 +146,16 @@ export function useChatTTS(context: {
       let anySuccess = false;
       for (let i = 0; i < segments.length; i++) {
         const seg = segments[i];
+        // 多人卡面對面一則訊息有好幾個人說話，台詞自己標的說話者優先
+        const speakerVoice = seg.speaker
+          ? memberVoice(context.resolveSpeakerId?.(seg.speaker))
+          : undefined;
+        const voiceId = speakerVoice || senderVoice || override.voiceId;
         // 每段用自己的 speed 和 emotion
         const mergedSettings = {
           ...baseSettings,
+          // 成員或聊天自己指定的音色優先於全域的音色混合
+          ...(voiceId && { voiceId, timberWeightsEnabled: false }),
           speed: baseSpeed * seg.speed,
         };
         const ttsText = convertTTSContentToSimplified(seg.text, mergedSettings.languageBoost);
