@@ -42,6 +42,7 @@ function registerMessageBubbleIframeWindow(
 
 <script setup lang="ts">
 import { useAudioPlayer } from "@/composables/useAudioPlayer";
+import type { AwayHint } from "@/composables/useCharAway";
 import {
   getAvatarFrameInlineStyle,
   getAvatarFrameLayers,
@@ -458,6 +459,8 @@ interface MessageBubbleProps {
   isCallNotification?: boolean;
   callNotificationType?: "declined" | "missed" | "unanswered";
   callReason?: string;
+  /** 角色暫時離開時，留在這兩則泡泡下的灰色小字 */
+  awayHint?: AwayHint | null;
   // MiniMax TTS 語音合成
   ttsAudioUrl?: string;
   ttsSegments?: Array<{
@@ -587,6 +590,7 @@ const props = withDefaults(defineProps<MessageBubbleProps>(), {
   isCallNotification: false,
   callNotificationType: undefined,
   callReason: undefined,
+  awayHint: null,
   ttsAudioUrl: undefined,
   ttsSegments: undefined,
   characterRegexScripts: () => [],
@@ -615,6 +619,8 @@ const emit = defineEmits<{
   /** 把被移出的成員拉回群裡（帶被移出者的名字） */
   (e: "restoreGroupMember", targetName: string): void;
   (e: "edit", id: string): void;
+  /** 角色暫時離開：發起「快回來」小遊戲 */
+  (e: "quickBack"): void;
   (e: "delete", id: string): void;
   (e: "copy", id: string): void;
   (e: "regenerate", id: string): void;
@@ -3371,11 +3377,20 @@ const showTextVoiceTranscript = ref(true);
           />
         </svg>
         <span class="call-notification-text">
-          {{ callNotificationType === "declined" ? "已拒接" : "未接來電" }}
+          {{
+            callNotificationType === "declined"
+              ? "已拒接"
+              : callNotificationType === "unanswered"
+                ? "未接通"
+                : "未接來電"
+          }}
         </span>
         <span class="call-notification-time">
           {{ formattedTime }}
         </span>
+        <div v-if="awayHint" class="away-hint">
+          {{ awayHint.text }}<template v-if="awayHint.action === 'urge'"> · <button type="button" class="away-hint-action" @click.stop="emit('quickBack')">快回來</button></template><template v-else-if="awayHint.action === 'locked'"> · {{ awayHint.lockedText }}</template>
+        </div>
       </div>
       <!-- 電話通話紀錄（系統訊息） -->
       <div v-else-if="isPhoneCallSummary" class="phone-call-summary-message">
@@ -4645,6 +4660,11 @@ const showTextVoiceTranscript = ref(true);
           class="message-time"
         >
           {{ formattedTime }}
+        </div>
+
+        <!-- 角色暫時離開：泡泡下的灰色小字 -->
+        <div v-if="awayHint" class="away-hint">
+          {{ awayHint.text }}<template v-if="awayHint.action === 'urge'"> · <button type="button" class="away-hint-action" @click.stop="emit('quickBack')">快回來</button></template><template v-else-if="awayHint.action === 'locked'"> · {{ awayHint.lockedText }}</template>
         </div>
       </div>
 
@@ -8111,6 +8131,33 @@ const showTextVoiceTranscript = ref(true);
   color: var(--color-text-muted);
   margin-top: 4px;
   padding: 0 4px;
+}
+
+// 角色暫時離開：泡泡下的灰色小字
+.away-hint {
+  font-size: 11px;
+  color: var(--color-text-muted);
+  margin-top: 2px;
+  padding: 0 4px;
+}
+
+.bubble.user .away-hint {
+  text-align: right;
+}
+
+.call-notification-card .away-hint {
+  text-align: center;
+}
+
+.away-hint-action {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+  cursor: pointer;
 }
 
 // 改字被看到：氣泡左下角外側的小眼睛

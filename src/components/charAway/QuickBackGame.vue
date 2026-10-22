@@ -35,7 +35,7 @@
             <div class="tap-bar-fill" :style="{ width: timeRatio * 100 + '%' }"></div>
           </div>
           <p class="tap-hint">
-            {{ started ? `剩 ${secondsLeft} 秒` : `10 秒內戳 ${tapTarget} 下` }}
+            {{ started ? `剩 ${secondsLeft} 秒` : '戳頭像就開始計時' }}
           </p>
         </div>
 
@@ -106,8 +106,8 @@ const won = ref(false)
 // ---- 共用 ----
 const subtitle = computed(() =>
   props.kind === 'tap'
-    ? `10 秒內戳 ${props.characterName} ${props.tapTarget} 下`
-    : `跟 ${props.characterName} 猜拳，三戰兩勝`,
+    ? `10 秒內戳${props.characterName} ${props.tapTarget} 下`
+    : `跟${props.characterName}猜拳，三戰兩勝`,
 )
 
 const avatarLetter = computed(() => props.characterName.trim().charAt(0) || '？')
