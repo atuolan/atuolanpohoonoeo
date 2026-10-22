@@ -14,8 +14,8 @@ import { watch } from "vue";
 // 5. 回到前台、頁面從凍結恢復：重新確認並接回
 // 所有聲音都等使用者第一次觸摸/點擊後才啟動，避免被瀏覽器自動播放策略攔截
 
-/** 15 秒單聲道靜音（Android 要超過 5 秒才會出現在音樂欄、保活才有效） */
-const KEEPALIVE_AUDIO_URL = `${import.meta.env.BASE_URL}keepalive.mp3`;
+/** 5 分鐘單聲道靜音，循環播放（Android 要超過 5 秒才會出現在音樂欄、保活才有效） */
+const KEEPALIVE_AUDIO_URL = `${import.meta.env.BASE_URL}keepalive-5min.mp3`;
 
 const POLL_INTERVAL_MS = 10_000;
 /** 被打斷後第一次等多久再接回 */
@@ -221,12 +221,14 @@ function createSilentAudio(): HTMLAudioElement {
   el.volume = 0.001;
   // 系統自己恢復播放（例如來電結束）也會走這裡，音樂欄狀態跟著實際播放
   el.addEventListener("play", () => {
-    lastResumedAt = Date.now();
     setPlaybackState("playing");
   });
-  // loop 保險：萬一沒有循環，自己從頭播
+  // loop 保險：萬一播到結尾停了，自己從頭播；播不起來就交給下一次輪詢
   el.addEventListener("ended", () => {
-    if (isActive && !pausedByUser) el.play().catch(() => {});
+    if (!isActive || pausedByUser) return;
+    el.play().catch(() => {
+      nextRetryAt = 0;
+    });
   });
   el.addEventListener("pause", onSilentAudioPaused);
   el.addEventListener("error", () => {
@@ -239,8 +241,9 @@ function createSilentAudio(): HTMLAudioElement {
 
 /** 不是自己停的（來電、別的 App 放音樂）：不馬上搶回，交給輪詢 */
 function onSilentAudioPaused() {
-  // pause 事件是非同步的：處理時已經又在播（例如循環），就不算被停
-  if (!isActive || pausedByUser || !silentAudioEl?.paused) return;
+  // pause 事件是非同步的：處理時已經又在播（例如循環），就不算被停；
+  // 播到結尾停的交給 ended 從頭播，也不算被別人搶
+  if (!isActive || pausedByUser || !silentAudioEl?.paused || silentAudioEl.ended) return;
   const now = Date.now();
   // 剛接回又被停：多半是別的 App 在放音樂，等久一點
   if (now - lastResumedAt < CONTENTION_WINDOW_MS) {
@@ -272,6 +275,7 @@ function startSilentAudio() {
     setupMediaSession();
     void playSilentAudio().then((ok) => {
       if (ok) {
+        lastResumedAt = Date.now();
         console.log("[KeepAlive] 靜音音檔已啟動");
       } else if (isActive && isPageVisible()) {
         // 多半是還沒有使用者手勢：下次觸摸畫面再試
@@ -324,6 +328,8 @@ function tryResume(trigger: ResumeTrigger) {
     if (attempt !== resumeAttempt) return;
     resumePending = false;
     if (ok) {
+      // 只記自己接回的時間；播到結尾從頭播、系統自己恢復都不算
+      lastResumedAt = Date.now();
       if (foreground && trigger !== "user") foregroundGrabs++;
       console.log("[KeepAlive] 已接回靜音");
       return;
