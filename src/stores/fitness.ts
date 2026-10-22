@@ -19,6 +19,7 @@ import type {
   FoodItem,
 } from '@/types/fitness'
 import dayjs from 'dayjs'
+import { findRecordedFoodIndex, findSameFood, mergeSameDateMealLogs, totalCaloriesOf } from '@/utils/mealLogs'
 
 // 預設設定
 const DEFAULT_SETTINGS: FitnessSettings = {
@@ -134,9 +135,20 @@ export const useFitnessStore = defineStore('fitness', () => {
 
   // ===== 資料庫操作 =====
   
-  async function loadFromDB() {
-    if (isLoaded.value) return
-    
+  // 同時有好幾個畫面叫載入時共用同一次，不然每次都把資料庫的紀錄再推一份進陣列
+  let loadingPromise: Promise<void> | null = null
+
+  function loadFromDB(): Promise<void> {
+    if (isLoaded.value) return Promise.resolve()
+    if (!loadingPromise) {
+      loadingPromise = doLoadFromDB().finally(() => {
+        loadingPromise = null
+      })
+    }
+    return loadingPromise
+  }
+
+  async function doLoadFromDB() {
     try {
       // 載入設定
       const storedSettings = await db.get<FitnessSettings>(DB_STORES.SETTINGS, 'fitness-settings')
@@ -155,19 +167,34 @@ export const useFitnessStore = defineStore('fitness', () => {
 
       // 載入所有健身相關資料
       const allSettings = await db.getAll<{ id?: string }>(DB_STORES.SETTINGS)
+      const loadedWorkouts = new Map<string, WorkoutLog>()
+      const loadedMeals: MealLog[] = []
+      const loadedBody = new Map<string, BodyMetrics>()
       
       for (const item of allSettings) {
         if (!item.id) continue
         
         if (item.id.startsWith('workout-')) {
-          workoutLogs.value.push(item as unknown as WorkoutLog)
+          loadedWorkouts.set(item.id, item as unknown as WorkoutLog)
         } else if (item.id.startsWith('meal-')) {
-          mealLogs.value.push(item as unknown as MealLog)
+          loadedMeals.push(item as unknown as MealLog)
         } else if (item.id.startsWith('body-')) {
-          bodyMetrics.value.push(item as unknown as BodyMetrics)
+          loadedBody.set(item.id, item as unknown as BodyMetrics)
         }
       }
-      
+
+      // 以前聊天在載入前就寫入，同一天會多出一份紀錄；併回一份，畫面才看得到全部食物
+      const { logs, changed, removedIds } = mergeSameDateMealLogs(loadedMeals)
+      for (const log of changed) {
+        await db.put(DB_STORES.SETTINGS, JSON.parse(JSON.stringify(log)), `meal-${log.id}`)
+      }
+      for (const id of removedIds) {
+        await db.delete(DB_STORES.SETTINGS, `meal-${id}`)
+      }
+
+      workoutLogs.value = [...loadedWorkouts.values()]
+      mealLogs.value = logs
+      bodyMetrics.value = [...loadedBody.values()]
       isLoaded.value = true
       console.log('[Fitness] 資料載入完成')
     } catch (error) {
@@ -197,6 +224,7 @@ export const useFitnessStore = defineStore('fitness', () => {
   // ===== 訓練記錄操作 =====
   
   async function addWorkoutLog(log: Omit<WorkoutLog, 'id' | 'createdAt'>) {
+    await loadFromDB()
     const newLog: WorkoutLog = {
       ...log,
       id: `workout-${Date.now()}`,
@@ -215,6 +243,7 @@ export const useFitnessStore = defineStore('fitness', () => {
   }
 
   async function updateWorkoutLog(id: string, updates: Partial<WorkoutLog>) {
+    await loadFromDB()
     const index = workoutLogs.value.findIndex(log => log.id === id)
     if (index === -1) return
     
@@ -230,6 +259,8 @@ export const useFitnessStore = defineStore('fitness', () => {
   // ===== 飲食記錄操作 =====
 
   async function addFoodToMeal(date: string, mealType: MealType, food: FoodItem) {
+    // 還沒載入就寫，會替同一天另外建一份紀錄
+    await loadFromDB()
     let mealLog = mealLogs.value.find(log => log.date === date)
     
     if (!mealLog) {
@@ -253,9 +284,7 @@ export const useFitnessStore = defineStore('fitness', () => {
     meal.foods.push(food)
     
     // 更新總熱量
-    mealLog.totalCalories = mealLog.meals.reduce((sum, m) => 
-      sum + m.foods.reduce((mealSum, f) => mealSum + (f.calories || 0), 0), 0
-    )
+    mealLog.totalCalories = totalCaloriesOf(mealLog)
     
     // 儲存
     try {
@@ -265,7 +294,25 @@ export const useFitnessStore = defineStore('fitness', () => {
     }
   }
 
+  /** 角色記的食物：這一餐已經有同一筆（重新生成、下一輪又寫一次）就不再加，回傳有沒有新增 */
+  async function addFoodToMealOnce(date: string, mealType: MealType, food: FoodItem): Promise<boolean> {
+    await loadFromDB()
+    const mealLog = mealLogs.value.find(log => log.date === date)
+    if (findSameFood(mealLog, mealType, food)) return false
+    await addFoodToMeal(date, mealType, food)
+    return true
+  }
+
+  /** 收回角色記的那一筆（換掉那一輪回覆時）；使用者已經自己刪掉就算了 */
+  async function withdrawFood(date: string, mealType: MealType, food: FoodItem) {
+    await loadFromDB()
+    const mealLog = mealLogs.value.find(log => log.date === date)
+    const index = findRecordedFoodIndex(mealLog, mealType, food)
+    if (index !== -1) await removeFoodFromMeal(date, mealType, index)
+  }
+
   async function removeFoodFromMeal(date: string, mealType: MealType, foodIndex: number) {
+    await loadFromDB()
     const mealLog = mealLogs.value.find(log => log.date === date)
     if (!mealLog) return
     
@@ -290,6 +337,7 @@ export const useFitnessStore = defineStore('fitness', () => {
   // ===== 身體數據操作 =====
 
   async function addBodyMetrics(metrics: Omit<BodyMetrics, 'id' | 'createdAt'>) {
+    await loadFromDB()
     // 檢查同一天是否已有記錄
     const existingIndex = bodyMetrics.value.findIndex(m => m.date === metrics.date)
     
@@ -429,6 +477,8 @@ export const useFitnessStore = defineStore('fitness', () => {
     addWorkoutLog,
     updateWorkoutLog,
     addFoodToMeal,
+    addFoodToMealOnce,
+    withdrawFood,
     removeFoodFromMeal,
     addBodyMetrics,
     getCharacterFitnessConfig,

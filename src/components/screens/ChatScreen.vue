@@ -205,6 +205,7 @@ import type {
   ChatLocationOverride,
   ChatMessage,
   CharStatus,
+  FoodRecordRef,
   ForwardedFrom,
   GenerationDiagnostics,
   GenerationContaminationProbeResult,
@@ -1855,6 +1856,7 @@ const {
   onRoundReplaced: async (removed, restored) => {
     await syncRoundCalendarEvents(removed, restored);
     await syncRoundPlanner(removed, restored);
+    await syncRoundFoodRecords(removed, restored);
   },
 });
 
@@ -6495,7 +6497,7 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
 
           // 群聊也支援飲食記錄標籤
           const gcFoodRecords = parseFoodRecordTags(finalContent);
-          for (const r of gcFoodRecords) await handleFoodRecord(r);
+          for (const r of gcFoodRecords) await handleFoodRecord(r, generationTurnId);
         }
         // 非群聊模式：檢查是否需要解析（包含導演系統標籤）
         else if (needsParsing(finalContent)) {
@@ -6581,7 +6583,7 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
 
             // 處理飲食記錄標籤
             if (parsed.hasFoodRecord && parsed.foodRecords) {
-              for (const r of parsed.foodRecords) await handleFoodRecord(r);
+              for (const r of parsed.foodRecords) await handleFoodRecord(r, generationTurnId);
             }
 
             // 時間跳轉／推進標籤統一在回覆結束後由 applyTimeAfterReply 處理
@@ -9330,7 +9332,7 @@ async function handleCalendarEvent(data: CalendarEventData, turnId?: string): Pr
 
 // ===== 飲食記錄處理 =====
 
-async function handleFoodRecord(data: FoodRecordData): Promise<void> {
+async function handleFoodRecord(data: FoodRecordData, turnId?: string): Promise<void> {
   try {
     const now = new Date();
     const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
@@ -9342,12 +9344,25 @@ async function handleFoodRecord(data: FoodRecordData): Promise<void> {
       data.meal ??
       (hour < 10 ? 'breakfast' : hour < 14 ? 'lunch' : hour < 17 ? 'snack' : 'dinner') as FoodRecordData['meal']
 
-    await fitnessStore.addFoodToMeal(date, guessedMeal!, {
+    const record: FoodRecordRef = {
+      date,
+      meal: guessedMeal!,
+      name: data.name,
+      time,
+      portion: data.portion,
+      calories: data.calories,
+    }
+    // 這一餐已經有同一筆（重新生成、下一輪又寫一次）：不再加，也不再插通知
+    const created = await fitnessStore.addFoodToMealOnce(date, record.meal, {
       name: data.name,
       portion: data.portion,
       calories: data.calories,
       time,
     })
+    if (!created) {
+      console.log('[ChatScreen] 這一餐已經記過，不重複新增:', data.name)
+      return
+    }
 
     // 格式化 M/D（去掉前導零）
     const [, mm, dd] = date.split('-')
@@ -9356,16 +9371,43 @@ async function handleFoodRecord(data: FoodRecordData): Promise<void> {
 
     messages.value.push({
       id: `msg_food_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      turnId: turnId || undefined,
       role: 'ai',
       content: recordContent,
       timestamp: Date.now(),
       isSystemNotification: true,
       isFoodRecord: true,
+      foodRecordData: record,
     })
 
     console.log('[ChatScreen] 飲食記錄已建立:', data)
   } catch (e) {
     console.error('[ChatScreen] 飲食記錄建立失敗:', e)
+  }
+}
+
+/** 一輪回覆被換下：收回那一輪記的飲食；換回來的那一輪再記回去 */
+async function syncRoundFoodRecords(removed: Message[], restored: Message[]): Promise<void> {
+  const restoredIds = new Set(restored.map((m) => m.id));
+  try {
+    for (const m of removed) {
+      const record = m.isFoodRecord ? m.foodRecordData : undefined;
+      if (record && !restoredIds.has(m.id)) {
+        await fitnessStore.withdrawFood(record.date, record.meal, { name: record.name, time: record.time });
+      }
+    }
+    for (const m of restored) {
+      const record = m.isFoodRecord ? m.foodRecordData : undefined;
+      if (!record) continue;
+      await fitnessStore.addFoodToMealOnce(record.date, record.meal, {
+        name: record.name,
+        portion: record.portion,
+        calories: record.calories,
+        time: record.time,
+      });
+    }
+  } catch (e) {
+    console.error('[ChatScreen] 收回／加回飲食記錄失敗:', e);
   }
 }
 
