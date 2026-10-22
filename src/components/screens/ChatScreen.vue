@@ -10577,7 +10577,10 @@ useChatCleanup({
                 : ''
             "
             :timestamp="getMessageDisplayTime(message)"
-            :show-time="isClassicMessageLayout"
+            :show-time="
+              isClassicMessageLayout ||
+              ['single', 'last'].includes(getGroupPosition(index))
+            "
             :group-position="getGroupPosition(index)"
             :layout="themeStore.chatMessageLayout"
             :char-frame-id="chatAppearance?.avatarFrames?.charFrameId ?? null"

@@ -238,7 +238,7 @@ function onKey(target: PreviewTarget) {
           <i v-if="isClassic"></i>
         </div>
 
-        <!-- 角色連續兩則：成組時頭像只在最後一則、不顯示名字與每則時間 -->
+        <!-- 角色連續兩則：成組時頭像與時間只在最後一則、不顯示名字 -->
         <div class="preview-ai-group" :style="aiGroupStyle">
           <div v-if="showPart('firstAi')" class="preview-message-row ai" :class="{ grouped: !isClassic }">
             <div
@@ -321,10 +321,12 @@ function onKey(target: PreviewTarget) {
               <span v-if="focus === 'thought'" class="focus-badge">{{ FOCUS_LABELS.thought }}</span>
               </div>
             </div>
+            <span v-if="!isClassic" class="preview-side-time" :style="{ color: colors.textMuted }">12:00</span>
           </div>
         </div>
 
         <div v-if="showPart('user')" class="preview-message-row user" :class="{ grouped: !isClassic }">
+          <span v-if="!isClassic" class="preview-side-time" :style="{ color: colors.textMuted }">12:01</span>
           <div class="preview-message-content">
             <div
               class="preview-bubble user"
@@ -589,6 +591,16 @@ function onKey(target: PreviewTarget) {
 .preview-ai-group {
   display: flex;
   flex-direction: column;
+}
+
+// 成組時每組最後一則在泡泡外側底部標時間，與聊天頁一致
+.preview-side-time {
+  flex-shrink: 0;
+  margin: 0 -4px;
+  padding-bottom: 2px;
+  font-size: 10px;
+  line-height: 1.2;
+  white-space: nowrap;
 }
 
 // 成組時同組前面幾則不顯示頭像，但保留寬度讓泡泡對齊

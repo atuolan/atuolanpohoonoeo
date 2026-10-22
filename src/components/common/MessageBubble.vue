@@ -2157,6 +2157,23 @@ const formattedTime = computed(() => {
   });
 });
 
+// 成組排版：每組最後一則在泡泡外側底部顯示時間（user 在左、char 在右）
+const showSideTime = computed(
+  () =>
+    props.showTime &&
+    props.layout !== "classic" &&
+    !!props.timestamp &&
+    !isHtmlOnlyBubble.value &&
+    !props.isRecall &&
+    !props.isGroupAction,
+);
+
+const sideTimeText = computed(() => {
+  if (!props.timestamp) return "";
+  const date = new Date(props.timestamp);
+  return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+});
+
 // 格式化拍立得日期（2023.05.20 格式）
 const formattedPhotoDate = computed(() => {
   const date = props.timestamp ? new Date(props.timestamp) : new Date();
@@ -3629,6 +3646,8 @@ const showTextVoiceTranscript = ref(true);
         </template>
       </div>
 
+      <span v-if="isUser && showSideTime" class="message-side-time">{{ sideTimeText }}</span>
+
       <!-- 訊息內容區 -->
       <div class="message-content">
         <!-- 發送者名稱 -->
@@ -4620,10 +4639,15 @@ const showTextVoiceTranscript = ref(true);
 
 
         <!-- 時間戳 -->
-        <div v-if="showTime && timestamp && !isHtmlOnlyBubble" class="message-time">
+        <div
+          v-if="showTime && layout === 'classic' && timestamp && !isHtmlOnlyBubble"
+          class="message-time"
+        >
           {{ formattedTime }}
         </div>
       </div>
+
+      <span v-if="!isUser && showSideTime" class="message-side-time">{{ sideTimeText }}</span>
 
       <!-- 用戶頭像（右側） -->
       <div v-if="isUser && showAvatar && !isHtmlOnlyBubble" class="avatar-container user-avatar">
@@ -5103,6 +5127,30 @@ const showTextVoiceTranscript = ref(true);
       visibility: hidden;
       height: 0;
     }
+  }
+
+  // 每組最後一則的時間：泡泡外側底部的小字，緊貼泡泡
+  > .message-side-time {
+    align-self: flex-end;
+    flex-shrink: 0;
+    font-size: 10px;
+    line-height: 1.2;
+    color: var(--color-text-muted, #8a8aa3);
+    white-space: nowrap;
+    padding-bottom: 2px;
+  }
+
+  &.user > .message-side-time {
+    margin-right: -6px;
+  }
+
+  &.ai > .message-side-time {
+    margin-left: -6px;
+  }
+
+  // 改字被看到的小眼睛和時間同在 user 泡泡左下，眼睛往上移一行
+  &:has(> .message-side-time) .edit-seen-eye {
+    bottom: 18px;
   }
 }
 
