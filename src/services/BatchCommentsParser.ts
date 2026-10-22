@@ -3,7 +3,8 @@
  * 解析 AI 生成的 JSON 格式評論
  */
 
-import type { BatchCommentsResult, GeneratedComment } from "@/types/qzone";
+import type { GeneratedComment } from "@/types/qzone";
+import { salvageArrayItems } from "@/utils/jsonSalvage";
 import { isKnownQualifier, normalizeQualifier } from "@/utils/plurkQualifiers";
 
 /**
@@ -15,32 +16,17 @@ export function parseBatchCommentsResponse(
   rawResponse: string,
 ): GeneratedComment[] {
   try {
-    // 清理響應，移除可能的 markdown 代碼塊標記
-    let cleanJSON = rawResponse.trim();
-
-    // 移除 ```json 和 ``` 標記
-    cleanJSON = cleanJSON.replace(/^```json\s*/i, "");
-    cleanJSON = cleanJSON.replace(/^```\s*/i, "");
-    cleanJSON = cleanJSON.replace(/\s*```$/i, "");
-
-    // 嘗試找到 JSON 對象
-    const jsonMatch = cleanJSON.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      console.warn("[BatchCommentsParser] 無法找到 JSON 對象");
-      return [];
-    }
-
-    const parsed: BatchCommentsResult = JSON.parse(jsonMatch[0]);
-
-    if (!parsed.comments || !Array.isArray(parsed.comments)) {
-      console.warn("[BatchCommentsParser] 響應中沒有 comments 陣列");
+    // 回覆被截斷時，前面完整的幾則照樣收
+    const items = salvageArrayItems(rawResponse, "comments") as Partial<GeneratedComment>[];
+    if (items.length === 0) {
+      console.warn("[BatchCommentsParser] 響應中沒有可用的 comments");
       return [];
     }
 
     // 驗證並清理每條評論
     const validComments: GeneratedComment[] = [];
 
-    for (const comment of parsed.comments) {
+    for (const comment of items) {
       if (!comment.characterId || !comment.characterName || !comment.content) {
         console.warn("[BatchCommentsParser] 跳過無效評論:", comment);
         continue;

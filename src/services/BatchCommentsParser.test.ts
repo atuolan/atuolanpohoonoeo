@@ -26,6 +26,17 @@ describe("parseBatchCommentsResponse 版主刪除", () => {
   });
 });
 
+describe("parseBatchCommentsResponse 截斷", () => {
+  it("回覆斷在中間，前面完整的留言照樣收", () => {
+    const raw =
+      '```json\n{"comments": [' +
+      '{"id": "c1", "characterId": "a", "characterName": "譚尧", "content": "嗯", "replyTo": null},' +
+      '{"id": "c2", "characterId": "b", "characterName": "沈", "content": "好", "replyTo": "c1"},' +
+      '{"id": "c3", "characterId": "c", "characterName": "林", "content": "哈哈我跟你說那天';
+    expect(parseBatchCommentsResponse(raw).map((c) => c.id)).toEqual(["c1", "c2"]);
+  });
+});
+
 describe("parseBatchVerdict", () => {
   it("讀頂層 verdict；fold 空字串＝null、天數取整不為負；沒有就 null", () => {
     expect(parseBatchVerdict(JSON.stringify({ comments: [], verdict: { fold: "引戰", banDays: 1.4 } }))).toEqual({ fold: "引戰", banDays: 1 });
