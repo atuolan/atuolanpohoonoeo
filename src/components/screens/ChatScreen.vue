@@ -10920,24 +10920,21 @@ useChatCleanup({
           :actor-name="characterName"
         />
 
-        <!-- 正在生成提示（僅在非流式時顯示） -->
-        <div
+        <!-- 正在生成提示（僅在非流式時顯示）：直接用串流中的訊息泡泡，兩種狀態長得一樣 -->
+        <MessageBubble
           v-if="isGenerating && !messages[messages.length - 1]?.isStreaming"
-          class="typing-indicator"
-        >
-          <div class="typing-avatar">
-            <img
-              v-if="displayAvatar"
-              :src="displayAvatar"
-              :alt="characterName"
-            />
-          </div>
-          <div class="typing-dots">
-            <span></span>
-            <span></span>
-            <span></span>
-          </div>
-        </div>
+          id="__typing-indicator__"
+          role="ai"
+          content=""
+          :avatar="displayAvatar"
+          :sender-name="characterName"
+          :show-time="false"
+          :layout="themeStore.chatMessageLayout"
+          :char-frame-id="chatAppearance?.avatarFrames?.charFrameId ?? null"
+          :avatar-shape="(chatAppearance?.useCustom && chatAppearance.avatar?.shape) || themeStore.avatarStyle.shape"
+          :character-name="characterName"
+          is-streaming
+        />
       </div>
     </main>
 
@@ -13949,67 +13946,6 @@ useChatCleanup({
 
 .message-memo-wrapper {
   display: contents;
-}
-
-// 正在輸入提示
-.typing-indicator {
-  display: flex;
-  align-items: flex-end;
-  gap: 10px;
-}
-
-.typing-avatar {
-  width: var(--avatar-size, 40px);
-  height: var(--avatar-size, 40px);
-  border-radius: var(--avatar-border-radius, 50%);
-  overflow: hidden;
-  background: var(--color-background);
-
-  img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-  }
-}
-
-.typing-dots {
-  display: flex;
-  gap: 4px;
-  padding: 16px 20px;
-  // 優先使用聊天專屬氣泡樣式
-  background: var(--chat-bubble-ai-bg, var(--bubble-ai-bg, white));
-  border-radius: var(--chat-bubble-radius, var(--bubble-radius, 20px));
-  border-bottom-left-radius: 6px;
-  box-shadow: var(--shadow-sm);
-
-  span {
-    width: 8px;
-    height: 8px;
-    background: var(--color-text-muted);
-    border-radius: 50%;
-    animation: typingBounce 1.4s ease-in-out infinite;
-
-    &:nth-child(2) {
-      animation-delay: 0.2s;
-    }
-
-    &:nth-child(3) {
-      animation-delay: 0.4s;
-    }
-  }
-}
-
-@keyframes typingBounce {
-  0%,
-  60%,
-  100% {
-    transform: translateY(0);
-    opacity: 0.4;
-  }
-  30% {
-    transform: translateY(-8px);
-    opacity: 1;
-  }
 }
 
 // 快捷輸入編輯模態框
