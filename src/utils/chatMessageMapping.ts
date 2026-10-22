@@ -130,6 +130,11 @@ export function convertStoredMessageToUiMessage(
       transferStatus = "refunded";
     }
   }
+  // 舊資料（例如主動訊息）的角色轉帳沒存狀態：當成還沒收，才有收款／退回按鈕
+  if (isTransfer && !transferStatus) {
+    transferStatus =
+      transferType === "refund" ? "refunded" : inferUiRoleFromStoredMessage(m) === "ai" ? "pending" : "sent";
+  }
 
   let isMusicShare = (m as any).isMusicShare;
   let musicShareData = (m as any).musicShareData;
@@ -320,6 +325,8 @@ export function convertToStorableMessage(m: any, charName: string): ChatMessage 
     transferType: m.transferType,
     transferNote: m.transferNote,
     transferStatus: m.transferStatus,
+    transferSettledBy: m.transferSettledBy,
+    refundOfMessageId: m.refundOfMessageId,
     isWaimaiShare: m.isWaimaiShare,
     isWaimaiPaymentRequest: m.isWaimaiPaymentRequest,
     isWaimaiPaymentConfirm: m.isWaimaiPaymentConfirm,
@@ -405,6 +412,8 @@ export function convertToStorableMessage(m: any, charName: string): ChatMessage 
     toolActivity: m.toolActivity ? m.toolActivity.map((entry: ToolActivityRecord) => ({ ...entry })) : undefined,
     sentWhileBlocked: m.sentWhileBlocked,
     isSystemNotification: m.isSystemNotification,
+    isFoodRecord: m.isFoodRecord,
+    foodRecordData: m.foodRecordData ? { ...m.foodRecordData } : undefined,
     isTransactionClaimNotice: m.isTransactionClaimNotice,
     isFriendRequest: m.isFriendRequest,
     friendRequestId: m.friendRequestId,

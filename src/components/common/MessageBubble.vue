@@ -67,6 +67,7 @@ import type {
   GroupActionType,
   WaimaiOrderSnapshot,
 } from "@/types/chat";
+import { stripPromptStatusNotes } from "@/utils/promptMessageContent";
 import { cleanTTSTags } from "@/utils/ttsTagCleaner";
 import { injectTTSInlineButtons } from "@/utils/ttsInlineButtons";
 import { stripPicNote } from "@/utils/picNote";
@@ -1728,7 +1729,9 @@ const renderedContent = computed(() => {
         .trim();
     }
     // 清理模型模仿歷史消息時間格式誤輸出的 [time:...] 標記
-    processedContent = processedContent.replace(/\[time:[^\]]*\]\s*/g, "").trim();
+    processedContent = stripPromptStatusNotes(
+      processedContent.replace(/\[time:[^\]]*\]\s*/g, ""),
+    ).trim();
 
     // 移除漏網的 ˇ想法ˇ 和舊格式 ~(想法)~
     processedContent = processedContent

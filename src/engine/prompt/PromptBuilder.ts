@@ -13,6 +13,7 @@
  * - OUTLET: 擴展輸出口
  */
 
+import { describeMessageForPrompt } from "@/utils/promptMessageContent";
 import {
   buildBlockMemoryContent,
   GROUP_CHAT_BLOCK_HINT,
@@ -584,7 +585,7 @@ export class PromptBuilder {
       lastUserTurnMsgs
         .map((m) => {
           // 若有引用回覆，在內容前加上引用標記
-          let content = m.content;
+          let content = this.describeCard(m);
           if (m.replyTo) {
             const repliedMsg = options.messages.find((r) => r.id === m.replyTo);
             if (repliedMsg) {
@@ -606,11 +607,10 @@ export class PromptBuilder {
           return content;
         })
         .join("\n") || "";
-    const lastCharMsg =
-      [...options.messages]
-        .reverse()
-        .find((m) => !m.is_user && !m.isTimetravel && m.sender !== "narrator")
-        ?.content || "";
+    const lastCharSource = [...options.messages]
+      .reverse()
+      .find((m) => !m.is_user && !m.isTimetravel && m.sender !== "narrator");
+    const lastCharMsg = lastCharSource ? this.describeCard(lastCharSource) : "";
     // {{lastMessage}}：上一條 AI 回覆之後所有未完成一輪的訊息（含時間跳轉、用戶輸入、小劇場）
     const lastMsg =
       PromptBuilder.getLastUserTurnMessages(options.messages)
@@ -740,7 +740,7 @@ export class PromptBuilder {
       lastUserTurnMsgs
         .map((m) => {
           // 若有引用回覆，在內容前加上引用標記
-          let content = m.content;
+          let content = this.describeCard(m);
           if (m.replyTo) {
             const repliedMsg = options.messages.find((r) => r.id === m.replyTo);
             if (repliedMsg) {
@@ -762,11 +762,10 @@ export class PromptBuilder {
           return content;
         })
         .join("\n") || "";
-    const lastCharMsg =
-      [...options.messages]
-        .reverse()
-        .find((m) => !m.is_user && !m.isTimetravel && m.sender !== "narrator")
-        ?.content || "";
+    const lastCharSource = [...options.messages]
+      .reverse()
+      .find((m) => !m.is_user && !m.isTimetravel && m.sender !== "narrator");
+    const lastCharMsg = lastCharSource ? this.describeCard(lastCharSource) : "";
     // {{lastMessage}}：上一條 AI 回覆之後所有未完成一輪的訊息（含時間跳轉、用戶輸入、小劇場）
     const lastMsg =
       PromptBuilder.getLastUserTurnMessages(options.messages)
@@ -899,8 +898,20 @@ export class PromptBuilder {
     return note ? `\n${note}` : "";
   }
 
+  /** 轉帳、紅包、位置等卡片訊息寫成角色看得懂的標籤和狀態（這類訊息的內容常常是空的） */
+  private describeCard(m: ChatMessage): string {
+    return describeMessageForPrompt(m, {
+      userName: this.options.userName || "{{user}}",
+      charName: this.options.character.data.name,
+      groupChat: !!this.options.groupChatMode,
+    });
+  }
+
   private formatMessageContentForMacro(m: ChatMessage): string {
-    const content = PromptBuilder.formatMessageContentForMacro(m);
+    const content =
+      m.isTimetravel || m.sender === "narrator"
+        ? PromptBuilder.formatMessageContentForMacro(m)
+        : this.describeCard(m);
     const isSystemMsg = m.sender === "system" || m.sender === "narrator";
 
     // 處理回覆引用；改字被發現時接上原文提示
@@ -3573,8 +3584,9 @@ ${open}好啊，我等你[emotion=calm]</msg>`;
     for (const msg of reversedMessages) {
       const hasImage = !!((msg.imageData || msg.imageUrl) && msg.imageMimeType);
       const keepImage = hasImage && lastUserTurn.has(msg);
+      const cardContent = this.describeCard(msg);
       const content =
-        hasImage && !keepImage ? describeImageForPrompt(msg.content, msg) : msg.content;
+        hasImage && !keepImage ? describeImageForPrompt(cardContent, msg) : cardContent;
       const tokens = await this.tokenCounter(content);
 
       if (usedTokens + tokens > maxTokens) {

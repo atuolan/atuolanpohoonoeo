@@ -1,6 +1,7 @@
 import type {
   ChatAppearance,
   ChatHistoryRecordData,
+  FoodRecordRef,
   ForwardedFrom,
   GroupActionType,
   WaimaiOrderSnapshot,
@@ -88,6 +89,8 @@ export interface ChatScreenMessage {
   transferType?: "pay" | "refund";
   transferNote?: string;
   transferStatus?: "sent" | "pending" | "received" | "refunded";
+  transferSettledBy?: string;
+  refundOfMessageId?: string;
   isWaimaiShare?: boolean;
   isWaimaiPaymentRequest?: boolean;
   isWaimaiPaymentConfirm?: boolean;
@@ -207,6 +210,7 @@ export interface ChatScreenMessage {
   isSystemNotification?: boolean;
   isTransactionClaimNotice?: boolean;
   isFoodRecord?: boolean;
+  foodRecordData?: FoodRecordRef;
   isContinuePrompt?: boolean;
   isCharBlockedNotification?: boolean;
   charBlockedReason?: string;

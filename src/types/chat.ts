@@ -282,6 +282,18 @@ export interface ForwardedFrom {
 }
 
 // ===== 單條消息 =====
+/** 角色從聊天記下的一筆飲食 */
+export interface FoodRecordRef {
+  /** YYYY-MM-DD */
+  date: string;
+  meal: "breakfast" | "lunch" | "dinner" | "snack";
+  name: string;
+  /** HH:mm */
+  time?: string;
+  portion?: string;
+  calories?: number;
+}
+
 export interface ChatMessage {
   /** 唯一識別碼 */
   id: string;
@@ -380,6 +392,10 @@ export interface ChatMessage {
   transferNote?: string;
   /** 轉帳狀態：sent=已發送, pending=待收款, received=已收款, refunded=已退回 */
   transferStatus?: "sent" | "pending" | "received" | "refunded";
+  /** 使用者轉給角色的錢：收下或退回它的那則角色訊息（換掉那一輪回覆時拿來還原） */
+  transferSettledBy?: string;
+  /** 角色的退款：退的是哪一則使用者轉帳 */
+  refundOfMessageId?: string;
 
   // --- 外賣/商城（MVP） ---
   /** 是否為商品分享卡 */
@@ -619,6 +635,10 @@ export interface ChatMessage {
   isSystemNotification?: boolean;
   /** 是否為交易領取通知：資料上算 user role，畫面上渲染為系統通知樣式 */
   isTransactionClaimNotice?: boolean;
+  /** 角色記下飲食的通知（「已記錄:…」） */
+  isFoodRecord?: boolean;
+  /** 這則通知記下的那一筆，換掉那一輪回覆時拿來收回 */
+  foodRecordData?: FoodRecordRef;
   /** 是否為繼續生成的隱藏提示（不顯示在聊天畫面上） */
   isContinuePrompt?: boolean;
   /** 是否為好友申請訊息（用戶封鎖角色後，角色想重新加好友的系統訊息卡片） */
