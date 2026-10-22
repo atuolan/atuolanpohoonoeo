@@ -97,10 +97,7 @@ export const useNotificationStore = defineStore("notification", () => {
     return `notif-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
   }
 
-  /**
-   * 添加通知
-   */
-  function addNotification(params: {
+  type NotificationParams = {
     type: NotificationType;
     title: string;
     message: string;
@@ -111,44 +108,20 @@ export const useNotificationStore = defineStore("notification", () => {
     priority?: NotificationPriority;
     navigateTo?: string;
     data?: Record<string, any>;
-  }): NotificationItem | null {
+  };
+
+  /**
+   * 添加通知
+   */
+  function addNotification(params: NotificationParams): NotificationItem | null {
     console.log(
       "[Notification] addNotification called:",
       params.type,
       params.title,
     );
 
-    // 檢查是否啟用通知
-    if (!settings.value.enabled) {
-      console.log("[Notification] 通知已停用");
-      return null;
-    }
-
-    // 檢查該類型通知是否啟用（兼容舊版設定缺少新類型 key 的情況）
-    const isTypeEnabled =
-      settings.value.typeSettings[params.type] ??
-      DEFAULT_NOTIFICATION_SETTINGS.typeSettings[params.type] ??
-      true;
-    if (!isTypeEnabled) {
-      console.log("[Notification] 該類型通知已停用:", params.type);
-      return null;
-    }
-
-    const notification: NotificationItem = {
-      id: generateId(),
-      type: params.type,
-      title: params.title,
-      message: params.message,
-      characterId: params.characterId,
-      characterName: params.characterName,
-      characterAvatar: params.characterAvatar,
-      chatId: params.chatId,
-      priority: params.priority || "normal",
-      createdAt: Date.now(),
-      read: false,
-      navigateTo: params.navigateTo,
-      data: params.data,
-    };
+    const notification = buildNotification(params);
+    if (!notification) return null;
 
     // 添加到通知列表
     notifications.value.unshift(notification);
@@ -171,6 +144,41 @@ export const useNotificationStore = defineStore("notification", () => {
 
     console.log("[Notification] 新通知:", notification.title);
     return notification;
+  }
+
+  /** 檢查通知與類型是否啟用，啟用才建出通知 */
+  function buildNotification(params: NotificationParams): NotificationItem | null {
+    // 檢查是否啟用通知
+    if (!settings.value.enabled) {
+      console.log("[Notification] 通知已停用");
+      return null;
+    }
+
+    // 檢查該類型通知是否啟用（兼容舊版設定缺少新類型 key 的情況）
+    const isTypeEnabled =
+      settings.value.typeSettings[params.type] ??
+      DEFAULT_NOTIFICATION_SETTINGS.typeSettings[params.type] ??
+      true;
+    if (!isTypeEnabled) {
+      console.log("[Notification] 該類型通知已停用:", params.type);
+      return null;
+    }
+
+    return {
+      id: generateId(),
+      type: params.type,
+      title: params.title,
+      message: params.message,
+      characterId: params.characterId,
+      characterName: params.characterName,
+      characterAvatar: params.characterAvatar,
+      chatId: params.chatId,
+      priority: params.priority || "normal",
+      createdAt: Date.now(),
+      read: false,
+      navigateTo: params.navigateTo,
+      data: params.data,
+    };
   }
 
   /**
@@ -315,12 +323,7 @@ export const useNotificationStore = defineStore("notification", () => {
     characterId?: string,
     characterAvatar?: string,
   ): NotificationItem | null {
-    // 如果正在該聊天頁面，不顯示通知
-    if (activeChatId.value === chatId) {
-      return null;
-    }
-
-    return addNotification({
+    const params: NotificationParams = {
       type: "chat_message",
       title: characterName,
       message: preview.length > 50 ? preview.slice(0, 50) + "..." : preview,
@@ -329,7 +332,20 @@ export const useNotificationStore = defineStore("notification", () => {
       characterId,
       chatId,
       navigateTo: "chat",
-    });
+    };
+
+    // 正在該聊天頁面：不進通知列表、不跳 Toast。
+    // 但停在聊天頁就切出 App／分頁時，聊天頁不會關，還是要發系統通知；
+    // 前景就跳過這件事交給 PushNotificationService 判斷。
+    if (activeChatId.value === chatId) {
+      const notification = buildNotification(params);
+      if (notification && settings.value.pushEnabled) {
+        pushNotificationService.send(notification);
+      }
+      return null;
+    }
+
+    return addNotification(params);
   }
 
   /** 聊天總結通知 */
