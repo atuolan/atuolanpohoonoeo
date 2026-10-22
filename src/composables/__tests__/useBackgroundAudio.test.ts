@@ -169,9 +169,33 @@ function createNavigator(userAgent: string) {
   };
 }
 
+class FakeWorker {
+  static instances: FakeWorker[] = [];
+  messages: unknown[] = [];
+  terminated = false;
+  onmessage: ((e: { data: unknown }) => void) | null = null;
+  onerror: (() => void) | null = null;
+
+  constructor(public url: string) {
+    FakeWorker.instances.push(this);
+  }
+
+  postMessage(data: unknown) {
+    this.messages.push(data);
+  }
+
+  terminate() {
+    this.terminated = true;
+  }
+
+  /** 模擬 Worker 計時器到了 */
+  ping() {
+    this.onmessage?.({ data: "ping" });
+  }
+}
+
 let doc: FakeDocument;
 let nav: ReturnType<typeof createNavigator>;
-let workerSpy: ReturnType<typeof vi.fn>;
 let channelSpy: ReturnType<typeof vi.fn>;
 let fetchSpy: ReturnType<typeof vi.fn>;
 let keepAlive: typeof import("@/composables/useBackgroundAudio");
@@ -185,7 +209,7 @@ async function setup(userAgent = IPHONE_UA, native = false) {
   FakeAudioContext.instances = [];
   doc = new FakeDocument();
   nav = createNavigator(userAgent);
-  workerSpy = vi.fn();
+  FakeWorker.instances = [];
   channelSpy = vi.fn();
   fetchSpy = vi.fn(() => Promise.resolve());
   vi.stubGlobal("document", doc);
@@ -193,7 +217,7 @@ async function setup(userAgent = IPHONE_UA, native = false) {
   vi.stubGlobal("Audio", FakeAudio);
   vi.stubGlobal("AudioContext", FakeAudioContext);
   vi.stubGlobal("MediaMetadata", FakeMediaMetadata);
-  vi.stubGlobal("Worker", workerSpy);
+  vi.stubGlobal("Worker", FakeWorker);
   vi.stubGlobal("BroadcastChannel", channelSpy);
   vi.stubGlobal("fetch", fetchSpy);
   keepAlive = await import("@/composables/useBackgroundAudio");
@@ -235,7 +259,7 @@ afterEach(() => {
 });
 
 describe("背景運行模式：負擔", () => {
-  it("只用一條靜音音檔，不開 Worker、BroadcastChannel、螢幕常亮，也不連網路", async () => {
+  it("只用一條靜音音檔，不開 BroadcastChannel、螢幕常亮，也不連網路", async () => {
     await setup();
     const audio = await startAndTouch();
     await setVisibility("hidden");
@@ -246,10 +270,74 @@ describe("背景運行模式：負擔", () => {
     expect(FakeAudio.instances).toHaveLength(1);
     expect(audio.loop).toBe(true);
     expect(audio.paused).toBe(false);
-    expect(workerSpy).not.toHaveBeenCalled();
     expect(channelSpy).not.toHaveBeenCalled();
     expect(fetchSpy).not.toHaveBeenCalled();
     expect(nav.wakeLock.request).not.toHaveBeenCalled();
+  });
+});
+
+describe("背景運行模式：Worker 心跳", () => {
+  it("只開一個 Worker，每 30 秒心跳一次，程式裡不連網路", async () => {
+    await setup();
+    await startAndTouch();
+    await setVisibility("hidden");
+    await setVisibility("visible");
+
+    expect(FakeWorker.instances).toHaveLength(1);
+    expect(FakeWorker.instances[0].messages).toEqual([{ type: "start", intervalMs: 30 * SEC }]);
+    expect(keepAlive.HEARTBEAT_WORKER_CODE).not.toMatch(/fetch|XMLHttpRequest|WebSocket/);
+  });
+
+  it("心跳會叫醒檢查：主程式計時器被系統放慢時，靠心跳接回", async () => {
+    await setup();
+    const audio = await startAndTouch();
+    await setVisibility("hidden");
+    await vi.advanceTimersByTimeAsync(2 * MIN);
+
+    audio.pause();
+    // 只讓時間過去、不跑主程式計時器（模擬背景被放慢）
+    vi.setSystemTime(Date.now() + 15 * SEC);
+    FakeWorker.instances[0].ping();
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(audio.paused).toBe(false);
+  });
+
+  it("心跳不會無視等待時間去搶", async () => {
+    await setup();
+    const audio = await startAndTouch();
+    await setVisibility("hidden");
+    await vi.advanceTimersByTimeAsync(2 * MIN);
+
+    audio.pause();
+    vi.setSystemTime(Date.now() + 3 * SEC);
+    FakeWorker.instances[0].ping();
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(audio.paused).toBe(true);
+  });
+
+  it("Worker 掛掉會自己重開", async () => {
+    await setup();
+    await startAndTouch();
+
+    FakeWorker.instances[0].onerror?.();
+    await vi.advanceTimersByTimeAsync(2 * SEC);
+
+    expect(FakeWorker.instances[0].terminated).toBe(true);
+    expect(FakeWorker.instances).toHaveLength(2);
+    expect(FakeWorker.instances[1].terminated).toBe(false);
+  });
+
+  it("關掉背景運行模式時停掉 Worker，不再重開", async () => {
+    await setup();
+    await startAndTouch();
+
+    keepAlive.stopKeepAlive();
+    await vi.advanceTimersByTimeAsync(5 * MIN);
+
+    expect(FakeWorker.instances).toHaveLength(1);
+    expect(FakeWorker.instances[0].terminated).toBe(true);
   });
 
   it("iPhone 不開靜音振盪器", async () => {
@@ -485,6 +573,125 @@ describe("背景運行模式：回到 App", () => {
     await startAndTouch();
     await vi.advanceTimersByTimeAsync(0);
     expect(appListeners.size).toBe(0);
+  });
+});
+
+describe("背景運行模式：僅生成時保活", () => {
+  async function setupGenerationMode(idleStopMs = 20 * SEC) {
+    await setup();
+    keepAlive.setKeepAliveOptions({ trigger: "generation", idleStopMs, pauseForcesPlay: false });
+    const audio = await startAndTouch();
+    return audio;
+  }
+
+  function aliveWorkers() {
+    return FakeWorker.instances.filter((w) => !w.terminated);
+  }
+
+  it("沒在生成時不播、音樂欄是空的、不跑心跳", async () => {
+    const audio = await setupGenerationMode();
+    await vi.advanceTimersByTimeAsync(5 * MIN);
+
+    expect(audio?.paused ?? true).toBe(true);
+    expect(nav.mediaSession.metadata).toBeNull();
+    expect(aliveWorkers()).toHaveLength(0);
+  });
+
+  it("開始生成就播，生成結束後等設定的秒數才停", async () => {
+    await setupGenerationMode();
+    keepAlive.setGenerating(true);
+    await vi.advanceTimersByTimeAsync(0);
+    const audio = FakeAudio.instances[0];
+    expect(audio.paused).toBe(false);
+    expect(nav.mediaSession.metadata).not.toBeNull();
+    expect(aliveWorkers()).toHaveLength(1);
+
+    keepAlive.setGenerating(false);
+    await vi.advanceTimersByTimeAsync(15 * SEC);
+    expect(audio.paused).toBe(false);
+
+    await vi.advanceTimersByTimeAsync(6 * SEC);
+    expect(audio.paused).toBe(true);
+    expect(nav.mediaSession.metadata).toBeNull();
+    expect(aliveWorkers()).toHaveLength(0);
+  });
+
+  it("停止秒數可以改成 10 秒", async () => {
+    await setupGenerationMode(10 * SEC);
+    keepAlive.setGenerating(true);
+    keepAlive.setGenerating(false);
+    await vi.advanceTimersByTimeAsync(11 * SEC);
+    expect(FakeAudio.instances[0].paused).toBe(true);
+  });
+
+  it("結束後又開始生成（重骰），不會停", async () => {
+    await setupGenerationMode();
+    keepAlive.setGenerating(true);
+    keepAlive.setGenerating(false);
+    await vi.advanceTimersByTimeAsync(10 * SEC);
+    keepAlive.setGenerating(true);
+    await vi.advanceTimersByTimeAsync(2 * MIN);
+    expect(FakeAudio.instances[0].paused).toBe(false);
+  });
+
+  it("停住時被別的 App 打斷也不搶，下一次生成自己接回", async () => {
+    await setupGenerationMode();
+    keepAlive.setGenerating(true);
+    await vi.advanceTimersByTimeAsync(0);
+    const audio = FakeAudio.instances[0];
+
+    // 生成中被影片打斷，生成結束、保活停住
+    audio.pause();
+    keepAlive.setGenerating(false);
+    await vi.advanceTimersByTimeAsync(5 * MIN);
+    expect(audio.paused).toBe(true);
+
+    keepAlive.setGenerating(true);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(audio.paused).toBe(false);
+  });
+
+  it("改回一直保活就馬上開始播", async () => {
+    await setupGenerationMode();
+    keepAlive.setKeepAliveOptions({ trigger: "always", idleStopMs: 20 * SEC, pauseForcesPlay: false });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(FakeAudio.instances.some((a) => !a.paused)).toBe(true);
+  });
+
+  it("改成僅生成時，沒在生成的話等秒數到了就停", async () => {
+    await setup();
+    const audio = await startAndTouch();
+    keepAlive.setKeepAliveOptions({ trigger: "generation", idleStopMs: 10 * SEC, pauseForcesPlay: false });
+    await vi.advanceTimersByTimeAsync(11 * SEC);
+    expect(audio.paused).toBe(true);
+  });
+});
+
+describe("背景運行模式：暫停鍵強制繼續播", () => {
+  it("開了以後，音樂欄按暫停還是繼續播", async () => {
+    await setup();
+    keepAlive.setKeepAliveOptions({ trigger: "always", idleStopMs: 20 * SEC, pauseForcesPlay: true });
+    const audio = await startAndTouch();
+
+    // 系統先停了元素、再通知暫停鍵
+    audio.pause();
+    nav.mediaSession.handlers.pause?.();
+    await vi.advanceTimersByTimeAsync(SEC);
+
+    expect(audio.paused).toBe(false);
+    expect(nav.mediaSession.playbackState).toBe("playing");
+    await vi.advanceTimersByTimeAsync(5 * MIN);
+    expect(audio.paused).toBe(false);
+  });
+
+  it("沒開的話照舊真的暫停", async () => {
+    await setup();
+    keepAlive.setKeepAliveOptions({ trigger: "always", idleStopMs: 20 * SEC, pauseForcesPlay: false });
+    const audio = await startAndTouch();
+
+    nav.mediaSession.handlers.pause?.();
+    await vi.advanceTimersByTimeAsync(MIN);
+    expect(audio.paused).toBe(true);
   });
 });
 

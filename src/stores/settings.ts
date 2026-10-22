@@ -138,6 +138,12 @@ export interface IncomingCallRingtoneSettings {
   customAudioName: string;
 }
 
+/** 背景運行模式的保活時機 */
+export type KeepAliveTrigger = "always" | "generation";
+/** 僅生成時保活：生成結束後幾秒停止 */
+export const KEEP_ALIVE_IDLE_STOP_SEC_OPTIONS = [10, 15, 20] as const;
+export type KeepAliveIdleStopSec = (typeof KEEP_ALIVE_IDLE_STOP_SEC_OPTIONS)[number];
+
 export interface SettingsData {
   id: string;
   currentProfileId: string | null;
@@ -157,6 +163,12 @@ export interface SettingsData {
   backgroundGenerationEnabled: boolean;
   backgroundAudioEnabled: boolean;
   keepAliveMode: "audio";
+  /** 保活時機：always＝一直保活，generation＝只在生成時 */
+  keepAliveTrigger?: KeepAliveTrigger;
+  /** 僅生成時保活：生成結束後幾秒停止 */
+  keepAliveIdleStopSec?: KeepAliveIdleStopSec;
+  /** 測試用：音樂欄按暫停也繼續播 */
+  keepAlivePauseForcesPlay?: boolean;
   audio: AudioSettings;
   callVoiceInput?: CallVoiceInputSettings;
   mcp?: McpSettings;
@@ -338,6 +350,9 @@ export const useSettingsStore = defineStore("settings", () => {
 
   // 保活模式：僅音頻模式
   const keepAliveMode = ref<"audio">("audio");
+  const keepAliveTrigger = ref<KeepAliveTrigger>("always");
+  const keepAliveIdleStopSec = ref<KeepAliveIdleStopSec>(20);
+  const keepAlivePauseForcesPlay = ref(false);
 
   // 語音訊息設定
   const audio = reactive<AudioSettings>(createDefaultAudioSettings());
@@ -600,6 +615,15 @@ export const useSettingsStore = defineStore("settings", () => {
           }
 
           // 保活模式已簡化為僅音頻，忽略舊的 mic/camera 設定
+          if (saved.keepAliveTrigger === "always" || saved.keepAliveTrigger === "generation") {
+            keepAliveTrigger.value = saved.keepAliveTrigger;
+          }
+          if (KEEP_ALIVE_IDLE_STOP_SEC_OPTIONS.includes(saved.keepAliveIdleStopSec as KeepAliveIdleStopSec)) {
+            keepAliveIdleStopSec.value = saved.keepAliveIdleStopSec as KeepAliveIdleStopSec;
+          }
+          if (typeof saved.keepAlivePauseForcesPlay === "boolean") {
+            keepAlivePauseForcesPlay.value = saved.keepAlivePauseForcesPlay;
+          }
 
           // 載入語音訊息設定
           if (saved.audio) {
@@ -781,6 +805,9 @@ export const useSettingsStore = defineStore("settings", () => {
         backgroundGenerationEnabled: backgroundGenerationEnabled.value,
         backgroundAudioEnabled: backgroundAudioEnabled.value,
         keepAliveMode: keepAliveMode.value,
+        keepAliveTrigger: keepAliveTrigger.value,
+        keepAliveIdleStopSec: keepAliveIdleStopSec.value,
+        keepAlivePauseForcesPlay: keepAlivePauseForcesPlay.value,
         audio: { ...toRaw(audio) },
         callVoiceInput: { ...toRaw(callVoiceInput) },
         // 巢狀陣列要整個複製成純物件，否則 IndexedDB 會丟 DataCloneError
@@ -1313,6 +1340,9 @@ export const useSettingsStore = defineStore("settings", () => {
     backgroundGenerationEnabled,
     backgroundAudioEnabled,
     keepAliveMode,
+    keepAliveTrigger,
+    keepAliveIdleStopSec,
+    keepAlivePauseForcesPlay,
     audio,
     callVoiceInput,
     mcp,

@@ -1,11 +1,26 @@
 <script setup lang="ts">
 /** 背景執行：背景運行模式、HF 後台生成（需要同步帳號）。改了就保存。 */
 import { useSettingsStore } from "@/stores";
+import { KEEP_ALIVE_IDLE_STOP_SEC_OPTIONS, type KeepAliveTrigger } from "@/stores/settings";
+import { computed } from "vue";
 import { useSyncAccount } from "../composables/useSyncAccount";
 import SettingsGroup from "../ui/SettingsGroup.vue";
+import SettingsSelectRow from "../ui/SettingsSelectRow.vue";
 import SettingsSwitchRow from "../ui/SettingsSwitchRow.vue";
 
+const TRIGGER_OPTIONS: { value: KeepAliveTrigger; label: string }[] = [
+  { value: "always", label: "一直保活" },
+  { value: "generation", label: "只在生成時" },
+];
+const IDLE_STOP_OPTIONS = KEEP_ALIVE_IDLE_STOP_SEC_OPTIONS.map((sec) => ({ value: sec, label: `${sec} 秒` }));
+
 const settingsStore = useSettingsStore();
+
+const triggerDescription = computed(() =>
+  settingsStore.keepAliveTrigger === "generation"
+    ? "按送出後開始，生成完就停，平常不佔音樂欄、不搶別的 App；每次生成會暫停你正在聽的音樂，主動訊息不會在背景跑"
+    : "開著就一直保活，主動訊息在背景也能跑；會一直佔著音樂欄",
+);
 const { syncStore, password, busy, canLogin, quickConnect } = useSyncAccount();
 
 function save() {
@@ -32,6 +47,32 @@ function toggleBackgroundGeneration(value: boolean) {
         description="防止瀏覽器把網頁暫停在後台"
         @change="save"
       />
+      <template v-if="settingsStore.backgroundAudioEnabled">
+        <SettingsSelectRow
+          v-model="settingsStore.keepAliveTrigger"
+          label="保活時機"
+          :description="triggerDescription"
+          :options="TRIGGER_OPTIONS"
+          indent
+          @change="save"
+        />
+        <SettingsSelectRow
+          v-if="settingsStore.keepAliveTrigger === 'generation'"
+          v-model="settingsStore.keepAliveIdleStopSec"
+          label="生成結束後停止"
+          description="太短的話，生成後的收尾（總結、變數更新）可能在背景被凍結，遇到再調長"
+          :options="IDLE_STOP_OPTIONS"
+          indent
+          @change="save"
+        />
+        <SettingsSwitchRow
+          v-model="settingsStore.keepAlivePauseForcesPlay"
+          label="暫停鍵也繼續播"
+          description="測試用：音樂欄按暫停不會停，要停只能關掉背景運行模式"
+          indent
+          @change="save"
+        />
+      </template>
     </SettingsGroup>
 
     <SettingsGroup
