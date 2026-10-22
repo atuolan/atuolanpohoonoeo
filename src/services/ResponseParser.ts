@@ -3,6 +3,7 @@
  * 處理導演系統的 <think>、<content>、<msg> 標籤
  */
 
+import { stripPromptStatusNotes } from "@/utils/promptMessageContent";
 import type { CalendarEventData } from "@/types/calendar";
 import type { GroupActionType } from "@/types/chat";
 import type { ScheduleCallData } from "@/types/incomingCall";
@@ -1009,6 +1010,8 @@ export function parseAIResponse(rawResponse: string): ParsedResponse {
     .replace(/<\/?content>/gi, "")
     .replace(/\[time:[^\]]*\]\s*/g, "")
     .trim();
+  // 角色照著歷史抄出來的 [轉帳狀態：…] 之類註記不是要說的話
+  outputContent = stripPromptStatusNotes(outputContent);
   result.rawOutput = outputContent;
 
   // 2.5 從 outputContent 中預先移除 char-action 標籤，避免它們出現在訊息氣泡裡
@@ -2775,10 +2778,12 @@ export function parseGroupChatResponse(
   }
 
   // 2. 消除 </thinking> 之前的所有內容（含 think 區塊本身）
-  let outputContent = rawResponse
-    .replace(/^[\s\S]*?<\/think(?:ing)?>\s*/si, "")
-    .replace(/<\/?content>/gi, "")
-    .trim();
+  let outputContent = stripPromptStatusNotes(
+    rawResponse
+      .replace(/^[\s\S]*?<\/think(?:ing)?>\s*/si, "")
+      .replace(/<\/?content>/gi, "")
+      .trim(),
+  );
 
   // 3. 呼叫 fuzzy repair
   const repaired = repairXmlTags(outputContent);
