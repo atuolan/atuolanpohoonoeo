@@ -1,3 +1,4 @@
+import { isNativeApp } from "@/native/platform";
 import { detectPlatform } from "@/services/phoneCalendar";
 import { useSettingsStore } from "@/stores/settings";
 import { watch } from "vue";
@@ -41,6 +42,8 @@ let gainNode: GainNode | null = null;
 let silentAudioEl: HTMLAudioElement | null = null;
 let webLockAbortController: AbortController | null = null;
 let pollTimer: ReturnType<typeof setInterval> | null = null;
+/** App 裡回到前景的原生事件（WKWebView 切回來不一定有 visibilitychange） */
+let nativeResumeListener: { remove: () => Promise<void> } | null = null;
 let isActive = false;
 let userInteracted = false;
 let interactionListenersBound = false;
@@ -330,7 +333,8 @@ function tryResume(trigger: ResumeTrigger) {
     if (ok) {
       // 只記自己接回的時間；播到結尾從頭播、系統自己恢復都不算
       lastResumedAt = Date.now();
-      if (foreground && trigger !== "user") foregroundGrabs++;
+      // 只有輪詢自動搶回才算；回到 App、使用者自己按的都不算
+      if (foreground && trigger === "poll") foregroundGrabs++;
       console.log("[KeepAlive] 已接回靜音");
       return;
     }
@@ -389,13 +393,37 @@ function removeInteractionListeners() {
 }
 
 // ---------- 頁面生命週期事件 ----------
-function handleVisibilityChange() {
-  if (!isActive || !isPageVisible()) return;
-  // 回到 App：使用者在音樂欄的暫停到此為止，重新接回保活
+/** 回到 App：使用者在音樂欄的暫停到此為止，重新接回保活 */
+function handleReturnToApp() {
+  if (!isActive) return;
   pausedByUser = false;
   resetRetryState();
   startPoll();
   tryResume("return");
+}
+
+function handleVisibilityChange() {
+  if (isPageVisible()) handleReturnToApp();
+}
+
+/** App 裡（iOS 沒開背景音訊，切出去整個 App 會被暫停）：回到前景時接回 */
+function listenNativeResume() {
+  if (!isNativeApp() || nativeResumeListener) return;
+  void import("@capacitor/app")
+    .then(({ App }) => App.addListener("resume", handleReturnToApp))
+    .then((handle) => {
+      if (isActive && !nativeResumeListener) {
+        nativeResumeListener = handle;
+      } else {
+        void handle.remove();
+      }
+    })
+    .catch((e) => console.warn("[KeepAlive] 監聽 App 回到前景失敗:", e));
+}
+
+function stopNativeResume() {
+  void nativeResumeListener?.remove();
+  nativeResumeListener = null;
 }
 
 function handlePageResume() {
@@ -422,6 +450,7 @@ export function startKeepAlive() {
 
   document.addEventListener("visibilitychange", handleVisibilityChange);
   document.addEventListener("resume", handlePageResume);
+  listenNativeResume();
 
   console.log("[KeepAlive] 已啟動");
 }
@@ -437,6 +466,7 @@ export function stopKeepAlive() {
   removeInteractionListeners();
   document.removeEventListener("visibilitychange", handleVisibilityChange);
   document.removeEventListener("resume", handlePageResume);
+  stopNativeResume();
 
   pausedByUser = false;
   resumePending = false;
