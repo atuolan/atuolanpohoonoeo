@@ -787,6 +787,19 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
           }
         }
 
+        // 角色暫時離開的說明是宏 {{charAwayGuide}}（不能用時展開成空字串），插在便利貼後面
+        // 放在補回狀態／便利貼之前，這樣連那幾行都沒有的舊內容補完後還是預設的順序
+        const contentWithAway = stored.prompts[onlineModeIndex].content;
+        if (!contentWithAway.includes("{{charAwayGuide}}")) {
+          const awayAnchor =
+            contentWithAway.match(/[^\n]*<sticky-note[^\n]*/)?.[0] ??
+            contentWithAway.match(/[^\n]*<char-status[^\n]*/)?.[0] ??
+            contentWithAway.match(/[^\n]*<char-location[^\n]*/)?.[0];
+          stored.prompts[onlineModeIndex].content = awayAnchor
+            ? contentWithAway.replace(awayAnchor, () => `${awayAnchor}\n{{charAwayGuide}}`)
+            : `${contentWithAway}\n{{charAwayGuide}}`;
+        }
+
         // 角色狀態插在角色位置更新後面，跟其他放在 </content> 之後的動作放一起
         const onlineContent = stored.prompts[onlineModeIndex].content;
         const charStatusLine = defaultOnlineMode.content.match(/[^\n]*<char-status[^\n]*/)?.[0];
