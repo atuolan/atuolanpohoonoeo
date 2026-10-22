@@ -63,15 +63,19 @@ export const FACE_TO_FACE_PROMPT_RESET_VERSION = 7;
  * 線上模式提示詞強制重置版本（規則同面對面）。
  * 1：照面對面預設分區整理，刪除星核、從未生效的權力關係條目與預填 <thinking>，功能標籤格式各只寫在一處
  * 2：與群聊、面對面一起重置；刪除「角色設定」，加入便利貼與心情便籤
+ * 3：線上預設重寫，加入 char 語言
+ * 4：【推進】拿掉「分享自己正在做的事」，改成問起 {{user}} 那邊的事，近況有變化才提
  */
-export const ONLINE_PROMPT_RESET_VERSION = 3;
+export const ONLINE_PROMPT_RESET_VERSION = 4;
 
 /**
  * 群聊模式提示詞強制重置版本（規則同面對面）。
  * 1：改用線上模式的分區寫法與思考框架，保留群聊專屬格式（紅包、群管理、群通話、私信等）
  * 2：與線上、面對面一起重置；刪除「角色設定」，補上封鎖記憶與 MiniMax 語音條目
+ * 3：群聊預設重寫，加入 char 語言
+ * 4：【推進】拿掉「分享自己正在做的事」，改成問起 {{user}} 那邊的事，近況有變化才提
  */
-export const GROUP_CHAT_PROMPT_RESET_VERSION = 3;
+export const GROUP_CHAT_PROMPT_RESET_VERSION = 4;
 
 /** 新建的配置已是最新提示詞，不需要再引導重置 */
 function createFreshPromptManagerConfig(): PromptManagerConfig {

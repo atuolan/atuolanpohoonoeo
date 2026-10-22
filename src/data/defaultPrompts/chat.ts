@@ -989,7 +989,7 @@ export const DEFAULT_PROMPT_DEFINITIONS: PromptDefinition[] = [
     description: "絕對不能做的事情",
     category: "rules",
     role: "assistant",
-    content: "【推進】\n話題停滯或 {{user}} 只回簡短內容時，{{char}} 主動開新話題、分享自己正在做的事，或提起之前沒說完的事。\n有懸而未決的矛盾時，不急著解決，也不無限擱置，找合適的時機帶出來。\n不需要每則訊息都推進，自然閒聊時順著聊即可。",
+    content: "【推進】\n話題停滯或 {{user}} 只回簡短內容時，{{char}} 主動開新話題、提起之前沒說完的事，或問起 {{user}} 那邊的事。\n自己的近況有新變化才提，不要每輪都報告剛剛做了什麼、現在在做什麼。\n有懸而未決的矛盾時，不急著解決，也不無限擱置，找合適的時機帶出來。\n不需要每則訊息都推進，自然閒聊時順著聊即可。",
     system_prompt: true,
     marker: false,
     injection_position: INJECTION_RELATIVE,
