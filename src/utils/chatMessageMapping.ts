@@ -130,6 +130,11 @@ export function convertStoredMessageToUiMessage(
       transferStatus = "refunded";
     }
   }
+  // 舊資料（例如主動訊息）的角色轉帳沒存狀態：當成還沒收，才有收款／退回按鈕
+  if (isTransfer && !transferStatus) {
+    transferStatus =
+      transferType === "refund" ? "refunded" : inferUiRoleFromStoredMessage(m) === "ai" ? "pending" : "sent";
+  }
 
   let isMusicShare = (m as any).isMusicShare;
   let musicShareData = (m as any).musicShareData;

@@ -7529,7 +7529,11 @@ async function handleStreamingClose() {
             !parsedMsg.isVoice &&
             !parsedMsg.isAiImage &&
             !parsedMsg.isShowPic &&
-            !parsedMsg.isShowVid
+            !parsedMsg.isShowVid &&
+            !parsedMsg.isRedpacket &&
+            !parsedMsg.isLocation &&
+            !parsedMsg.isGift &&
+            !parsedMsg.isTransfer
           )
             continue;
           if (isSilencedGroupSender(senderCharId, parsedMsg.senderName || "")) {

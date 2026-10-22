@@ -1425,6 +1425,7 @@ export class ProactiveMessageService {
                   transferType: parsed.transferType,
                   transferAmount: parsed.transferAmount,
                   transferNote: parsed.transferNote,
+                  transferStatus: parsed.transferType === "refund" ? ("refunded" as const) : ("pending" as const),
                 }),
                 ...(parsed.isGift && {
                   isGift: true,
