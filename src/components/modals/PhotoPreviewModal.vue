@@ -47,9 +47,19 @@
           />
         </div>
 
-        <div v-if="caption || date" class="photo-preview-info">
+        <div v-if="caption || date || canReadImage" class="photo-preview-info">
           <div v-if="caption" class="photo-preview-caption">{{ caption }}</div>
           <div v-if="date" class="photo-preview-date">{{ date }}</div>
+          <div v-if="canReadImage" class="photo-preview-note">
+            <span>{{ note ? `圖片備註：${note}` : "還沒有圖片備註" }}</span>
+            <button
+              class="photo-preview-note-action"
+              :disabled="readingImage"
+              @click.stop="emit('readImage')"
+            >
+              {{ readingImage ? "讀圖中…" : note ? "重新讀圖" : "讀圖" }}
+            </button>
+          </div>
         </div>
       </div>
     </Transition>
@@ -65,12 +75,18 @@ interface Props {
   caption?: string;
   date?: string;
   canRegenerate?: boolean;
+  /** 模型看圖時寫的圖片備註 */
+  note?: string;
+  /** 顯示「讀圖」按鈕（user 傳的圖） */
+  canReadImage?: boolean;
+  readingImage?: boolean;
 }
 
 const props = defineProps<Props>();
 const emit = defineEmits<{
   (e: "update:visible", value: boolean): void;
   (e: "regenerate"): void;
+  (e: "readImage"): void;
 }>();
 
 const isVisible = ref(props.visible);
@@ -225,6 +241,34 @@ const regeneratePhoto = () => {
 .photo-preview-date {
   font-size: 14px;
   opacity: 0.7;
+}
+
+.photo-preview-note {
+  margin-top: 8px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.photo-preview-note-action {
+  margin-left: 6px;
+  padding: 1px 10px;
+  background: none;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 999px;
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+
+  &:active {
+    background: rgba(255, 255, 255, 0.15);
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
 }
 
 .photo-preview-fade-enter-active,

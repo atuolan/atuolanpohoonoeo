@@ -69,6 +69,7 @@ import type {
 } from "@/types/chat";
 import { cleanTTSTags } from "@/utils/ttsTagCleaner";
 import { injectTTSInlineButtons } from "@/utils/ttsInlineButtons";
+import { stripPicNote } from "@/utils/picNote";
 import { marked } from "marked";
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import GroupCallHistoryModal from "../modals/GroupCallHistoryModal.vue";
@@ -349,6 +350,10 @@ interface MessageBubbleProps {
     | "audio";
   imageUrl?: string;
   imageCaption?: string;
+  // 模型看圖時寫的圖片備註，點開圖片時顯示；canReadImage 時可以按「讀圖」重寫
+  imageNote?: string;
+  canReadImage?: boolean;
+  imageNoteReading?: boolean;
   // AI 文生圖原始 prompt（descriptive-image 失敗時用於重新生成）
   imagePrompt?: string;
   // 音頻相關
@@ -614,6 +619,7 @@ const emit = defineEmits<{
   (e: "regenerate", id: string): void;
   (e: "regenerateVoice", id: string): void;
   (e: "regenerateImage", id: string): void;
+  (e: "readImageNote", id: string): void;
   (e: "swipe", id: string, direction: "prev" | "next"): void;
   (e: "roundSwipe", id: string, direction: "prev" | "next"): void;
   (e: "reply", id: string): void;
@@ -1702,9 +1708,11 @@ const renderedContent = computed(() => {
     // 串流中佔位氣泡會先拿到原始模型輸出；此處只做顯示層清理，避免把
     // <thinking>/<UpdateVariable>/<horae> 等控制區塊或「結果:」鏡像內容渲染給用戶。
     // 先剝離 <think>/<thinking> 區塊，再提取 <content>，避免 thinking 內的 <content> 被誤捕
-    processedContent = stripStateThinking(processedContent, true)
-      .replace(/<think(?:ing)?>[\s\S]*?(?:<\/think(?:ing)?>|$)/gi, "")
-      .replace(/^[\s\S]*?<\/think(?:ing)?>/gis, "");
+    processedContent = stripPicNote(
+      stripStateThinking(processedContent, true)
+        .replace(/<think(?:ing)?>[\s\S]*?(?:<\/think(?:ing)?>|$)/gi, "")
+        .replace(/^[\s\S]*?<\/think(?:ing)?>/gis, ""),
+    );
     const firstContentMatch = processedContent.match(/<content>\s*([\s\S]*?)\s*<\/content>/i);
     if (firstContentMatch) {
       processedContent = firstContentMatch[1].trim();
@@ -4882,7 +4890,11 @@ const showTextVoiceTranscript = ref(true);
     :caption="imageCaption"
     :date="formattedPhotoDate"
     :can-regenerate="canRegenerateImage"
+    :note="imageNote"
+    :can-read-image="canReadImage"
+    :reading-image="imageNoteReading"
     @regenerate="handleRegenerateImage"
+    @read-image="emit('readImageNote', id)"
     @update:visible="showPhotoPreview = $event"
   />
 

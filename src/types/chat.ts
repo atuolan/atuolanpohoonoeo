@@ -437,6 +437,8 @@ export interface ChatMessage {
   imageMimeType?: string;
   /** 圖片說明/描述 */
   imageCaption?: string;
+  /** 模型看圖時寫的圖片備註（<pic-note>），之後的回合用它代替重送圖片 */
+  imageNote?: string;
   /** 文生圖英文提示詞 */
   imagePrompt?: string;
 

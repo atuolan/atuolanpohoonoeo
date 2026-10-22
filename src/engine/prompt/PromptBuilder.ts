@@ -79,6 +79,7 @@ import { applyChatPromptPreset } from "@/utils/chatPromptPreset";
 import { cleanTTSTags } from "@/utils/ttsTagCleaner";
 import { resolveStoryTime } from "@/utils/fakeTime";
 import { formatCharStatusForPrompt, formatGap } from "@/utils/elapsedTime";
+import { describeImageForPrompt } from "@/utils/picNote";
 import { getMacroEngine } from "../macros/MacroEngine";
 import { resolveDeferredVariables } from "./deferredVariables";
 import { WorldInfoScanner } from "../worldinfo/WorldInfoScanner";
@@ -100,6 +101,8 @@ interface BuiltMessage {
   imageMimeType?: string;
   /** 圖片說明/描述（用於歷史圖片的文字替代） */
   imageCaption?: string;
+  /** 模型看圖時寫的圖片備註（用於歷史圖片的文字替代） */
+  imageNote?: string;
   /** 文生圖英文提示詞（用於歷史圖片的文字替代） */
   imagePrompt?: string;
 }
@@ -1555,6 +1558,7 @@ export class PromptBuilder {
             current.imageData = msg.imageData;
             current.imageMimeType = msg.imageMimeType ?? current.imageMimeType;
             current.imageCaption = msg.imageCaption ?? current.imageCaption;
+            current.imageNote = msg.imageNote ?? current.imageNote;
             current.imagePrompt = msg.imagePrompt ?? current.imagePrompt;
           } else if (!current.imageData && msg.imageMimeType) {
             current.imageMimeType = msg.imageMimeType;
@@ -3562,9 +3566,15 @@ ${open}好啊，我等你[emotion=calm]</msg>`;
     // 從最新到最舊處理消息，直到達到 Token 限制
     const reversedMessages = [...messages].reverse();
     const tempMessages: BuiltMessage[] = [];
+    // 只有最後一輪使用者訊息的圖片送給模型看；更早的圖片模型已經回應過，
+    // 換成文字描述（優先用模型看圖時寫的備註），不再每輪重送整張圖
+    const lastUserTurn = new Set(PromptBuilder.getLastUserTurnMessages(messages));
 
     for (const msg of reversedMessages) {
-      const content = msg.content;
+      const hasImage = !!((msg.imageData || msg.imageUrl) && msg.imageMimeType);
+      const keepImage = hasImage && lastUserTurn.has(msg);
+      const content =
+        hasImage && !keepImage ? describeImageForPrompt(msg.content, msg) : msg.content;
       const tokens = await this.tokenCounter(content);
 
       if (usedTokens + tokens > maxTokens) {
@@ -3648,11 +3658,12 @@ ${open}好啊，我等你[emotion=calm]</msg>`;
         content: msgContent,
         name: msg.name,
         identifier: "chatMessage",
-        // 保留圖片資訊（用於 Vision API）
-        imageData: msg.imageData,
-        imageMimeType: msg.imageMimeType,
-        // 保留圖片描述（用於歷史圖片的文字替代）
+        // 保留圖片資訊（用於 Vision API）；舊圖片已換成文字，不帶圖片資料
+        imageData: keepImage ? msg.imageData : undefined,
+        imageMimeType: keepImage ? msg.imageMimeType : undefined,
+        // 保留圖片描述（用於圖片送不出去時的文字替代）
         imageCaption: msg.imageCaption,
+        imageNote: msg.imageNote,
         imagePrompt: msg.imagePrompt,
       } as BuiltMessage);
       usedTokens += tokens;
