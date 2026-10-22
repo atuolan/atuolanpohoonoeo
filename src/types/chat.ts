@@ -1327,6 +1327,8 @@ export interface GenerationDiagnostics {
   finishReason?: GenerationStopReason;
   apiContentLength?: number;
   finalContentLength?: number;
+  /** 串流中途斷線、但已收到內容時的錯誤與診斷文字；內容照常使用，可能不完整 */
+  networkInterruption?: string;
   chunkCount?: number;
   totalBytes?: number;
   firstChunkTimeMs?: number;

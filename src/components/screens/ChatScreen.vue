@@ -6050,6 +6050,10 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
         isEmpty: !finalContent || !finalContent.trim(),
       };
       if (useWindow) streamingWindow.setDiagnostics(generationDiagnostics, streamingWindowOwnerId);
+      if (generationDiagnostics.networkInterruption) {
+        console.warn("[ChatScreen] 串流中途斷線，保留已收到的內容", generationDiagnostics.networkInterruption);
+        showToast("連線中途斷了，已保留收到的回覆（可能不完整）");
+      }
       const msgIndex = messages.value.findIndex((m) => m.id === aiMessage.id);
 
       // 空回應檢測：若是使用者主動停止，直接移除佔位氣泡

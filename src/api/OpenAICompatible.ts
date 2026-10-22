@@ -1683,6 +1683,23 @@ export class OpenAICompatibleClient {
               receivedChars: fullContent.length,
             })
           : "";
+        if (diagnosis && fullContent.trim()) {
+          yield {
+            type: "done",
+            content: fullContent,
+            finishReason: "error",
+            rawFinishReason: "network_interrupted",
+            diagnostics: {
+              ...request.diagnostics,
+              finishReason: "error",
+              rawFinishReason: "network_interrupted",
+              apiContentLength: fullContent.length,
+              totalTimeMs: Date.now() - streamStartTime,
+              networkInterruption: `${errMsg}${diagnosis}`,
+            },
+          };
+          return;
+        }
         yield { type: "error", error: `${errMsg}${diagnosis}` };
       }
     } finally {
@@ -2296,6 +2313,22 @@ export class OpenAICompatibleClient {
               totalBytes,
             })
           : "";
+        // 串流中途斷線（常見於切到背景、網路切換）：已收到的內容照常交出，不整段丟掉
+        if (diagnosis && fullContent.trim()) {
+          const diagnostics: GenerationDiagnostics = {
+            ...request.diagnostics,
+            finishReason: "error",
+            rawFinishReason: "network_interrupted",
+            apiContentLength: fullContent.length,
+            chunkCount,
+            totalBytes,
+            firstChunkTimeMs: firstChunkTime,
+            totalTimeMs: totalTime,
+            networkInterruption: `${errMsg}${diagnosis}`,
+          };
+          yield { type: "done", content: fullContent, finishReason: "error", rawFinishReason: "network_interrupted", diagnostics };
+          return;
+        }
         yield { type: "error", error: `${errMsg}${diagnosis}` };
       }
     } finally {
