@@ -20,6 +20,7 @@ import {
   DEFAULT_PROMPT_ORDER,
   FACE_TO_FACE_PROMPT_DEFINITIONS,
 } from "@/types/promptManager";
+import { PLURK_COMMENT_LANGUAGE_MODE, PLURK_POST_LANGUAGE_MODE } from "@/data/defaultPrompts/plurk";
 import {
   FACE_TO_FACE_PROMPT_RESET_VERSION,
   GROUP_CHAT_PROMPT_RESET_VERSION,
@@ -182,49 +183,96 @@ describe("已停用的線上必要條目", () => {
   });
 });
 
-describe("翻譯格式統一成「外語<br>中文翻譯」", () => {
+describe("噗浪照母語發言（跟線上聊天一樣）", () => {
   beforeEach(() => {
     storage.clear();
     setActivePinia(createPinia());
   });
 
-  it("已存的舊預設翻譯提示載入時換成新格式", async () => {
-    const oldHint =
-      "💡 翻譯提示：如果你在回覆噗浪評論時使用非中文，請在後面用括號附上中文翻譯。\n例如：「Good morning! (早安！)」、「I love you (我愛你)」";
+  const BRACKET_HINT =
+    "💡 翻譯提示：如果你在回覆噗浪評論時使用非中文，請在後面用括號附上中文翻譯。\n例如：「Good morning! (早安！)」、「I love you (我愛你)」";
+  const BR_HINT =
+    "💡 翻譯提示：噗浪內容用到非中文時，跟聊天訊息一樣在後面附上中文翻譯，格式是「外語<br>中文翻譯」。\n例如：Good morning!<br>早安！、I love you<br>我愛你";
+  const NEW_BATCH_RULE =
+    "4. 口語化表達\n5. 每個角色依自己的國籍與背景判斷母語：母語是中文就直接寫繁體中文；母語不是中文，每則評論都完整用母語寫，content 寫成「母語原文<br>對應的中文翻譯」，禁止只有中文的評論。路人用繁體中文";
+
+  // 兩代舊預設：最早的括號翻譯，以及上一版的「外語<br>中文翻譯」
+  const OLD_VERSIONS = {
+    括號翻譯: {
+      hint: BRACKET_HINT,
+      comment6: "6. 如果使用非中文，請在後面用括號附上中文翻譯",
+      batch5: "5. 如果角色使用外語，只在外語部分後加括號翻譯",
+    },
+    "外語<br>中文翻譯": {
+      hint: BR_HINT,
+      comment6: "6. 如果使用非中文，在後面附上中文翻譯，格式是「外語<br>中文翻譯」",
+      batch5: "5. 如果角色使用外語，只在外語部分後面附上中文翻譯，格式是「外語<br>中文翻譯」",
+    },
+  };
+
+  for (const [label, old] of Object.entries(OLD_VERSIONS)) {
+    it(`已存的舊預設（${label}）載入時換成依母語的新規則`, async () => {
+      const config = createDefaultPromptManagerConfig();
+      const defaults = structuredClone(config);
+      const withOld = <T extends { identifier: string; content: string }>(list: T[], id: string, from: string, to: string) =>
+        list.map((p) => {
+          if (p.identifier !== id) return p;
+          expect(p.content, id).toContain(from);
+          return { ...p, content: p.content.replace(from, to) };
+        });
+      const contentOf = (list: Array<{ identifier: string; content: string }> | undefined, id: string) =>
+        list!.find((p) => p.identifier === id)!.content;
+      const social = contentOf(config.prompts, "socialMedia");
+      const newHint = social.slice(social.indexOf("💡"), social.indexOf("\n\n{{socialPosts}}"));
+
+      config.prompts = withOld(config.prompts, "socialMedia", newHint, old.hint);
+      config.faceToFacePrompts = withOld(config.faceToFacePrompts!, "f2fSocialMedia", newHint, old.hint);
+      config.plurkPostPrompts = withOld(
+        config.plurkPostPrompts!,
+        "plurkPostSystemPrompt",
+        `\n\n${PLURK_POST_LANGUAGE_MODE}\n`,
+        "\n6. 使用繁體中文\n",
+      );
+      config.plurkCommentPrompts = withOld(
+        config.plurkCommentPrompts!,
+        "plurkCommentSystemPrompt",
+        `\n\n${PLURK_COMMENT_LANGUAGE_MODE}`,
+        `\n5. 使用繁體中文\n${old.comment6}`,
+      );
+      config.batchCommentsPrompts = withOld(
+        config.batchCommentsPrompts!,
+        "batchCommentsSystemPrompt",
+        NEW_BATCH_RULE,
+        `4. 使用繁體中文，口語化表達\n${old.batch5}`,
+      );
+      storage.set("promptManagerConfig", config);
+
+      const store = usePromptManagerStore();
+      await store.loadConfig();
+
+      expect(contentOf(store.config.prompts, "socialMedia")).toBe(contentOf(defaults.prompts, "socialMedia"));
+      expect(contentOf(store.config.faceToFacePrompts, "f2fSocialMedia")).toBe(
+        contentOf(defaults.faceToFacePrompts, "f2fSocialMedia"),
+      );
+      expect(contentOf(store.config.plurkPostPrompts, "plurkPostSystemPrompt")).toBe(
+        contentOf(defaults.plurkPostPrompts, "plurkPostSystemPrompt"),
+      );
+      expect(contentOf(store.config.plurkCommentPrompts, "plurkCommentSystemPrompt")).toBe(
+        contentOf(defaults.plurkCommentPrompts, "plurkCommentSystemPrompt"),
+      );
+      expect(contentOf(store.config.batchCommentsPrompts, "batchCommentsSystemPrompt")).toBe(
+        contentOf(defaults.batchCommentsPrompts, "batchCommentsSystemPrompt"),
+      );
+    });
+  }
+
+  it("預設的噗浪發文與留言都有母語規則，不再只寫「使用繁體中文」", () => {
     const config = createDefaultPromptManagerConfig();
-    const withOld = <T extends { identifier: string; content: string }>(list: T[], id: string, from: string, to: string) =>
-      list.map((p) => (p.identifier === id ? { ...p, content: p.content.replace(from, to) } : p));
-    const newHint = (content: string) => content.slice(content.indexOf("💡"), content.indexOf("\n\n{{socialPosts}}"));
-
-    const onlineHint = newHint(config.prompts.find((p) => p.identifier === "socialMedia")!.content);
-    config.prompts = withOld(config.prompts, "socialMedia", onlineHint, oldHint);
-    config.faceToFacePrompts = withOld(config.faceToFacePrompts!, "f2fSocialMedia", onlineHint, oldHint);
-    config.plurkCommentPrompts = withOld(
-      config.plurkCommentPrompts!,
-      "plurkCommentSystemPrompt",
-      "6. 如果使用非中文，在後面附上中文翻譯，格式是「外語<br>中文翻譯」",
-      "6. 如果使用非中文，請在後面用括號附上中文翻譯",
-    );
-    config.batchCommentsPrompts = withOld(
-      config.batchCommentsPrompts!,
-      "batchCommentsSystemPrompt",
-      "5. 如果角色使用外語，只在外語部分後面附上中文翻譯，格式是「外語<br>中文翻譯」",
-      "5. 如果角色使用外語，只在外語部分後加括號翻譯",
-    );
-    storage.set("promptManagerConfig", config);
-
-    const store = usePromptManagerStore();
-    await store.loadConfig();
-
-    const all = [
-      ...store.config.prompts,
-      ...store.config.faceToFacePrompts!,
-      ...store.config.plurkCommentPrompts!,
-      ...store.config.batchCommentsPrompts!,
-    ];
-    for (const prompt of all) {
-      expect(prompt.content, prompt.identifier).not.toMatch(/括號附上中文翻譯|加括號翻譯/);
-    }
-    expect(all.filter((p) => p.content.includes("外語<br>中文翻譯")).length).toBeGreaterThanOrEqual(4);
+    const post = config.plurkPostPrompts!.find((p) => p.identifier === "plurkPostSystemPrompt")!.content;
+    const comment = config.plurkCommentPrompts!.find((p) => p.identifier === "plurkCommentSystemPrompt")!.content;
+    expect(post).toContain("<plurk>（母語原文）<br>（對應的中文翻譯）</plurk>");
+    expect(post).not.toContain("6. 使用繁體中文");
+    expect(comment).toContain("禁止出現只有中文的留言");
+    expect(comment).not.toContain("5. 使用繁體中文");
   });
 });

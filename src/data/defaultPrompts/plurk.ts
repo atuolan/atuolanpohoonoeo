@@ -6,6 +6,39 @@
 import type { PromptDefinition, PromptOrderEntry } from "./types";
 import { INJECTION_RELATIVE } from "./types";
 
+/** 噗浪發文的語言規則：跟線上聊天一樣依母語分兩種格式（舊版只寫「使用繁體中文」，外國角色都講中文） */
+export const PLURK_POST_LANGUAGE_MODE = `<language_mode>
+【語言規則｜噗浪發文｜最高優先】
+噗文沒有旁白，整則都是 {{char}} 親手打的字。
+先判斷 {{char}} 的母語（依國籍與背景），再依結果選擇一種格式：
+▍母語是中文 → 直接用繁體中文
+  • 不加 <br>，不加翻譯
+  • 格式：<plurk>（中文內容）</plurk>
+▍母語不是中文 → 母語＋翻譯
+  • 整則噗都完整使用母語，無一例外：心情、日常、吐槽、問句，全部用母語
+  • 格式：<plurk>（母語原文）<br>（對應的中文翻譯）</plurk>
+  • 翻譯必須對應原文，不得加入原文沒有的內容
+  • 禁止出現只有中文的噗
+兩種格式都不使用「」引號。
+</language_mode>`;
+
+/** 噗浪留言的語言規則：每個角色各自依母語決定格式，路人照舊用中文 */
+export const PLURK_COMMENT_LANGUAGE_MODE = `<language_mode>
+【語言規則｜噗浪留言｜最高優先】
+留言沒有旁白，每一則都是角色親手打的字。
+每個角色先判斷自己的母語（依國籍與背景），再依結果選擇一種格式：
+▍母語是中文 → 直接用繁體中文
+  • 不加 <br>，不加翻譯
+  • 格式：（中文內容）
+▍母語不是中文 → 母語＋翻譯
+  • 每一則留言都完整使用母語，無一例外：接話、吐槽、玩梗、問句，全部用母語
+  • 格式：（母語原文）<br>（對應的中文翻譯）
+  • 翻譯必須對應原文，不得加入原文沒有的內容
+  • 禁止出現只有中文的留言
+路人是一般網友，直接用繁體中文。
+兩種格式都不使用「」引號。
+</language_mode>`;
+
 // ===== 噗浪發文提示詞定義 =====
 export const PLURK_POST_PROMPT_DEFINITIONS: PromptDefinition[] = [
   {
@@ -22,7 +55,8 @@ export const PLURK_POST_PROMPT_DEFINITIONS: PromptDefinition[] = [
 3. 可以分享心情、日常、想法
 4. 長度適中，不要太長
 5. 可以使用表情符號
-6. 使用繁體中文
+
+${PLURK_POST_LANGUAGE_MODE}
 
 輸出格式：
 <plurk>發文內容</plurk>
@@ -130,8 +164,8 @@ export const PLURK_COMMENT_PROMPT_DEFINITIONS: PromptDefinition[] = [
 2. 回覆要自然、有互動感，可以接話、吐槽、玩梗
 3. 可以使用表情符號
 4. 長度適中，不要每則都一樣長
-5. 使用繁體中文
-6. 如果使用非中文，在後面附上中文翻譯，格式是「外語<br>中文翻譯」`,
+
+${PLURK_COMMENT_LANGUAGE_MODE}`,
     system_prompt: true,
     marker: false,
     injection_position: INJECTION_RELATIVE,
