@@ -1,6 +1,7 @@
 /**
- * App 熱更新：網頁版部署後，App 在背景下載變動的檔案，
- * 等下次開 App 時才換上（開啟時多重新載入一次；不會在聊天、AI 生成到一半時換掉）。
+ * App 熱更新：網頁版部署後，App 在背景下載變動的檔案。
+ * 下載好時，如果剛開 App、還停在主畫面、也沒在生成，就直接換上（開啟時多重新載入一次）；
+ * 不然跳一行提示讓使用者自己點，沒點就等下次開 App 再換（不會在聊天、AI 生成到一半時換掉）。
  *
  * 不用更新套件的 next()：它會在 App 切到背景時就換版重新載入，切回來畫面和生成中的回覆都沒了。
  * 改成自己記下載好的版本，開 App 時再呼叫 set() 換上。
@@ -10,7 +11,10 @@
  */
 import { App } from "@capacitor/app";
 import { CapacitorHttp } from "@capacitor/core";
-import { CapacitorUpdater } from "@capgo/capacitor-updater";
+import { CapacitorUpdater, type BundleInfo } from "@capgo/capacitor-updater";
+import { useAIGenerationStore } from "@/stores/aiGeneration";
+import { showFloatingToast } from "@/utils/floatingToast";
+import { watch } from "vue";
 import {
   LIVE_UPDATE_MANIFEST,
   decideLiveUpdate,
@@ -19,12 +23,15 @@ import {
   type LiveUpdateManifest,
 } from "./liveUpdateManifest";
 import { LIVE_UPDATE_ORIGINS } from "./platform";
+import { showUpdateReadyHint } from "./updateReadyHint";
 import { readWebVersion } from "./webVersion";
 
 /** 開 App 後等這麼久才檢查，讓開機時的資料載入先跑完 */
 const STARTUP_CHECK_DELAY_MS = 8000;
+/** 開 App 後這段時間內下載好，又還停在主畫面、沒在生成，就直接換上 */
+const STARTUP_APPLY_WINDOW_MS = 30 * 1000;
 /** 回到前景時，距離上次檢查超過這麼久才再檢查 */
-const RESUME_CHECK_INTERVAL_MS = 60 * 60 * 1000;
+const RESUME_CHECK_INTERVAL_MS = 30 * 60 * 1000;
 /** 下載好、等下次開 App 換上的版本 id */
 const PENDING_BUNDLE_KEY = "aguaphone.liveUpdate.pendingBundle";
 /** 換上後開不起來、被自動退回的版本（只留最近幾個） */
@@ -33,6 +40,9 @@ const MAX_FAILED_VERSIONS = 5;
 
 let checking = false;
 let lastCheckAt = 0;
+let launchedAt = Date.now();
+/** 這次開 App 已經提示過的版本，回前景重新檢查時不再重複跳 */
+let hintedBundleId: string | null = null;
 
 function readPendingBundle(): string | null {
   try {
@@ -107,6 +117,64 @@ async function deleteStaleBundles(keepId: string): Promise<void> {
   }
 }
 
+/** 還停在主畫面（App.vue 把目前頁面記在 history.state.page，還沒換過頁時是 null） */
+function isOnHomePage(): boolean {
+  const state: unknown = window.history.state;
+  if (state === null) return true;
+  return typeof state === "object" && (state as { page?: unknown }).page === "home";
+}
+
+/** 換上下載好的版本，會立刻重新載入 */
+async function applyBundle(bundle: BundleInfo): Promise<void> {
+  writePendingBundle(null);
+  console.info(`[LiveUpdate] 換上新版 ${bundle.version}`);
+  await CapacitorUpdater.set({ id: bundle.id });
+}
+
+function applyBundleNow(bundle: BundleInfo): void {
+  applyBundle(bundle).catch((err) => console.warn("[LiveUpdate] 換上新版失敗:", err));
+}
+
+/** 跳提示讓使用者自己點換上；生成中先不跳，等回完再跳 */
+function offerHint(bundle: BundleInfo): void {
+  const generation = useAIGenerationStore();
+  if (generation.hasActiveGeneration) {
+    const stop = watch(
+      () => generation.hasActiveGeneration,
+      (active) => {
+        if (active) return;
+        stop();
+        offerHint(bundle);
+      },
+    );
+    return;
+  }
+  // 等的期間已經換上或下載了更新的版本
+  if (readPendingBundle() !== bundle.id) return;
+  showUpdateReadyHint(() => {
+    if (generation.hasActiveGeneration) {
+      showFloatingToast("AI 還在回覆，回完會再提示一次");
+      offerHint(bundle);
+      return;
+    }
+    applyBundleNow(bundle);
+  });
+}
+
+/** 新版下載好了：剛開 App 還沒開始用就直接換上，不然跳提示 */
+function offerBundle(bundle: BundleInfo): void {
+  // 已經切到背景就留到下次開 App 或回前景再說
+  if (document.visibilityState !== "visible") return;
+  const justLaunched = Date.now() - launchedAt <= STARTUP_APPLY_WINDOW_MS;
+  if (justLaunched && isOnHomePage() && !useAIGenerationStore().hasActiveGeneration) {
+    applyBundleNow(bundle);
+    return;
+  }
+  if (hintedBundleId === bundle.id) return;
+  hintedBundleId = bundle.id;
+  offerHint(bundle);
+}
+
 export async function checkForLiveUpdate(): Promise<void> {
   if (checking) return;
   checking = true;
@@ -143,7 +211,8 @@ export async function checkForLiveUpdate(): Promise<void> {
 
     writePendingBundle(bundle.id);
     await deleteStaleBundles(bundle.id);
-    console.info(`[LiveUpdate] 新版 ${manifest.version} 已下載，下次開啟 App 時套用`);
+    console.info(`[LiveUpdate] 新版 ${manifest.version} 已下載`);
+    offerBundle(bundle);
   } catch (err) {
     console.warn("[LiveUpdate] 檢查更新失敗:", err);
   } finally {
@@ -168,12 +237,12 @@ async function applyPendingBundle(): Promise<boolean> {
   ]);
   const target = bundles.find((b) => b.id === pendingId);
   if (!target || target.status === "error" || target.id === current.id) return false;
-  console.info(`[LiveUpdate] 換上新版 ${target.version}`);
-  await CapacitorUpdater.set({ id: target.id });
+  await applyBundle(target);
   return true;
 }
 
 export function initLiveUpdate(): void {
+  launchedAt = Date.now();
   // 走到這裡代表這份網頁開得起來，告訴更新套件不用退回
   CapacitorUpdater.notifyAppReady().catch((err) =>
     console.warn("[LiveUpdate] notifyAppReady 失敗:", err),
