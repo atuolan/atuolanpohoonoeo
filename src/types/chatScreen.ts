@@ -162,7 +162,7 @@ export interface ChatScreenMessage {
   isCalendarEvent?: boolean;
   calendarEventData?: import("@/types/calendar").CalendarCardData;
   isCallNotification?: boolean;
-  callNotificationType?: "declined" | "missed";
+  callNotificationType?: "declined" | "missed" | "unanswered";
   callReason?: string;
   isHtmlBlock?: boolean;
   htmlContent?: string;
@@ -207,6 +207,8 @@ export interface ChatScreenMessage {
   /** 這一輪角色用過的工具（只掛在該輪第一則角色訊息上） */
   toolActivity?: ToolActivityRecord[];
   sentWhileBlocked?: boolean;
+  /** user 在角色暫時離開期間留下的（訊息或未接通電話卡），值是 CharAway.id */
+  sentWhileAway?: string;
   isSystemNotification?: boolean;
   isTransactionClaimNotice?: boolean;
   isFoodRecord?: boolean;

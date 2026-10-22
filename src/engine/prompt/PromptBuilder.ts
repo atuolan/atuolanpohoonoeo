@@ -284,6 +284,10 @@ export interface PromptBuilderOptions {
   charStatusUpdatedAt?: number;
   /** 這個角色上一張便利貼（用於 {{charStickyNote}} 宏，例如「今天 14:20：記得帶傘」） */
   charStickyNote?: string;
+  /** 角色暫時離開的標籤說明（{{charAwayGuide}} 宏）；不能用時是空字串或不傳 */
+  charAwayGuide?: string;
+  /** 角色剛暫離回來那一輪的說明（[剛忙完回來]／[被催回來]），附加在 timeInfo 後面 */
+  charAwayReturnNote?: string;
   /** {{user}} 主畫面的心情便籤（用於 {{userMoodNote}} 宏；空的時候「心情便籤」條目不輸出） */
   userMoodNote?: string;
   /** 角色自己的待辦和行程清單（用於 {{charPlanner}} 宏；沒給的時候「角色待辦與行程」條目不輸出） */
@@ -646,6 +650,7 @@ export class PromptBuilder {
         readingSummaries: options.companionReading?.readingSummaries || "（還沒有摘要）",
         charStatus: formatCharStatusForPrompt(options.charStatus, options.charStatusUpdatedAt),
         charStickyNote: options.charStickyNote || "還沒寫過",
+        charAwayGuide: options.charAwayGuide || "",
         userMoodNote: options.userMoodNote || "",
         charPlanner: options.charPlanner || "",
         userCalendar: options.userCalendar || "",
@@ -800,6 +805,7 @@ export class PromptBuilder {
         readingSummaries: options.companionReading?.readingSummaries || "（還沒有摘要）",
         charStatus: formatCharStatusForPrompt(options.charStatus, options.charStatusUpdatedAt),
         charStickyNote: options.charStickyNote || "還沒寫過",
+        charAwayGuide: options.charAwayGuide || "",
         userMoodNote: options.userMoodNote || "",
         charPlanner: options.charPlanner || "",
         userCalendar: options.userCalendar || "",
@@ -2080,6 +2086,8 @@ export class PromptBuilder {
           if (identifier === "timeInfo") {
             const gapNote = this.buildReplyGapNote(now);
             if (gapNote) content += `\n\n${gapNote}`;
+            if (this.options.charAwayReturnNote)
+              content += `\n\n${this.options.charAwayReturnNote}`;
           }
           content = await this.macroEngine.substitute(content);
           return content ? { role: getRole(), content, identifier } : null;

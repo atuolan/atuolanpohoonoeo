@@ -87,6 +87,36 @@ export async function showNativeNotification(options: {
   });
 }
 
+/** 排程一則原生通知：時間到由系統發出，App 沒開也收得到 */
+export async function scheduleNativeNotificationAt(options: {
+  tag: string;
+  at: number;
+  title: string;
+  body: string;
+  extra?: Record<string, unknown>;
+}): Promise<void> {
+  await ensureChannel();
+  await LocalNotifications.schedule({
+    notifications: [
+      {
+        id: notificationId(options.tag),
+        title: options.title,
+        body: options.body,
+        extra: options.extra,
+        channelId: MESSAGE_CHANNEL_ID,
+        schedule: { at: new Date(options.at), allowWhileIdle: true },
+      },
+    ],
+  });
+}
+
+/** 取消已經排好的原生通知（tag 跟排程時用的相同） */
+export async function cancelNativeNotification(tag: string): Promise<void> {
+  await LocalNotifications.cancel({
+    notifications: [{ id: notificationId(tag) }],
+  });
+}
+
 /**
  * 點通知打開 App 時呼叫 handler（帶著發通知時的 extra）。
  * App 被點通知冷啟動時，事件會留到這裡註冊監聽才送出。

@@ -411,6 +411,7 @@ export function convertToStorableMessage(m: any, charName: string): ChatMessage 
     // 逐筆複製：messages.value 裡是 reactive Proxy，直接存會讓 IndexedDB 丟 DataCloneError
     toolActivity: m.toolActivity ? m.toolActivity.map((entry: ToolActivityRecord) => ({ ...entry })) : undefined,
     sentWhileBlocked: m.sentWhileBlocked,
+    sentWhileAway: m.sentWhileAway,
     isSystemNotification: m.isSystemNotification,
     isFoodRecord: m.isFoodRecord,
     foodRecordData: m.foodRecordData ? { ...m.foodRecordData } : undefined,

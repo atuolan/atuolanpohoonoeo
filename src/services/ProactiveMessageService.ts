@@ -19,6 +19,7 @@ import {
   publishCharacterPlurk,
 } from "./PlurkPostService";
 import { pickGenerationToggles } from "@/utils/generationToggles";
+import { buildCharAwayReturnNote, isCharAwayActive } from "./charAway";
 import { formatEventTime } from "@/utils/calendarEventFormat";
 import { computeChatNow } from "@/utils/fakeTime";
 import { toPromptGroupMember, withLiveSubCharSnapshot } from "@/utils/groupMembers";
@@ -230,6 +231,10 @@ export class ProactiveMessageService {
               console.log(`[ProactiveMessage] 角色 ${character.id} 處於封鎖狀態，跳過主動發訊`);
               continue;
             }
+            if (charChats.some((c: any) => isCharAwayActive(c.charAway))) {
+              console.log(`[ProactiveMessage] 角色 ${character.id} 暫時離開中，跳過主動發訊`);
+              continue;
+            }
           } catch (err) {
             console.warn('[ProactiveMessage] 封鎖狀態檢查失敗，繼續發送:', err);
           }
@@ -378,6 +383,59 @@ export class ProactiveMessageService {
       return { ok: false, reason: 'no message appended (silent return inside sendProactiveMessage)' }
     } catch (postErr) {
       return { ok: false, reason: `post-check failed: ${String(postErr)}` }
+    }
+  }
+
+  /**
+   * 角色暫時離開回來後：接著回 user 留下的訊息 / 未接來電
+   *
+   * 只發進指定的聊天（targetChatId），不寫回排程欄位。
+   * 回傳 true 表示確實有追加訊息。
+   */
+  async sendCharAwayReturnReply(chatId: string): Promise<boolean> {
+    // 使用臨時 settings，不影響正常排程
+    const tempSettings: ProactiveMessageSettings = {
+      enabled: true,
+      intervalMinutes: 15,
+      doNotDisturbEnabled: false,
+      doNotDisturbStart: '00:00',
+      doNotDisturbEnd: '06:00',
+      showNotification: true,
+    }
+
+    let characterId = ''
+    let beforeCount = 0
+    try {
+      const { db, DB_STORES } = await import('@/db/database')
+      const { getMessageCount } = await import('@/storage/chatMessageStorage')
+      const chat = await db.get<any>(DB_STORES.CHATS, chatId)
+      if (!chat?.characterId) return false
+      characterId = chat.characterId
+      beforeCount = await getMessageCount(chatId).catch(() => 0)
+    } catch (lookupErr) {
+      console.warn('[ProactiveMessage] sendCharAwayReturnReply: 讀取聊天失敗', lookupErr)
+      return false
+    }
+
+    try {
+      await this.sendProactiveMessage(characterId, tempSettings, {
+        skipScheduleUpdate: true,
+        targetChatId: chatId,
+        customTopicInstruction:
+          '你剛忙完回來，看到對方在你忙的時候留的訊息或未接來電，現在回應對方。',
+      })
+    } catch (err) {
+      console.warn('[ProactiveMessage] sendCharAwayReturnReply: 發送失敗', err)
+      return false
+    }
+
+    try {
+      const { getMessageCount } = await import('@/storage/chatMessageStorage')
+      const afterCount = await getMessageCount(chatId).catch(() => beforeCount)
+      return afterCount > beforeCount
+    } catch (postErr) {
+      console.warn('[ProactiveMessage] sendCharAwayReturnReply: 對照訊息數失敗', postErr)
+      return false
     }
   }
 
@@ -880,6 +938,8 @@ export class ProactiveMessageService {
       customTopicInstruction?: string;
       skipScheduleUpdate?: boolean;
       gamePlayingContext?: { gameName: string };
+      /** 指定要發進哪個聊天（預設該角色最近的單聊） */
+      targetChatId?: string;
     },
   ) {
     // 標記該角色正在處理中，防止 setInterval 重複觸發
@@ -947,7 +1007,10 @@ export class ProactiveMessageService {
         .filter((c) => c.characterId === characterId && !c.isGroupChat)
         .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
 
-      let chat = characterChats[0];
+      let chat = options?.targetChatId
+        ? characterChats.find((c) => c.id === options.targetChatId) ||
+          characterChats[0]
+        : characterChats[0];
 
       if (!chat) {
         // 如果沒有聊天，創建一個新的
@@ -1222,6 +1285,13 @@ export class ProactiveMessageService {
           await listCalendarEvents({ from: proactiveToday, to: shiftDate(proactiveToday, 6) }).catch(() => []),
           { today: proactiveToday, chatId: chat.id, charName: character.data?.name || character.nickname || "角色" },
         ) || undefined;
+      // 暫離期間 user 留了幾則訊息（回來後要他接著回）
+      const awayLeftMessageCount = existingMessages.filter(
+        (m) =>
+          m.is_user &&
+          !!m.sentWhileAway &&
+          m.sentWhileAway === chat.charAway?.id,
+      ).length;
       const promptBuilder = new PromptBuilder({
         character,
         lorebooks: applyWorldInfoRegexToLorebooks(characterLorebooks, regexContext),
@@ -1254,6 +1324,9 @@ export class ProactiveMessageService {
         socialPosts: await getSocialPostsForPrompt([character.id]),
         charStatus: chat.charStatus?.text,
         charStatusUpdatedAt: chat.charStatus?.updatedAt,
+        charAwayReturnNote:
+          buildCharAwayReturnNote(chat.charAway, awayLeftMessageCount) ??
+          undefined,
         charStickyNote: noteBoardContext.charStickyNote,
         userMoodNote: noteBoardContext.moodNote,
         charPlanner: charPlannerText,

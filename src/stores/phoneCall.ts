@@ -8,6 +8,7 @@ import { useStreamingWindow } from "@/composables/useStreamingWindow";
 import { db, DB_STORES } from "@/db/database";
 import { PromptBuilder } from "@/engine/prompt/PromptBuilder";
 import { parseAffinityUpdateTags } from "@/services/ResponseParser";
+import { isCharAwayActive } from "@/services/charAway";
 import {
   applyPromptRegexToHistory,
   applyWorldInfoRegexToLorebooks,
@@ -177,6 +178,8 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
   let durationTimer: ReturnType<typeof setInterval> | null = null;
   let abortController: AbortController | null = null;
   let autoAnswerTimer: ReturnType<typeof setTimeout> | null = null;
+  /** 角色暫時離開時撥過去，響多久才顯示無人接聽 */
+  const AWAY_UNANSWERED_RING_MS = 8000;
 
   // 輔助資料
   const summaries = ref<Summary[]>([]);
@@ -578,6 +581,30 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
   }
 
   // ===== 開始視訊通話（靜態模式 MVP） =====
+  /**
+   * 角色暫時離開時撥過去：不問接不接，響一陣子後無人接聽；
+   * 聊天裡留一張未接通卡片，他回來時會知道打過幾通。不動原本的未接計數。
+   */
+  async function ringUnansweredIfAway(info: ActiveCallInfo): Promise<boolean> {
+    if (info.isIncoming || !info.chatId) return false;
+    const chatId = info.chatId;
+    const chat = await loadChatById(chatId).catch(() => undefined);
+    if (!isCharAwayActive(chat?.charAway)) return false;
+
+    callState.value = "ringing";
+    callStartedAt.value = null;
+    import("@/services/charAwayRuntime")
+      .then(({ recordCharAwayCall }) => recordCharAwayCall(chatId, info.characterName))
+      .catch((err) => console.warn("[PhoneCall] 記錄暫離時的未接通電話失敗:", err));
+    autoAnswerTimer = setTimeout(() => {
+      if (callState.value !== "ringing") return;
+      callState.value = "rejected";
+      rejectReason.value = "無人接聽";
+      setTimeout(() => endCall(), 3000);
+    }, AWAY_UNANSWERED_RING_MS);
+    return true;
+  }
+
   async function startVideoCall(
     info: ActiveCallInfo,
     options?: {
@@ -598,6 +625,8 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
     rejectReason.value = "";
     isSpeaker.value = false;
     isExpanded.value = true;
+
+    if (await ringUnansweredIfAway(info)) return;
 
     const { useUserStore } = await import("@/stores/user");
     const userStore = useUserStore();
@@ -651,6 +680,8 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
     // 載入輔助資料
     await loadSummariesAndEvents(info);
     await loadTTSConfig(info);
+
+    if (await ringUnansweredIfAway(info)) return;
 
     // 來電模式：直接接聽
     if (info.isIncoming) {

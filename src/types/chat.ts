@@ -578,7 +578,7 @@ export interface ChatMessage {
   /** 是否為通話通知卡片 */
   isCallNotification?: boolean;
   /** 通話通知類型 */
-  callNotificationType?: "declined" | "missed";
+  callNotificationType?: "declined" | "missed" | "unanswered";
   /** 通話來電原因（用於顯示和上下文） */
   callReason?: string;
 
@@ -631,6 +631,8 @@ export interface ChatMessage {
   // --- 封鎖系統相關 ---
   /** 是否為封鎖期間發送的訊息（用戶封鎖角色後仍可發送） */
   sentWhileBlocked?: boolean;
+  /** user 在角色暫時離開期間留下的（訊息或未接通電話卡），值是 CharAway.id */
+  sentWhileAway?: string;
   /** 是否為系統通知訊息（封鎖/解封提示等，不作為普通聊天訊息顯示） */
   isSystemNotification?: boolean;
   /** 是否為交易領取通知：資料上算 user role，畫面上渲染為系統通知樣式 */
@@ -1181,11 +1183,32 @@ export interface Chat {
 
   /** 角色狀態（AI 用 <char-status> 更新，顯示在聊天頂欄角色名字下方） */
   charStatus?: CharStatus;
+  /** 角色暫時離開（最近一次，進行中或已結束） */
+  charAway?: CharAway;
+  /** 允許角色暫時離開；undefined 當作開 */
+  charAwayEnabled?: boolean;
 }
 
 /** 角色狀態文字；updatedAt 用來在多處同時寫入時保留較新的一筆 */
 export interface CharStatus {
   text: string;
+  updatedAt: number;
+}
+
+/** 角色暫時離開（<char-away>）；updatedAt 用來在多處同時寫入時保留較新的一筆 */
+export interface CharAway {
+  id: string;               // 這次暫離的 id，訊息的 sentWhileAway 用它對應
+  reason: string;           // 在忙什麼
+  backText: string;         // 時間到時替他送出的話
+  startedAt: number;
+  returnAt: number;
+  startMessageId?: string;  // 宣告暫離的那則 AI 訊息
+  urgeCount: number;        // 按「快回來」玩過幾次
+  callCount: number;        // 暫離期間 user 打了幾通電話
+  urgeLockedUntil?: number; // 輸了之後到這個時間前不能再催
+  endedAt?: number;         // 有值代表已經回來
+  endedBy?: "time" | "urge" | "cancel";
+  replyPending?: boolean;   // 回來後還沒回 user 留的話
   updatedAt: number;
 }
 

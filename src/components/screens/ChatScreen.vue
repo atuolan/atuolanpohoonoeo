@@ -40,11 +40,13 @@ import ForwardTargetPickerModal from "@/components/modals/ForwardTargetPickerMod
 import VideoCallModal from "@/components/modals/VideoCallModal.vue";
 import ToolConfirmationModal from "@/components/modals/ToolConfirmationModal.vue";
 import ImageSearchPanel from "@/components/panels/ImageSearchPanel.vue";
+import QuickBackGame from "@/components/charAway/QuickBackGame.vue";
 import { _delay, _escapeRegex, _messageRenderDelay, countTurns, formatClaimAmount, GENERATION_ERROR_PREFIX, getPreviewText, hashString, isGenerationErrorMessage, isShadowBubbleOf, sliceMessagesByTurns } from "@/utils/chatScreenHelpers";
 import { findQuotedMessage } from "@/utils/replyQuote";
 import { setDebugInfoLine } from "@/utils/debugOverlay";
 import { pickGenerationToggles } from "@/utils/generationToggles";
 import { useChatAffinity } from "@/composables/useChatAffinity";
+import { useCharAway } from "@/composables/useCharAway";
 import { useChatBlock } from "@/composables/useChatBlock";
 import { useChatRedpacket } from "@/composables/useChatRedpacket";
 import { useChatRegex } from "@/composables/useChatRegex";
@@ -336,6 +338,8 @@ const onHeaderAdvanceStoryTime = (...args: any[]) =>
   advanceStoryTime(Number(args[0]));
 const onHeaderSetEditNoticeChance = (...args: any[]) =>
   setEditNoticeChance(Number(args[0]));
+const onHeaderSetCharAwayEnabled = (...args: any[]) =>
+  setCharAwayEnabled(Boolean(args[0]));
 const onHeaderUpdateOffsetStartDateTime = (...args: any[]) =>
   updateOffsetStartDateTime(args[0] as string);
 const onHeaderNavigate = (...args: any[]) =>
@@ -2423,6 +2427,23 @@ const pendingTTSRegenerationMessageId = ref<string | null>(null);
 const chatImageSearchEnabled = ref(true);
 const chatSpeakerMode = ref<"user" | "char" | "system">("user");
 const showSpeakerModePopover = ref(false);
+
+// 角色暫時離開（<char-away>）：忙碌中不回覆、灰色小字、快回來小遊戲
+const charAwayCtl = useCharAway({
+  currentChatId,
+  messages,
+  faceToFace: chatFaceToFaceMode,
+  isGroupChat,
+  characterName: displayCharacterName,
+  isGenerating: () => isGenerating.value,
+  triggerAIResponse: () => triggerAIResponse(),
+});
+const {
+  headerStatusText: charAwayHeaderText,
+  quickBackGame: charAwayGame,
+  charAwayEnabled,
+} = charAwayCtl;
+
 async function setSpeakerMode(mode: "user" | "char" | "system") {
   chatSpeakerMode.value = mode;
   showSpeakerModePopover.value = false;
@@ -3710,6 +3731,9 @@ function addUserMessage() {
     ...(mode === "user" && isBlockedByChar.value
       ? { sentWhileBlocked: true }
       : {}),
+    ...(mode === "user" && charAwayCtl.activeAwayId.value
+      ? { sentWhileAway: charAwayCtl.activeAwayId.value }
+      : {}),
   };
   messages.value.push(newMessage);
   inputText.value = "";
@@ -3771,6 +3795,9 @@ async function sendAndTriggerAI() {
       replyTo: replyingTo.value?.id,
       // 被角色封鎖時，用戶發的訊息標記為「發送失敗」（角色暫時看不到，解封後可見）
       ...(isBlockedByChar.value ? { sentWhileBlocked: true } : {}),
+      ...(charAwayCtl.activeAwayId.value
+        ? { sentWhileAway: charAwayCtl.activeAwayId.value }
+        : {}),
     };
     messages.value.push(userMessage);
     inputText.value = "";
@@ -3789,6 +3816,8 @@ async function sendAndTriggerAI() {
 
   // 被角色封鎖期間，不觸發 AI 回覆（訊息已標記 sentWhileBlocked，角色看不到）
   if (isBlockedByChar.value) return;
+  // 角色暫時離開中：訊息照存，不呼叫 AI（時間到或催回來後一起回）
+  if (charAwayCtl.isAwayActive.value) return;
 
   // 空輸入 + 最後一條是 AI 訊息 → 視為「繼續」（讓 AI 接著說）
   // 但 char / system 發言模式下不觸發繼續，避免誤觸
@@ -4507,6 +4536,8 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
   // 被角色封鎖期間，除非明確繞過（如好友申請），否則不觸發 AI 生成
   if (isBlockedByChar.value && !options?.bypassBlockCheck) return;
   await ensureAllMessagesLoaded();
+  // 角色暫時離開中不生成；宣告暫離的那則被重新生成或刪掉時，暫離會取消並照常生成
+  if (await charAwayCtl.beforeGenerate()) return;
   const generationTurnId = currentTurnId.value || "";
 
   // 使用全局狀態管理開始生成
@@ -4797,6 +4828,7 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
       replyToContent: m.replyToContent,
       // 封鎖狀態
       sentWhileBlocked: m.sentWhileBlocked,
+      sentWhileAway: m.sentWhileAway,
       // 改字被發現
       editNoticed: m.editNoticed,
       editOriginalContent: m.editOriginalContent,
@@ -5278,6 +5310,8 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
       // 傳入角色目前的狀態（{{charStatus}}）
       charStatus: charStatus.value?.text,
       charStatusUpdatedAt: charStatus.value?.updatedAt,
+      // 角色暫時離開：標籤說明（能用時才有）與回來那一輪的說明
+      ...charAwayCtl.promptOptions(),
       // 傳入這個角色上一張紙條（{{charStickyNote}}）與 user 的心情（{{userMoodNote}}）
       charStickyNote: noteBoardContext.charStickyNote,
       userMoodNote: noteBoardContext.moodNote,
@@ -5723,6 +5757,7 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
           isSystem: message.role === "system",
           isTimetravel: !!message.isTimetravel,
           sentWhileBlocked: !!message.sentWhileBlocked,
+          sentWhileAway: message.sentWhileAway,
           hasReplyTo: !!message.replyTo,
           timestamp: message.timestamp,
         })),
@@ -6159,6 +6194,7 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
           messages.value[msgIndex].isStreaming = false;
         }
       } else {
+        let charAwayTag: Parameters<typeof charAwayCtl.afterReply>[0];
         // 群聊/多人卡模式：使用群聊解析器
         if (useGroupChatParser.value) {
           console.log("[ChatScreen][render] 進入群聊解析器路徑");
@@ -6672,6 +6708,9 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
               await handleCharStatusUpdate(parsed.charStatusData.text);
             }
 
+            // 角色暫時離開：這輪宣告了暫離，回覆處理完再開始計時
+            charAwayTag = parsed.hasCharAway ? parsed.charAwayData : undefined;
+
             // 處理角色待辦與行程標籤
             await handleCharPlannerTags(finalContent, generationTurnId);
 
@@ -7104,6 +7143,10 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
             }
             streamingWindow.setComplete(streamingWindowOwnerId);
           }
+        }
+        // 角色暫時離開：回過留言就清掉待回（純文字回覆不會進上面的解析，也要清）；這輪宣告了暫離就開始計時
+        if (!useGroupChatParser.value) {
+          await charAwayCtl.afterReply(charAwayTag);
         }
       }
     }
@@ -8322,6 +8365,12 @@ function setEditNoticeChance(value: number) {
   saveChat();
 }
 
+// 允許角色暫時離開（聊天設定開關）
+function setCharAwayEnabled(value: boolean) {
+  charAwayEnabled.value = value;
+  saveChat();
+}
+
 // 跳轉時間（假時間功能）
 async function handleTimeJump() {
   const input = timeJumpInput.value.trim();
@@ -8747,6 +8796,7 @@ async function loadOrCreateChat(overrideChatId?: string) {
 
         // 載入角色狀態
         charStatus.value = chat.charStatus ?? null;
+        charAwayCtl.loadFromChat(chat);
         // 載入角色待辦與行程（另外存，不在聊天記錄上）
         void loadPlannerForChat(chat.id);
 
@@ -9060,6 +9110,7 @@ function buildChatMetadata(
     userNarrativePerson: chatUserNarrativePerson.value,
     enableRealTimeAwareness: chatEnableRealTimeAwareness.value,
     editNoticeChance: chatEditNoticeChance.value,
+    charAwayEnabled: charAwayEnabled.value,
     fakeTimeFields: fakeTime.toChatFields(),
     minimaxTTSEnabled: chatMinimaxTTSEnabled.value,
     imageSearchEnabled: chatImageSearchEnabled.value,
@@ -10151,7 +10202,7 @@ useChatCleanup({
       :can-open-streaming-window="canOpenStreamingWindow"
       :last-output-state="lastOutputState"
       :group-member-count="groupMemberCount"
-      :character-status="charStatus?.text"
+      :character-status="charAwayHeaderText || charStatus?.text"
       :show-rail="showRail"
       :current-user-avatar="userStore.currentAvatar"
       :current-user-name="userStore.currentName"
@@ -10165,6 +10216,7 @@ useChatCleanup({
       :anti-truncation="settingsStore.antiTruncation"
       :chat-enable-real-time-awareness="chatEnableRealTimeAwareness"
       :edit-notice-chance="chatEditNoticeChance"
+      :char-away-enabled="charAwayEnabled"
       :show-fake-time-panel="showFakeTimePanel"
       :fake-time-mode="fakeTime.fakeTimeMode.value"
       :fake-time-loop-start="fakeTime.fakeTimeLoop.value.startDateTime"
@@ -10206,6 +10258,7 @@ useChatCleanup({
       @open-last-output="openLastOutput"
       @toggle-real-time-awareness="toggleRealTimeAwareness"
       @set-edit-notice-chance="onHeaderSetEditNoticeChance"
+      @set-char-away-enabled="onHeaderSetCharAwayEnabled"
       @toggle-fake-time-panel="toggleFakeTimePanel"
       @set-fake-time-mode="onHeaderSetFakeTimeMode"
       @update-fake-time-loop-start="onHeaderUpdateFakeTimeLoopStart"
@@ -10535,6 +10588,7 @@ useChatCleanup({
             isBlockedByChar,
             currentBlockedAt,
             message.sentWhileBlocked,
+            charAwayCtl.awayHintKey(message.id),
             message.isUserRecalled,
             message.isCharRecall,
             message.isTransactionClaimNotice,
@@ -10798,6 +10852,7 @@ useChatCleanup({
             :is-online-mode-request="message.isOnlineModeRequest"
             :online-mode-request-reason="message.onlineModeRequestReason"
             :online-mode-request-status="message.onlineModeRequestStatus"
+            :away-hint="charAwayCtl.awayHintFor(message)"
             :is-friend-request="message.isFriendRequest"
             :friend-request-data="message.friendRequestData"
             :friend-request-result="message.friendRequestResult"
@@ -10815,6 +10870,7 @@ useChatCleanup({
                 : handleMessageClick(message.id)
             "
             @edit="onMessageEdit"
+            @quick-back="charAwayCtl.openQuickBack()"
             @delete="onMessageDelete"
             @copy="onMessageCopy"
             @regenerate="onMessageRegenerate"
@@ -13391,6 +13447,19 @@ useChatCleanup({
       @close="showImageSearchPanel = false"
       @select="handleImageSearchSelect"
     />
+
+    <!-- 角色暫時離開：快回來小遊戲 -->
+    <Teleport to="body">
+      <QuickBackGame
+        v-if="charAwayGame"
+        :kind="charAwayGame.kind"
+        :tap-target="charAwayGame.tapTarget"
+        :character-name="characterName"
+        :character-avatar="displayAvatar || undefined"
+        @finish="charAwayCtl.onQuickBackFinish"
+        @close="charAwayCtl.closeQuickBack()"
+      />
+    </Teleport>
   </div>
 </template>
 

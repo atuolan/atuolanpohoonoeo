@@ -19,6 +19,7 @@ export interface BuildChatMetadataOptions {
   userNarrativePerson: "first" | "second" | "third";
   enableRealTimeAwareness: boolean;
   editNoticeChance: number;
+  charAwayEnabled?: boolean;
   fakeTimeFields: Partial<Chat>;
   minimaxTTSEnabled: boolean;
   imageSearchEnabled: boolean;
@@ -60,6 +61,7 @@ export function buildChatMetadataFromState(options: BuildChatMetadataOptions): C
     userNarrativePerson: options.userNarrativePerson,
     enableRealTimeAwareness: options.enableRealTimeAwareness,
     editNoticeChance: options.editNoticeChance,
+    charAwayEnabled: options.charAwayEnabled,
     ...options.fakeTimeFields,
     minimaxTTSEnabled: options.minimaxTTSEnabled,
     imageSearchEnabled: options.imageSearchEnabled,

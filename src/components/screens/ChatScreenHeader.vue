@@ -7,6 +7,7 @@ import {
   Check,
   ChevronRight,
   Clock,
+  Coffee,
   Dices,
   Eye,
   Fish,
@@ -74,6 +75,8 @@ const props = defineProps<{
   antiTruncation: boolean;
   /** 改字被發現的機率（0–100） */
   editNoticeChance: number;
+  /** 允許角色暫時離開（預設 true） */
+  charAwayEnabled?: boolean;
   chatEnableRealTimeAwareness: boolean;
   showFakeTimePanel: boolean;
   fakeTimeMode: "real" | "loop" | "offset" | "story";
@@ -116,6 +119,7 @@ const emit = defineEmits<{
   (e: "toggle-night-mode"): void;
   (e: "toggle-anti-truncation"): void;
   (e: "set-edit-notice-chance", value: number): void;
+  (e: "set-char-away-enabled", value: boolean): void;
   (e: "open-streaming-window"): void;
   (e: "open-last-output"): void;
   (e: "toggle-real-time-awareness"): void;
@@ -726,6 +730,20 @@ const isDarkBackground = computed(() =>
                 @input="onEditNoticeChanceInput"
               />
               <p class="fake-time-hint">編輯對方還沒回覆的訊息時，有這個機率被看到改之前的原文。對方已經回過的訊息不會被發現；調到 0 就關閉。</p>
+            </div>
+            <div
+              v-if="!chatFaceToFaceMode"
+              class="dropdown-toggle-item"
+              title="他忙的時候可能會暫時離開，時間到了自己回來"
+            >
+              <div class="toggle-item-info">
+                <Coffee :size="20" :stroke-width="1.75" />
+                <span>允許暫時離開</span>
+              </div>
+              <label class="toggle-switch-mini">
+                <input type="checkbox" aria-label="允許暫時離開" :checked="charAwayEnabled !== false" @change="emit('set-char-away-enabled', charAwayEnabled === false)" />
+                <span class="toggle-slider-mini"></span>
+              </label>
             </div>
             <div class="dropdown-divider"></div>
             <div class="dropdown-section-title">電話設定</div>
