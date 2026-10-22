@@ -286,7 +286,7 @@ function reveal(key: string): void {
   peekPhoneStore.markRevealed(key);
 }
 
-// ===== 偷看的結果回到聊天（窺視選單裡的開關，每個聊天各自存；會不會被發現放下手機時擲骰） =====
+// ===== 偷看的結果回到聊天（窺視選單裡的開關，每個聊天各自存；會不會被發現放下手機時背後擲骰） =====
 const links = ref<PeekLinkSettings>({ ...DEFAULT_PEEK_LINKS });
 /** 這次拿起手機才找到的秘密：被發現時告訴他看到了什麼 */
 const foundThisTime = new Set<string>();
@@ -331,11 +331,9 @@ onMounted(async () => {
   }
 });
 
-// 放下手機：擲一次隱匿檢定，被發現或他起疑就在聊天裡留一筆
+// 放下手機：背後擲一次隱匿檢定，被發現或他起疑就在聊天裡留一筆；只有被發現才跳出來
 const stealth = ref<StealthCheck | null>(null);
-/** 骰子轉動中顯示的點數；轉完等於 stealth.roll */
-const diceFace = ref(20);
-const diceRolling = ref(false);
+const caught = computed(() => stealth.value?.outcome === "caught");
 
 /** 擲骰結果定了：被發現或他起疑就在聊天裡留一筆；被抓到再請 AI 寫他的第一反應 */
 function settleStealth(check: StealthCheck) {
@@ -361,55 +359,22 @@ function settleStealth(check: StealthCheck) {
     .catch((err) => console.warn("[PeekPhoneScreen] 留下被發現的紀錄失敗:", err));
 }
 
-/** 擲骰：結果先定好，再播骰子轉動 */
+/** 結果定了；被發現就收起選單，跳出「糟糕！」 */
 function showStealth(check: StealthCheck) {
-  showSheet.value = false;
   settleStealth(check);
-  const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-  if (reduceMotion) {
-    diceFace.value = check.roll;
-    return;
-  }
-  diceRolling.value = true;
-  let ticks = 0;
-  const timer = window.setInterval(() => {
-    ticks++;
-    diceFace.value = 1 + Math.floor(Math.random() * check.sides);
-    if (ticks >= 14) {
-      window.clearInterval(timer);
-      diceFace.value = check.roll;
-      diceRolling.value = false;
-    }
-  }, 60);
+  if (caught.value) showSheet.value = false;
 }
 
-/** 想放下手機：偷看過又還沒擲骰就先擲，回傳 true 代表擋下來顯示結果 */
+/** 想放下手機：偷看過又還沒擲骰就擲，被發現才回傳 true 擋下來 */
 function tryLeave(): boolean {
   if (!openedThisTime || stealth.value) return false;
   showStealth(rollStealth(foundThisTime.size));
-  return true;
-}
-
-/** 擲骰畫面的按鈕：被抓到回聊天，其他放下手機 */
-function closeStealth() {
-  if (stealth.value?.outcome === "caught") emit("caught");
-  else emit("back");
+  return caught.value;
 }
 
 function leavePhone() {
   if (!tryLeave()) emit("back");
 }
-
-const stealthTitle = computed(() => {
-  const check = stealth.value;
-  if (!check) return "";
-  if (check.interrupted) return "他回來了！手機被拿走了";
-  if (check.critical === "success") return "大成功！他完全沒發現";
-  if (check.critical === "fail") return "大失敗……被他當場抓到";
-  if (check.outcome === "safe") return "成功，他沒發現";
-  if (check.outcome === "suspicious") return "差一點……他覺得手機被動過";
-  return "失敗，被他發現了";
-});
 
 // 沒經過「放下手機」就離開（例如直接回主畫面）：背後擲骰
 onUnmounted(() => {
@@ -747,12 +712,11 @@ function goBackFromApp() {
 
 /** 右滑返回：先退手機裡的一層（面板、聊天、日記、App），退到主畫面或鎖屏才回 false，讓外面離開手機 */
 function handleBack(): boolean {
-  // 擲骰畫面開著：返回等於按下面的按鈕
-  if (stealth.value && !diceRolling.value) {
-    closeStealth();
+  // 被發現的畫面開著：返回等於回到聊天
+  if (caught.value) {
+    emit("caught");
     return true;
   }
-  if (stealth.value) return true;
   if (showSheet.value) {
     showSheet.value = false;
     return true;
@@ -1675,37 +1639,27 @@ const todayLabel = computed(
       :secret="hasUnfound"
       @open="showSheet = !showSheet"
     />
-    <!-- 隱匿檢定：放下手機時擲 d20 -->
-    <Transition name="stealth-fade">
-      <div v-if="stealth" class="stealth-layer" role="dialog" aria-modal="true" aria-label="隱匿檢定">
-        <div class="stealth-card" :class="!diceRolling && `is-${stealth.outcome}`">
-          <div class="stealth-label">{{ stealth.interrupted ? "突發事件" : "隱匿檢定" }}</div>
-          <div class="stealth-dc">
-            {{ stealth.interrupted ? `d100 擲到 ${stealth.dc} 以下他就回來了` : `d20 · 難度 DC ${stealth.dc}` }}
-          </div>
-          <div class="stealth-die" :class="{ rolling: diceRolling }" aria-live="polite">
-            <svg viewBox="0 0 100 100" aria-hidden="true">
-              <polygon points="50,4 93,27 93,73 50,96 7,73 7,27" class="stealth-die-body" />
-              <polygon points="50,30 76,68 24,68" class="stealth-die-face" />
-              <path
-                d="M50,30 L50,4 M50,30 L93,27 M50,30 L7,27 M76,68 L93,27 M76,68 L93,73 M76,68 L50,96 M24,68 L7,27 M24,68 L7,73 M24,68 L50,96"
-                class="stealth-die-edge"
-              />
+    <!-- 被他發現了：擲骰都在背後，沒被發現什麼都不跳 -->
+    <Transition name="caught-pop">
+      <div v-if="caught" class="caught-layer" role="alertdialog" aria-modal="true" aria-labelledby="peek-caught-title">
+        <div class="caught-card">
+          <div class="caught-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="6" y="2.5" width="12" height="19" rx="2.5" />
+              <path d="M12 7.5v5" />
+              <path d="M12 16h.01" stroke-width="2.6" />
             </svg>
-            <span class="stealth-die-num">{{ diceFace }}</span>
           </div>
-          <template v-if="!diceRolling">
-            <div class="stealth-title">{{ stealthTitle }}</div>
-            <p class="stealth-sub">
-              <template v-if="foundThisTime.size">這次找到 {{ foundThisTime.size }} 個秘密<br /></template>
-              <template v-if="stealth.outcome === 'caught'">他正在傳訊息給你……</template>
-              <template v-else-if="stealth.outcome === 'suspicious'">聊天裡會留一筆，他下一則回覆會看到</template>
-              <template v-else-if="!foundThisTime.size">什麼都沒留下</template>
-            </p>
-            <button type="button" class="stealth-leave" @click="closeStealth">
-              {{ stealth.outcome === "caught" ? "回到聊天" : "放下手機" }}
-            </button>
-          </template>
+          <div id="peek-caught-title" class="caught-title">糟糕！被{{ charName }}發現了！</div>
+          <p class="caught-sub">
+            {{ stealth?.interrupted ? "看到一半他突然回來，手機被拿走了" : "他一拿起手機就發現被動過了" }}
+            <template v-if="foundThisTime.size"><br />這次看到的 {{ foundThisTime.size }} 個秘密，他都知道了</template>
+          </p>
+          <div class="caught-typing">
+            <span class="caught-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+            {{ charName }}正在傳訊息給你
+          </div>
+          <button type="button" class="caught-leave" @click="emit('caught')">回到聊天</button>
         </div>
       </div>
     </Transition>
@@ -1733,7 +1687,7 @@ const todayLabel = computed(
 </style>
 
 <style lang="scss" scoped>
-.stealth-layer {
+.caught-layer {
   position: absolute;
   inset: 0;
   z-index: 40;
@@ -1746,102 +1700,80 @@ const todayLabel = computed(
   -webkit-backdrop-filter: blur(6px);
 }
 
-.stealth-card {
+.caught-card {
   width: min(320px, 100%);
-  padding: 28px 24px 22px;
+  padding: 30px 24px 22px;
   border-radius: 28px;
   background: #1b1c20;
+  box-shadow: 0 0 0 1px rgba(240, 122, 106, 0.18), 0 18px 48px rgba(0, 0, 0, 0.45);
   color: #f2f1ed;
   text-align: center;
   box-sizing: border-box;
-  --stealth-tone: #c9b88a;
-
-  &.is-safe {
-    --stealth-tone: #7fc8a0;
-  }
-  &.is-suspicious {
-    --stealth-tone: #f0c05a;
-  }
-  &.is-caught {
-    --stealth-tone: #f07a6a;
-  }
+  animation: caught-card-in 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-.stealth-label {
-  font-size: 13px;
-  letter-spacing: 0.2em;
-  color: rgba(242, 241, 237, 0.6);
-}
-
-.stealth-dc {
-  margin-top: 4px;
-  font-size: 15px;
-  font-weight: 600;
-}
-
-.stealth-die {
-  position: relative;
-  width: 120px;
-  height: 120px;
-  margin: 18px auto 14px;
+.caught-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 64px;
+  margin: 0 auto 16px;
+  border-radius: 50%;
+  background: rgba(240, 122, 106, 0.14);
+  color: #f07a6a;
 
   svg {
-    width: 100%;
-    height: 100%;
-  }
-
-  &.rolling svg {
-    animation: stealth-spin 0.42s linear infinite;
+    width: 32px;
+    height: 32px;
+    animation: caught-shake 0.5s 0.15s ease-in-out;
   }
 }
 
-.stealth-die-body {
-  fill: #2a2c33;
-  stroke: var(--stealth-tone);
-  stroke-width: 2.5;
-  stroke-linejoin: round;
-  transition: stroke 0.3s;
-}
-
-.stealth-die-face {
-  fill: #33363e;
-  stroke: var(--stealth-tone);
-  stroke-width: 2;
-  stroke-linejoin: round;
-}
-
-.stealth-die-edge {
-  fill: none;
-  stroke: var(--stealth-tone);
-  stroke-width: 1.5;
-  opacity: 0.55;
-}
-
-.stealth-die-num {
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 44%;
-  font-size: 30px;
-  font-weight: 800;
-  font-variant-numeric: tabular-nums;
-  color: var(--stealth-tone);
-}
-
-.stealth-title {
-  font-size: 18px;
+.caught-title {
+  font-size: 19px;
   font-weight: 700;
-  color: var(--stealth-tone);
+  line-height: 1.4;
+  color: #f07a6a;
 }
 
-.stealth-sub {
-  margin: 8px 0 18px;
+.caught-sub {
+  margin: 8px 0 0;
   font-size: 13px;
   line-height: 1.6;
   color: rgba(242, 241, 237, 0.65);
 }
 
-.stealth-leave {
+.caught-typing {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 14px 0 20px;
+  font-size: 12px;
+  color: rgba(242, 241, 237, 0.5);
+}
+
+.caught-dots {
+  display: inline-flex;
+  gap: 3px;
+
+  i {
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: currentColor;
+    animation: caught-dot 1.2s ease-in-out infinite;
+
+    &:nth-child(2) {
+      animation-delay: 0.15s;
+    }
+    &:nth-child(3) {
+      animation-delay: 0.3s;
+    }
+  }
+}
+
+.caught-leave {
   width: 100%;
   height: 46px;
   border: none;
@@ -1853,19 +1785,59 @@ const todayLabel = computed(
   cursor: pointer;
 }
 
-@keyframes stealth-spin {
-  to {
-    transform: rotate(360deg);
+@keyframes caught-dot {
+  0%,
+  60%,
+  100% {
+    opacity: 0.3;
+    transform: translateY(0);
+  }
+  30% {
+    opacity: 1;
+    transform: translateY(-2px);
   }
 }
 
-.stealth-fade-enter-active,
-.stealth-fade-leave-active {
+@keyframes caught-shake {
+  0%,
+  100% {
+    transform: rotate(0);
+  }
+  20% {
+    transform: rotate(-12deg);
+  }
+  40% {
+    transform: rotate(10deg);
+  }
+  60% {
+    transform: rotate(-6deg);
+  }
+  80% {
+    transform: rotate(3deg);
+  }
+}
+
+@keyframes caught-card-in {
+  from {
+    transform: scale(0.92);
+  }
+}
+
+.caught-pop-enter-active,
+.caught-pop-leave-active {
   transition: opacity 0.2s;
 }
-.stealth-fade-enter-from,
-.stealth-fade-leave-to {
+.caught-pop-enter-from,
+.caught-pop-leave-to {
   opacity: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .caught-card,
+  .caught-icon svg,
+  .caught-dots i {
+    animation: none;
+  }
 }
 
 @import url("https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600&display=swap");

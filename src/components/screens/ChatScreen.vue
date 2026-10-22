@@ -188,6 +188,8 @@ import {
 import { usePhoneCallStore } from "@/stores/phoneCall";
 import { useMcpChatTools } from "@/composables/useMcpChatTools";
 import ToolActivityRow from "@/components/common/ToolActivityRow.vue";
+import PeekNoteNotice from "@/components/common/PeekNoteNotice.vue";
+import { parsePeekNote } from "@/utils/peekLinks";
 import type { LiveToolActivity } from "@/types/toolActivity";
 import { finalizeLiveActivity, summarizeToolResult, upsertLiveActivity } from "@/utils/toolActivity";
 import type { PendingToolConfirmation } from "@/services/toolCalling/types";
@@ -1663,6 +1665,13 @@ function turnDiaryPage(step: number) {
 /** 聊天提示的圖示：這篇日記的第一張貼紙 */
 function getDiaryNoticeSticker(diaryId: string): DiaryStickerId | undefined {
   return chatDiaries.value.find((d) => d.id === diaryId)?.page?.stickers[0];
+}
+
+/** 偷看手機那筆：多選時點了是選取，不展開 */
+function handlePeekNoteClick(event: MouseEvent, messageId: string) {
+  if (!isSelectingMessages.value) return;
+  event.stopPropagation();
+  toggleMessageSelection(messageId);
 }
 
 function handleViewDiary(diary: any) {
@@ -10591,6 +10600,20 @@ useChatCleanup({
             </svg>
             <span class="system-notification-text">{{ message.content }}</span>
             <span class="diary-notice-action">偷偷看看</span>
+          </div>
+
+          <!-- 偷看手機被發現／他起疑：一行小字，點了原地展開看到了什麼 -->
+          <div
+            v-else-if="message.isSystemNotification && parsePeekNote(message.content)"
+            class="system-notification"
+            :class="{
+              'is-selected':
+                isSelectingMessages && selectedMessageIds.includes(message.id),
+            }"
+            @click.capture="handlePeekNoteClick($event, message.id)"
+            @contextmenu.prevent="handleMessageDelete(message.id)"
+          >
+            <PeekNoteNotice :note="parsePeekNote(message.content)!" />
           </div>
 
           <!-- 系統通知（封鎖/解封等）；交易領取通知資料上仍算 user role，但畫面使用系統通知樣式 -->

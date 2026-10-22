@@ -195,7 +195,7 @@ const subtitle = computed(() => {
               <span class="peek-sheet-switch" aria-hidden="true"><span class="peek-sheet-switch-knob" /></span>
             </button>
           </div>
-          <p class="peek-sheet-note">只影響這段聊天，預設都關。放下手機時會擲骰，看他有沒有發現</p>
+          <p class="peek-sheet-note">只影響這段聊天，預設都關。放下手機時看運氣，可能會被他發現</p>
         </div>
 
         <div class="peek-sheet-section">
