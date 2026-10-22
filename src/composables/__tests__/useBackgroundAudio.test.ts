@@ -2,6 +2,26 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/stores/settings", () => ({ useSettingsStore: vi.fn() }));
 
+const { nativeState, appListeners } = vi.hoisted(() => ({
+  nativeState: { native: false },
+  appListeners: new Map<string, () => void>(),
+}));
+
+vi.mock("@/native/platform", () => ({ isNativeApp: () => nativeState.native }));
+
+vi.mock("@capacitor/app", () => ({
+  App: {
+    addListener: async (event: string, fn: () => void) => {
+      appListeners.set(event, fn);
+      return {
+        remove: async () => {
+          appListeners.delete(event);
+        },
+      };
+    },
+  },
+}));
+
 const SEC = 1000;
 const MIN = 60 * SEC;
 const IPHONE_UA =
@@ -156,8 +176,10 @@ let channelSpy: ReturnType<typeof vi.fn>;
 let fetchSpy: ReturnType<typeof vi.fn>;
 let keepAlive: typeof import("@/composables/useBackgroundAudio");
 
-async function setup(userAgent = IPHONE_UA) {
+async function setup(userAgent = IPHONE_UA, native = false) {
   vi.resetModules();
+  nativeState.native = native;
+  appListeners.clear();
   FakeAudio.instances = [];
   FakeAudio.rejectPlay = false;
   FakeAudioContext.instances = [];
@@ -410,6 +432,59 @@ describe("背景運行模式：被打斷時的輪詢", () => {
     doc.dispatch("touchstart");
     await vi.advanceTimersByTimeAsync(0);
     expect(audio.paused).toBe(false);
+  });
+});
+
+describe("背景運行模式：回到 App", () => {
+  it("App 回到前景（原生 resume）馬上接回，沒有 visibilitychange 也一樣", async () => {
+    await setup(IPHONE_UA, true);
+    const audio = await startAndTouch();
+    // 原生監聽是動態載入的，要等模組載完
+    await vi.waitFor(() => expect(appListeners.has("resume")).toBe(true));
+
+    // 來回切出去五次：iOS 每次都把 App 暫停，回來都要馬上接回
+    for (let i = 0; i < 5; i++) {
+      audio.pause();
+      await vi.advanceTimersByTimeAsync(2 * SEC);
+      appListeners.get("resume")?.();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(audio.paused).toBe(false);
+    }
+  });
+
+  it("回到 App 不算自動搶回次數，之後在 App 裡照樣能搶回兩次", async () => {
+    await setup();
+    const audio = await startAndTouch();
+    await vi.advanceTimersByTimeAsync(2 * MIN);
+
+    await setVisibility("hidden");
+    audio.pause();
+    await setVisibility("visible");
+    expect(audio.paused).toBe(false);
+    await vi.advanceTimersByTimeAsync(2 * MIN);
+
+    audio.pause();
+    expect(await waitUntilPlaying(audio, MIN)).toBeLessThanOrEqual(20 * SEC);
+    audio.pause();
+    expect(await waitUntilPlaying(audio, MIN)).toBeLessThanOrEqual(30 * SEC);
+  });
+
+  it("關掉背景運行模式時拿掉原生 resume 監聽", async () => {
+    await setup(IPHONE_UA, true);
+    await startAndTouch();
+    await vi.waitFor(() => expect(appListeners.has("resume")).toBe(true));
+
+    keepAlive.stopKeepAlive();
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(appListeners.has("resume")).toBe(false);
+  });
+
+  it("網頁版不載入原生監聽", async () => {
+    await setup(IPHONE_UA, false);
+    await startAndTouch();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(appListeners.size).toBe(0);
   });
 });
 
