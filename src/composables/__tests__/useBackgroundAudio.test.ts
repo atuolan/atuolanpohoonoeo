@@ -35,6 +35,7 @@ class FakeAudio extends FakeEventTarget {
   loop = false;
   volume = 1;
   paused = true;
+  ended = false;
 
   constructor(src = "") {
     super();
@@ -48,6 +49,7 @@ class FakeAudio extends FakeEventTarget {
     }
     if (this.paused) {
       this.paused = false;
+      this.ended = false;
       this.dispatch("play");
     }
     return Promise.resolve();
@@ -57,6 +59,14 @@ class FakeAudio extends FakeEventTarget {
     if (this.paused) return;
     this.paused = true;
     this.dispatch("pause");
+  }
+
+  /** 模擬播到結尾卻沒有循環：跟瀏覽器一樣先 pause 再 ended */
+  end() {
+    this.paused = true;
+    this.ended = true;
+    this.dispatch("pause");
+    this.dispatch("ended");
   }
 
   load() {}
@@ -358,6 +368,36 @@ describe("背景運行模式：被打斷時的輪詢", () => {
     await setVisibility("hidden");
     await setVisibility("visible");
     expect(audio.paused).toBe(false);
+  });
+
+  it("播到結尾沒有循環時馬上從頭播，不算被打斷", async () => {
+    await setup();
+    const audio = await startAndTouch();
+    await setVisibility("hidden");
+    await vi.advanceTimersByTimeAsync(2 * MIN);
+
+    audio.end();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(audio.paused).toBe(false);
+
+    // 結尾不算被搶：接著真的被打斷，照樣 10 秒後接回，不會加倍
+    audio.pause();
+    expect(await waitUntilPlaying(audio, MIN)).toBeLessThan(20 * SEC);
+  });
+
+  it("播到結尾從頭播失敗時，下一次輪詢就再試", async () => {
+    await setup();
+    const audio = await startAndTouch();
+    await setVisibility("hidden");
+    await vi.advanceTimersByTimeAsync(30 * SEC);
+
+    FakeAudio.rejectPlay = true;
+    audio.end();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(audio.paused).toBe(true);
+
+    FakeAudio.rejectPlay = false;
+    expect(await waitUntilPlaying(audio, MIN)).toBeLessThanOrEqual(10 * SEC);
   });
 
   it("在 App 裡播不起來時，下次觸摸畫面再試", async () => {

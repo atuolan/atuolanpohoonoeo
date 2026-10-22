@@ -364,7 +364,7 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
         unlockedAudio.preload = "auto";
       }
       // 用內建靜音檔（背景運行模式也用這個）做一次手勢內播放來解鎖
-      unlockedAudio.src = "/keepalive.mp3";
+      unlockedAudio.src = "/keepalive-5min.mp3";
       const p = unlockedAudio.play();
       if (p && typeof p.then === "function") {
         p.then(() => {
