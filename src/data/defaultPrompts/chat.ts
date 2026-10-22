@@ -686,7 +686,7 @@ export const DEFAULT_PROMPT_DEFINITIONS: PromptDefinition[] = [
     description: "",
     category: "custom",
     role: "system",
-    content: "<social_media>\n📱 {{char}} 的社交媒體動態\n\n基拉祈：這是 {{char}} 最近的社交媒體貼文，可以幫助你了解 {{char}} 近期的想法、心情和生活。\n\n禁止重複發文：如果你決定發噗浪，絕對禁止發布與下面動態相同或相似的內容！\n  - 不要重複相同的話題、句式、表達方式\n  - 每次發文必須是全新的、獨特的角度\n  - 內容要生動具體，有細節感（例：不要只說「好累」，而是「剛跑完三公里，腿都軟了」）\n\n💡 翻譯提示：噗浪內容用到非中文時，跟聊天訊息一樣在後面附上中文翻譯，格式是「外語<br>中文翻譯」。\n例如：Good morning!<br>早安！、I love you<br>我愛你\n\n{{socialPosts}}\n</social_media>",
+    content: "<social_media>\n📱 {{char}} 的社交媒體動態\n\n基拉祈：這是 {{char}} 最近的社交媒體貼文，可以幫助你了解 {{char}} 近期的想法、心情和生活。\n\n禁止重複發文：如果你決定發噗浪，絕對禁止發布與下面動態相同或相似的內容！\n  - 不要重複相同的話題、句式、表達方式\n  - 每次發文必須是全新的、獨特的角度\n  - 內容要生動具體，有細節感（例：不要只說「好累」，而是「剛跑完三公里，腿都軟了」）\n\n💡 語言提示：噗浪跟聊天訊息一樣照 {{char}} 的母語發。母語是中文就直接寫中文，不加翻譯；母語不是中文，整則噗都用母語寫，後面接 <br> 和對應的中文翻譯，禁止只有中文的噗。\n例如：Finally got my coffee!<br>終於喝到咖啡了！\n\n{{socialPosts}}\n</social_media>",
     system_prompt: true,
     marker: true,
     injection_position: INJECTION_RELATIVE,

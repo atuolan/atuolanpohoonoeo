@@ -556,8 +556,8 @@ ${qualifierFormatLine}
 1. 每個角色可以發表多條評論，模擬真實的評論區對話
 2. 角色之間可以互相回覆，形成對話串
 3. 評論必須是純文字，禁止任何動作描述（如「（微笑）」「*轉筆*」）
-4. 使用繁體中文，口語化表達
-5. 如果角色使用外語，只在外語部分後加括號翻譯
+4. 口語化表達
+5. 每個角色依自己的國籍與背景判斷母語：母語是中文就直接寫繁體中文；母語不是中文，每則評論都完整用母語寫，content 寫成「母語原文<br>對應的中文翻譯」，禁止只有中文的評論。路人用繁體中文
 6. 噗浪作者、已有評論作者、被回覆者、路人、以及各角色私聊中的 {{user}} 是不同身份欄位；不得因為看到「用戶／玩家」就自動合併。
 ${replyPrioritySection}${styleSection}${singleSection}
 # 評論區角色
@@ -583,7 +583,7 @@ ${existingCommentsPrompt}
 - id: 評論的唯一 ID（格式：c1, c2, c3...）
 - characterId: ${passerbyAllowed ? "角色 ID（角色用原 ID，路人用 passerby-1, passerby-2...）" : "角色 ID（用上面列出的原 ID）"}
 - characterName: ${passerbyAllowed ? "角色名稱或路人暱稱" : "角色名稱"}
-- content: 評論內容（10-80字）
+- content: 評論內容（10-80字，中文翻譯不算在內）
 - replyTo: 回覆的評論 ID，如果是直接評論貼文則為 null
 ${qualifierFormatLine}
 
