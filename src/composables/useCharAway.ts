@@ -105,7 +105,12 @@ export function useCharAway(ctx: {
 
   // --- 資料 ---
   function loadFromChat(chat: Chat): void {
-    charAway.value = chat.charAway ?? null;
+    // 重新讀聊天可能晚於事件送達：同一次暫離，讀到的比手上的舊就不覆蓋
+    const current = charAway.value;
+    const incoming = chat.charAway ?? null;
+    const stale =
+      !!current && !!incoming && current.id === incoming.id && current.updatedAt > incoming.updatedAt;
+    if (!stale) charAway.value = incoming;
     charAwayEnabled.value = chat.charAwayEnabled !== false;
     if (!isCharAwayActive(charAway.value ?? undefined)) quickBackGame.value = null;
     void nextTick(() => maybeAutoReply());

@@ -392,3 +392,23 @@ describe("useCharAway", () => {
     });
   });
 });
+
+describe("loadFromChat", () => {
+  it("重新讀到同一次暫離的舊狀態時不覆蓋（事件比重新讀聊天先到）", () => {
+    const ctx = setup();
+    const ended = makeAway({ endedAt: Date.now(), endedBy: "time", replyPending: true, updatedAt: Date.now() + 10 });
+    ctx.charAway.value = ended; // 事件先送到的「已回來」
+    ctx.loadFromChat(makeChat(makeAway()));
+    expect(ctx.charAway.value?.endedAt).toBe(ended.endedAt);
+    expect(ctx.isAwayActive.value).toBe(false);
+  });
+
+  it("換成別的暫離或沒有暫離時照讀", () => {
+    const ctx = setup();
+    ctx.loadFromChat(makeChat(makeAway({ updatedAt: Date.now() + 10 })));
+    ctx.loadFromChat(makeChat(makeAway({ id: "away_2" })));
+    expect(ctx.charAway.value?.id).toBe("away_2");
+    ctx.loadFromChat(makeChat(null));
+    expect(ctx.charAway.value).toBeNull();
+  });
+});

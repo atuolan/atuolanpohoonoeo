@@ -205,6 +205,12 @@ export async function returnCharAwayIfDue(
     const ts = Math.max(away.returnAt, lastTs + 1);
     const name = await characterName(chat);
 
+    // 先存「已回來」再加訊息：聊天頁收到新訊息會重新讀聊天，要讀到回來後的狀態
+    const hasLeft = messages.some((m) => m.sentWhileAway === away.id);
+    const ended = endCharAway(away, "time", Date.now(), hasLeft);
+    await saveCharAway(chatId, ended);
+    clearReturnTimer(chatId);
+
     // 回來的第一句：以他的身分送進聊天
     await appendToChat(chatId, [
       {
@@ -219,10 +225,6 @@ export async function returnCharAwayIfDue(
       },
     ]);
 
-    const hasLeft = messages.some((m) => m.sentWhileAway === away.id);
-    const ended = endCharAway(away, "time", Date.now(), hasLeft);
-    await saveCharAway(chatId, ended);
-    clearReturnTimer(chatId);
 
     // App 在前景：排好的系統通知不需要了
     if (hasNativeNotifications()) {
