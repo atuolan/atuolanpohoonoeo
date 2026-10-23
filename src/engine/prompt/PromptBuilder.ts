@@ -874,6 +874,20 @@ export class PromptBuilder {
     return `[time:${y}/${mon}/${day} ${h12}:${m}${ampm}]`;
   }
 
+  /** 面對面每輪最後一則 AI 訊息 → 那一輪結束的劇情時間（給歷史訊息補結尾時間戳記） */
+  private static collectTurnEndTimes(messages: ChatMessage[]): Map<ChatMessage, number> {
+    const ends = new Map<ChatMessage, number>();
+    for (let i = 0; i < messages.length; i++) {
+      const m = messages[i];
+      const end = m.storyClockAfter?.pausedAt;
+      if (m.is_user || typeof end !== "number") continue;
+      const next = messages[i + 1];
+      if (next && !next.is_user && next.storyClockAfter?.pausedAt === end) continue;
+      ends.set(m, end);
+    }
+    return ends;
+  }
+
   /** 面對面時間戳記的值：YYYY-MM-DD HH:mm（24 小時制，跟 AI 要寫的格式一樣） */
   private formatStoryStampValue(msg: { createdAt: number; storyTime?: number }): string {
     return formatStampDate(new Date(this.resolveMsgTime(msg)));
@@ -2837,13 +2851,16 @@ ${PHONE_CALL_BILINGUAL_REMINDER}`
     const { nowText } = this.getStoryNowParts();
     const example = formatStampDate(new Date(now.getTime() + 5 * 60 * 1000));
     const exampleClock = example.slice(11);
+    const exampleEndClock = formatStampDate(new Date(now.getTime() + 20 * 60 * 1000)).slice(11);
     const lines = [
       `[劇情時鐘] 目前劇情時間：${nowText}`,
       "現在是面對面相處，時間只隨劇情推進，現實過了多久都不算。",
-      "每則回覆的第一行，寫下這段劇情發生的時間：",
+      "每則回覆的第一行寫這段劇情開始的時間，最後一行寫這段劇情結束的時間：",
       `<!--t:${example}-->`,
+      "（正文）",
+      `<!--t:${exampleEndClock}-->`,
       "- 從目前劇情時間往後估：幾句對話約 1～5 分鐘，一頓飯約 30～60 分鐘；寫了「兩個小時後」就加兩小時",
-      "- 時間只能往後，不能早於目前劇情時間",
+      "- 時間只能往後：開始不能早於目前劇情時間，結束不能早於開始",
       `- 跨日一定要寫日期；同一天可以只寫 <!--t:${exampleClock}-->`,
       "- 正文裡出現的時間（看手錶、電子鐘）要跟這裡一致",
     ];
@@ -3690,6 +3707,10 @@ ${open}好啊，我等你[emotion=calm]</msg>`;
     // 只有最後一輪使用者訊息的圖片送給模型看；更早的圖片模型已經回應過，
     // 換成文字描述（優先用模型看圖時寫的備註），不再每輪重送整張圖
     const lastUserTurn = new Set(PromptBuilder.getLastUserTurnMessages(messages));
+    // 面對面：每輪最後一則 AI 訊息結尾補上那一輪結束的劇情時間（AI 照著頭尾各寫一個）
+    const turnEnds = this.options.faceToFaceMode
+      ? PromptBuilder.collectTurnEndTimes(messages)
+      : new Map<ChatMessage, number>();
 
     for (const msg of reversedMessages) {
       const hasImage = !!((msg.imageData || msg.imageUrl) && msg.imageMimeType);
@@ -3759,6 +3780,10 @@ ${open}好啊，我等你[emotion=calm]</msg>`;
         // 面對面模式用跟 AI 要寫的時間戳記一樣的格式（<!--t:YYYY-MM-DD HH:mm-->），AI 照著寫，程式會從正文拿掉
         if (this.options.faceToFaceMode) {
           msgContent = `<!--t:${this.formatStoryStampValue(msg)}-->${msgContent}`;
+          const turnEnd = turnEnds.get(msg);
+          if (turnEnd !== undefined && turnEnd > this.resolveMsgTime(msg)) {
+            msgContent = `${msgContent}\n<!--t:${formatStampDate(new Date(turnEnd))}-->`;
+          }
         } else {
           msgContent = `${this.formatMsgTimeTag(msg)} ${msgContent}`;
         }

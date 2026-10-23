@@ -169,7 +169,7 @@ import {
   parseCalendarEventTags,
   parseFoodRecordTags,
   parseTimeAdvanceTag,
-  parseStoryStamp,
+  parseStoryStamps,
   parseTimeJumpTag,
   parseGroupChatResponse,
   type ParsedGroupMessage,
@@ -1501,7 +1501,7 @@ function toggleFakeTimePanel() {
 
 /**
  * AI 回覆結束後處理劇情時間：
- * - 面對面（劇情時鐘暫停中）：先看回覆開頭的時間戳記 <!--t:...-->，照它設定時鐘
+ * - 面對面（劇情時鐘暫停中）：先看時間戳記 <!--t:...-->，開頭是這段開始的時間（泡泡用），結尾是結束的時間（時鐘走到這裡）
  * - 沒有時間戳記：<time-jump> 跳到指定時間、<time-advance> 往後推進
  * 面對面開場那一輪，進入面對面後的訊息都改成新的時間；一般的跳轉只改這一輪 AI 的回覆。
  * 每輪先記下套用前的時鐘（重新生成時還原），套用後的時鐘記在這一輪的 AI 訊息上（換回候選時用）。
@@ -1526,13 +1526,15 @@ function applyTimeAfterReply(
   const openingConsumed = openingSince !== null;
 
   let changed = false;
-  const stamp =
+  const stamps =
     content && fakeTime.isStoryClockPaused.value
-      ? parseStoryStamp(content, fakeTime.getChatNow().getTime())
+      ? parseStoryStamps(content, fakeTime.getChatNow().getTime())
       : null;
-  if (stamp !== null) {
-    fakeTime.setStoryNowMs(stamp);
+  if (stamps?.start != null) {
+    // 泡泡顯示這段開始的時間，時鐘走到這段結束的時間
+    fakeTime.setStoryNowMs(stamps.start);
     restampStoryTime(openingSince, turnId);
+    if (stamps.end !== null) fakeTime.setStoryNowMs(stamps.end);
     changed = true;
   } else {
     const jumpTarget = content ? parseTimeJumpTag(content) : null;
@@ -4947,6 +4949,7 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
       createdAt: m.timestamp,
       updatedAt: m.timestamp,
       storyTime: m.storyTime,
+      storyClockAfter: m.storyClockAfter,
       // 圖片相關欄位
       messageType: m.messageType,
       imageUrl: m.imageUrl,
@@ -10090,6 +10093,7 @@ function toStoredRemoteMessage(message: Message, fallbackName: string): ChatMess
     createdAt: message.timestamp,
     updatedAt: message.timestamp,
     storyTime: message.storyTime,
+    storyClockAfter: message.storyClockAfter,
     thought: message.thought,
     isTimetravel: message.isTimetravel,
     timetravelContent: message.timetravelContent,
