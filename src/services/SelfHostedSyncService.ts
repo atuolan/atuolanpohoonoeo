@@ -1081,6 +1081,7 @@ export class SelfHostedSyncService {
       enableRealTimeAwareness: payload.enableRealTimeAwareness,
       editNoticeChance: payload.editNoticeChance,
       charAwayEnabled: payload.charAwayEnabled,
+      plurkShareCount: payload.plurkShareCount,
       fakeTimeMode: payload.fakeTimeMode,
       fakeTimeLoop: payload.fakeTimeLoop,
       fakeTimeOffset: payload.fakeTimeOffset,

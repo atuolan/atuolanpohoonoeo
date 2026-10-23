@@ -377,6 +377,7 @@ export type SyncChatRecordPayload = Pick<
   | "enableRealTimeAwareness"
   | "editNoticeChance"
   | "charAwayEnabled"
+  | "plurkShareCount"
   | "fakeTimeMode"
   | "fakeTimeLoop"
   | "fakeTimeOffset"

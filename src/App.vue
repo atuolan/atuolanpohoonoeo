@@ -3099,6 +3099,7 @@ useSwipeBack(handleGlobalSwipeBack, swipeBackEnabled);
       @incoming-call-consumed="pendingIncomingCallReason = ''"
       @open-chat="onOpenExistingChatEvent"
       @chat-switched="onChatSwitchedEvent"
+      @open-plurk-thread="(...args: any[]) => openPlurkThreadFromChat(args[0])"
     />
 
     <!-- 設定頁 -->

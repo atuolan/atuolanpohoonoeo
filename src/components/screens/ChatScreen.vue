@@ -282,6 +282,7 @@ import {
   shouldLoadOlderMessages,
 } from "@/utils/chatPaging";
 import { getTtsAudioRenderKey } from "@/utils/ttsRenderKey";
+import { PLURK_SHARE_COUNTS } from "@/utils/plurkShare";
 import type { TTSLanguageMode } from "@/utils/ttsTextSelector";
 import {
   computed,
@@ -322,6 +323,7 @@ const emit = defineEmits<{
   (e: "incomingCallConsumed"): void;
   (e: "openChat", chatId: string, characterId: string): void;
   (e: "chatSwitched", chatId: string): void;
+  (e: "openPlurkThread", target: { postId: string; commentId?: string }): void;
 }>();
 
 
@@ -340,6 +342,8 @@ const onHeaderSetEditNoticeChance = (...args: any[]) =>
   setEditNoticeChance(Number(args[0]));
 const onHeaderSetCharAwayEnabled = (...args: any[]) =>
   setCharAwayEnabled(Boolean(args[0]));
+const onHeaderSetPlurkShareCount = (...args: any[]) =>
+  setPlurkShareCount(Number(args[0]));
 const onHeaderUpdateOffsetStartDateTime = (...args: any[]) =>
   updateOffsetStartDateTime(args[0] as string);
 const onHeaderNavigate = (...args: any[]) =>
@@ -2421,6 +2425,7 @@ const chatCharNarrativePerson = ref<"first" | "third">("first"); // {{char}} 敘
 const chatUserNarrativePerson = ref<"first" | "second" | "third">("second"); // {{user}} 敘事人稱
 const chatEnableRealTimeAwareness = ref(true); // 感知現實時間（默認開啟）
 const chatEditNoticeChance = ref(DEFAULT_EDIT_NOTICE_CHANCE); // 改字被發現的機率（0–100）
+const chatPlurkShareCount = ref(0); // 讓他傳噗給你：提示詞列幾則最近的噗（0＝關閉）
 const chatMinimaxTTSEnabled = ref(false); // 聊天專屬 MiniMax TTS（默認關閉）
 const showTTSRegenerationChoiceModal = ref(false);
 const pendingTTSRegenerationMessageId = ref<string | null>(null);
@@ -8371,6 +8376,12 @@ function setCharAwayEnabled(value: boolean) {
   saveChat();
 }
 
+// 讓他傳噗給你：提示詞列幾則最近的噗（0＝關閉）
+function setPlurkShareCount(value: number) {
+  chatPlurkShareCount.value = value;
+  saveChat();
+}
+
 // 跳轉時間（假時間功能）
 async function handleTimeJump() {
   const input = timeJumpInput.value.trim();
@@ -8769,6 +8780,7 @@ async function loadOrCreateChat(overrideChatId?: string) {
         chatEnableRealTimeAwareness.value =
           chat.enableRealTimeAwareness !== false;
         chatEditNoticeChance.value = clampEditNoticeChance(chat.editNoticeChance);
+        chatPlurkShareCount.value = (PLURK_SHARE_COUNTS as readonly number[]).includes(chat.plurkShareCount ?? 0) ? chat.plurkShareCount ?? 0 : 0;
         // 載入假時間設定
         fakeTime.loadFromChat(chat);
         // 載入 MiniMax TTS 設定（默認為 false）
@@ -9111,6 +9123,7 @@ function buildChatMetadata(
     enableRealTimeAwareness: chatEnableRealTimeAwareness.value,
     editNoticeChance: chatEditNoticeChance.value,
     charAwayEnabled: charAwayEnabled.value,
+    plurkShareCount: chatPlurkShareCount.value,
     fakeTimeFields: fakeTime.toChatFields(),
     minimaxTTSEnabled: chatMinimaxTTSEnabled.value,
     imageSearchEnabled: chatImageSearchEnabled.value,
@@ -10217,6 +10230,7 @@ useChatCleanup({
       :chat-enable-real-time-awareness="chatEnableRealTimeAwareness"
       :edit-notice-chance="chatEditNoticeChance"
       :char-away-enabled="charAwayEnabled"
+      :plurk-share-count="chatPlurkShareCount"
       :show-fake-time-panel="showFakeTimePanel"
       :fake-time-mode="fakeTime.fakeTimeMode.value"
       :fake-time-loop-start="fakeTime.fakeTimeLoop.value.startDateTime"
@@ -10259,6 +10273,7 @@ useChatCleanup({
       @toggle-real-time-awareness="toggleRealTimeAwareness"
       @set-edit-notice-chance="onHeaderSetEditNoticeChance"
       @set-char-away-enabled="onHeaderSetCharAwayEnabled"
+      @set-plurk-share-count="onHeaderSetPlurkShareCount"
       @toggle-fake-time-panel="toggleFakeTimePanel"
       @set-fake-time-mode="onHeaderSetFakeTimeMode"
       @update-fake-time-loop-start="onHeaderUpdateFakeTimeLoopStart"
@@ -10788,6 +10803,9 @@ useChatCleanup({
             :waimai-order="message.waimaiOrder"
             :is-music-share="message.isMusicShare"
             :music-share-data="message.musicShareData"
+            :plurk-share="message.plurkShare"
+            :plurk-activity="message.plurkActivity"
+            @open-plurk="(...args: any[]) => emit('openPlurkThread', args[0])"
             :is-avatar-change="message.isAvatarChange"
             :avatar-change-action="message.avatarChangeAction"
             :avatar-change-mood="message.avatarChangeMood"

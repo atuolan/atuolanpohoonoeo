@@ -66,6 +66,8 @@ import type { CalendarCardData } from "@/types/calendar";
 import type {
   ChatHistoryRecordData,
   GroupActionType,
+  PlurkActivity,
+  PlurkShareSnapshot,
   WaimaiOrderSnapshot,
 } from "@/types/chat";
 import { stripPromptStatusNotes } from "@/utils/promptMessageContent";
@@ -82,6 +84,7 @@ import GroupCallHistoryCard from "./GroupCallHistoryCard.vue";
 import PhoneCallHistoryCard from "./PhoneCallHistoryCard.vue";
 import GroupChatHistoryCard from "./GroupChatHistoryCard.vue";
 import MusicShareCard from "./MusicShareCard.vue";
+import PlurkShareCard from "./PlurkShareCard.vue";
 import PixelGiftChest from "./PixelGiftChest.vue";
 import PixelTransferCard from "./PixelTransferCard.vue";
 import { stripStateThinking } from "@/services/ResponseParser";
@@ -395,6 +398,9 @@ interface MessageBubbleProps {
     cover?: string;
     lyrics?: string;
   };
+  // 噗文分享相關
+  plurkShare?: PlurkShareSnapshot;
+  plurkActivity?: PlurkActivity;
   // 換頭像相關
   isAvatarChange?: boolean;
   avatarChangeAction?: "accept" | "reject" | "forced" | "mood" | "restore";
@@ -564,6 +570,8 @@ const props = withDefaults(defineProps<MessageBubbleProps>(), {
   waimaiOrder: undefined,
   isMusicShare: false,
   musicShareData: undefined,
+  plurkShare: undefined,
+  plurkActivity: undefined,
   isAvatarChange: false,
   avatarChangeAction: undefined,
   avatarChangeMood: "",
@@ -652,6 +660,7 @@ const emit = defineEmits<{
   (e: "rejectOnlineModeRequest", id: string): void;
   (e: "claimRedpacket", id: string): void;
   (e: "favorite-audio", id: string): void;
+  (e: "openPlurk", target: { postId: string; commentId?: string }): void;
 }>();
 
 // 群聊記錄 Modal 狀態
@@ -1853,6 +1862,7 @@ const hasSpecialBubbleBody = computed(() => {
     props.isWaimaiPaymentResult ||
     props.isWaimaiDelivery ||
     props.isMusicShare ||
+    !!props.plurkShare ||
     props.isHtmlBlock ||
     props.isPrivateMessage ||
     props.messageType === "image" ||
@@ -3391,6 +3401,9 @@ const showTextVoiceTranscript = ref(true);
         <div v-if="awayHint" class="away-hint">
           {{ awayHint.text }}<template v-if="awayHint.action === 'urge'"> · <button type="button" class="away-hint-action" @click.stop="emit('quickBack')">快回來</button></template><template v-else-if="awayHint.action === 'locked'"> · {{ awayHint.lockedText }}</template>
         </div>
+        <div v-if="plurkActivity && !isUser" class="plurk-activity-hint">
+          <button type="button" class="plurk-activity-link" @click.stop="emit('openPlurk', { postId: plurkActivity.postId, commentId: plurkActivity.commentId })">在噗浪回應了這則噗 ›</button>
+        </div>
       </div>
       <!-- 電話通話紀錄（系統訊息） -->
       <div v-else-if="isPhoneCallSummary" class="phone-call-summary-message">
@@ -4240,6 +4253,15 @@ const showTextVoiceTranscript = ref(true);
             </div>
           </div>
 
+          <!-- 噗文分享卡片 -->
+          <div v-else-if="plurkShare" class="plurk-share-wrapper">
+            <PlurkShareCard
+              :share="plurkShare"
+              :is-receiver="role !== 'user'"
+              @open="emit('openPlurk', { postId: plurkShare.postId, commentId: plurkShare.comment?.id })"
+            />
+          </div>
+
           <!-- 音樂分享卡片 -->
           <div
             v-else-if="isMusicShare && musicShareData"
@@ -4665,6 +4687,9 @@ const showTextVoiceTranscript = ref(true);
         <!-- 角色暫時離開：泡泡下的灰色小字 -->
         <div v-if="awayHint" class="away-hint">
           {{ awayHint.text }}<template v-if="awayHint.action === 'urge'"> · <button type="button" class="away-hint-action" @click.stop="emit('quickBack')">快回來</button></template><template v-else-if="awayHint.action === 'locked'"> · {{ awayHint.lockedText }}</template>
+        </div>
+        <div v-if="plurkActivity && !isUser" class="plurk-activity-hint">
+          <button type="button" class="plurk-activity-link" @click.stop="emit('openPlurk', { postId: plurkActivity.postId, commentId: plurkActivity.commentId })">在噗浪回應了這則噗 ›</button>
         </div>
       </div>
 
@@ -8157,6 +8182,27 @@ const showTextVoiceTranscript = ref(true);
   color: inherit;
   text-decoration: underline dotted;
   text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+// 角色去噗浪留言了：泡泡下的灰色小字
+.plurk-activity-hint {
+  font-size: 11px;
+  color: var(--color-text-muted);
+  margin-top: 2px;
+  padding: 0 4px;
+}
+
+.bubble.user .plurk-activity-hint {
+  text-align: right;
+}
+
+.plurk-activity-link {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
   cursor: pointer;
 }
 
