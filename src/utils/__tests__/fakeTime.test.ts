@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   computeChatNow,
+  computeRealignTarget,
+  getChatClockShift,
   resolveStoryTime,
   stampStoryTimes,
   STORY_TIME_STAMP_WINDOW_MS,
@@ -91,5 +93,67 @@ describe("stampStoryTimes", () => {
     ];
     stampStoryTimes(messages, () => new Date(0), now);
     expect(messages.every((m) => m.storyTime === undefined)).toBe(true);
+  });
+});
+
+describe("computeRealignTarget", () => {
+  it("劇情比現實慢：回到現實的現在", () => {
+    expect(computeRealignTarget(t(2026, 10, 23, 13), t(2026, 10, 23, 18))).toBe(
+      t(2026, 10, 23, 18),
+    );
+  });
+
+  it("劇情比現實快：跳到之後第一個跟現實同一時刻的時間點", () => {
+    const real = new Date(2026, 9, 23, 3, 8).getTime();
+    const story = new Date(2026, 9, 23, 15, 35).getTime();
+    expect(computeRealignTarget(story, real)).toBe(new Date(2026, 9, 24, 3, 8).getTime());
+  });
+
+  it("劇情快好幾天也只往後找到第一個同一時刻", () => {
+    const real = new Date(2026, 9, 23, 3, 8).getTime();
+    const story = new Date(2026, 11, 25, 15, 35).getTime();
+    expect(computeRealignTarget(story, real)).toBe(new Date(2026, 11, 26, 3, 8).getTime());
+  });
+});
+
+describe("getChatClockShift", () => {
+  const real = t(2026, 10, 23, 10);
+
+  it("真實時間、沒開感知現實時間、面對面暫停中都是 0", () => {
+    expect(getChatClockShift({ fakeTimeMode: "real" }, real)).toBe(0);
+    expect(
+      getChatClockShift(
+        { fakeTimeMode: "story", fakeTimeOffset: 3_600_000, enableRealTimeAwareness: false },
+        real,
+      ),
+    ).toBe(0);
+    expect(
+      getChatClockShift(
+        { fakeTimeMode: "story", fakeTimeOffset: 3_600_000, storyClockPausedAt: real },
+        real,
+      ),
+    ).toBe(0);
+  });
+
+  it("劇情時鐘線上、偏移時間：聊天時間減現實時間", () => {
+    expect(getChatClockShift({ fakeTimeMode: "story", fakeTimeOffset: 3_600_000 }, real)).toBe(
+      3_600_000,
+    );
+    expect(getChatClockShift({ fakeTimeMode: "offset", fakeTimeOffset: -60_000 }, real)).toBe(
+      -60_000,
+    );
+  });
+});
+
+describe("stampStoryTimes 回傳標記了幾則", () => {
+  it("有新訊息時回傳數量，沒有時回傳 0", () => {
+    const now = t(2026, 10, 23, 10);
+    const msgs: Array<{ storyTime?: number; timestamp?: number }> = [
+      { storyTime: now - 5000, timestamp: now - 5000 },
+      { timestamp: now - 1000 },
+      { timestamp: now },
+    ];
+    expect(stampStoryTimes(msgs, () => new Date(now), now)).toBe(2);
+    expect(stampStoryTimes(msgs, () => new Date(now), now)).toBe(0);
   });
 });
