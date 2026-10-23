@@ -263,6 +263,34 @@ export class IncomingCallScheduler {
           );
           continue;
         }
+
+        // 角色正在睡覺或忙碌：把這通電話延到他醒來／忙完後 1 分鐘再打
+        try {
+          const { loadChatById } = await import("@/storage/chatStorage");
+          const { isCharAwayActive, awayKind } = await import(
+            "@/services/charAway"
+          );
+          const chat = await loadChatById(call.chatId);
+          const charAway = chat?.charAway;
+          if (isCharAwayActive(charAway)) {
+            const kind = awayKind(charAway);
+            if (kind === "sleep" || kind === "busy") {
+              call.triggerTime = charAway!.returnAt + 60_000;
+              await db.put(DB_STORES.PENDING_CALLS, call);
+              console.log(
+                "[IncomingCallScheduler] 角色正在",
+                kind === "sleep" ? "睡覺" : "忙碌",
+                "，來電延後到結束後 1 分鐘:",
+                call.chatId,
+                new Date(call.triggerTime).toLocaleString(),
+              );
+              continue;
+            }
+          }
+        } catch {
+          // 讀不到聊天就照常回傳這通電話
+        }
+
         return call;
       }
 
