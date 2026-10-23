@@ -43,6 +43,8 @@ function chatName(chat: Chat): string {
 }
 
 function chatAvatar(chat: Chat): string {
+  // 群聊用群頭像，沒有就顯示群名第一個字，不借成員的頭像
+  if (chat.isGroupChat) return chat.groupMetadata?.groupAvatar || "";
   const char = charactersStore.characters.find((c) => c.id === chat.characterId);
   return char?.avatar || "";
 }
