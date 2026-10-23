@@ -344,6 +344,10 @@ const onHeaderSetEditNoticeChance = (...args: any[]) =>
   setEditNoticeChance(Number(args[0]));
 const onHeaderSetCharAwayEnabled = (...args: any[]) =>
   setCharAwayEnabled(Boolean(args[0]));
+const onHeaderSetCharSleepEnabled = (...args: any[]) =>
+  setCharSleepEnabled(Boolean(args[0]));
+const onHeaderSetCharBusyEnabled = (...args: any[]) =>
+  setCharBusyEnabled(Boolean(args[0]));
 const onHeaderSetPlurkShareCount = (...args: any[]) =>
   setPlurkShareCount(Number(args[0]));
 const onHeaderUpdateOffsetStartDateTime = (...args: any[]) =>
@@ -2457,6 +2461,8 @@ const {
   headerStatusText: charAwayHeaderText,
   quickBackGame: charAwayGame,
   charAwayEnabled,
+  charSleepEnabled,
+  charBusyEnabled,
 } = charAwayCtl;
 
 async function setSpeakerMode(mode: "user" | "char" | "system") {
@@ -6222,7 +6228,7 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
           messages.value[msgIndex].isStreaming = false;
         }
       } else {
-        let charAwayTag: Parameters<typeof charAwayCtl.afterReply>[0];
+        let charAwayTags: Parameters<typeof charAwayCtl.afterReply>[0];
         // 群聊/多人卡模式：使用群聊解析器
         if (useGroupChatParser.value) {
           console.log("[ChatScreen][render] 進入群聊解析器路徑");
@@ -6737,8 +6743,13 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
               await handleCharStatusUpdate(parsed.charStatusData.text);
             }
 
-            // 角色暫時離開：這輪宣告了暫離，回覆處理完再開始計時
-            charAwayTag = parsed.hasCharAway ? parsed.charAwayData : undefined;
+            // 角色暫時離開：這輪宣告了暫離／睡覺／忙碌，回覆處理完再開始計時
+            charAwayTags = {
+              away: parsed.hasCharAway ? parsed.charAwayData : undefined,
+              sleep: parsed.hasCharSleep ? parsed.charSleepData : undefined,
+              busy: parsed.hasCharBusy ? parsed.charBusyData : undefined,
+              wake: !!parsed.hasCharWake,
+            };
 
             // 處理角色待辦與行程標籤
             await handleCharPlannerTags(finalContent, generationTurnId);
@@ -7184,7 +7195,7 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
         }
         // 角色暫時離開：回過留言就清掉待回（純文字回覆不會進上面的解析，也要清）；這輪宣告了暫離就開始計時
         if (!useGroupChatParser.value) {
-          await charAwayCtl.afterReply(charAwayTag);
+          await charAwayCtl.afterReply(charAwayTags);
         }
       }
     }
@@ -8411,6 +8422,23 @@ function setCharAwayEnabled(value: boolean) {
   saveChat();
 }
 
+// 允許角色睡覺（聊天設定開關）
+function setCharSleepEnabled(value: boolean) {
+  charSleepEnabled.value = value;
+  saveChat();
+}
+
+// 允許角色排忙碌行程（聊天設定開關）；關掉時預約也一併取消
+function setCharBusyEnabled(value: boolean) {
+  charBusyEnabled.value = value;
+  saveChat();
+  if (!value && currentChatId.value) {
+    void import("@/services/charAwayRuntime").then((m) =>
+      m.cancelCharAwayPlan(currentChatId.value!),
+    );
+  }
+}
+
 // 讓他傳噗給你：提示詞列幾則最近的噗（0＝關閉）
 function setPlurkShareCount(value: number) {
   chatPlurkShareCount.value = value;
@@ -9158,6 +9186,8 @@ function buildChatMetadata(
     enableRealTimeAwareness: chatEnableRealTimeAwareness.value,
     editNoticeChance: chatEditNoticeChance.value,
     charAwayEnabled: charAwayEnabled.value,
+    charSleepEnabled: charSleepEnabled.value,
+    charBusyEnabled: charBusyEnabled.value,
     plurkShareCount: chatPlurkShareCount.value,
     fakeTimeFields: fakeTime.toChatFields(),
     minimaxTTSEnabled: chatMinimaxTTSEnabled.value,
@@ -10328,6 +10358,8 @@ useChatCleanup({
       :chat-enable-real-time-awareness="chatEnableRealTimeAwareness"
       :edit-notice-chance="chatEditNoticeChance"
       :char-away-enabled="charAwayEnabled"
+      :char-sleep-enabled="charSleepEnabled"
+      :char-busy-enabled="charBusyEnabled"
       :plurk-share-count="chatPlurkShareCount"
       :show-fake-time-panel="showFakeTimePanel"
       :fake-time-mode="fakeTime.fakeTimeMode.value"
@@ -10371,6 +10403,8 @@ useChatCleanup({
       @toggle-real-time-awareness="toggleRealTimeAwareness"
       @set-edit-notice-chance="onHeaderSetEditNoticeChance"
       @set-char-away-enabled="onHeaderSetCharAwayEnabled"
+      @set-char-sleep-enabled="onHeaderSetCharSleepEnabled"
+      @set-char-busy-enabled="onHeaderSetCharBusyEnabled"
       @set-plurk-share-count="onHeaderSetPlurkShareCount"
       @toggle-fake-time-panel="toggleFakeTimePanel"
       @set-fake-time-mode="onHeaderSetFakeTimeMode"
@@ -13569,6 +13603,7 @@ useChatCleanup({
       <QuickBackGame
         v-if="charAwayGame"
         :kind="charAwayGame.kind"
+        :mode="charAwayGame.mode"
         :tap-target="charAwayGame.tapTarget"
         :character-name="characterName"
         :character-avatar="displayAvatar || undefined"

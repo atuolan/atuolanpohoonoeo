@@ -16,29 +16,50 @@ import {
 } from "vue";
 import type { Ref } from "vue";
 import type { ChatScreenMessage as Message } from "@/types/chatScreen";
-import type { Chat, CharAway } from "@/types/chat";
-import type { ParsedCharAway } from "@/services/charAway";
+import type { Chat, CharAway, CharAwayKind } from "@/types/chat";
+import type {
+  ParsedCharAway,
+  ParsedCharBusy,
+  ParsedCharSleep,
+} from "@/services/charAway";
 import {
+  awayHeaderText,
+  awayKind,
+  awayUrgeLabel,
   buildAwayHintText,
   buildCharAwayGuide,
+  buildCharAwayPlanNote,
   buildCharAwayReturnNote,
+  buildCharAwaySneakNote,
+  buildCharBusyGuide,
+  buildCharSleepGuide,
   canUseCharAway,
+  canUseCharBusy,
+  canUseCharSleep,
   clearReplyPending,
+  countLeftSinceSneak,
   isCharAwayActive,
+  isCharAwayPlanPending,
   pickQuickBackGame,
   quickBackTapTarget,
 } from "@/services/charAway";
 import {
   CHAR_AWAY_CHANGED_EVENT,
   cancelCharAway,
+  cancelCharAwayPlan,
+  finishCharAwaySneak,
   markCharAwayReplied,
   setCharAwayViewingChat,
   startCharAway,
+  startCharBusy,
+  startCharSleep,
   urgeCharAway,
+  wakeCharAwayNow,
 } from "@/services/charAwayRuntime";
 
 export interface AwayHint {
   text: string;
+  label: string;
   action: "urge" | "locked" | "none";
   lockedText?: string;
 }
@@ -56,10 +77,14 @@ export function useCharAway(ctx: {
   triggerAIResponse: () => Promise<void>;
 }) {
   const charAway = ref<CharAway | null>(null);
+  const charAwayPlan = ref<CharAway | null>(null);
   const charAwayEnabled = ref(true);
+  const charSleepEnabled = ref(true);
+  const charBusyEnabled = ref(true);
   const now = ref(Date.now());
   const quickBackGame = ref<null | {
     kind: "tap" | "rps";
+    mode: CharAwayKind;
     tapTarget: number;
   }>(null);
 
@@ -76,7 +101,7 @@ export function useCharAway(ctx: {
 
   const headerStatusText = computed(() =>
     isAwayActive.value && charAway.value
-      ? `忙碌中・${charAway.value.reason}`
+      ? awayHeaderText(charAway.value)
       : "",
   );
 
@@ -111,7 +136,19 @@ export function useCharAway(ctx: {
     const stale =
       !!current && !!incoming && current.id === incoming.id && current.updatedAt > incoming.updatedAt;
     if (!stale) charAway.value = incoming;
+
+    const currentPlan = charAwayPlan.value;
+    const incomingPlan = chat.charAwayPlan ?? null;
+    const planStale =
+      !!currentPlan &&
+      !!incomingPlan &&
+      currentPlan.id === incomingPlan.id &&
+      currentPlan.updatedAt > incomingPlan.updatedAt;
+    if (!planStale) charAwayPlan.value = incomingPlan;
+
     charAwayEnabled.value = chat.charAwayEnabled !== false;
+    charSleepEnabled.value = chat.charSleepEnabled !== false;
+    charBusyEnabled.value = chat.charBusyEnabled !== false;
     if (!isCharAwayActive(charAway.value ?? undefined)) quickBackGame.value = null;
     void nextTick(() => maybeAutoReply());
   }
@@ -119,7 +156,10 @@ export function useCharAway(ctx: {
   const firstAwayEntryId = computed<string | null>(() => {
     const away = charAway.value;
     if (!away) return null;
-    const first = ctx.messages.value.find((m) => m.sentWhileAway === away.id);
+    const since = away.lastSneakAt ?? 0;
+    const first = ctx.messages.value.find(
+      (m) => m.sentWhileAway === away.id && m.timestamp > since,
+    );
     return first?.id ?? null;
   });
 
@@ -143,8 +183,9 @@ export function useCharAway(ctx: {
     if (message.id !== firstAwayEntryId.value) return null;
 
     const text = buildAwayHintText(ctx.characterName.value, away);
+    const label = awayUrgeLabel(away);
     const { action, lockedText } = hintAction(away);
-    return lockedText ? { text, action, lockedText } : { text, action };
+    return lockedText ? { text, label, action, lockedText } : { text, label, action };
   }
 
   function awayHintKey(messageId: string): string {
@@ -153,44 +194,92 @@ export function useCharAway(ctx: {
     if (messageId !== firstAwayEntryId.value) return "";
 
     const { action, lockedText } = hintAction(away);
-    return `${away.id}|${action}|${lockedText ?? ""}`;
+    return `${away.id}|${awayUrgeLabel(away)}|${action}|${lockedText ?? ""}`;
   }
 
   // --- 提示詞 ---
   function promptOptions(): {
     charAwayGuide: string;
+    charSleepGuide: string;
+    charBusyGuide: string;
     charAwayReturnNote?: string;
   } {
     const away = charAway.value ?? undefined;
+    const plan = charAwayPlan.value ?? undefined;
+    const nowTs = Date.now();
+    const opts = { faceToFace: ctx.faceToFace.value, now: nowTs };
+    const availability = {
+      charAway: away,
+      charAwayPlan: plan,
+      charAwayEnabled: charAwayEnabled.value,
+      charSleepEnabled: charSleepEnabled.value,
+      charBusyEnabled: charBusyEnabled.value,
+      isGroupChat: ctx.isGroupChat.value,
+    };
 
     const charAwayGuide = buildCharAwayGuide(
-      canUseCharAway(
-        {
-          charAway: away,
-          charAwayEnabled: charAwayEnabled.value,
-          isGroupChat: ctx.isGroupChat.value,
-        },
-        { faceToFace: ctx.faceToFace.value, now: Date.now() },
-      ),
+      canUseCharAway(availability, opts),
+    );
+    const charSleepGuide = buildCharSleepGuide(
+      canUseCharSleep(availability, opts),
+    );
+    const charBusyGuide = buildCharBusyGuide(
+      canUseCharBusy(availability, opts),
+      plan,
+      nowTs,
     );
 
-    let charAwayReturnNote: string | undefined;
-    if (away) {
-      const leftCount = ctx.messages.value.filter(
-        (m) => m.role === "user" && m.sentWhileAway === away.id,
-      ).length;
-      charAwayReturnNote = buildCharAwayReturnNote(away, leftCount) ?? undefined;
-    }
+    const entries = away
+      ? ctx.messages.value
+          .filter((m) => m.sentWhileAway === away.id)
+          .map((m) => ({
+            sentWhileAway: m.sentWhileAway,
+            isUser: m.role === "user",
+            at: m.timestamp,
+          }))
+      : [];
+    const leftCount = away ? countLeftSinceSneak(away, entries) : 0;
 
-    return { charAwayGuide, charAwayReturnNote };
+    const notes = [
+      buildCharAwayReturnNote(away, leftCount),
+      buildCharAwaySneakNote(away, leftCount),
+      buildCharAwayPlanNote(plan, nowTs),
+    ].filter((note): note is string => !!note);
+    const charAwayReturnNote = notes.length > 0 ? notes.join("\n\n") : undefined;
+
+    return { charAwayGuide, charSleepGuide, charBusyGuide, charAwayReturnNote };
   }
 
   // --- 生成前後的接線 ---
   async function beforeGenerate(): Promise<boolean> {
-    if (!isAwayActive.value) return false;
+    if (!isAwayActive.value) {
+      const plan = charAwayPlan.value;
+      const chatId = ctx.currentChatId.value;
+      if (
+        chatId &&
+        plan &&
+        isCharAwayPlanPending(plan) &&
+        !!plan.startMessageId &&
+        !ctx.messages.value.some((m) => m.id === plan.startMessageId)
+      ) {
+        await cancelCharAwayPlan(chatId);
+        const ts = Date.now();
+        if (charAwayPlan.value?.id === plan.id) {
+          charAwayPlan.value = {
+            ...plan,
+            endedAt: ts,
+            endedBy: "cancel",
+            updatedAt: ts,
+          };
+        }
+      }
+      return false;
+    }
 
     const away = charAway.value;
     if (!away) return false;
+
+    if (away.sneakPending) return false;
 
     const gone =
       !!away.startMessageId &&
@@ -216,7 +305,12 @@ export function useCharAway(ctx: {
     return false;
   }
 
-  async function afterReply(parsed?: ParsedCharAway): Promise<void> {
+  async function afterReply(tags?: {
+    away?: ParsedCharAway;
+    sleep?: ParsedCharSleep;
+    busy?: ParsedCharBusy;
+    wake?: boolean;
+  }): Promise<void> {
     const chatId = ctx.currentChatId.value;
 
     const pendingAway = charAway.value;
@@ -228,13 +322,39 @@ export function useCharAway(ctx: {
       }
     }
 
-    if (!parsed) return;
+    const sneakAway = charAway.value;
+    if (sneakAway && isCharAwayActive(sneakAway) && sneakAway.sneakPending) {
+      if (!chatId) return;
+      const next = tags?.wake
+        ? await wakeCharAwayNow(chatId)
+        : await finishCharAwaySneak(chatId, true);
+      if (next) charAway.value = next;
+      return;
+    }
+
+    if (!tags) return;
     if (ctx.faceToFace.value || ctx.isGroupChat.value) return;
     if (!chatId) return;
 
     const lastAi = [...ctx.messages.value].reverse().find((m) => m.role === "ai");
-    const started = await startCharAway(chatId, parsed, lastAi?.id);
-    if (started) charAway.value = started;
+
+    if (tags.sleep) {
+      const started = await startCharSleep(chatId, tags.sleep, lastAi?.id);
+      if (started) charAway.value = started;
+      return;
+    }
+
+    if (tags.busy) {
+      const result = await startCharBusy(chatId, tags.busy, lastAi?.id);
+      if (result?.active) charAway.value = result.active;
+      if (result?.plan) charAwayPlan.value = result.plan;
+      return;
+    }
+
+    if (tags.away) {
+      const started = await startCharAway(chatId, tags.away, lastAi?.id);
+      if (started) charAway.value = started;
+    }
   }
 
   // --- 「快回來」小遊戲 ---
@@ -247,6 +367,7 @@ export function useCharAway(ctx: {
 
     quickBackGame.value = {
       kind: pickQuickBackGame(),
+      mode: awayKind(away),
       tapTarget: quickBackTapTarget(away.returnAt - ts),
     };
   }
@@ -264,7 +385,15 @@ export function useCharAway(ctx: {
     const next = await urgeCharAway(chatId, won);
     if (next) charAway.value = next;
 
-    if (won && next) await ctx.triggerAIResponse();
+    if (!won || !next) return;
+
+    await ctx.triggerAIResponse();
+
+    const current = charAway.value;
+    if (current && current.id === next.id && current.sneakPending) {
+      const finished = await finishCharAwaySneak(chatId, false);
+      if (finished) charAway.value = finished;
+    }
   }
 
   // --- 時間到回來後自動接著回留言 ---
@@ -297,11 +426,18 @@ export function useCharAway(ctx: {
 
   function handleCharAwayChanged(event: Event): void {
     const detail = (
-      event as CustomEvent<{ chatId?: string; charAway?: CharAway | null }>
+      event as CustomEvent<{
+        chatId?: string;
+        charAway?: CharAway | null;
+        charAwayPlan?: CharAway | null;
+      }>
     ).detail;
     if (!detail || detail.chatId !== ctx.currentChatId.value) return;
 
     charAway.value = detail.charAway ?? null;
+    if ("charAwayPlan" in detail) {
+      charAwayPlan.value = detail.charAwayPlan ?? null;
+    }
     if (!isCharAwayActive(charAway.value ?? undefined)) {
       quickBackGame.value = null;
     }
@@ -340,7 +476,10 @@ export function useCharAway(ctx: {
 
   return {
     charAway,
+    charAwayPlan,
     charAwayEnabled,
+    charSleepEnabled,
+    charBusyEnabled,
     isAwayActive,
     activeAwayId,
     headerStatusText,

@@ -5,16 +5,26 @@ import type { ChatScreenMessage as Message } from "@/types/chatScreen";
 import type { Chat, CharAway } from "@/types/chat";
 import {
   cancelCharAway,
+  cancelCharAwayPlan,
+  finishCharAwaySneak,
   markCharAwayReplied,
   startCharAway,
+  startCharBusy,
+  startCharSleep,
   urgeCharAway,
+  wakeCharAwayNow,
 } from "@/services/charAwayRuntime";
 import { useCharAway } from "../useCharAway";
 
 vi.mock("@/services/charAwayRuntime", () => ({
   CHAR_AWAY_CHANGED_EVENT: "aguaphone:char-away-changed",
   startCharAway: vi.fn(),
+  startCharSleep: vi.fn(),
+  startCharBusy: vi.fn(),
   cancelCharAway: vi.fn(),
+  cancelCharAwayPlan: vi.fn(),
+  finishCharAwaySneak: vi.fn(),
+  wakeCharAwayNow: vi.fn(),
   urgeCharAway: vi.fn(),
   markCharAwayReplied: vi.fn(),
   setCharAwayViewingChat: vi.fn(),
@@ -29,6 +39,7 @@ beforeEach(() => {
   vi.setSystemTime(new Date("2026-01-01T10:00:00Z"));
   vi.clearAllMocks();
   vi.mocked(cancelCharAway).mockResolvedValue(undefined);
+  vi.mocked(cancelCharAwayPlan).mockResolvedValue(undefined);
   vi.mocked(markCharAwayReplied).mockResolvedValue(undefined);
 });
 
@@ -157,6 +168,20 @@ describe("useCharAway", () => {
       await expect(api.beforeGenerate()).resolves.toBe(false);
       expect(cancelCharAway).not.toHaveBeenCalled();
     });
+
+    it("偷回那一輪放行一次，不取消暫離", async () => {
+      const api = setup();
+      const away = makeAway({
+        startMessageId: "msg_ai_start",
+        sneakPending: true,
+      });
+      api.messages.value = [makeMessage({ id: "msg_ai_other", role: "ai" })];
+      api.loadFromChat(makeChat(away));
+
+      await expect(api.beforeGenerate()).resolves.toBe(false);
+      expect(cancelCharAway).not.toHaveBeenCalled();
+      expect(api.isAwayActive.value).toBe(true);
+    });
   });
 
   describe("awayHintFor", () => {
@@ -200,8 +225,35 @@ describe("useCharAway", () => {
       expect(hint?.action).toBe("locked");
       expect(hint?.lockedText).toBe("4:32 後可以再催");
       expect(api.awayHintKey(first.id)).toBe(
-        `${away.id}|locked|4:32 後可以再催`,
+        `${away.id}|快回來|locked|4:32 後可以再催`,
       );
+    });
+
+    it("偷回之後才顯示提示，按鈕文字依種類", () => {
+      const api = setup();
+      const ts = Date.now();
+      const away = makeAway({
+        kind: "sleep",
+        lastSneakAt: ts - 30_000,
+        reason: "睡覺",
+      });
+      const before = makeMessage({
+        id: "msg_before_sneak",
+        sentWhileAway: away.id,
+        timestamp: ts - 60_000,
+      });
+      const after = makeMessage({
+        id: "msg_after_sneak",
+        sentWhileAway: away.id,
+        timestamp: ts - 10_000,
+      });
+      api.messages.value = [before, after];
+      api.loadFromChat(makeChat(away));
+
+      expect(api.awayHintFor(before)).toBeNull();
+      const hint = api.awayHintFor(after);
+      expect(hint?.label).toBe("起床重睡");
+      expect(hint?.text).toContain("睡著了");
     });
 
     it("已結束 → none，非第一筆的 key 是空字串", () => {
@@ -283,7 +335,7 @@ describe("useCharAway", () => {
       vi.mocked(startCharAway).mockResolvedValue(away);
 
       const parsed = { minutes: 10, reason: "開會", backText: "回來了" };
-      await api.afterReply(parsed);
+      await api.afterReply({ away: parsed });
 
       expect(startCharAway).toHaveBeenCalledWith(
         CHAT_ID,
@@ -291,6 +343,66 @@ describe("useCharAway", () => {
         "msg_ai_last",
       );
       expect(api.charAway.value?.id).toBe(away.id);
+    });
+
+    it("同時有 sleep 與 away 標籤時只開始睡覺", async () => {
+      const api = setup();
+      api.messages.value = [makeMessage({ id: "msg_ai_last", role: "ai" })];
+      const sleepParsed = { wake: "07:30", backText: "早安" };
+      const awayParsed = { minutes: 10, reason: "開會", backText: "回來了" };
+      vi.mocked(startCharSleep).mockResolvedValue(
+        makeAway({ kind: "sleep", reason: "睡覺" }),
+      );
+
+      await api.afterReply({ sleep: sleepParsed, away: awayParsed });
+
+      expect(startCharSleep).toHaveBeenCalledWith(
+        CHAT_ID,
+        sleepParsed,
+        "msg_ai_last",
+      );
+      expect(startCharAway).not.toHaveBeenCalled();
+      expect(api.charAway.value?.kind).toBe("sleep");
+    });
+
+    it("偷回那一輪帶 wake → 呼叫 wakeCharAwayNow，其他標籤忽略", async () => {
+      const api = setup();
+      const away = makeAway({ kind: "sleep", sneakPending: true });
+      api.loadFromChat(makeChat(away));
+      const woken = makeAway({
+        kind: "sleep",
+        endedAt: Date.now(),
+        endedBy: "wake",
+      });
+      vi.mocked(wakeCharAwayNow).mockResolvedValue(woken);
+
+      await api.afterReply({
+        wake: true,
+        sleep: { wake: "07:30", backText: "早安" },
+      });
+
+      expect(wakeCharAwayNow).toHaveBeenCalledWith(CHAT_ID);
+      expect(finishCharAwaySneak).not.toHaveBeenCalled();
+      expect(startCharSleep).not.toHaveBeenCalled();
+      expect(api.charAway.value?.endedBy).toBe("wake");
+    });
+
+    it("偷回那一輪沒有 wake → 呼叫 finishCharAwaySneak", async () => {
+      const api = setup();
+      const away = makeAway({ kind: "busy", sneakPending: true });
+      api.loadFromChat(makeChat(away));
+      const finished = makeAway({
+        kind: "busy",
+        lastSneakAt: Date.now(),
+      });
+      vi.mocked(finishCharAwaySneak).mockResolvedValue(finished);
+
+      await api.afterReply({ busy: { end: "18:00", reason: "搭飛機", backText: "忙完了" } });
+
+      expect(finishCharAwaySneak).toHaveBeenCalledWith(CHAT_ID, true);
+      expect(wakeCharAwayNow).not.toHaveBeenCalled();
+      expect(startCharBusy).not.toHaveBeenCalled();
+      expect(api.charAway.value?.lastSneakAt).toBe(finished.lastSneakAt);
     });
   });
 
