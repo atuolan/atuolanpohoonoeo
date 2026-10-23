@@ -18,6 +18,7 @@ import {
   Moon,
   Pencil,
   PhoneIncoming,
+  Plane,
   ScanSearch,
   ScrollText,
   Send,
@@ -79,6 +80,10 @@ const props = defineProps<{
   editNoticeChance: number;
   /** 允許角色暫時離開（預設 true） */
   charAwayEnabled?: boolean;
+  /** 允許角色睡覺（預設 true） */
+  charSleepEnabled?: boolean;
+  /** 允許角色排忙碌行程（預設 true） */
+  charBusyEnabled?: boolean;
   /** 讓他傳噗給你：提示詞列幾則最近的噗（0＝關閉） */
   plurkShareCount?: number;
   chatEnableRealTimeAwareness: boolean;
@@ -124,6 +129,8 @@ const emit = defineEmits<{
   (e: "toggle-anti-truncation"): void;
   (e: "set-edit-notice-chance", value: number): void;
   (e: "set-char-away-enabled", value: boolean): void;
+  (e: "set-char-sleep-enabled", value: boolean): void;
+  (e: "set-char-busy-enabled", value: boolean): void;
   (e: "set-plurk-share-count", value: number): void;
   (e: "open-streaming-window"): void;
   (e: "open-last-output"): void;
@@ -760,6 +767,34 @@ const isDarkBackground = computed(() =>
               </div>
               <label class="toggle-switch-mini">
                 <input type="checkbox" aria-label="允許暫時離開" :checked="charAwayEnabled !== false" @change="emit('set-char-away-enabled', charAwayEnabled === false)" />
+                <span class="toggle-slider-mini"></span>
+              </label>
+            </div>
+            <div
+              v-if="!chatFaceToFaceMode"
+              class="dropdown-toggle-item"
+              title="你說晚安時，他可能會跟著去睡，到起床時間才回"
+            >
+              <div class="toggle-item-info">
+                <Moon :size="20" :stroke-width="1.75" />
+                <span>允許睡覺</span>
+              </div>
+              <label class="toggle-switch-mini">
+                <input type="checkbox" aria-label="允許睡覺" :checked="charSleepEnabled !== false" @change="emit('set-char-sleep-enabled', charSleepEnabled === false)" />
+                <span class="toggle-slider-mini"></span>
+              </label>
+            </div>
+            <div
+              v-if="!chatFaceToFaceMode"
+              class="dropdown-toggle-item"
+              title="他可能會排一段時間去忙（搭飛機、考試），那段時間不回訊息"
+            >
+              <div class="toggle-item-info">
+                <Plane :size="20" :stroke-width="1.75" />
+                <span>允許忙碌行程</span>
+              </div>
+              <label class="toggle-switch-mini">
+                <input type="checkbox" aria-label="允許忙碌行程" :checked="charBusyEnabled !== false" @change="emit('set-char-busy-enabled', charBusyEnabled === false)" />
                 <span class="toggle-slider-mini"></span>
               </label>
             </div>

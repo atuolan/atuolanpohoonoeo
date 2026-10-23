@@ -3399,7 +3399,7 @@ const showTextVoiceTranscript = ref(true);
           {{ formattedTime }}
         </span>
         <div v-if="awayHint" class="away-hint">
-          {{ awayHint.text }}<template v-if="awayHint.action === 'urge'"> · <button type="button" class="away-hint-action" @click.stop="emit('quickBack')">快回來</button></template><template v-else-if="awayHint.action === 'locked'"> · {{ awayHint.lockedText }}</template>
+          {{ awayHint.text }}<template v-if="awayHint.action === 'urge'"> · <button type="button" class="away-hint-action" @click.stop="emit('quickBack')">{{ awayHint.label }}</button></template><template v-else-if="awayHint.action === 'locked'"> · {{ awayHint.lockedText }}</template>
         </div>
         <div v-if="plurkActivity && !isUser" class="plurk-activity-hint">
           <button type="button" class="plurk-activity-link" @click.stop="emit('openPlurk', { postId: plurkActivity.postId, commentId: plurkActivity.commentId })">在噗浪回應了這則噗 ›</button>
@@ -4686,7 +4686,7 @@ const showTextVoiceTranscript = ref(true);
 
         <!-- 角色暫時離開：泡泡下的灰色小字 -->
         <div v-if="awayHint" class="away-hint">
-          {{ awayHint.text }}<template v-if="awayHint.action === 'urge'"> · <button type="button" class="away-hint-action" @click.stop="emit('quickBack')">快回來</button></template><template v-else-if="awayHint.action === 'locked'"> · {{ awayHint.lockedText }}</template>
+          {{ awayHint.text }}<template v-if="awayHint.action === 'urge'"> · <button type="button" class="away-hint-action" @click.stop="emit('quickBack')">{{ awayHint.label }}</button></template><template v-else-if="awayHint.action === 'locked'"> · {{ awayHint.lockedText }}</template>
         </div>
         <div v-if="plurkActivity && !isUser" class="plurk-activity-hint">
           <button type="button" class="plurk-activity-link" @click.stop="emit('openPlurk', { postId: plurkActivity.postId, commentId: plurkActivity.commentId })">在噗浪回應了這則噗 ›</button>

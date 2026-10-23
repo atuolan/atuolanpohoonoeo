@@ -1228,6 +1228,12 @@ export interface Chat {
   charAway?: CharAway;
   /** 允許角色暫時離開；undefined 當作開 */
   charAwayEnabled?: boolean;
+  /** 預約好、還沒開始的忙碌（kind "busy"、startedAt 在未來）；endedAt 有值＝已取消或已開始 */
+  charAwayPlan?: CharAway;
+  /** 允許角色去睡覺；undefined 當作開 */
+  charSleepEnabled?: boolean;
+  /** 允許角色排忙碌行程；undefined 當作開 */
+  charBusyEnabled?: boolean;
 
   /** 讓他傳噗給你：提示詞列出幾則最近的噗；0／undefined＝關閉 */
   plurkShareCount?: number;
@@ -1238,6 +1244,9 @@ export interface CharStatus {
   text: string;
   updatedAt: number;
 }
+
+/** 角色暫時離開的種類：暫離、睡覺、忙碌 */
+export type CharAwayKind = "away" | "sleep" | "busy";
 
 /** 角色暫時離開（<char-away>）；updatedAt 用來在多處同時寫入時保留較新的一筆 */
 export interface CharAway {
@@ -1251,9 +1260,15 @@ export interface CharAway {
   callCount: number;        // 暫離期間 user 打了幾通電話
   urgeLockedUntil?: number; // 輸了之後到這個時間前不能再催
   endedAt?: number;         // 有值代表已經回來
-  endedBy?: "time" | "urge" | "cancel";
+  endedBy?: "time" | "urge" | "cancel" | "wake"; // wake：被吵醒或自己起床，不送 back
   replyPending?: boolean;   // 回來後還沒回 user 留的話
   updatedAt: number;
+  kind?: CharAwayKind;      // 種類；undefined 當作 "away"（舊資料）
+  fromPlan?: boolean;       // 由預約開始的（原生通知 tag 不同）
+  sneakCount?: number;      // 睡覺／忙碌：小遊戲贏了、回過幾則
+  sneakPending?: boolean;   // 剛贏，正要生成那一則
+  lastSneakAt?: number;     // 最後一次偷回的時間；之後留的才算「還沒回」
+  callAts?: number[];       // 睡覺時每通沒接的電話時間（只留 10 分鐘內的）
 }
 
 // ===== 聊天設定 =====

@@ -2,15 +2,23 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { PendingCall } from "@/types/incomingCall";
 
 const { pendingCalls } = vi.hoisted(() => ({ pendingCalls: new Map<string, PendingCall>() }));
+const { chats } = vi.hoisted(() => ({ chats: new Map<string, unknown>() }));
 
 vi.mock("@/db/database", () => ({
   DB_STORES: { PENDING_CALLS: "pendingCalls" },
   db: {
     getAll: vi.fn(async () => [...pendingCalls.values()]),
+    put: vi.fn(async (_store: string, value: PendingCall) => {
+      pendingCalls.set(value.id, value);
+    }),
     delete: vi.fn(async (_store: string, id: string) => {
       pendingCalls.delete(id);
     }),
   },
+}));
+
+vi.mock("@/storage/chatStorage", () => ({
+  loadChatById: vi.fn(async (id: string) => chats.get(id) ?? null),
 }));
 
 import { IncomingCallScheduler } from "@/services/IncomingCallScheduler";
@@ -31,6 +39,7 @@ function addCall(id: string, chatId: string, triggerOffset: number, createdOffse
 
 beforeEach(() => {
   pendingCalls.clear();
+  chats.clear();
   vi.useFakeTimers();
   vi.setSystemTime(NOW);
 });
@@ -76,5 +85,51 @@ describe("待處理來電的聊天勿擾", () => {
     );
 
     expect(result?.id).toBe("second");
+  });
+});
+
+describe("角色睡覺或忙碌時延後來電", () => {
+  it("聊天睡覺中：到期的來電不回傳，改成起床後 1 分鐘再打", async () => {
+    addCall("sleepy", "chat-sleep", -5000, -60_000);
+    const returnAt = NOW + 3 * 60 * 60 * 1000;
+    chats.set("chat-sleep", {
+      id: "chat-sleep",
+      charAway: {
+        id: "away_1",
+        kind: "sleep",
+        reason: "睡覺",
+        startedAt: NOW - 60_000,
+        returnAt,
+        urgeCount: 0,
+        callCount: 0,
+        updatedAt: NOW - 60_000,
+      },
+    });
+
+    const result = await new IncomingCallScheduler().checkPendingCalls(false, async () => false);
+
+    expect(result).toBeNull();
+    expect(pendingCalls.get("sleepy")?.triggerTime).toBe(returnAt + 60_000);
+  });
+
+  it("角色只是暫離（kind 未設）時照常回傳", async () => {
+    addCall("away", "chat-away", -5000, -60_000);
+    chats.set("chat-away", {
+      id: "chat-away",
+      charAway: {
+        id: "away_1",
+        reason: "開會",
+        startedAt: NOW - 60_000,
+        returnAt: NOW + 30 * 60_000,
+        urgeCount: 0,
+        callCount: 0,
+        updatedAt: NOW - 60_000,
+      },
+    });
+
+    const result = await new IncomingCallScheduler().checkPendingCalls(false, async () => false);
+
+    expect(result?.id).toBe("away");
+    expect(pendingCalls.get("away")?.triggerTime).toBe(NOW - 5000);
   });
 });

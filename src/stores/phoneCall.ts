@@ -8,7 +8,7 @@ import { useStreamingWindow } from "@/composables/useStreamingWindow";
 import { db, DB_STORES } from "@/db/database";
 import { PromptBuilder } from "@/engine/prompt/PromptBuilder";
 import { parseAffinityUpdateTags } from "@/services/ResponseParser";
-import { isCharAwayActive } from "@/services/charAway";
+import { isCharAwayActive, shouldWakeByCall } from "@/services/charAway";
 import {
   applyPromptRegexToHistory,
   applyWorldInfoRegexToLorebooks,
@@ -584,12 +584,27 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
   /**
    * 角色暫時離開時撥過去：不問接不接，響一陣子後無人接聽；
    * 聊天裡留一張未接通卡片，他回來時會知道打過幾通。不動原本的未接計數。
+   * 睡覺中被 10 分鐘內第 3 通吵醒時改成直接接起來（回 "wake"，不記未接通卡片）。
    */
-  async function ringUnansweredIfAway(info: ActiveCallInfo): Promise<boolean> {
-    if (info.isIncoming || !info.chatId) return false;
+  async function ringUnansweredIfAway(
+    info: ActiveCallInfo,
+  ): Promise<"ring" | "wake" | null> {
+    if (info.isIncoming || !info.chatId) return null;
     const chatId = info.chatId;
     const chat = await loadChatById(chatId).catch(() => undefined);
-    if (!isCharAwayActive(chat?.charAway)) return false;
+    const away = chat?.charAway;
+    if (!isCharAwayActive(away)) return null;
+
+    // 睡覺被連續打來的電話吵醒：直接結束睡覺並接起來
+    if (shouldWakeByCall(away, Date.now())) {
+      try {
+        const { wakeCharAwayNow } = await import("@/services/charAwayRuntime");
+        await wakeCharAwayNow(chatId);
+      } catch (err) {
+        console.warn("[PhoneCall] 睡夢中接電話失敗:", err);
+      }
+      return "wake";
+    }
 
     callState.value = "ringing";
     callStartedAt.value = null;
@@ -602,7 +617,7 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
       rejectReason.value = "無人接聽";
       setTimeout(() => endCall(), 3000);
     }, AWAY_UNANSWERED_RING_MS);
-    return true;
+    return "ring";
   }
 
   async function startVideoCall(
@@ -626,7 +641,8 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
     isSpeaker.value = false;
     isExpanded.value = true;
 
-    if (await ringUnansweredIfAway(info)) return;
+    const awayResult = await ringUnansweredIfAway(info);
+    if (awayResult === "ring") return;
 
     const { useUserStore } = await import("@/stores/user");
     const userStore = useUserStore();
@@ -646,6 +662,11 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
     };
 
     await loadTTSConfig(info);
+
+    if (awayResult === "wake") {
+      await handleAnswer(undefined, { wokenUp: true });
+      return;
+    }
 
     durationTimer = setInterval(() => {
       callDuration.value++;
@@ -681,7 +702,12 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
     await loadSummariesAndEvents(info);
     await loadTTSConfig(info);
 
-    if (await ringUnansweredIfAway(info)) return;
+    const awayResult = await ringUnansweredIfAway(info);
+    if (awayResult === "ring") return;
+    if (awayResult === "wake") {
+      await handleAnswer(undefined, { wokenUp: true });
+      return;
+    }
 
     // 來電模式：直接接聽
     if (info.isIncoming) {
@@ -714,7 +740,10 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
   }
 
   // ===== 接聽 =====
-  async function handleAnswer(openingMessages?: CallLine[]) {
+  async function handleAnswer(
+    openingMessages?: CallLine[],
+    opts?: { wokenUp?: boolean },
+  ) {
     callState.value = "connected";
     callStartedAt.value = Date.now();
     durationTimer = setInterval(() => { callDuration.value++; }, 1000);
@@ -724,11 +753,13 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
     const { useUserStore } = await import("@/stores/user");
     const userStore = useUserStore();
 
-    if (info.isIncoming) {
+    if (info.isIncoming || opts?.wokenUp) {
       callMessages.value.push({
         id: `call_trigger_${Date.now()}`,
         role: "system",
-        content: `（${info.characterName} 主動打電話給 ${userStore.currentPersona?.name || "User"}，電話接通了...請以角色身份先開口說話）`,
+        content: opts?.wokenUp
+          ? `（${info.characterName} 正在睡覺，被 ${userStore.currentPersona?.name || "User"} 連續打來的電話吵醒，迷迷糊糊接起來了……請以角色身份先開口說話）`
+          : `（${info.characterName} 主動打電話給 ${userStore.currentPersona?.name || "User"}，電話接通了...請以角色身份先開口說話）`,
         timestamp: Date.now(),
       });
       await generateAIResponse(true);

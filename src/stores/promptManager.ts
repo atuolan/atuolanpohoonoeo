@@ -800,6 +800,24 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
             : `${contentWithAway}\n{{charAwayGuide}}`;
         }
 
+        // 睡覺和忙碌的說明也是宏（{{charSleepGuide}}／{{charBusyGuide}}，不能用時展開成空字串），
+        // 依序接在 {{charAwayGuide}} 後面，跟預設內容的順序一致
+        const contentWithSleep = stored.prompts[onlineModeIndex].content;
+        if (!contentWithSleep.includes("{{charSleepGuide}}")) {
+          const sleepAnchor = contentWithSleep.match(/[^\n]*\{\{charAwayGuide\}\}[^\n]*/)?.[0];
+          stored.prompts[onlineModeIndex].content = sleepAnchor
+            ? contentWithSleep.replace(sleepAnchor, () => `${sleepAnchor}\n{{charSleepGuide}}`)
+            : `${contentWithSleep}\n{{charSleepGuide}}`;
+        }
+
+        const contentWithBusy = stored.prompts[onlineModeIndex].content;
+        if (!contentWithBusy.includes("{{charBusyGuide}}")) {
+          const busyAnchor = contentWithBusy.match(/[^\n]*\{\{charSleepGuide\}\}[^\n]*/)?.[0];
+          stored.prompts[onlineModeIndex].content = busyAnchor
+            ? contentWithBusy.replace(busyAnchor, () => `${busyAnchor}\n{{charBusyGuide}}`)
+            : `${contentWithBusy}\n{{charBusyGuide}}`;
+        }
+
         // 噗文分享的說明是宏 {{plurkShareGuide}}（沒有可留言的噗、也沒開傳噗時展開成空字串），插在【噗浪】段落最後
         const contentWithShare = stored.prompts[onlineModeIndex].content;
         if (!contentWithShare.includes("{{plurkShareGuide}}")) {

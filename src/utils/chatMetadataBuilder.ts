@@ -20,6 +20,8 @@ export interface BuildChatMetadataOptions {
   enableRealTimeAwareness: boolean;
   editNoticeChance: number;
   charAwayEnabled?: boolean;
+  charSleepEnabled?: boolean;
+  charBusyEnabled?: boolean;
   plurkShareCount?: number;
   fakeTimeFields: Partial<Chat>;
   minimaxTTSEnabled: boolean;
@@ -63,6 +65,8 @@ export function buildChatMetadataFromState(options: BuildChatMetadataOptions): C
     enableRealTimeAwareness: options.enableRealTimeAwareness,
     editNoticeChance: options.editNoticeChance,
     charAwayEnabled: options.charAwayEnabled,
+    charSleepEnabled: options.charSleepEnabled,
+    charBusyEnabled: options.charBusyEnabled,
     plurkShareCount: options.plurkShareCount,
     ...options.fakeTimeFields,
     minimaxTTSEnabled: options.minimaxTTSEnabled,
