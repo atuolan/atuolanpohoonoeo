@@ -4,6 +4,8 @@ import type {
   FoodRecordRef,
   ForwardedFrom,
   GroupActionType,
+  PlurkActivity,
+  PlurkShareSnapshot,
   WaimaiOrderSnapshot,
 } from "@/types/chat";
 import type { ToolActivityRecord } from "@/types/toolActivity";
@@ -123,6 +125,10 @@ export interface ChatScreenMessage {
   groupActionValue?: string;
   isGroupChatHistory?: boolean;
   forwardedFrom?: ForwardedFrom;
+  /** 噗文分享卡片 */
+  plurkShare?: PlurkShareSnapshot;
+  /** 這輪回覆裡角色去噗浪留言了 */
+  plurkActivity?: PlurkActivity;
   groupChatHistoryData?: ChatHistoryRecordData;
   isGroupCallHistory?: boolean;
   groupCallHistoryData?: {
@@ -251,6 +257,10 @@ export interface PendingInjectedMessage {
     cover?: string;
     lyrics?: string;
   };
+  /** 噗文分享卡片 */
+  plurkShare?: PlurkShareSnapshot;
+  /** 卡片後面接著送的一句話 */
+  followUpText?: string;
 }
 
 export interface ChatScreenProps {

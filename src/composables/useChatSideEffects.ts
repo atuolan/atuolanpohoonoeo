@@ -57,9 +57,19 @@ export function useChatSideEffects(context: {
       baseMessage.waimaiOrder = msg.waimaiOrder;
       baseMessage.isMusicShare = msg.isMusicShare;
       baseMessage.musicShareData = msg.musicShareData;
+      baseMessage.plurkShare = msg.plurkShare;
     }
 
     context.messages.value.push(baseMessage);
+
+    if (typeof msg !== "string" && msg.followUpText?.trim()) {
+      context.messages.value.push({
+        id: `msg_${Date.now()}_text`,
+        role: "user",
+        content: msg.followUpText.trim(),
+        timestamp: Date.now() + 1,
+      });
+    }
 
     if (typeof msg !== "string" && msg.waimaiProgressMessages?.length) {
       const progressEntries = msg.waimaiProgressMessages
