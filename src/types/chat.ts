@@ -281,6 +281,43 @@ export interface ForwardedFrom {
   senderName: string;
 }
 
+/** 噗文分享卡片的範圍標籤；square＝廣場路人噗 */
+export type PlurkShareAudience = "all" | "friends" | "private" | "anon" | "square";
+
+/** 噗文分享卡片的快照（分享當下的樣子） */
+export interface PlurkShareSnapshot {
+  ref: string;
+  postId: string;
+  sharedBy: "user" | "char";
+  authorKind: "user" | "char" | "npc" | "anon";
+  authorName: string;
+  authorAvatar?: string;
+  authorCharacterId?: string;
+  /** 偷偷說的真正角色（畫面不顯示，只給提示詞用） */
+  anonOf?: string;
+  audience: PlurkShareAudience;
+  qualifier?: string;
+  text: string;
+  imageUrl?: string;
+  imageCount: number;
+  imageDescription?: string;
+  postedAt: number;
+  responseCount: number;
+  recentResponses: Array<{ name: string; text: string }>;
+  /** 只分享一則回應時才有 */
+  comment?: { id: string; name: string; avatar?: string; qualifier?: string; text: string; authorCharacterId?: string };
+}
+
+/** 角色在這輪回覆裡去噗浪留言（換掉那輪時刪掉、換回來時用內容補回去） */
+export interface PlurkActivity {
+  postId: string;
+  commentId: string;
+  content: string;
+  qualifier?: string;
+  replyToId?: string;
+  replyToUsername?: string;
+}
+
 // ===== 單條消息 =====
 /** 角色從聊天記下的一筆飲食 */
 export interface FoodRecordRef {
@@ -511,6 +548,10 @@ export interface ChatMessage {
   isGroupChatHistory?: boolean;
   /** 逐條轉發：訊息原本的來源（聊天名稱與原發送者） */
   forwardedFrom?: ForwardedFrom;
+  /** 噗文分享卡片 */
+  plurkShare?: PlurkShareSnapshot;
+  /** 這輪回覆裡角色去噗浪留言了 */
+  plurkActivity?: PlurkActivity;
   /** 群聊記錄數據 */
   groupChatHistoryData?: ChatHistoryRecordData;
 
@@ -1187,6 +1228,9 @@ export interface Chat {
   charAway?: CharAway;
   /** 允許角色暫時離開；undefined 當作開 */
   charAwayEnabled?: boolean;
+
+  /** 讓他傳噗給你：提示詞列出幾則最近的噗；0／undefined＝關閉 */
+  plurkShareCount?: number;
 }
 
 /** 角色狀態文字；updatedAt 用來在多處同時寫入時保留較新的一筆 */
