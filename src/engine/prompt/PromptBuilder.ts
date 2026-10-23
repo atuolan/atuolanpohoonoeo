@@ -78,7 +78,7 @@ import _ from "lodash";
 import { createStTemplateContext } from "@/services/StTemplateContextService";
 import { applyChatPromptPreset } from "@/utils/chatPromptPreset";
 import { cleanTTSTags } from "@/utils/ttsTagCleaner";
-import { resolveStoryTime } from "@/utils/fakeTime";
+import { resolveStoryTime, STORY_CLOCK_SYNC_THRESHOLD_MS } from "@/utils/fakeTime";
 import { formatCharStatusForPrompt, formatGap } from "@/utils/elapsedTime";
 import { describeImageForPrompt } from "@/utils/picNote";
 import { getMacroEngine } from "../macros/MacroEngine";
@@ -410,6 +410,8 @@ export interface PromptBuilderOptions {
   storyClockPaused?: boolean;
   /** 劇情時鐘剛進入面對面、尚未決定見面時間（由 AI 依前文判斷） */
   storyClockOpening?: boolean;
+  /** 劇情時鐘面對面開場：進面對面那一刻的線上時鐘（跟前一則訊息差很多時告訴 AI） */
+  storyClockOnlineNow?: Date;
   /** 健身資訊（由外部傳入） */
   fitnessInfo?: {
     todayWorkout?: string;
@@ -501,6 +503,19 @@ export function formatLocalTime(date: Date, timezone: string): string {
       parts.find((p) => p.type === type)?.value ?? "00";
     return `${get("year")}/${get("month")}/${get("day")} ${get("hour")}:${get("minute")}`;
   }
+}
+
+/** 時間戳記格式 YYYY-MM-DD HH:mm（面對面歷史訊息、AI 要寫的時間戳記都用這個） */
+function formatStampDate(d: Date): string {
+  const pad = (n: number) => n.toString().padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/** 劇情時間顯示格式 YYYY/MM/DD（週）HH:mm */
+function formatStoryNowText(d: Date): string {
+  const pad = (n: number) => n.toString().padStart(2, "0");
+  const weekDay = ["日", "一", "二", "三", "四", "五", "六"][d.getDay()];
+  return `${d.getFullYear()}/${pad(d.getMonth() + 1)}/${pad(d.getDate())}（${weekDay}）${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 /**
@@ -635,7 +650,10 @@ export class PromptBuilder {
       charDescription: options.character.data.description,
       charPersonality: options.character.data.personality,
       scenario: options.character.data.scenario,
-      currentDate: new Date(),
+      currentDate:
+        options.enableRealTimeAwareness !== false && options.fakeTimeOverride
+          ? options.fakeTimeOverride
+          : new Date(),
       messageCount: options.messages.length,
       // 添加自定義變量，包含用戶人設和電話上下文
       customVariables: {
@@ -794,7 +812,11 @@ export class PromptBuilder {
       charDescription: options.character.data.description,
       charPersonality: options.character.data.personality,
       scenario: options.character.data.scenario,
-      currentDate: new Date(),
+      // {{date}}、{{time}} 等巨集跟著聊天時間走（劇情時鐘／偏移／輪迴）；沒開感知現實時間就用現實時間
+      currentDate:
+        options.enableRealTimeAwareness !== false && options.fakeTimeOverride
+          ? options.fakeTimeOverride
+          : new Date(),
       messageCount: options.messages.length,
       customVariables: {
         userPersona: options.userPersona || "",
@@ -850,6 +872,11 @@ export class PromptBuilder {
     const ampm = h >= 12 ? "P.M" : "A.M";
     const h12 = h % 12 || 12;
     return `[time:${y}/${mon}/${day} ${h12}:${m}${ampm}]`;
+  }
+
+  /** 面對面時間戳記的值：YYYY-MM-DD HH:mm（24 小時制，跟 AI 要寫的格式一樣） */
+  private formatStoryStampValue(msg: { createdAt: number; storyTime?: number }): string {
+    return formatStampDate(new Date(this.resolveMsgTime(msg)));
   }
 
   /**
@@ -2788,15 +2815,14 @@ ${PHONE_CALL_BILINGUAL_REMINDER}`
     const day = now.getDate().toString().padStart(2, "0");
     const h = now.getHours().toString().padStart(2, "0");
     const m = now.getMinutes().toString().padStart(2, "0");
-    const weekDay = ["日", "一", "二", "三", "四", "五", "六"][now.getDay()];
     return {
       currentDatetime: `${y}-${mon}-${day}T${h}:${m}`,
-      nowText: `${y}/${mon}/${day}（${weekDay}）${h}:${m}`,
+      nowText: formatStoryNowText(now),
     };
   }
 
   /**
-   * 劇情時鐘暫停中（面對面）的時間推進指令。
+   * 劇情時鐘暫停中（面對面）的時間戳記指令：每則回覆開頭寫這段劇情發生的時間。
    * 條件不符（未開感知現實時間、不是劇情時鐘、沒有暫停）時回傳 null。
    */
   private buildStoryClockPrompt(): string | null {
@@ -2807,24 +2833,36 @@ ${PHONE_CALL_BILINGUAL_REMINDER}`
     ) {
       return null;
     }
+    const now = this.options.fakeTimeOverride ?? new Date();
     const { nowText } = this.getStoryNowParts();
+    const example = formatStampDate(new Date(now.getTime() + 5 * 60 * 1000));
+    const exampleClock = example.slice(11);
     const lines = [
       `[劇情時鐘] 目前劇情時間：${nowText}`,
-      "現在是面對面相處，劇情時間由你依故事推進，現實時間的流逝不算數；訊息上的時間就是劇情時間，你不推進它就會一直停在原地。",
-      "每次回覆時請判斷這段劇情實際經過了多久：",
-      `- 經過了一段時間（例如聊了一陣子、吃完一頓飯、散步到海邊），在 </content> 之後輸出：\n${PromptBuilder.TIME_ADVANCE_LINE}\n  分鐘數依你描寫的內容合理估計，幾句對話約 1～5 分鐘，一頓飯約 30～60 分鐘。`,
-      `- 大幅跳轉（例如「隔天早上」「兩個月後」），在 </content> 之後輸出：\n<time-jump datetime="YYYY-MM-DDTHH:mm" reason="跳轉原因"/>`,
-      "- 幾乎沒有經過時間（同一個當下的對話）就不用輸出。",
-      "不要自行假設過了很久，也不要讓時間跳得比劇情描寫更快。",
+      "現在是面對面相處，時間只隨劇情推進，現實過了多久都不算。",
+      "每則回覆的第一行，寫下這段劇情發生的時間：",
+      `<!--t:${example}-->`,
+      "- 從目前劇情時間往後估：幾句對話約 1～5 分鐘，一頓飯約 30～60 分鐘；寫了「兩個小時後」就加兩小時",
+      "- 時間只能往後，不能早於目前劇情時間",
+      `- 跨日一定要寫日期；同一天可以只寫 <!--t:${exampleClock}-->`,
+      "- 正文裡出現的時間（看手錶、電子鐘）要跟這裡一致",
     ];
     if (this.options.storyClockOpening) {
+      const online = this.options.storyClockOnlineNow;
+      const gapMs = online ? online.getTime() - now.getTime() : 0;
+      const onlineNote =
+        online && gapMs >= STORY_CLOCK_SYNC_THRESHOLD_MS
+          ? `（線上時鐘現在 ${formatStoryNowText(online)}，已經過了 ${formatGap(gapMs)}）`
+          : "";
       lines.push(
         "",
-        `【剛從線上進入面對面】前一則訊息的時間是 ${nowText}。見面不一定緊接在那一刻，請依前文內容判斷這次面對面發生在什麼時候：`,
-        "- 前文約好了時間或日子（例如「明天下午三點見」「週末去海邊」）→ 用 time-jump 跳到那個時間",
-        "- 需要一段時間才見得到面（例如「我現在過去找你」）→ 用 time-advance 推進路程時間",
-        "- 就是接續剛才的當下 → 不用輸出",
-        "這一輪的描寫請符合你決定的時間。",
+        `【剛從線上進入面對面】前一則訊息的時間是 ${nowText}${onlineNote}。`,
+        "見面不一定緊接在那一刻，請依前文判斷這次面對面發生在什麼時候，寫在第一行的時間裡：",
+        "- 前文約好了時間或日子（例如「明天下午三點見」「週末去海邊」）→ 寫那個時間",
+        "- 需要一段時間才見得到面（例如「我現在過去找你」）→ 加上路程時間",
+        ...(onlineNote ? ["- 隔了很久才見面 → 可以直接寫線上時鐘的現在時間"] : []),
+        "- 就是接續剛才的當下 → 寫前一則訊息的時間",
+        "這一輪的描寫請符合你寫的時間。",
       );
     }
     return lines.join("\n");
@@ -3718,9 +3756,9 @@ ${open}好啊，我等你[emotion=calm]</msg>`;
         !isSystemMsg &&
         msg.createdAt
       ) {
-        // 面對面模式使用不易被模型模仿的格式，避免模型把 [time:...] 輸出到正文
+        // 面對面模式用跟 AI 要寫的時間戳記一樣的格式（<!--t:YYYY-MM-DD HH:mm-->），AI 照著寫，程式會從正文拿掉
         if (this.options.faceToFaceMode) {
-          msgContent = `<!--t:${this.formatMsgTimeTag(msg)}-->${msgContent}`;
+          msgContent = `<!--t:${this.formatStoryStampValue(msg)}-->${msgContent}`;
         } else {
           msgContent = `${this.formatMsgTimeTag(msg)} ${msgContent}`;
         }

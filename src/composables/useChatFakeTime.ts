@@ -10,14 +10,16 @@
  * 劇情時鐘：線上聊天時跟著現實流動；進入面對面就暫停，只隨劇情推進
  *   （AI 依劇情輸出 <time-advance>/<time-jump>，或用戶手動調整），
  *   切回線上時從最後的劇情時間繼續走
+ *   線上手動調過時間再進面對面，直接停在調好的時間；重新生成時還原到那一輪之前的時鐘
  *
  * 跳轉時間：用戶輸入目標日期時間，偏移/輪迴/劇情模式下自動調整到那個時間點
  */
 
-import type { Chat } from "@/types/chat";
+import type { Chat, StoryClockState, StoryClockUndo } from "@/types/chat";
 import { computed, ref } from "vue";
 import {
   computeChatNow,
+  computeRealignTarget,
   parseLoopRange,
 } from "@/utils/fakeTime";
 import type { FakeTimeMode } from "@/utils/fakeTime";
@@ -76,12 +78,23 @@ export function useChatFakeTime(options: UseChatFakeTimeOptions = {}) {
   let isFaceToFace = false;
   // 面對面開場：進入面對面的現實時間（毫秒）。第一輪 AI 回覆會依前文決定見面時間，之後清除
   const storyOpeningSince = ref<number | null>(null);
+  // 劇情時鐘線上時使用者手動調過時間：進面對面時直接停在目前時鐘，不交給 AI 決定開場
+  const storyClockPinned = ref(false);
+  // 最後一輪套用劇情時間之前的時鐘狀態（重新生成這一輪時還原）
+  const storyClockUndo = ref<StoryClockUndo | null>(null);
 
   const isStoryClockPaused = computed(
     () => fakeTimeMode.value === "story" && storyClockPausedAt.value !== null,
   );
   const isStoryOpeningPending = computed(
     () => isStoryClockPaused.value && storyOpeningSince.value !== null,
+  );
+
+  /** 劇情時鐘線上：劇情時間減現實時間（負的＝劇情比較慢）；其他情況 0 */
+  const storyGapMs = computed(() =>
+    fakeTimeMode.value === "story" && storyClockPausedAt.value === null
+      ? fakeTimeOffset.value
+      : 0,
   );
 
   const formattedFakeTime = ref<string>("");
@@ -135,6 +148,97 @@ export function useChatFakeTime(options: UseChatFakeTimeOptions = {}) {
     }
   }
 
+  /** 直接把劇情時間設成指定毫秒（面對面時間戳記用） */
+  function setStoryNowMs(targetMs: number) {
+    setStoryNow(targetMs);
+    refreshDisplay();
+  }
+
+  /** 使用者手動調了時間（只在劇情時鐘線上時記下） */
+  function markStoryPinned() {
+    if (fakeTimeMode.value === "story" && storyClockPausedAt.value === null) {
+      storyClockPinned.value = true;
+    }
+  }
+
+  /** 線上有新的對話訊息：「調過」的記號清掉 */
+  function clearStoryPinned() {
+    storyClockPinned.value = false;
+  }
+
+  /** 聊天時間減現實時間（給睡覺／忙碌換算「幾點」）；真實時間或面對面暫停中為 0 */
+  function getClockShiftMs(): number {
+    if (fakeTimeMode.value === "real" || storyClockPausedAt.value !== null) return 0;
+    return getChatNow().getTime() - Date.now();
+  }
+
+  /** 面對面開場時，進面對面那一刻的線上時鐘（毫秒）；不在開場時回傳 null */
+  function getOpeningOnlineNow(): number | null {
+    if (!isStoryOpeningPending.value) return null;
+    return storyOpeningSince.value! + fakeTimeOffset.value;
+  }
+
+  /** 記下這一輪套用劇情時間之前的時鐘狀態 */
+  function snapshotBeforeTurn(turnId: string) {
+    storyClockUndo.value = {
+      turnId,
+      offset: fakeTimeOffset.value,
+      pausedAt: storyClockPausedAt.value ?? undefined,
+      openingSince: storyOpeningSince.value ?? undefined,
+    };
+  }
+
+  /** 目前的時鐘狀態（記在這一輪的 AI 訊息上） */
+  function getClockState(): StoryClockState {
+    return {
+      offset: fakeTimeOffset.value,
+      pausedAt: storyClockPausedAt.value ?? undefined,
+    };
+  }
+
+  /**
+   * 套用時鐘狀態；面對面暫停與否跟現在不同（中間切過面對面）就不套用。
+   * 回傳是否有套用。
+   */
+  function applyClockState(state: StoryClockState & { openingSince?: number }): boolean {
+    if (fakeTimeMode.value !== "story" && fakeTimeMode.value !== "offset") return false;
+    const paused = storyClockPausedAt.value !== null;
+    if (paused !== (typeof state.pausedAt === "number")) return false;
+    fakeTimeOffset.value = state.offset;
+    storyClockPausedAt.value = typeof state.pausedAt === "number" ? state.pausedAt : null;
+    storyOpeningSince.value =
+      storyClockPausedAt.value !== null && typeof state.openingSince === "number"
+        ? state.openingSince
+        : null;
+    refreshDisplay();
+    return true;
+  }
+
+  /** 被換下的是最後一輪：時鐘還原成那一輪之前（含面對面開場標記） */
+  function restoreBeforeTurn(turnId: string): boolean {
+    const undo = storyClockUndo.value;
+    if (!undo || undo.turnId !== turnId) return false;
+    return applyClockState(undo);
+  }
+
+  /** 換回某一輪的候選：時鐘設成那一輪之後的狀態，之後重刷它時還原到同一個起點 */
+  function applyRoundAfter(turnId: string, after: StoryClockState): boolean {
+    const undo = storyClockUndo.value;
+    if (!applyClockState({ ...after, openingSince: undefined })) return false;
+    if (undo) storyClockUndo.value = { ...undo, turnId };
+    return true;
+  }
+
+  /** 劇情時鐘線上：對齊現實（較慢就回到現在；較快就跳到之後第一個跟現實同一時刻） */
+  function realignToReality(): boolean {
+    if (fakeTimeMode.value !== "story" || storyClockPausedAt.value !== null) return false;
+    const realNow = Date.now();
+    const target = computeRealignTarget(getChatNow().getTime(), realNow);
+    fakeTimeOffset.value = target - realNow;
+    refreshDisplay();
+    return true;
+  }
+
   /**
    * 同步面對面狀態（劇情時鐘用）
    * 進入面對面：停在當下的劇情時間；離開面對面：從停下的時間繼續跟著現實走
@@ -160,10 +264,17 @@ export function useChatFakeTime(options: UseChatFakeTimeOptions = {}) {
     isFaceToFace = faceToFace;
     if (fakeTimeMode.value !== "story") return;
     if (faceToFace && storyClockPausedAt.value === null) {
-      // 先停在最後一則訊息的時間（現實隔了多久都不影響劇情），
-      // 實際的見面時間交給第一輪 AI 依前文判斷
-      storyClockPausedAt.value = getResumeTime();
-      storyOpeningSince.value = Date.now();
+      if (storyClockPinned.value) {
+        // 線上先調好了時間：直接停在這個時間，不交給 AI 決定開場
+        storyClockPausedAt.value = getChatNow().getTime();
+        storyOpeningSince.value = null;
+      } else {
+        // 先停在最後一則訊息的時間（現實隔了多久都不影響劇情），
+        // 實際的見面時間交給第一輪 AI 依前文判斷
+        storyClockPausedAt.value = getResumeTime();
+        storyOpeningSince.value = Date.now();
+      }
+      storyClockPinned.value = false;
       refreshDisplay();
     } else if (!faceToFace && storyClockPausedAt.value !== null) {
       fakeTimeOffset.value = storyClockPausedAt.value - Date.now();
@@ -234,6 +345,8 @@ export function useChatFakeTime(options: UseChatFakeTimeOptions = {}) {
     fakeTimeOffset.value = 0;
     storyClockPausedAt.value = null;
     storyOpeningSince.value = null;
+    storyClockPinned.value = false;
+    storyClockUndo.value = null;
     if (mode === "offset") {
       // 初次切換到偏移模式，預設為當前時間（偏移 0）
       offsetStartDateTime.value = toDatetimeLocal(new Date());
@@ -325,6 +438,11 @@ export function useChatFakeTime(options: UseChatFakeTimeOptions = {}) {
       typeof chat.storyClockOpeningSince === "number"
         ? chat.storyClockOpeningSince
         : null;
+    storyClockPinned.value =
+      fakeTimeMode.value === "story" &&
+      storyClockPausedAt.value === null &&
+      chat.storyClockPinned === true;
+    storyClockUndo.value = chat.storyClockUndo ? { ...chat.storyClockUndo } : null;
     isFaceToFace = chat.faceToFaceMode === true;
     // 舊資料或同步差異：面對面狀態與暫停狀態不一致時補齊
     syncFaceToFace(isFaceToFace);
@@ -350,6 +468,8 @@ export function useChatFakeTime(options: UseChatFakeTimeOptions = {}) {
       storyClockOpeningSince: isStoryOpeningPending.value
         ? storyOpeningSince.value!
         : undefined,
+      storyClockUndo: storyClockUndo.value ? { ...storyClockUndo.value } : undefined,
+      storyClockPinned: storyClockPinned.value ? true : undefined,
     };
   }
 
@@ -360,6 +480,17 @@ export function useChatFakeTime(options: UseChatFakeTimeOptions = {}) {
     offsetStartDateTime,
     isStoryClockPaused,
     isStoryOpeningPending,
+    storyGapMs,
+    setStoryNowMs,
+    markStoryPinned,
+    clearStoryPinned,
+    getClockShiftMs,
+    getOpeningOnlineNow,
+    snapshotBeforeTurn,
+    getClockState,
+    restoreBeforeTurn,
+    applyRoundAfter,
+    realignToReality,
     getChatNow,
     getLegacyOffsetMs,
     formattedFakeTime,

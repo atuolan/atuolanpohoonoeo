@@ -1357,7 +1357,7 @@ export function parseAIResponse(rawResponse: string): ParsedResponse {
   // <content> 外的文字不會進入 outputContent，因此這類系統控制標籤需要從 rawResponse 額外轉成卡片訊息。
   appendTopLevelModeRequestMessages(result.messages, rawResponse);
 
-  // 從所有訊息中移除 char-location、char-status、char-away、char-sleep、char-busy、char-wake、sticky-note、mood-reply、pic-note 與時間控制標籤（模型偶爾會寫在 <content> 裡）
+  // 從所有訊息中移除 char-location、char-status、char-away、char-sleep、char-busy、char-wake、sticky-note、mood-reply、pic-note、時間控制標籤與面對面時間戳記 <!--t:...-->（模型偶爾會寫在 <content> 裡）
   for (const msg of result.messages) {
     if (msg.content) {
       msg.content = stripPicNote(msg.content)
@@ -1371,6 +1371,7 @@ export function parseAIResponse(rawResponse: string): ParsedResponse {
         .replace(MOOD_REPLY_TAG_REGEX, "")
         .replace(CHAR_PLANNER_TAG_REGEX, "")
         .replace(/<time-(?:jump|advance)\s+[^>]*?\s*\/?>(?:<\/time-(?:jump|advance)>)?/gi, "")
+        .replace(/<!--\s*t:[^>]*?-->/gi, "")
         .trim();
     }
   }
@@ -2744,6 +2745,75 @@ export function parseTimeAdvanceTag(rawResponse: string): number | null {
   const total = minutes + hours * 60;
   if (total <= 0) return null;
   return Math.min(total, 7 * 24 * 60);
+}
+
+/** 面對面時間戳記：<!--t:2026-10-23 15:35--> 或 <!--t:15:35-->（劇情時鐘面對面專用） */
+const STORY_STAMP_REGEX = /<!--\s*t:([^>]*?)-->/gi;
+/** 只寫 HH:mm 且比目前早不到這麼久：當作寫錯；超過就當作隔天 */
+const STORY_STAMP_BACKWARD_TOLERANCE_MS = 6 * 60 * 60 * 1000;
+/** 有日期但比目前晚這麼久以上：多半是年份寫錯 */
+const STORY_STAMP_MAX_AHEAD_MS = 366 * 24 * 60 * 60 * 1000;
+
+/** 本地時間；數值超出範圍或日期不存在（例如 2/30）回 null */
+function buildLocalTime(y: number, mo: number, d: number, h: number, mi: number): number | null {
+  if (mo < 1 || mo > 12 || d < 1 || d > 31 || h < 0 || h > 23 || mi < 0 || mi > 59) return null;
+  const date = new Date(y, mo - 1, d, h, mi, 0, 0);
+  if (date.getMonth() !== mo - 1 || date.getDate() !== d) return null;
+  return date.getTime();
+}
+
+/**
+ * 換算一個時間戳記的值。
+ * @returns 毫秒；null＝格式正確但不採用（比目前早、太遠）；undefined＝格式錯
+ */
+function resolveStoryStamp(value: string, currentMs: number): number | null | undefined {
+  const full = value.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})[ T](\d{1,2}):(\d{2})$/);
+  if (full) {
+    const target = buildLocalTime(+full[1], +full[2], +full[3], +full[4], +full[5]);
+    if (target === null) return undefined;
+    if (target < currentMs) return null;
+    if (target - currentMs > STORY_STAMP_MAX_AHEAD_MS) return null;
+    return target;
+  }
+  const clock = value.match(/^(\d{1,2}):(\d{2})$/);
+  if (clock) {
+    const base = new Date(currentMs);
+    const sameDay = buildLocalTime(
+      base.getFullYear(),
+      base.getMonth() + 1,
+      base.getDate(),
+      +clock[1],
+      +clock[2],
+    );
+    if (sameDay === null) return undefined;
+    if (sameDay >= currentMs) return sameDay;
+    if (currentMs - sameDay < STORY_STAMP_BACKWARD_TOLERANCE_MS) return null;
+    const next = new Date(sameDay);
+    next.setDate(next.getDate() + 1);
+    return next.getTime();
+  }
+  return undefined;
+}
+
+/**
+ * 解析面對面時間戳記（這段劇情發生的時間）。
+ * 只看思考區塊之後的部分；取第一個內容非空、格式正確的。
+ * 只寫 HH:mm：當作同一天；比目前早不到 6 小時當作寫錯，早 6 小時以上當作隔天。
+ * 有日期：比目前早、或晚一年以上都不採用。
+ *
+ * @param currentMs 目前的劇情時間
+ * @returns 劇情時間（毫秒），或 null（沒寫、格式錯、不採用）
+ */
+export function parseStoryStamp(rawResponse: string, currentMs: number): number | null {
+  const body = stripStateThinking(rawResponse).replace(/^[\s\S]*<\/think(?:ing)?>/i, "");
+  for (const match of body.matchAll(STORY_STAMP_REGEX)) {
+    const value = match[1].trim();
+    if (!value) continue;
+    const resolved = resolveStoryStamp(value, currentMs);
+    if (resolved === undefined) continue;
+    return resolved;
+  }
+  return null;
 }
 
 /**

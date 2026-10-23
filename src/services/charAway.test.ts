@@ -17,15 +17,21 @@ import {
   createCharBusy,
   createCharSleep,
   endCharAway,
+  fastForwardAway,
+  fastForwardPlan,
   finishSneak,
+  isCharAwayActive,
   isCharAwayCoolingDown,
+  isCharAwayPlanPending,
   isNightTime,
   nextClockAfter,
   parseClock,
+  pauseCharAway,
   quickBackTapTarget,
   recordAwayCall,
   recordSneakWin,
   recordUrgeAttempt,
+  resumeCharAway,
   shouldWakeByCall,
   wakeCharAway,
 } from "./charAway";
@@ -686,5 +692,104 @@ describe("buildAwayHintText / awayUrgeLabel / awayHeaderText", () => {
     expect(awayHeaderText(makeAway())).toBe("忙碌中・開會");
     expect(awayHeaderText(makeSleep())).toBe("睡覺中");
     expect(awayHeaderText(makeBusy())).toBe("忙碌中・搭飛機");
+  });
+});
+
+describe("劇情時間換算（shiftMs）", () => {
+  const SHIFT = 10 * 60 * MINUTE; // 劇情比現實快 10 小時：現實 14:00＝劇情隔天 00:00
+
+  it("能不能去睡看劇情時間", () => {
+    expect(canUseCharSleep({}, { faceToFace: false, now: NOW, shiftMs: SHIFT })).toBe(true);
+    expect(canUseCharSleep({}, { faceToFace: false, now: NOW })).toBe(false);
+  });
+
+  it("起床時間是劇情時間，存成對應的現實時間", () => {
+    const sleep = createCharSleep({ wake: "08:00", backText: "" }, NOW, undefined, undefined, SHIFT)!;
+    expect(sleep.returnAt).toBe(NOW + 8 * 60 * MINUTE);
+  });
+
+  it("忙碌的開始／結束是劇情時間", () => {
+    const busy = createCharBusy(
+      { start: "02:00", end: "05:00", reason: "值班", backText: "" },
+      NOW,
+      undefined,
+      SHIFT,
+    )!;
+    expect(busy.startedAt).toBe(NOW + 2 * 60 * MINUTE);
+    expect(busy.returnAt).toBe(NOW + 5 * 60 * MINUTE);
+  });
+
+  it("給 AI 和畫面看的時間用劇情時間", () => {
+    const away = makeAway({ kind: "sleep", returnAt: NOW + 8 * 60 * MINUTE });
+    expect(buildAwayHintText("他", away, SHIFT)).toContain("08:00");
+    const plan = makeAway({
+      kind: "busy",
+      reason: "值班",
+      startedAt: NOW + 2 * 60 * MINUTE,
+      returnAt: NOW + 5 * 60 * MINUTE,
+    });
+    expect(buildCharAwayPlanNote(plan, NOW, SHIFT)).toContain("02:00～05:00");
+    expect(buildCharBusyGuide(true, plan, NOW, SHIFT)).toContain("02:00～05:00");
+  });
+});
+
+describe("面對面暫停", () => {
+  it("暫停中不算進行中，預約不算待開始", () => {
+    const away = pauseCharAway(makeAway({ returnAt: NOW + 30 * MINUTE }), NOW);
+    expect(away.pausedAt).toBe(NOW);
+    expect(isCharAwayActive(away)).toBe(false);
+    const plan = pauseCharAway(
+      makeAway({ kind: "busy", startedAt: NOW + 60 * MINUTE, returnAt: NOW + 120 * MINUTE }),
+      NOW,
+    );
+    expect(isCharAwayPlanPending(plan)).toBe(false);
+  });
+
+  it("恢復時從剩下的時間繼續", () => {
+    const away = makeAway({
+      startedAt: NOW - 10 * MINUTE,
+      returnAt: NOW + 30 * MINUTE,
+      urgeLockedUntil: NOW + 3 * MINUTE,
+    });
+    const later = NOW + 2 * 60 * MINUTE;
+    const resumed = resumeCharAway(pauseCharAway(away, NOW), later);
+    expect(resumed.pausedAt).toBeUndefined();
+    expect(resumed.returnAt).toBe(later + 30 * MINUTE);
+    expect(resumed.startedAt).toBe(later - 10 * MINUTE);
+    expect(resumed.urgeLockedUntil).toBe(later + 3 * MINUTE);
+    expect(isCharAwayActive(resumed)).toBe(true);
+  });
+
+  it("已結束或已暫停的不重複暫停；沒暫停的恢復時原樣回傳", () => {
+    const ended = makeAway({ endedAt: NOW - MINUTE });
+    expect(pauseCharAway(ended, NOW)).toBe(ended);
+    const paused = pauseCharAway(makeAway(), NOW);
+    expect(pauseCharAway(paused, NOW + MINUTE)).toBe(paused);
+    const plain = makeAway();
+    expect(resumeCharAway(plain, NOW)).toBe(plain);
+  });
+});
+
+describe("手動調時間跨過", () => {
+  it("跨過回來的劇情時間就把 returnAt 拉到現在", () => {
+    const away = makeAway({ returnAt: NOW + 3 * 60 * MINUTE });
+    expect(fastForwardAway(away, NOW, 0, 4 * 60 * MINUTE)?.returnAt).toBe(NOW);
+    expect(fastForwardAway(away, NOW, 0, 60 * MINUTE)).toBeNull();
+    expect(fastForwardAway(away, NOW, 60 * MINUTE, 0)).toBeNull();
+  });
+
+  it("預約：跨過開始就現在開始，連結束也跨過就一起拉到現在", () => {
+    const plan = makeAway({
+      kind: "busy",
+      startedAt: NOW + 60 * MINUTE,
+      returnAt: NOW + 3 * 60 * MINUTE,
+    });
+    const started = fastForwardPlan(plan, NOW, 0, 2 * 60 * MINUTE)!;
+    expect(started.startedAt).toBe(NOW);
+    expect(started.returnAt).toBe(NOW + 3 * 60 * MINUTE);
+    const done = fastForwardPlan(plan, NOW, 0, 5 * 60 * MINUTE)!;
+    expect(done.startedAt).toBe(NOW);
+    expect(done.returnAt).toBe(NOW);
+    expect(fastForwardPlan(plan, NOW, 0, 30 * MINUTE)).toBeNull();
   });
 });

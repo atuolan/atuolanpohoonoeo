@@ -91,6 +91,35 @@ export function computeChatNow(
   }
 }
 
+/** 劇情時間跟現實差這麼多以上，才算「差很多」（回線上詢問、面板顯示快慢、開場告訴 AI 線上時鐘） */
+export const STORY_CLOCK_SYNC_THRESHOLD_MS = 10 * 60 * 1000;
+
+/**
+ * 回到線上／對齊現實時的目標時間：
+ * 劇情比現實慢 → 現實的現在；劇情比現實快 → 之後第一個跟現實同一時刻的時間點（時間不倒退）
+ */
+export function computeRealignTarget(storyNowMs: number, realNowMs: number): number {
+  if (storyNowMs <= realNowMs) return realNowMs;
+  const target = new Date(realNowMs);
+  while (target.getTime() < storyNowMs) target.setDate(target.getDate() + 1);
+  return target.getTime();
+}
+
+/**
+ * 聊天時間減現實時間（睡覺／忙碌換算「幾點」用）。
+ * 沒開感知現實時間、真實時間、劇情時鐘面對面暫停中都是 0。
+ */
+export function getChatClockShift(
+  fields: (FakeTimeFields & { enableRealTimeAwareness?: boolean }) | undefined | null,
+  realNowMs: number,
+): number {
+  if (!fields || fields.enableRealTimeAwareness === false) return 0;
+  const mode = fields.fakeTimeMode ?? "real";
+  if (mode === "real") return 0;
+  if (mode === "story" && typeof fields.storyClockPausedAt === "number") return 0;
+  return computeChatNow(fields, new Date(realNowMs)).getTime() - realNowMs;
+}
+
 /**
  * 取得訊息的「劇情時間」（毫秒）。
  *
@@ -114,13 +143,15 @@ export const STORY_TIME_STAMP_WINDOW_MS = 2 * 60 * 1000;
 /**
  * 從陣列尾端往前，為新加入且尚未標記的訊息寫入 storyTime。
  * 遇到已標記或已超過時間窗口的訊息就停止（舊訊息維持無標記，走 fallback）。
+ * 回傳這次標記了幾則。
  */
 export function stampStoryTimes(
   messages: Array<{ storyTime?: number; timestamp?: number }>,
   getChatNow: () => Date,
   realNowMs: number = Date.now(),
-): void {
+): number {
   let offset: number | null = null;
+  let stamped = 0;
   for (let i = messages.length - 1; i >= 0; i--) {
     const m = messages[i];
     if (!m || typeof m.storyTime === "number") break;
@@ -128,5 +159,7 @@ export function stampStoryTimes(
     if (typeof ts !== "number" || realNowMs - ts > STORY_TIME_STAMP_WINDOW_MS) break;
     if (offset === null) offset = getChatNow().getTime() - realNowMs;
     m.storyTime = ts + offset;
+    stamped++;
   }
+  return stamped;
 }

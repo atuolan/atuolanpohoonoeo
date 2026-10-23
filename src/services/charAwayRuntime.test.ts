@@ -4,12 +4,14 @@ import { canUseCharAway } from "./charAway";
 import {
   activatePlanIfDue,
   cancelCharAway,
+  fastForwardCharAway,
   recordCharAwayCall,
   returnCharAwayIfDue,
   setCharAwayViewingChat,
   startCharAway,
   startCharBusy,
   startCharSleep,
+  syncCharAwayF2F,
   urgeCharAway,
   wakeCharAwayNow,
 } from "./charAwayRuntime";
@@ -492,5 +494,69 @@ describe("cancelCharAway", () => {
     const chat = store.chats.get("chat1")!;
     expect(chat.charAway!.endedBy).toBe("cancel");
     expect(canUseCharAway(chat, { faceToFace: false, now: NOW })).toBe(true);
+  });
+});
+
+describe("syncCharAwayF2F", () => {
+  it("面對面時暫停進行中的與預約；回線上從剩下的時間繼續", async () => {
+    seedChat({
+      charAway: makeAway({ startedAt: NOW - 5 * MINUTE, returnAt: NOW + 30 * MINUTE }),
+      charAwayPlan: makeAway({
+        id: "plan1",
+        kind: "busy",
+        startedAt: NOW + 60 * MINUTE,
+        returnAt: NOW + 120 * MINUTE,
+      }),
+    });
+    await syncCharAwayF2F("chat1", true, NOW);
+    let chat = store.chats.get("chat1");
+    expect(chat.charAway.pausedAt).toBe(NOW);
+    expect(chat.charAwayPlan.pausedAt).toBe(NOW);
+
+    const later = NOW + 2 * 60 * MINUTE;
+    vi.setSystemTime(later);
+    await syncCharAwayF2F("chat1", false, later);
+    chat = store.chats.get("chat1");
+    expect(chat.charAway.pausedAt).toBeUndefined();
+    expect(chat.charAway.returnAt).toBe(later + 30 * MINUTE);
+    expect(chat.charAwayPlan.pausedAt).toBeUndefined();
+    expect(chat.charAwayPlan.startedAt).toBe(later + 60 * MINUTE);
+  });
+
+  it("重複呼叫不會重複暫停", async () => {
+    seedChat({ charAway: makeAway({ returnAt: NOW + 30 * MINUTE }) });
+    await syncCharAwayF2F("chat1", true, NOW);
+    await syncCharAwayF2F("chat1", true, NOW + 10 * MINUTE);
+    expect(store.chats.get("chat1").charAway.pausedAt).toBe(NOW);
+  });
+});
+
+describe("劇情時間", () => {
+  it("劇情時鐘比現實快時，現實白天也能在劇情的晚上去睡", async () => {
+    // 現實 12:00，劇情 23:00
+    seedChat({ fakeTimeMode: "story", fakeTimeOffset: 11 * 60 * MINUTE });
+    const sleep = await startCharSleep("chat1", { wake: "07:00", backText: "早安" });
+    expect(sleep).not.toBeNull();
+    // 劇情 07:00＝現實 20:00
+    expect(sleep!.returnAt).toBe(NOW + 8 * 60 * MINUTE);
+  });
+
+  it("回來的第一句記劇情時間", async () => {
+    seedChat({
+      fakeTimeMode: "story",
+      fakeTimeOffset: 60 * MINUTE,
+      charAway: makeAway({ returnAt: NOW - MINUTE }),
+    });
+    await returnCharAwayIfDue("chat1", NOW);
+    const back = (store.messages.get("chat1") ?? []).slice(-1)[0];
+    expect(back.storyTime).toBe(back.createdAt + 60 * MINUTE);
+  });
+
+  it("手動把時間調過起床時間就立刻回來；沒調過頭倒數不變", async () => {
+    seedChat({ charAway: makeAway({ returnAt: NOW + 3 * 60 * MINUTE }) });
+    await fastForwardCharAway("chat1", 0, 60 * MINUTE, NOW);
+    expect(store.chats.get("chat1").charAway.endedAt).toBeUndefined();
+    await fastForwardCharAway("chat1", 0, 4 * 60 * MINUTE, NOW);
+    expect(store.chats.get("chat1").charAway.endedAt).toBeDefined();
   });
 });

@@ -6,6 +6,7 @@ import type {
   GroupActionType,
   PlurkActivity,
   PlurkShareSnapshot,
+  StoryClockState,
   WaimaiOrderSnapshot,
 } from "@/types/chat";
 import type { ToolActivityRecord } from "@/types/toolActivity";
@@ -31,6 +32,8 @@ export interface ChatScreenMessage {
   timestamp: number;
   /** 劇情時間：建立當下的聊天有效時間（假時間模式下與 timestamp 不同） */
   storyTime?: number;
+  /** 這一輪套用劇情時間之後的時鐘狀態 */
+  storyClockAfter?: StoryClockState;
   turnId?: string;
   swipes?: string[];
   swipeId?: number;

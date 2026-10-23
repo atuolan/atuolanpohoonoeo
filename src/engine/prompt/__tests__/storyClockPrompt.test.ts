@@ -23,7 +23,8 @@ describe("劇情時鐘提示詞模組", () => {
   it("暫停中才輸出，並帶上目前劇情時間", () => {
     const text: string = build({ storyClockPaused: true }).buildStoryClockPrompt();
     expect(text).toContain("目前劇情時間：2026/08/19（三）21:30");
-    expect(text).toContain("<time-advance");
+    expect(text).toContain("<!--t:2026-08-19 21:35-->");
+    expect(text).not.toContain("<time-advance");
     expect(text).not.toContain("剛從線上進入面對面");
 
     expect(build({ storyClockPaused: false }).buildStoryClockPrompt()).toBeNull();
@@ -39,5 +40,40 @@ describe("劇情時鐘提示詞模組", () => {
     }).buildStoryClockPrompt();
     expect(text).toContain("剛從線上進入面對面");
     expect(text).toContain("前一則訊息的時間是 2026/08/19（三）21:30");
+  });
+});
+
+describe("劇情時鐘：開場的線上時鐘", () => {
+  it("線上時鐘跟前一則訊息差 10 分鐘以上才寫出來", () => {
+    const text: string = build({
+      storyClockPaused: true,
+      storyClockOpening: true,
+      storyClockOnlineNow: new Date(2026, 7, 20, 2, 30),
+    }).buildStoryClockPrompt();
+    expect(text).toContain("線上時鐘現在 2026/08/20（四）02:30，已經過了 5 小時");
+    expect(text).toContain("隔了很久才見面");
+
+    const near: string = build({
+      storyClockPaused: true,
+      storyClockOpening: true,
+      storyClockOnlineNow: new Date(2026, 7, 19, 21, 35),
+    }).buildStoryClockPrompt();
+    expect(near).not.toContain("線上時鐘");
+    expect(near).not.toContain("隔了很久才見面");
+  });
+});
+
+describe("面對面歷史訊息的時間戳記格式", () => {
+  it("用 YYYY-MM-DD HH:mm", () => {
+    const b = build({});
+    const at = new Date(2026, 7, 19, 9, 5).getTime();
+    expect(b.formatStoryStampValue({ createdAt: at, storyTime: at })).toBe("2026-08-19 09:05");
+  });
+});
+
+describe("日期時間巨集跟著聊天時間", () => {
+  it("開啟感知現實時間時 {{time}} 用 fakeTimeOverride", async () => {
+    const b = build({});
+    expect(await b.macroEngine.substitute("{{time}}")).toBe("21:30");
   });
 });
