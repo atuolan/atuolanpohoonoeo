@@ -87,6 +87,13 @@ export async function saveChatMetadata(chat: Chat): Promise<void> {
   ) {
     nextChat.charAway = existing.charAway;
   }
+  // 預約的忙碌也一樣；取消或開始時寫 endedAt，不會用 undefined 清掉
+  if (
+    existing?.charAwayPlan &&
+    (existing.charAwayPlan.updatedAt || 0) > (nextChat.charAwayPlan?.updatedAt || 0)
+  ) {
+    nextChat.charAwayPlan = existing.charAwayPlan;
+  }
   await db.put(DB_STORES.CHATS, nextChat);
   scheduleSelfHostedAutoSync();
 }

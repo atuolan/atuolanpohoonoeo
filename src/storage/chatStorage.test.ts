@@ -162,4 +162,14 @@ describe("saveChatMetadata 的角色暫時離開", () => {
     await saveChatMetadata({ ...createChat(), charAway: away(300, 1000) });
     expect(dbPut.mock.calls[0][1].charAway).toEqual(away(300, 1000));
   });
+
+  it("預約的忙碌同樣保留較新的一筆", async () => {
+    dbGet.mockResolvedValue({ ...createChat(), charAwayPlan: away(200, 1000) });
+
+    await saveChatMetadata(createChat());
+    expect(dbPut.mock.calls[0][1].charAwayPlan).toEqual(away(200, 1000));
+
+    await saveChatMetadata({ ...createChat(), charAwayPlan: away(300) });
+    expect(dbPut.mock.calls[1][1].charAwayPlan).toEqual(away(300));
+  });
 });
