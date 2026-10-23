@@ -6,6 +6,7 @@ import { checkAppeals } from "@/services/plurkModeration";
 import { useNotificationStore } from "@/stores/notification";
 import { useQzoneStore } from "@/stores/qzone";
 import type { QZoneComment, QZonePost } from "@/types/qzone";
+import { plurkPlainText } from "@/utils/plurkContent";
 import { isPostFollowed } from "@/utils/plurkRiver";
 import { reactive } from "vue";
 
@@ -77,7 +78,12 @@ export function startPlurkRevealTicker(): void {
     if (qzoneStore.isLoaded) {
       const notificationStore = useNotificationStore();
       for (const { comment } of findDueComments(qzoneStore.posts, lastTick, now)) {
-        notificationStore.notifyQzoneComment(comment.username || "角色", comment.avatar, comment.authorId);
+        notificationStore.notifyQzoneComment(
+          comment.username || "角色",
+          comment.avatar,
+          comment.authorId,
+          plurkPlainText(comment.content || "", 40),
+        );
       }
       // 申訴到點了就出結果
       void checkAppeals(now);

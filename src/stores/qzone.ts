@@ -26,6 +26,7 @@ import type {
 } from "@/types/qzone";
 import { DEFAULT_AUTO_INTERACTION_CONFIG } from "@/types/qzone";
 import { DEFAULT_DIRECTOR_CONFIG, migrateDirectorConfig, type PlurkDirectorConfig } from "@/utils/plurkDirectorConfig";
+import { plurkPlainText } from "@/utils/plurkContent";
 import { isPostFollowed } from "@/utils/plurkRiver";
 import { makeNoticeId, withNotice } from "@/utils/plurkModeration";
 import { defineStore } from "pinia";
@@ -169,6 +170,7 @@ export const useQzoneStore = defineStore("qzone", () => {
           post.username || "角色",
           post.avatar,
           post.authorId,
+          plurkPlainText(post.content || "", 40),
         );
       } catch (e) {
         // 通知失敗不影響主流程
@@ -306,6 +308,7 @@ export const useQzoneStore = defineStore("qzone", () => {
           comment.username || "角色",
           comment.avatar,
           comment.authorId,
+          plurkPlainText(comment.content || "", 40),
         );
       } catch (e) {
         console.warn("[QZone] 發送通知失敗:", e);

@@ -75,6 +75,13 @@ describe("App 裡的系統通知", () => {
     expect(shown.map((n) => n.tag)).toEqual(["incoming-call-chat-1"]);
   });
 
+  it("合併的噗浪通知用 pushTag，同一批蓋掉舊的", async () => {
+    pushNotificationService.send(item({ id: "n1", type: "qzone_comment", data: { pushTag: "qzone_comment-1" } }));
+    pushNotificationService.send(item({ id: "n2", type: "qzone_comment", data: { pushTag: "qzone_comment-1" } }));
+    await flush();
+    expect(shown.map((n) => n.tag)).toEqual(["qzone_comment-1", "qzone_comment-1"]);
+  });
+
   it("沒有通知權限就不發", async () => {
     permission = "denied";
     pushNotificationService.send(item());

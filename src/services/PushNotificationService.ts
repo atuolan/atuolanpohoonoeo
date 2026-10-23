@@ -295,11 +295,10 @@ function notificationTitle(item: NotificationItem): string {
   return `${badge} ${item.title}`;
 }
 
-/** 同一通來電用同一個 tag，新的通知蓋掉舊的 */
+/** 同一通來電、同一批合併的通知（噗浪）用同一個 tag，新的通知蓋掉舊的 */
 function notificationTag(item: NotificationItem): string {
-  return item.type === "incoming_call" && item.chatId
-    ? `incoming-call-${item.chatId}`
-    : item.id;
+  if (item.type === "incoming_call" && item.chatId) return `incoming-call-${item.chatId}`;
+  return typeof item.data?.pushTag === "string" ? item.data.pushTag : item.id;
 }
 
 /** 單例 */
