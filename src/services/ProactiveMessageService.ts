@@ -20,7 +20,7 @@ import {
 } from "./PlurkPostService";
 import { applyCharPlurkComment, buildPlurkShareGuideForChat } from "./plurkShareRuntime";
 import { pickGenerationToggles } from "@/utils/generationToggles";
-import { buildCharAwayReturnNote, isCharAwayActive } from "./charAway";
+import { buildCharAwayPlanNote, buildCharAwayReturnNote, countLeftSinceSneak, isCharAwayActive } from "./charAway";
 import { formatEventTime } from "@/utils/calendarEventFormat";
 import { computeChatNow } from "@/utils/fakeTime";
 import { toPromptGroupMember, withLiveSubCharSnapshot } from "@/utils/groupMembers";
@@ -1286,13 +1286,19 @@ export class ProactiveMessageService {
           await listCalendarEvents({ from: proactiveToday, to: shiftDate(proactiveToday, 6) }).catch(() => []),
           { today: proactiveToday, chatId: chat.id, charName: character.data?.name || character.nickname || "角色" },
         ) || undefined;
-      // 暫離期間 user 留了幾則訊息（回來後要他接著回）
-      const awayLeftMessageCount = existingMessages.filter(
-        (m) =>
-          m.is_user &&
-          !!m.sentWhileAway &&
-          m.sentWhileAway === chat.charAway?.id,
-      ).length;
+      // 暫離／睡覺／忙碌期間 user 留了幾則訊息（回來後要他接著回，只算最後一次偷回之後的）
+      const awayLeftMessageCount = chat.charAway
+        ? countLeftSinceSneak(
+            chat.charAway,
+            existingMessages
+              .filter((m) => m.sentWhileAway === chat.charAway!.id)
+              .map((m) => ({
+                sentWhileAway: m.sentWhileAway,
+                isUser: !!m.is_user,
+                at: m.createdAt,
+              })),
+          )
+        : 0;
       const promptBuilder = new PromptBuilder({
         character,
         lorebooks: applyWorldInfoRegexToLorebooks(characterLorebooks, regexContext),
@@ -1326,8 +1332,12 @@ export class ProactiveMessageService {
         charStatus: chat.charStatus?.text,
         charStatusUpdatedAt: chat.charStatus?.updatedAt,
         charAwayReturnNote:
-          buildCharAwayReturnNote(chat.charAway, awayLeftMessageCount) ??
-          undefined,
+          [
+            buildCharAwayReturnNote(chat.charAway, awayLeftMessageCount),
+            buildCharAwayPlanNote(chat.charAwayPlan, Date.now()),
+          ]
+            .filter((note): note is string => !!note)
+            .join("\n\n") || undefined,
         charStickyNote: noteBoardContext.charStickyNote,
         userMoodNote: noteBoardContext.moodNote,
         charPlanner: charPlannerText,
