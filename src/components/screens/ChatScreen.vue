@@ -167,6 +167,7 @@ import {
   parseCalendarEventTags,
   parseFoodRecordTags,
   parseTimeAdvanceTag,
+  parseStoryStamp,
   parseTimeJumpTag,
   parseGroupChatResponse,
   type ParsedGroupMessage,
@@ -1497,12 +1498,12 @@ function toggleFakeTimePanel() {
 }
 
 /**
- * AI 回覆結束後處理劇情時間（由模型自己判斷要不要推進）：
- * - <time-jump>：跳到指定時間（偏移／劇情時鐘）
- * - <time-advance>：往後推進指定分鐘
- * 面對面開場那一輪，模型會依前文決定見面時間；若跳轉，進入面對面後的訊息都改成見面時間。
- * 一般的跳轉則把這一輪 AI 的回覆改成跳轉後的時間（回覆描寫的是跳轉後的場景）。
- * 重新生成只套用絕對的 time-jump，避免同一輪被推進兩次。
+ * AI 回覆結束後處理劇情時間：
+ * - 面對面（劇情時鐘暫停中）：先看回覆開頭的時間戳記 <!--t:...-->，照它設定時鐘
+ * - 沒有時間戳記：<time-jump> 跳到指定時間、<time-advance> 往後推進
+ * 面對面開場那一輪，進入面對面後的訊息都改成新的時間；一般的跳轉只改這一輪 AI 的回覆。
+ * 每輪先記下套用前的時鐘（重新生成時還原），套用後的時鐘記在這一輪的 AI 訊息上（換回候選時用）。
+ * 重新生成且時鐘有還原時照一般回覆套用；沒還原時只認絕對時間（時間戳記、跳轉），避免重複推進。
  * 回傳是否有改動（需要存檔）。
  */
 function applyTimeAfterReply(
@@ -1514,19 +1515,64 @@ function applyTimeAfterReply(
   const mode = fakeTime.fakeTimeMode.value;
   if (mode !== "offset" && mode !== "story") return false;
 
-  const openingSince = isRegeneration ? null : fakeTime.consumeStoryOpening();
+  const restored = storyClockRestoredForRegen;
+  storyClockRestoredForRegen = false;
+  const treatAsFresh = !isRegeneration || restored;
+
+  if (turnId) fakeTime.snapshotBeforeTurn(turnId);
+  const openingSince = treatAsFresh ? fakeTime.consumeStoryOpening() : null;
   const openingConsumed = openingSince !== null;
 
-  const jumpTarget = content ? parseTimeJumpTag(content) : null;
-  if (jumpTarget) {
-    if (fakeTime.jumpToTime(jumpTarget) !== true) return openingConsumed;
+  let changed = false;
+  const stamp =
+    content && fakeTime.isStoryClockPaused.value
+      ? parseStoryStamp(content, fakeTime.getChatNow().getTime())
+      : null;
+  if (stamp !== null) {
+    fakeTime.setStoryNowMs(stamp);
     restampStoryTime(openingSince, turnId);
-    return true;
+    changed = true;
+  } else {
+    const jumpTarget = content ? parseTimeJumpTag(content) : null;
+    if (jumpTarget) {
+      if (fakeTime.jumpToTime(jumpTarget) === true) {
+        restampStoryTime(openingSince, turnId);
+        changed = true;
+      }
+    } else if (treatAsFresh) {
+      const minutes = content ? parseTimeAdvanceTag(content) : null;
+      if (minutes && fakeTime.advanceBy(minutes)) changed = true;
+    }
   }
-  if (isRegeneration) return false;
 
-  const minutes = content ? parseTimeAdvanceTag(content) : null;
-  return (minutes ? fakeTime.advanceBy(minutes) : false) || openingConsumed;
+  if (turnId) recordStoryClockAfter(turnId);
+  return changed || openingConsumed || !!turnId;
+}
+
+/** 重新生成前時鐘已還原到那一輪之前（syncRoundStoryClock 設定，下一次 applyTimeAfterReply 取用） */
+let storyClockRestoredForRegen = false;
+
+/** 套用完時間後，把時鐘狀態記在這一輪的 AI 訊息上 */
+function recordStoryClockAfter(turnId: string) {
+  const after = fakeTime.getClockState();
+  for (const m of messages.value) {
+    if (m.role === "ai" && m.turnId === turnId) m.storyClockAfter = { ...after };
+  }
+}
+
+/** 一輪回覆被換下時：時鐘還原到那一輪之前；換回舊候選就照它當時的時鐘 */
+function syncRoundStoryClock(removed: Message[], restored: Message[]) {
+  let changed = false;
+  const removedTurnId = removed.find((m) => m.turnId)?.turnId;
+  if (removedTurnId && fakeTime.restoreBeforeTurn(removedTurnId)) {
+    changed = true;
+    storyClockRestoredForRegen = restored.length === 0;
+  }
+  const restoredAi = restored.find((m) => m.role === "ai" && m.turnId && m.storyClockAfter);
+  if (restoredAi && fakeTime.applyRoundAfter(restoredAi.turnId!, restoredAi.storyClockAfter!)) {
+    changed = true;
+  }
+  if (changed) void saveChat();
 }
 
 /**
@@ -1923,6 +1969,7 @@ const {
   deleteMessage: deleteCurrentChatMessage,
   triggerAIResponse,
   onRoundReplaced: async (removed, restored) => {
+    syncRoundStoryClock(removed, restored);
     await syncRoundCalendarEvents(removed, restored);
     await syncRoundPlanner(removed, restored);
     await syncRoundFoodRecords(removed, restored);
@@ -2035,7 +2082,12 @@ function getMessageDisplayTime(m: { timestamp: number; storyTime?: number }): nu
 // 用 sync flush 讓 AI 回覆裡的 <time-jump> 生效前，同一輪的訊息已先標記好。
 watch(
   () => messages.value.length,
-  () => stampStoryTimes(messages.value, fakeTime.getChatNow),
+  () => {
+    // 線上有新的對話訊息：清掉「手動調過時間」的記號（進面對面時就照最後一則訊息接續）
+    if (stampStoryTimes(messages.value, fakeTime.getChatNow) > 0 && !fakeTime.isStoryClockPaused.value) {
+      fakeTime.clearStoryPinned();
+    }
+  },
   { flush: "sync" },
 );
 
@@ -5378,6 +5430,10 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
       fakeTimeMode: fakeTime.fakeTimeMode.value,
       storyClockPaused: fakeTime.isStoryClockPaused.value,
       storyClockOpening: fakeTime.isStoryOpeningPending.value,
+      storyClockOnlineNow: (() => {
+        const t = fakeTime.getOpeningOnlineNow();
+        return t === null ? undefined : new Date(t);
+      })(),
       // 傳入 MiniMax TTS 語音合成狀態
       minimaxTTSEnabled: chatMinimaxTTSEnabled.value,
       // 傳入群聊模式狀態（多人卡 + 面對面 = 不使用群聯模式）
@@ -10092,7 +10148,7 @@ async function landRemoteGenerationTask(task: BgGenerationTaskView): Promise<voi
     await applyRemoteParsedMessageSideEffects(remoteMessages);
     completeChatGeneration(finalContent);
     scrollToBottom();
-    applyTimeAfterReply(finalContent, false);
+    applyTimeAfterReply(finalContent, false, turnId);
     await settleTransfersAfterReply();
     await saveChatImmediate();
     await processGiftReceived();
