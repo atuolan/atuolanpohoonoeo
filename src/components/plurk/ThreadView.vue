@@ -13,6 +13,7 @@ import {
   Loader2,
   MessageSquare,
   RefreshCw,
+  Send,
   Smile,
   Trash2,
   UserCheck,
@@ -76,6 +77,8 @@ const emit = defineEmits<{
   regenerate: [id: string, tone: "again" | "cold" | "warm"];
   reply: [id: string];
   remove: [id: string];
+  share: [];
+  shareComment: [commentId: string];
   cancelReply: [];
   quickAction: [action: ThreadQuickAction];
   openPersona: [];
@@ -233,6 +236,14 @@ defineExpose({ insertText, scrollToResponse, focusInput });
           {{ props.squareMode ? `${props.characterCount} 位角色參與` : `${props.participantCount} 人參與` }}</span
         >
       </div>
+      <button
+        type="button"
+        class="icon-btn share-btn"
+        aria-label="傳給…"
+        @click="emit('share')"
+      >
+        <Send :size="20" aria-hidden="true" />
+      </button>
       <button
         type="button"
         class="icon-btn mute-btn"
@@ -397,6 +408,16 @@ defineExpose({ insertText, scrollToResponse, focusInput });
                 溫柔一點
               </button>
             </template>
+            <button
+              type="button"
+              class="mini-btn"
+              :aria-label="`傳給… ${row.authorName}的回應`"
+              :disabled="row.regenerating"
+              @click="emit('shareComment', row.id)"
+            >
+              <Send :size="13" aria-hidden="true" />
+              傳給…
+            </button>
             <button
               type="button"
               class="mini-btn"
@@ -574,6 +595,10 @@ defineExpose({ insertText, scrollToResponse, focusInput });
 
 .mute-btn {
   margin-right: -4px;
+}
+
+.share-btn {
+  color: var(--color-text-secondary);
 }
 
 .top-who {

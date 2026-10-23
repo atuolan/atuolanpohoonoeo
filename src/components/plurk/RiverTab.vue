@@ -51,6 +51,7 @@ const emit = defineEmits<{
   openProfile: [id: string];
   like: [id: string];
   repost: [id: string];
+  share: [id: string];
   bookmark: [id: string];
   more: [id: string];
   openImage: [id: string, index: number];
@@ -218,6 +219,7 @@ defineExpose({ scrollToTop, scrollToPost });
             @open-profile="emit('openProfile', card.id)"
             @like="emit('like', card.id)"
             @repost="emit('repost', card.id)"
+            @share="emit('share', card.id)"
             @bookmark="emit('bookmark', card.id)"
             @more="emit('more', card.id)"
             @open-image="emit('openImage', card.id, $event)"

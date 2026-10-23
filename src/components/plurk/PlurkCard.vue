@@ -12,6 +12,7 @@ import {
   MessageSquare,
   MoreHorizontal,
   Repeat2,
+  Send,
 } from "lucide-vue-next";
 import { computed } from "vue";
 import PlurkAvatar from "@/components/plurk/PlurkAvatar.vue";
@@ -25,6 +26,7 @@ const emit = defineEmits<{
   openProfile: [];
   like: [];
   repost: [];
+  share: [];
   bookmark: [];
   more: [];
   openImage: [index: number];
@@ -181,6 +183,14 @@ const repostImages = computed(() => (props.post.repost?.images ?? []).slice(0, 2
       >
         <Repeat2 :size="19" aria-hidden="true" />
         <span class="foot-num">{{ props.post.repostCount }}</span>
+      </button>
+      <button
+        type="button"
+        class="foot-btn foot-btn--share"
+        aria-label="傳給…"
+        @click.stop="emit('share')"
+      >
+        <Send :size="19" aria-hidden="true" />
       </button>
       <span class="foot-spacer"></span>
       <button
@@ -551,6 +561,10 @@ const repostImages = computed(() => (props.post.repost?.images ?? []).slice(0, 2
 
 .foot-btn--liked {
   color: var(--color-primary);
+}
+
+.foot-btn--share {
+  padding-right: 12px;
 }
 
 .foot-num {

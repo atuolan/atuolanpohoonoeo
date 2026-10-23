@@ -22,6 +22,7 @@
         @open-profile="openProfileOfPost"
         @like="(id) => qzoneStore.toggleLike(id, 'user')"
         @repost="openRepost"
+        @share="(id) => openShare(id)"
         @bookmark="(id) => qzoneStore.toggleBookmark(id)"
         @more="openPostMore"
         @open-image="openPostImage"
@@ -122,6 +123,8 @@
         @open-image="(i) => openLightbox(threadPostData?.images ?? [], i)"
         @regenerate="(id, tone) => thread.regenerate(id, tone)"
         @reply="replyToResponse"
+        @share="openShare(threadPostId!)"
+        @share-comment="(cid) => openShare(threadPostId!, cid)"
         @remove="(id) => thread.remove(id)"
         @cancel-reply="thread.replyingTo.value = null"
         @quick-action="runThreadQuickAction"
@@ -238,6 +241,13 @@
       @confirm="confirmRepost"
     />
 
+    <ShareToChatSheet
+      :open="!!shareTarget"
+      :preview="sharePreview"
+      @close="shareTarget = null"
+      @confirm="confirmShare"
+    />
+
     <ImageLightbox
       :open="lightbox.open"
       :images="lightbox.images"
@@ -296,6 +306,7 @@ import PersonaSheet from "@/components/plurk/sheets/PersonaSheet.vue";
 import PlurkActionSheet from "@/components/plurk/sheets/PlurkActionSheet.vue";
 import QualifierPickerSheet from "@/components/plurk/sheets/QualifierPickerSheet.vue";
 import RepostSheet from "@/components/plurk/sheets/RepostSheet.vue";
+import ShareToChatSheet from "@/components/plurk/sheets/ShareToChatSheet.vue";
 import type {
   DirectorRosterItem,
   MeListRow,
@@ -357,9 +368,11 @@ import { useQzoneStore } from "@/stores/qzone";
 import { useSettingsStore } from "@/stores/settings";
 import { useStickerStore } from "@/stores/sticker";
 import type { QZoneComment, QZonePost } from "@/types/qzone";
+import type { PlurkShareSnapshot } from "@/types/chat";
 import { renderPlurkContent, plurkPlainText } from "@/utils/plurkContent";
 import { getRole, LIVELINESS_RATES } from "@/utils/plurkDirectorConfig";
 import { audienceLabel, getAudience, getLikeTotal, getTheaterPostId } from "@/utils/plurkPost";
+import { buildPlurkShareSnapshot } from "@/utils/plurkShare";
 import {
   buildNoticeList,
   countUnreadPosts,
@@ -386,12 +399,21 @@ import { isGeneratedSquarePost, isModerationShown, squareStock, squareStockText 
 import { PenLine, X } from "lucide-vue-next";
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from "vue";
 
+const props = withDefaults(
+  defineProps<{
+    openTarget?: { postId: string; commentId?: string; nonce: number } | null;
+  }>(),
+  { openTarget: null },
+);
+
 const emit = defineEmits<{
   (e: "back"): void;
   (e: "navigate-theater", theaterPostId?: string): void;
   (e: "open-chat", characterId: string): void;
   (e: "open-peek", characterId: string): void;
   (e: "open-api-settings"): void;
+  (e: "share-to-chat", payload: { chatId: string; characterId: string; snapshot: PlurkShareSnapshot; text: string }): void;
+  (e: "open-target-consumed"): void;
 }>();
 
 const TABS: Array<{ id: PlurkTabId; label: string }> = [
@@ -1362,6 +1384,80 @@ async function openNotice(postId: string, commentId?: string) {
   window.setTimeout(() => threadRef.value?.scrollToResponse(commentId), 60);
 }
 
+/** 從外面（聊天）打開某則噗的回應串 */
+async function consumeOpenTarget() {
+  const target = props.openTarget;
+  if (!target) return;
+  emit("open-target-consumed");
+  const post = findPost(target.postId);
+  if (!post) return;
+  tab.value = "river";
+  await openNotice(target.postId, target.commentId);
+}
+
+watch(
+  () => props.openTarget?.nonce,
+  () => {
+    void consumeOpenTarget();
+  },
+);
+
+// ============================================================
+// 傳給聊天
+// ============================================================
+
+const shareTarget = ref<{ postId: string; commentId?: string } | null>(null);
+
+function openShare(postId: string, commentId?: string) {
+  shareTarget.value = commentId ? { postId, commentId } : { postId };
+}
+
+const sharePreview = computed(() => {
+  const target = shareTarget.value;
+  if (!target) return null;
+  const post = findPost(target.postId);
+  if (!post) return null;
+  const postWho = postAuthor(post);
+  if (target.commentId) {
+    const comment = (post.comments ?? []).find((c) => c.id === target.commentId);
+    if (!comment) return null;
+    const who = commentAuthor(post, comment);
+    return {
+      authorName: who.name,
+      authorAvatar: who.avatar,
+      qualifier: comment.qualifier,
+      text: plurkPlainText(comment.content, 120),
+      commentLine: `回應 ${postWho.name} 的噗：${plurkPlainText(post.content || "", 30)}`,
+    };
+  }
+  return {
+    authorName: postWho.name,
+    authorAvatar: postWho.avatar,
+    qualifier: post.qualifier,
+    text: plurkPlainText(post.content || "", 120),
+  };
+});
+
+function confirmShare(payload: { chatId: string; characterId: string; text: string }) {
+  const target = shareTarget.value;
+  shareTarget.value = null;
+  if (!target) return;
+  const post = findPost(target.postId);
+  if (!post) return;
+  const snapshot = buildPlurkShareSnapshot(post, {
+    sharedBy: "user",
+    commentId: target.commentId,
+    resolveName: (id, fallback) => authorName(id, fallback),
+    resolveAvatar: (id, fallback) => authorAvatar(id, fallback),
+  });
+  emit("share-to-chat", {
+    chatId: payload.chatId,
+    characterId: payload.characterId,
+    snapshot,
+    text: payload.text,
+  });
+}
+
 // ============================================================
 // 角色個人頁
 // ============================================================
@@ -1659,6 +1755,7 @@ defineExpose({ handleBack });
 onMounted(async () => {
   window.visualViewport?.addEventListener("resize", handleViewportResize);
   await qzoneStore.init();
+  await consumeOpenTarget();
   await stickerStore.init();
   await charactersStore.loadCharacters();
   await promptManagerStore.loadConfig();
