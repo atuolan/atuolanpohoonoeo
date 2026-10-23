@@ -169,3 +169,143 @@ describe("面對面開場由 AI 決定見面時間", () => {
     ft.stopDisplayTimer();
   });
 });
+
+describe("劇情時鐘：手動調過時間後進面對面", () => {
+  it("手動調過（pinned）就停在目前時鐘，不設開場", () => {
+    const ft = useChatFakeTime({ getLastMessageStoryTime: () => Date.now() - 3 * HOUR });
+    ft.setMode("story");
+    ft.advanceBy(60);
+    ft.markStoryPinned();
+    const expected = ft.getChatNow().getTime();
+    ft.syncFaceToFace(true);
+    expect(ft.getChatNow().getTime()).toBe(expected);
+    expect(ft.isStoryOpeningPending.value).toBe(false);
+    ft.stopDisplayTimer();
+  });
+
+  it("沒有 pinned 時照舊停在最後一則訊息的時間並等 AI 開場", () => {
+    const last = Date.now() - 3 * HOUR;
+    const ft = useChatFakeTime({ getLastMessageStoryTime: () => last });
+    ft.setMode("story");
+    ft.advanceBy(60);
+    ft.syncFaceToFace(true);
+    expect(ft.getChatNow().getTime()).toBe(last);
+    expect(ft.isStoryOpeningPending.value).toBe(true);
+    ft.stopDisplayTimer();
+  });
+
+  it("面對面中 markStoryPinned 沒有作用；clearStoryPinned 會清掉", () => {
+    const ft = setupStory();
+    ft.markStoryPinned();
+    ft.clearStoryPinned();
+    expect(ft.toChatFields().storyClockPinned).toBeUndefined();
+    ft.syncFaceToFace(true);
+    ft.markStoryPinned();
+    expect(ft.toChatFields().storyClockPinned).toBeUndefined();
+    ft.stopDisplayTimer();
+  });
+});
+
+describe("劇情時鐘：開場的線上時鐘", () => {
+  it("開場時回傳進面對面那一刻的線上時鐘，開場結束後為 null", () => {
+    const last = Date.now() - 5 * HOUR;
+    const ft = useChatFakeTime({ getLastMessageStoryTime: () => last });
+    ft.setMode("story");
+    const onlineNow = ft.getChatNow().getTime();
+    ft.syncFaceToFace(true);
+    vi.advanceTimersByTime(10 * MIN);
+    expect(ft.getOpeningOnlineNow()).toBe(onlineNow);
+    ft.consumeStoryOpening();
+    expect(ft.getOpeningOnlineNow()).toBeNull();
+    ft.stopDisplayTimer();
+  });
+});
+
+describe("劇情時鐘：重新生成還原", () => {
+  it("restoreBeforeTurn 對到 turnId 才還原（含開場標記）", () => {
+    const ft = useChatFakeTime({ getLastMessageStoryTime: () => Date.now() });
+    ft.setMode("story");
+    ft.syncFaceToFace(true);
+    const before = ft.getChatNow().getTime();
+    ft.snapshotBeforeTurn("t1");
+    ft.consumeStoryOpening();
+    ft.setStoryNowMs(before + 2 * HOUR);
+    expect(ft.restoreBeforeTurn("other")).toBe(false);
+    expect(ft.getChatNow().getTime()).toBe(before + 2 * HOUR);
+    expect(ft.restoreBeforeTurn("t1")).toBe(true);
+    expect(ft.getChatNow().getTime()).toBe(before);
+    expect(ft.isStoryOpeningPending.value).toBe(true);
+    ft.stopDisplayTimer();
+  });
+
+  it("面對面狀態跟記錄時不同就不還原", () => {
+    const ft = setupStory();
+    ft.snapshotBeforeTurn("t1");
+    ft.syncFaceToFace(true);
+    expect(ft.restoreBeforeTurn("t1")).toBe(false);
+    ft.stopDisplayTimer();
+  });
+
+  it("applyRoundAfter 設成那一輪之後的時鐘，之後重刷仍還原到同一個起點", () => {
+    const ft = useChatFakeTime({ getLastMessageStoryTime: () => Date.now() });
+    ft.setMode("story");
+    ft.syncFaceToFace(true);
+    const start = ft.getChatNow().getTime();
+    ft.snapshotBeforeTurn("t1");
+    ft.setStoryNowMs(start + HOUR);
+    const afterA = ft.getClockState();
+    ft.restoreBeforeTurn("t1");
+    ft.setStoryNowMs(start + 3 * HOUR);
+    expect(ft.applyRoundAfter("t1", afterA)).toBe(true);
+    expect(ft.getChatNow().getTime()).toBe(start + HOUR);
+    expect(ft.restoreBeforeTurn("t1")).toBe(true);
+    expect(ft.getChatNow().getTime()).toBe(start);
+    ft.stopDisplayTimer();
+  });
+
+  it("toChatFields／loadFromChat 帶著 storyClockUndo 和 storyClockPinned", () => {
+    const ft = setupStory();
+    ft.markStoryPinned();
+    ft.snapshotBeforeTurn("t9");
+    const fields = ft.toChatFields();
+    expect(fields.storyClockPinned).toBe(true);
+    expect(fields.storyClockUndo?.turnId).toBe("t9");
+    const ft2 = useChatFakeTime();
+    ft2.loadFromChat({ ...fields, faceToFaceMode: false } as Chat);
+    expect(ft2.toChatFields().storyClockPinned).toBe(true);
+    expect(ft2.restoreBeforeTurn("t9")).toBe(true);
+    ft.stopDisplayTimer();
+    ft2.stopDisplayTimer();
+  });
+});
+
+describe("劇情時鐘：對齊現實與差距", () => {
+  it("劇情比現實慢：對齊後等於現在，差距歸零", () => {
+    const ft = setupStory();
+    ft.setOffsetFromDateTime("2026-09-28T07:00");
+    expect(ft.storyGapMs.value).toBe(-3 * HOUR);
+    expect(ft.realignToReality()).toBe(true);
+    expect(ft.getChatNow().getTime()).toBe(Date.now());
+    expect(ft.storyGapMs.value).toBe(0);
+    ft.stopDisplayTimer();
+  });
+
+  it("劇情比現實快：對齊到隔天同一時刻", () => {
+    const ft = setupStory();
+    ft.setOffsetFromDateTime("2026-09-28T15:00");
+    ft.realignToReality();
+    expect(ft.getChatNow().getTime()).toBe(new Date(2026, 8, 29, 10, 0).getTime());
+    ft.stopDisplayTimer();
+  });
+
+  it("面對面暫停中不能對齊，差距與換算差距都是 0", () => {
+    const ft = setupStory();
+    ft.advanceBy(60);
+    expect(ft.getClockShiftMs()).toBe(HOUR);
+    ft.syncFaceToFace(true);
+    expect(ft.realignToReality()).toBe(false);
+    expect(ft.storyGapMs.value).toBe(0);
+    expect(ft.getClockShiftMs()).toBe(0);
+    ft.stopDisplayTimer();
+  });
+});
