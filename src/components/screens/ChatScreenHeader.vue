@@ -34,6 +34,8 @@ import type { LastOutputState } from "@/composables/useStreamingWindow";
 import { PLURK_SHARE_COUNTS } from "@/utils/plurkShare";
 import { useThemeStore } from "@/stores/theme";
 import { isCssColorDark } from "@/utils/wallpaperLuminance";
+import { computeRealignTarget, STORY_CLOCK_SYNC_THRESHOLD_MS } from "@/utils/fakeTime";
+import { formatGap } from "@/utils/elapsedTime";
 
 interface PersonaOption {
   id: string;
@@ -95,6 +97,8 @@ const props = defineProps<{
   formattedFakeTime: string;
   storyClockPaused: boolean;
   storyOpeningPending: boolean;
+  /** 劇情時鐘線上：劇情時間減現實時間（負的＝劇情比較慢）；面對面或其他模式為 0 */
+  storyGapMs: number;
   timeJumpInput: string;
   chatDoNotDisturb: boolean;
   enablePhoneDecision: boolean;
@@ -145,6 +149,7 @@ const emit = defineEmits<{
   (e: "advance-story-time", minutes: number): void;
   (e: "story-next-morning"): void;
   (e: "resume-story-from-last"): void;
+  (e: "realign-story-time"): void;
   (e: "toggle-chat-do-not-disturb"): void;
   (e: "toggle-phone-decision"): void;
   (e: "toggle-novel-ai-image"): void;
@@ -231,8 +236,41 @@ const FAKE_TIME_MODE_HINTS: Record<"real" | "loop" | "offset" | "story", string>
   real: "AI 看到的就是你手機的現在時間。",
   loop: "在起始與結束之間循環：設定後從起始時間開始走，走到結束就回到起始，適合「重複同一天／同一週」的劇情。",
   offset: "設定劇情裡的「現在」，之後跟著現實一起流動（現實過 1 小時，劇情也過 1 小時）。AI 也能用時間跳轉把劇情往後推。",
-  story: "線上聊天時跟著現實流動；進入面對面時由 AI 依前文決定見面時間（約好的時間、路程，或接續當下），之後只隨劇情推進（AI 依劇情自己判斷經過多久，或你手動調整）。切回線上會從最後的劇情時間繼續走。",
+  story: "線上聊天時跟著現實流動。面對面時時間停住，照 AI 每則寫的時間往後走（也可以手動調）。切回線上時如果跟現實差很多，會問你要接續劇情時間還是對齊現實。角色睡覺／忙碌在面對面時暫停。",
 };
+
+/** 劇情時鐘狀態列文字 */
+function storyClockStatusText(): string {
+  if (props.storyClockPaused) {
+    return props.storyOpeningPending
+      ? "等 AI 第一則回覆決定見面時間"
+      : "面對面：時間停住，照 AI 寫的時間走";
+  }
+  const gap = props.storyGapMs;
+  if (Math.abs(gap) < STORY_CLOCK_SYNC_THRESHOLD_MS) return "跟著現實走・跟現實同步";
+  return gap > 0
+    ? `跟著現實走・比現實快 ${formatGap(gap)}`
+    : `跟著現實走・比現實慢 ${formatGap(-gap)}`;
+}
+
+/** 線上跟現實差 10 分鐘以上才顯示對齊按鈕 */
+function showRealignButton(): boolean {
+  return (
+    props.fakeTimeMode === "story" &&
+    !props.storyClockPaused &&
+    Math.abs(props.storyGapMs) >= STORY_CLOCK_SYNC_THRESHOLD_MS
+  );
+}
+
+/** 對齊按鈕文字：較慢「回到現實時間 18:20」，較快「對齊現實的時刻 10/24 03:08」 */
+function realignButtonLabel(): string {
+  const realNow = Date.now();
+  const d = new Date(computeRealignTarget(realNow + props.storyGapMs, realNow));
+  const hm = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  return props.storyGapMs < 0
+    ? `回到現實時間 ${hm}`
+    : `對齊現實的時刻 ${d.getMonth() + 1}/${d.getDate()} ${hm}`;
+}
 
 const loopRangeInvalid = computed(() => {
   if (!props.fakeTimeLoopStart || !props.fakeTimeLoopEnd) return false;
@@ -655,29 +693,24 @@ const isDarkBackground = computed(() =>
                 <p v-if="loopRangeInvalid" class="fake-time-warning">結束時間要晚於起始時間，目前先使用真實時間。</p>
                 <p v-else-if="!fakeTimeLoopStart || !fakeTimeLoopEnd" class="fake-time-warning">請設定起始和結束時間，設定完成前使用真實時間。</p>
               </div>
-              <div v-if="fakeTimeMode === 'story'" :class="['story-clock-status', { paused: storyClockPaused }]">
-                {{
-                  !storyClockPaused
-                    ? '線上聊天：時間跟著現實流動，進入面對面會自動暫停'
-                    : storyOpeningPending
-                      ? '剛進入面對面：下一輪由 AI 依前文決定見面時間（約好的時間、路程，或接續當下）'
-                      : '面對面中：時間暫停，只隨劇情推進'
-                }}
-              </div>
+              <div v-if="fakeTimeMode === 'story'" class="story-clock-status">{{ storyClockStatusText() }}</div>
               <div v-if="fakeTimeMode === 'offset' || fakeTimeMode === 'story'" class="fake-time-config">
                 <label class="fake-time-label">
                   劇情現在時間
                   <input type="datetime-local" :value="offsetStartDateTime" class="fake-time-input" @change="onOffsetStartDateTimeChange" />
                 </label>
               </div>
-              <div v-if="fakeTimeMode !== 'real'" class="fake-time-preview">AI 感知時間：{{ formattedFakeTime }}</div>
+              <div v-if="fakeTimeMode === 'loop'" class="fake-time-preview">AI 感知時間：{{ formattedFakeTime }}</div>
               <div v-if="fakeTimeMode === 'offset' || fakeTimeMode === 'story'" class="story-advance-row">
                 <button v-for="opt in STORY_ADVANCE_OPTIONS" :key="opt.minutes" type="button" class="story-advance-btn" @click="emit('advance-story-time', opt.minutes)">
                   {{ opt.label }}
                 </button>
                 <button type="button" class="story-advance-btn" @click="emit('story-next-morning')">隔天早上</button>
               </div>
-              <button v-if="fakeTimeMode === 'story'" type="button" class="story-resume-btn" @click="emit('resume-story-from-last')">
+              <button v-if="showRealignButton()" type="button" class="story-resume-btn" @click="emit('realign-story-time')">
+                {{ realignButtonLabel() }}
+              </button>
+              <button v-if="fakeTimeMode === 'story' && storyClockPaused" type="button" class="story-resume-btn" @click="emit('resume-story-from-last')">
                 接續最後一則訊息的時間
               </button>
               <div v-if="fakeTimeMode === 'loop'" class="fake-time-jump">
@@ -1930,11 +1963,6 @@ const isDarkBackground = computed(() =>
   color: var(--color-text-secondary);
   background: var(--color-background);
   overflow-wrap: anywhere;
-
-  &.paused {
-    color: var(--color-primary);
-    background: var(--color-primary-light, rgba(var(--color-primary-rgb, 99, 102, 241), 0.1));
-  }
 }
 
 .story-advance-row {
