@@ -14,12 +14,13 @@ import { CapacitorHttp } from "@capacitor/core";
 import { CapacitorUpdater, type BundleInfo } from "@capgo/capacitor-updater";
 import { useAIGenerationStore } from "@/stores/aiGeneration";
 import { showFloatingToast } from "@/utils/floatingToast";
-import { watch } from "vue";
+import { reactive, watch } from "vue";
 import {
   LIVE_UPDATE_MANIFEST,
   decideLiveUpdate,
   isLiveUpdateManifest,
   toDownloadEntries,
+  type LiveUpdateDecision,
   type LiveUpdateManifest,
 } from "./liveUpdateManifest";
 import { LIVE_UPDATE_ORIGINS } from "./platform";
@@ -37,6 +38,61 @@ const PENDING_BUNDLE_KEY = "aguaphone.liveUpdate.pendingBundle";
 /** 換上後開不起來、被自動退回的版本（只留最近幾個） */
 const FAILED_VERSIONS_KEY = "aguaphone.liveUpdate.failedVersions";
 const MAX_FAILED_VERSIONS = 5;
+/** 上一次檢查更新做到哪一步，開發者選項的「熱更新」顯示（關掉 App 也留著，才看得出卡在哪） */
+const LAST_CHECK_KEY = "aguaphone.liveUpdate.lastCheck";
+
+export type LiveUpdateCheckResult =
+  LiveUpdateDecision | "checking" | "downloading" | "downloaded" | "error";
+
+export interface LiveUpdateCheckRecord {
+  at: number;
+  result: LiveUpdateCheckResult;
+  /** 伺服器上的最新版 */
+  remoteVersion?: string;
+  /** 清單是從哪個網站拿到的 */
+  origin?: string;
+  error?: string;
+}
+
+function readLastCheck(): LiveUpdateCheckRecord | null {
+  try {
+    const data: unknown = JSON.parse(localStorage.getItem(LAST_CHECK_KEY) ?? "null");
+    return data && typeof data === "object" && "result" in data
+      ? (data as LiveUpdateCheckRecord)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+/** 開發者選項跟著變：檢查中、下載進度、上次結果 */
+export const liveUpdateState = reactive<{
+  checking: boolean;
+  /** 這次開 App 正在下載時的百分比，沒在下載是 null */
+  downloadPercent: number | null;
+  lastCheck: LiveUpdateCheckRecord | null;
+}>({ checking: false, downloadPercent: null, lastCheck: readLastCheck() });
+
+function recordCheck(patch: Partial<LiveUpdateCheckRecord>, fresh = false): void {
+  const base =
+    fresh || !liveUpdateState.lastCheck
+      ? { at: Date.now(), result: "checking" as const }
+      : liveUpdateState.lastCheck;
+  liveUpdateState.lastCheck = { ...base, ...patch };
+  try {
+    localStorage.setItem(LAST_CHECK_KEY, JSON.stringify(liveUpdateState.lastCheck));
+  } catch {
+    // 存不了只是重開後看不到
+  }
+}
+
+/** 原生插件丟的錯誤不一定是 Error，盡量拿到看得懂的訊息 */
+function describeError(err: unknown): string {
+  if (err instanceof Error) return err.message || err.name;
+  if (err && typeof err === "object" && "message" in err)
+    return String((err as { message: unknown }).message);
+  return String(err);
+}
 
 let checking = false;
 let lastCheckAt = 0;
@@ -86,7 +142,7 @@ async function rememberFailedUpdate(): Promise<void> {
 
 /** 依序向各網站拿更新清單；之後的檔案也從同一個網站下載 */
 async function fetchRemoteManifest(): Promise<{ origin: string; manifest: LiveUpdateManifest }> {
-  let lastError: unknown = null;
+  const errors: string[] = [];
   for (const origin of LIVE_UPDATE_ORIGINS) {
     try {
       // 走原生連線：App 的網址是 https://localhost，用 fetch 會被 CORS 擋
@@ -99,10 +155,10 @@ async function fetchRemoteManifest(): Promise<{ origin: string; manifest: LiveUp
       if (!isLiveUpdateManifest(data)) throw new Error("清單格式不對");
       return { origin, manifest: data };
     } catch (err) {
-      lastError = err;
+      errors.push(`${new URL(origin).host}：${describeError(err)}`);
     }
   }
-  throw lastError;
+  throw new Error(`拿不到更新清單（${errors.join("；")}）`);
 }
 
 /** 刪掉用不到的舊下載（下載好卻被更新的版本取代的） */
@@ -178,9 +234,12 @@ function offerBundle(bundle: BundleInfo): void {
 export async function checkForLiveUpdate(): Promise<void> {
   if (checking) return;
   checking = true;
+  liveUpdateState.checking = true;
   lastCheckAt = Date.now();
+  recordCheck({}, true);
   try {
     const { origin, manifest } = await fetchRemoteManifest();
+    recordCheck({ origin, remoteVersion: manifest.version });
     const [localVersion, info] = await Promise.all([readWebVersion(), App.getInfo()]);
     const decision = decideLiveUpdate({
       remote: manifest,
@@ -191,17 +250,25 @@ export async function checkForLiveUpdate(): Promise<void> {
     if (decision === "needs-newer-app") {
       console.info("[LiveUpdate] 新版網頁需要較新的 App，要重新安裝 APK");
     }
-    if (decision !== "update") return;
+    if (decision !== "update") {
+      recordCheck({ result: decision });
+      return;
+    }
 
     const { bundles } = await CapacitorUpdater.list();
     let bundle = bundles.find((b) => b.version === manifest.version);
-    if (bundle?.status === "downloading") return;
+    if (bundle?.status === "downloading") {
+      recordCheck({ result: "downloading" });
+      return;
+    }
     if (bundle?.status === "error") {
       await CapacitorUpdater.delete({ id: bundle.id }).catch(() => {});
       bundle = undefined;
     }
     if (!bundle) {
       console.info(`[LiveUpdate] 下載新版 ${manifest.version}（${origin}）`);
+      recordCheck({ result: "downloading" });
+      liveUpdateState.downloadPercent = 0;
       bundle = await CapacitorUpdater.download({
         url: `${origin}/${LIVE_UPDATE_MANIFEST}`,
         version: manifest.version,
@@ -212,11 +279,15 @@ export async function checkForLiveUpdate(): Promise<void> {
     writePendingBundle(bundle.id);
     await deleteStaleBundles(bundle.id);
     console.info(`[LiveUpdate] 新版 ${manifest.version} 已下載`);
+    recordCheck({ result: "downloaded" });
     offerBundle(bundle);
   } catch (err) {
     console.warn("[LiveUpdate] 檢查更新失敗:", err);
+    recordCheck({ result: "error", error: describeError(err) });
   } finally {
     checking = false;
+    liveUpdateState.checking = false;
+    liveUpdateState.downloadPercent = null;
   }
 }
 
@@ -241,12 +312,56 @@ async function applyPendingBundle(): Promise<boolean> {
   return true;
 }
 
+export interface LiveUpdateStatus {
+  /** App 外殼的版本名稱與 versionCode */
+  appVersion: string;
+  /** 目前跑的是 APK／IPA 內建的網頁（從沒換上過熱更新） */
+  runningBuiltin: boolean;
+  /** 下載好、還沒換上的版本 */
+  pendingVersion: string | null;
+  /** 手機裡下載過的每一版和狀態 */
+  downloads: string[];
+  /** 換上後開不起來、被退回的版本 */
+  failedVersions: string[];
+}
+
+/** 開發者選項的「熱更新」：看熱更新卡在哪一步 */
+export async function readLiveUpdateStatus(): Promise<LiveUpdateStatus> {
+  const [info, { bundle: current }, { bundles }] = await Promise.all([
+    App.getInfo(),
+    CapacitorUpdater.current(),
+    CapacitorUpdater.list(),
+  ]);
+  const pendingId = readPendingBundle();
+  return {
+    appVersion: `${info.version}（${info.build}）`,
+    runningBuiltin: current.id === "builtin",
+    pendingVersion: bundles.find((b) => b.id === pendingId)?.version ?? null,
+    downloads: bundles.filter((b) => b.id !== "builtin").map((b) => `${b.version}（${b.status}）`),
+    failedVersions: readFailedVersions(),
+  };
+}
+
+/** 開發者選項的「換上新版」：馬上換上下載好的版本（會重新載入）；沒有可換的回傳 false */
+export async function applyDownloadedUpdate(): Promise<boolean> {
+  const pendingId = readPendingBundle();
+  if (!pendingId) return false;
+  const { bundles } = await CapacitorUpdater.list();
+  const target = bundles.find((b) => b.id === pendingId);
+  if (!target || target.status === "error") return false;
+  await applyBundle(target);
+  return true;
+}
+
 export function initLiveUpdate(): void {
   launchedAt = Date.now();
   // 走到這裡代表這份網頁開得起來，告訴更新套件不用退回
   CapacitorUpdater.notifyAppReady().catch((err) =>
     console.warn("[LiveUpdate] notifyAppReady 失敗:", err),
   );
+  CapacitorUpdater.addListener("download", ({ percent }) => {
+    if (liveUpdateState.downloadPercent !== null) liveUpdateState.downloadPercent = percent;
+  }).catch(() => {});
 
   rememberFailedUpdate()
     .catch(() => {})

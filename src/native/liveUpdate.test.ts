@@ -17,18 +17,18 @@ const showFloatingToast = vi.fn();
 vi.mock("@capacitor/app", () => ({
   App: { getInfo: async () => ({ build: "9" }) },
 }));
-vi.mock("@capacitor/core", () => ({
-  CapacitorHttp: {
-    get: async () => ({
-      status: 200,
-      data: { version: "new", minNativeBuild: 1, files: [{ file_name: "index.html", file_hash: "aa" }] },
-    }),
-  },
-}));
+const httpGet = vi.fn();
+const manifestResponse = {
+  status: 200,
+  data: { version: "new", minNativeBuild: 1, files: [{ file_name: "index.html", file_hash: "aa" }] },
+};
+vi.mock("@capacitor/core", () => ({ CapacitorHttp: { get: httpGet } }));
 vi.mock("@capgo/capacitor-updater", () => ({ CapacitorUpdater: updater }));
 vi.mock("@/stores/aiGeneration", () => ({ useAIGenerationStore: () => generation }));
 vi.mock("@/utils/floatingToast", () => ({ showFloatingToast }));
-vi.mock("./platform", () => ({ LIVE_UPDATE_ORIGINS: ["https://example.test"] }));
+vi.mock("./platform", () => ({
+  LIVE_UPDATE_ORIGINS: ["https://example.test", "https://backup.test"],
+}));
 vi.mock("./webVersion", () => ({ readWebVersion: async () => "old" }));
 vi.mock("./updateReadyHint", () => ({ showUpdateReadyHint }));
 
@@ -54,6 +54,7 @@ beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(0);
   generation.hasActiveGeneration = false;
+  httpGet.mockResolvedValue(manifestResponse);
   updater.list.mockResolvedValue({ bundles: [] });
   updater.current.mockResolvedValue({ bundle: { id: "builtin" } });
   updater.download.mockResolvedValue(bundle);
@@ -133,5 +134,46 @@ describe("checkForLiveUpdate 下載好之後", () => {
     await checkForLiveUpdate();
     expect(updater.download).toHaveBeenCalledTimes(1);
     expect(showUpdateReadyHint).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("checkForLiveUpdate 記下檢查結果", () => {
+  it("下載好：記下伺服器版本、來源和結果，重開也讀得到", async () => {
+    stubBrowser("chat");
+    const { checkForLiveUpdate, liveUpdateState } = await loadModule();
+    vi.setSystemTime(60_000);
+    await checkForLiveUpdate();
+    expect(liveUpdateState.lastCheck).toMatchObject({
+      at: 60_000,
+      result: "downloaded",
+      remoteVersion: "new",
+      origin: "https://example.test",
+    });
+    expect(liveUpdateState.checking).toBe(false);
+
+    const reloaded = await loadModule();
+    expect(reloaded.liveUpdateState.lastCheck?.result).toBe("downloaded");
+  });
+
+  it("兩個網站都拿不到清單：記下各自的錯誤", async () => {
+    stubBrowser(null);
+    httpGet
+      .mockRejectedValueOnce(new Error("timeout"))
+      .mockResolvedValueOnce({ status: 502, data: "" });
+    const { checkForLiveUpdate, liveUpdateState } = await loadModule();
+    await checkForLiveUpdate();
+    expect(liveUpdateState.lastCheck?.result).toBe("error");
+    expect(liveUpdateState.lastCheck?.error).toContain("example.test：timeout");
+    expect(liveUpdateState.lastCheck?.error).toContain("backup.test：HTTP 502");
+    expect(updater.download).not.toHaveBeenCalled();
+  });
+
+  it("下載失敗：記下套件給的錯誤訊息", async () => {
+    stubBrowser(null);
+    updater.download.mockRejectedValueOnce({ message: "file hash mismatch" });
+    const { checkForLiveUpdate, liveUpdateState } = await loadModule();
+    await checkForLiveUpdate();
+    expect(liveUpdateState.lastCheck).toMatchObject({ result: "error", error: "file hash mismatch" });
+    expect(liveUpdateState.downloadPercent).toBeNull();
   });
 });
