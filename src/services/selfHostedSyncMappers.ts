@@ -70,6 +70,8 @@ export function toSyncChatRecordPayload(chat: SyncableChatRecordSource): SyncCha
     fakeTimeOffset: chat.fakeTimeOffset,
     storyClockPausedAt: chat.storyClockPausedAt,
     storyClockOpeningSince: chat.storyClockOpeningSince,
+    storyClockUndo: chat.storyClockUndo,
+    storyClockPinned: chat.storyClockPinned,
     minimaxTTSEnabled: chat.minimaxTTSEnabled,
     imageSearchEnabled: chat.imageSearchEnabled,
     speakerMode: chat.speakerMode,

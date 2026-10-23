@@ -350,6 +350,8 @@ export interface ChatMessage {
   updatedAt: number;
   /** 劇情時間：建立當下的聊天有效時間（假時間模式下與 createdAt 不同；舊訊息沒有此欄位） */
   storyTime?: number;
+  /** 這一輪套用劇情時間之後的時鐘狀態；換回這一輪候選時照它設定時鐘 */
+  storyClockAfter?: StoryClockState;
 
   // --- 滑動功能 ---
   /** 滑動消息列表（多個回覆選項） */
@@ -1150,6 +1152,10 @@ export interface Chat {
   storyClockPausedAt?: number;
   /** 劇情時鐘：面對面開場尚未由 AI 決定見面時間時，記錄進入面對面的現實時間（毫秒） */
   storyClockOpeningSince?: number;
+  /** 最後一輪套用劇情時間之前的時鐘狀態；重新生成這一輪時還原 */
+  storyClockUndo?: StoryClockUndo;
+  /** 劇情時鐘線上時使用者手動調過時間（之後有新訊息就清掉）；進面對面時直接停在目前時鐘 */
+  storyClockPinned?: boolean;
 
   /** 是否啟用 MiniMax TTS 語音合成（單聊天存取，默認關閉） */
   minimaxTTSEnabled?: boolean;
@@ -1269,6 +1275,19 @@ export interface CharAway {
   sneakPending?: boolean;   // 剛贏，正要生成那一則
   lastSneakAt?: number;     // 最後一次偷回的時間；之後留的才算「還沒回」
   callAts?: number[];       // 睡覺時每通沒接的電話時間（只留 10 分鐘內的）
+  pausedAt?: number;        // 面對面期間暫停（現實時間）；回線上時倒數從剩下的時間繼續
+}
+
+/** 劇情時鐘的狀態：offset 是線上的偏移量，pausedAt 有值代表面對面暫停中 */
+export interface StoryClockState {
+  offset: number;
+  pausedAt?: number;
+}
+
+/** 最後一輪套用劇情時間之前的時鐘狀態（含面對面開場標記） */
+export interface StoryClockUndo extends StoryClockState {
+  turnId: string;
+  openingSince?: number;
 }
 
 // ===== 聊天設定 =====

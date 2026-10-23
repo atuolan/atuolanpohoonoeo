@@ -1089,6 +1089,8 @@ export class SelfHostedSyncService {
       fakeTimeOffset: payload.fakeTimeOffset,
       storyClockPausedAt: payload.storyClockPausedAt,
       storyClockOpeningSince: payload.storyClockOpeningSince,
+      storyClockUndo: payload.storyClockUndo,
+      storyClockPinned: payload.storyClockPinned,
       minimaxTTSEnabled: payload.minimaxTTSEnabled,
       imageSearchEnabled: payload.imageSearchEnabled,
       speakerMode: payload.speakerMode,
