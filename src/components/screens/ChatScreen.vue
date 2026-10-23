@@ -214,6 +214,7 @@ import type {
   ForwardedFrom,
   GenerationDiagnostics,
   GenerationContaminationProbeResult,
+  PlurkActivity,
   SubCharSource,
   SubCharUserBinding,
   SubCharAffinitySnapshot,
@@ -283,6 +284,7 @@ import {
 } from "@/utils/chatPaging";
 import { getTtsAudioRenderKey } from "@/utils/ttsRenderKey";
 import { PLURK_SHARE_COUNTS } from "@/utils/plurkShare";
+import type { ParsedPlurkComment } from "@/utils/plurkShare";
 import type { TTSLanguageMode } from "@/utils/ttsTextSelector";
 import {
   computed,
@@ -426,6 +428,13 @@ import {
   getSocialPostsForPrompt,
   publishCharacterPlurk,
 } from "@/services/PlurkPostService";
+// 噗浪分享：提示詞、角色去留言、換輪次時收回／補回留言
+import {
+  buildPlurkShareGuideForChat,
+  applyCharPlurkComment,
+  removePlurkActivity,
+  restorePlurkActivity,
+} from "@/services/plurkShareRuntime";
 
 // 使用者 Store
 import {
@@ -1914,6 +1923,7 @@ const {
     await syncRoundPlanner(removed, restored);
     await syncRoundFoodRecords(removed, restored);
     await syncRoundTransfers(removed, restored);
+    await syncRoundPlurkComments(removed, restored);
   },
 });
 
@@ -4851,6 +4861,7 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
       redpacketState: m.redpacketState,
       isLocation: m.isLocation,
       locationContent: m.locationContent,
+      plurkShare: m.plurkShare,
       isGift: m.isGift,
       giftName: m.giftName,
       audioTranscript: m.audioTranscript,
@@ -5246,6 +5257,16 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
         }) || undefined;
     }
 
+    // 噗文分享：可以留言的噗＋（有開設定時）最近的噗；只在單人線上聊天
+    const plurkShareGuide =
+      !isGroupChat.value && !chatFaceToFaceMode.value && char
+        ? await buildPlurkShareGuideForChat({
+            characterId: char.id,
+            history: messages.value,
+            shareCount: chatPlurkShareCount.value,
+          })
+        : "";
+
     const builder = new PromptBuilder({
       character: char,
       lorebooks: applyWorldInfoRegex(linkedLorebooks),
@@ -5317,6 +5338,8 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
       charStatusUpdatedAt: charStatus.value?.updatedAt,
       // 角色暫時離開：標籤說明（能用時才有）與回來那一輪的說明
       ...charAwayCtl.promptOptions(),
+      // 噗文分享：可以留言的噗、可以傳的噗（{{plurkShareGuide}}）
+      plurkShareGuide,
       // 傳入這個角色上一張紙條（{{charStickyNote}}）與 user 的心情（{{userMoodNote}}）
       charStickyNote: noteBoardContext.charStickyNote,
       userMoodNote: noteBoardContext.moodNote,
@@ -6567,6 +6590,7 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
               redpacketData: parsedMsg.redpacketData,
               isLocation: parsedMsg.isLocation,
               locationContent: parsedMsg.locationContent,
+              plurkShare: parsedMsg.plurkShare,
               ...resolveAiReplyQuote(parsedMsg),
               isGift: parsedMsg.isGift,
               giftName: parsedMsg.giftName,
@@ -6754,6 +6778,11 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
               console.log("[ChatScreen][render] handlePlurkPost 完成");
             }
 
+            // 角色去分享的噗底下留言
+            if (parsed.plurkComment) {
+              await handlePlurkComment(parsed.plurkComment, generationTurnId);
+            }
+
             // 處理角色動作標籤（封鎖、解封、道歉外賣等）
             if (
               parsed.charActions &&
@@ -6896,7 +6925,8 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
                 !parsedMsg.isWaimaiDelivery &&
                 !parsedMsg.isCharRecall &&
                 !parsedMsg.isFaceToFaceRequest &&
-                !parsedMsg.isOnlineModeRequest
+                !parsedMsg.isOnlineModeRequest &&
+                !parsedMsg.plurkShare
               ) {
                 continue;
               }
@@ -6943,6 +6973,7 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
                 redpacketData: parsedMsg.redpacketData,
                 isLocation: parsedMsg.isLocation,
                 locationContent: parsedMsg.locationContent,
+                plurkShare: parsedMsg.plurkShare,
                 ...resolveAiReplyQuote(parsedMsg),
                 isGift: parsedMsg.isGift,
                 giftName: parsedMsg.giftName,
@@ -7146,6 +7177,8 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
                 });
               }
             }
+            // 噗浪留言：這輪角色訊息已在 messages.value，把留言記錄掛到最後一則
+            await flushPendingPlurkActivity(generationTurnId);
             streamingWindow.setComplete(streamingWindowOwnerId);
           }
         }
@@ -7709,6 +7742,7 @@ async function handleStreamingClose() {
             redpacketData: parsedMsg.redpacketData,
             isLocation: parsedMsg.isLocation,
             locationContent: parsedMsg.locationContent,
+            plurkShare: parsedMsg.plurkShare,
             ...resolveAiReplyQuote(parsedMsg),
             isGift: parsedMsg.isGift,
             giftName: parsedMsg.giftName,
@@ -7862,6 +7896,7 @@ async function handleStreamingClose() {
               redpacketData: parsedMsg.redpacketData,
               isLocation: parsedMsg.isLocation,
               locationContent: parsedMsg.locationContent,
+              plurkShare: parsedMsg.plurkShare,
               ...resolveAiReplyQuote(parsedMsg),
               isGift: parsedMsg.isGift,
               giftName: parsedMsg.giftName,
@@ -9584,6 +9619,31 @@ async function syncRoundFoodRecords(removed: Message[], restored: Message[]): Pr
   }
 }
 
+/** 一輪回覆被換下：那一輪在噗浪留的言刪掉；換回來的那一輪用存的內容補回去 */
+async function syncRoundPlurkComments(removed: Message[], restored: Message[]): Promise<void> {
+  const restoredIds = new Set(restored.map((m) => m.id));
+  try {
+    for (const m of removed) {
+      if (m.plurkActivity && !restoredIds.has(m.id)) await removePlurkActivity(m.plurkActivity);
+    }
+    const char = currentCharacter.value;
+    if (!char) return;
+    const charRef = { id: char.id, name: props.characterName || char.nickname || char.data?.name || "角色", avatar: props.characterAvatar || char.avatar };
+    let changed = false;
+    for (const m of restored) {
+      if (!m.plurkActivity) continue;
+      const next = await restorePlurkActivity(m.plurkActivity, charRef);
+      if (next && next.commentId !== m.plurkActivity.commentId) {
+        m.plurkActivity = next;
+        changed = true;
+      }
+    }
+    if (changed) await saveChatImmediate();
+  } catch (e) {
+    console.error("[ChatScreen] 收回／補回噗浪留言失敗:", e);
+  }
+}
+
 // ===== 噗浪發文處理 =====
 
 async function handlePlurkPost(rawContent: string) {
@@ -9610,6 +9670,41 @@ async function handlePlurkPost(rawContent: string) {
   } catch (error) {
     console.error("[ChatScreen] 噗浪發文失敗:", error);
   }
+}
+
+/** 噗浪留言：標籤比這輪訊息更早處理，留言結果先擺著，訊息推進 messages.value 後再掛上去 */
+const _pendingPlurkActivities = new Map<string, PlurkActivity>();
+
+/** 角色去聊天裡分享的噗底下留言，成功就記在這輪最後一則角色訊息上（灰色小字、換輪次時用） */
+async function handlePlurkComment(comment: ParsedPlurkComment, turnId?: string) {
+  if (isGroupChat.value || chatFaceToFaceMode.value) return;
+  const char = currentCharacter.value;
+  if (!char) return;
+  const activity = await applyCharPlurkComment({
+    character: { id: char.id, name: props.characterName || char.nickname || char.data?.name || "角色", avatar: props.characterAvatar || char.avatar },
+    history: messages.value,
+    comment,
+  });
+  if (!activity) return;
+  const target = [...messages.value].reverse().find((m) => m.role === "ai" && (!turnId || m.turnId === turnId));
+  if (!target) {
+    _pendingPlurkActivities.set(turnId || "", activity);
+    return;
+  }
+  target.plurkActivity = activity;
+  await saveChatImmediate();
+}
+
+/** 這輪訊息推進 messages.value 之後，把留言結果補到最後一則角色訊息上 */
+async function flushPendingPlurkActivity(turnId?: string): Promise<void> {
+  const key = turnId || "";
+  const activity = _pendingPlurkActivities.get(key);
+  if (!activity) return;
+  _pendingPlurkActivities.delete(key);
+  const target = [...messages.value].reverse().find((m) => m.role === "ai" && (!turnId || m.turnId === turnId));
+  if (!target) return;
+  target.plurkActivity = activity;
+  await saveChatImmediate();
 }
 
 /**
@@ -9696,6 +9791,7 @@ function buildRemoteParsedMessages(
         redpacketData: parsedMsg.redpacketData,
         isLocation: parsedMsg.isLocation,
         locationContent: parsedMsg.locationContent,
+        plurkShare: parsedMsg.plurkShare,
         ...resolveAiReplyQuote(parsedMsg, [...replyHistory, ...parsedMessages]),
         isGift: parsedMsg.isGift,
         giftName: parsedMsg.giftName,
@@ -9854,6 +9950,8 @@ function toStoredRemoteMessage(message: Message, fallbackName: string): ChatMess
     redpacketState: message.redpacketState,
     isLocation: message.isLocation,
     locationContent: message.locationContent,
+    plurkShare: message.plurkShare,
+    plurkActivity: message.plurkActivity,
     replyToContent: message.replyToContent,
     replyTo: message.replyTo,
     isGift: message.isGift,

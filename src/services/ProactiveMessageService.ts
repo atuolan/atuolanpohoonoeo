@@ -18,6 +18,7 @@ import {
   getSocialPostsForPrompt,
   publishCharacterPlurk,
 } from "./PlurkPostService";
+import { applyCharPlurkComment, buildPlurkShareGuideForChat } from "./plurkShareRuntime";
 import { pickGenerationToggles } from "@/utils/generationToggles";
 import { buildCharAwayReturnNote, isCharAwayActive } from "./charAway";
 import { formatEventTime } from "@/utils/calendarEventFormat";
@@ -1331,6 +1332,14 @@ export class ProactiveMessageService {
         userMoodNote: noteBoardContext.moodNote,
         charPlanner: charPlannerText,
         userCalendar: userCalendarText,
+        // 噗文分享：可以留言的噗＋（有開設定時）最近的噗；面對面模式不帶
+        plurkShareGuide: chat.faceToFaceMode
+          ? ""
+          : await buildPlurkShareGuideForChat({
+              characterId: character.id,
+              history: existingMessages,
+              shareCount: chat.plurkShareCount ?? 0,
+            }),
       });
 
       const promptData = await promptBuilder.build();
@@ -1505,6 +1514,7 @@ export class ProactiveMessageService {
                   giftName: parsed.giftName,
                 }),
                 ...(parsed.isHtmlBlock && { isHtmlBlock: true }),
+                ...(parsed.plurkShare && { plurkShare: parsed.plurkShare }),
                 ...(parsed.isAiImage && {
                   isAiImage: true,
                   imageDescription: parsed.imageDescription,
@@ -1545,6 +1555,29 @@ export class ProactiveMessageService {
               await publishCharacterPlurk(character, parsedResponse.plurkContent);
             } catch (error) {
               console.error("[ProactiveMessage] 噗浪發文失敗:", error);
+            }
+          }
+
+          // 角色去分享的噗底下留言（記在這輪最後一則角色訊息上，換輪次時收回／補回）
+          if (parsedResponse.plurkComment) {
+            try {
+              const activity = await applyCharPlurkComment({
+                character: {
+                  id: character.id,
+                  name: character.nickname || character.data?.name || "角色",
+                  avatar: character.avatar,
+                },
+                history: existingMessages,
+                comment: parsedResponse.plurkComment,
+              });
+              if (activity) {
+                const target = [...newMessages]
+                  .reverse()
+                  .find((m) => m.sender === "assistant");
+                if (target) target.plurkActivity = activity;
+              }
+            } catch (error) {
+              console.error("[ProactiveMessage] 噗浪留言失敗:", error);
             }
           }
 
