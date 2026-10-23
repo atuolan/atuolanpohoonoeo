@@ -9,8 +9,8 @@ android {
         targetSdkVersion rootProject.ext.targetSdkVersion
         // versionCode 變了，熱更新會清掉下載過的網頁、改用 APK 裡的；
         // 網頁用到新的原生功能時要和 src/native/liveUpdateManifest.ts 的 LIVE_UPDATE_MIN_NATIVE_BUILD 一起加一
-        versionCode 3
-        versionName "1.1"
+        versionCode 4
+        versionName "1.1.1"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
