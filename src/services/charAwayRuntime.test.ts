@@ -548,7 +548,7 @@ describe("劇情時間", () => {
       charAway: makeAway({ returnAt: NOW - MINUTE }),
     });
     await returnCharAwayIfDue("chat1", NOW);
-    const back = (store.messages.get("chat1") ?? []).at(-1);
+    const back = (store.messages.get("chat1") ?? []).slice(-1)[0];
     expect(back.storyTime).toBe(back.createdAt + 60 * MINUTE);
   });
 
