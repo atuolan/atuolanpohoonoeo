@@ -27,13 +27,19 @@ export const useNotificationStore = defineStore("notification", () => {
   const visibleToasts = ref<NotificationItem[]>([]);
 
   /** 通知設定 */
-  const settings = ref<NotificationSettings>(DEFAULT_NOTIFICATION_SETTINGS);
+  const settings = ref<NotificationSettings>({
+    ...DEFAULT_NOTIFICATION_SETTINGS,
+    typeSettings: { ...DEFAULT_NOTIFICATION_SETTINGS.typeSettings },
+  });
 
   /** 是否已載入設定 */
   const isLoaded = ref(false);
 
   /** 當前活躍的聊天 ID（用於判斷是否在聊天頁面） */
   const activeChatId = ref<string | null>(null);
+
+  /** 正在看噗浪（噗浪自己有通知分頁，不用再跳 Toast） */
+  const viewingQzone = ref(false);
 
   // ============================================================
   // 計算屬性
@@ -204,20 +210,150 @@ export const useNotificationStore = defineStore("notification", () => {
       visibleToasts.value.length,
     );
 
-    // 設定自動消失
-    setTimeout(() => {
-      dismissToast(notification.id);
-    }, settings.value.duration);
+    scheduleToastDismiss(notification.id);
+  }
+
+  /** Toast 自動消失的計時器；合併通知更新同一個 Toast 時要重新計時 */
+  const toastTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+  function scheduleToastDismiss(id: string): void {
+    const old = toastTimers.get(id);
+    if (old) clearTimeout(old);
+    toastTimers.set(
+      id,
+      setTimeout(() => dismissToast(id), settings.value.duration),
+    );
   }
 
   /**
    * 關閉 Toast
    */
   function dismissToast(id: string): void {
+    const timer = toastTimers.get(id);
+    if (timer) {
+      clearTimeout(timer);
+      toastTimers.delete(id);
+    }
     const index = visibleToasts.value.findIndex((n) => n.id === id);
     if (index !== -1) {
       visibleToasts.value.splice(index, 1);
     }
+  }
+
+  // ============================================================
+  // 合併通知（噗浪一批生成會一次冒出很多則）
+  // ============================================================
+
+  /** 同一組通知多久內算同一批 */
+  const GROUP_WINDOW_MS = 10 * 60_000;
+  /** 系統通知等這批停下來才發，連續進來只發一次 */
+  const GROUP_PUSH_DELAY_MS = 2500;
+
+  type GroupEntry = {
+    name: string;
+    text: string;
+    avatar?: string;
+    characterId?: string;
+  };
+
+  const groupPushTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+  /** 系統通知延後一下再發，同一組用同一個 tag，新的蓋掉舊的 */
+  function sendGroupPush(groupKey: string, notification: NotificationItem): void {
+    if (!settings.value.pushEnabled) return;
+    const old = groupPushTimers.get(groupKey);
+    if (old) clearTimeout(old);
+    groupPushTimers.set(
+      groupKey,
+      setTimeout(() => {
+        groupPushTimers.delete(groupKey);
+        pushNotificationService.send({ ...notification, data: { ...notification.data } });
+      }, GROUP_PUSH_DELAY_MS),
+    );
+  }
+
+  /**
+   * 加一則可合併的通知：同組、未讀、還在時間內的就併進去，
+   * 通知列表只留一則、Toast 原地更新、系統通知整批只跳一則。
+   */
+  function addGroupedNotification(
+    groupKey: string,
+    params: Omit<NotificationParams, "title" | "message">,
+    entry: GroupEntry,
+    summarize: (entries: GroupEntry[]) => { title: string; message: string },
+    opts: { quiet?: boolean } = {},
+  ): NotificationItem | null {
+    const now = Date.now();
+    const existing = notifications.value.find(
+      (n) =>
+        n.data?.groupKey === groupKey &&
+        !n.read &&
+        now - (n.data?.groupStartedAt ?? n.createdAt) < GROUP_WINDOW_MS,
+    );
+    const entries: GroupEntry[] = [...(existing?.data?.entries ?? []), entry];
+    const { title, message } = summarize(entries);
+    const groupStartedAt: number = existing?.data?.groupStartedAt ?? now;
+    const data = {
+      ...params.data,
+      groupKey,
+      groupStartedAt,
+      entries,
+      pushTag: `${groupKey}-${groupStartedAt}`,
+    };
+
+    const notification = buildNotification({
+      ...params,
+      title,
+      message,
+      characterName: entry.name,
+      characterAvatar: entry.avatar,
+      characterId: entry.characterId,
+      data,
+    });
+    if (!notification) return null;
+
+    let target = notification;
+    if (existing) {
+      Object.assign(existing, {
+        title,
+        message,
+        characterName: entry.name,
+        characterAvatar: entry.avatar ?? existing.characterAvatar,
+        characterId: entry.characterId ?? existing.characterId,
+        createdAt: now,
+        data,
+      });
+      target = existing;
+      // 移到列表最上面
+      const index = notifications.value.indexOf(existing);
+      if (index > 0) {
+        notifications.value.splice(index, 1);
+        notifications.value.unshift(existing);
+      }
+    } else {
+      notifications.value.unshift(notification);
+      if (notifications.value.length > 100) {
+        notifications.value = notifications.value.slice(0, 100);
+      }
+    }
+
+    // 正在看噗浪就不跳 Toast；切到背景時的系統通知照發
+    if (!opts.quiet) {
+      if (visibleToasts.value.some((n) => n.id === target.id)) {
+        scheduleToastDismiss(target.id);
+      } else {
+        showToast(target);
+      }
+    }
+    sendGroupPush(groupKey, target);
+    return target;
+  }
+
+  /** 「小明、小華、小美 等 5 人」 */
+  function joinNames(entries: GroupEntry[]): string {
+    const names = [...new Set(entries.map((e) => e.name))];
+    const shown = names.slice(0, 3).join("、");
+    return names.length > 3 ? `${shown} 等 ${names.length} 人` : shown;
   }
 
   /**
@@ -281,38 +417,67 @@ export const useNotificationStore = defineStore("notification", () => {
   // 便捷方法 - 各類型通知
   // ============================================================
 
-  /** 噗浪發文通知 */
+  /** 正在看噗浪時呼叫，離開時傳 false */
+  function setViewingQzone(viewing: boolean): void {
+    viewingQzone.value = viewing;
+  }
+
+  /** 噗浪發文通知；短時間內的新噗合成一則 */
   function notifyQzonePost(
     characterName: string,
     characterAvatar?: string,
     characterId?: string,
+    preview = "",
   ): NotificationItem | null {
-    return addNotification({
-      type: "qzone_post",
-      title: "新噗浪",
-      message: `${characterName} 發了一則新動態`,
-      characterName,
-      characterAvatar,
-      characterId,
-      navigateTo: "qzone",
-    });
+    return addGroupedNotification(
+      "qzone_post",
+      { type: "qzone_post", navigateTo: "qzone" },
+      { name: characterName, text: preview, avatar: characterAvatar, characterId },
+      (entries) => {
+        const last = entries[entries.length - 1];
+        if (entries.length === 1) {
+          return {
+            title: `${last.name} 發了新噗`,
+            message: last.text || "去噗浪看看",
+          };
+        }
+        return {
+          title: `噗浪 · ${entries.length} 則新噗`,
+          message: joinNames(entries),
+        };
+      },
+      { quiet: viewingQzone.value },
+    );
   }
 
-  /** 噗浪回覆通知 */
+  /** 噗浪回應通知（追蹤中的噗）；短時間內的回應合成一則 */
   function notifyQzoneComment(
     characterName: string,
     characterAvatar?: string,
     characterId?: string,
+    preview = "",
   ): NotificationItem | null {
-    return addNotification({
-      type: "qzone_comment",
-      title: "噗浪回覆",
-      message: `${characterName} 回覆了你的動態`,
-      characterName,
-      characterAvatar,
-      characterId,
-      navigateTo: "qzone",
-    });
+    return addGroupedNotification(
+      "qzone_comment",
+      { type: "qzone_comment", navigateTo: "qzone" },
+      { name: characterName, text: preview, avatar: characterAvatar, characterId },
+      (entries) => {
+        const last = entries[entries.length - 1];
+        if (entries.length === 1) {
+          return {
+            title: `${last.name} 回應了噗`,
+            message: last.text || "去噗浪看看",
+          };
+        }
+        return {
+          title: `噗浪 · ${entries.length} 則新回應`,
+          message: last.text
+            ? `${joinNames(entries)}｜${last.name}：${last.text}`
+            : joinNames(entries),
+        };
+      },
+      { quiet: viewingQzone.value },
+    );
   }
 
   /** 聊天訊息通知（非聊天頁面時） */
@@ -502,6 +667,7 @@ export const useNotificationStore = defineStore("notification", () => {
     settings,
     isLoaded,
     activeChatId,
+    viewingQzone,
 
     // 計算屬性
     unreadCount,
@@ -521,6 +687,7 @@ export const useNotificationStore = defineStore("notification", () => {
     // 頁面追蹤
     setActiveChatId,
     isInChat,
+    setViewingQzone,
 
     // 便捷方法
     notifyQzonePost,

@@ -2859,6 +2859,9 @@ watch(currentPage, (p) => {
   if (p !== "qzone" && p !== "chat") qzoneOpenedFromChat.value = false;
 });
 
+// 正在看噗浪時噗浪通知不跳 Toast（噗浪自己有通知分頁）
+watch(currentPage, (p) => notificationStore.setViewingQzone(p === "qzone"), { immediate: true });
+
 /** 噗浪：個人頁「偷看他的手機」、版務公告、偷偷說的線索 → 他的私聊的 PEEK */
 async function openPeekFromQzone(characterId: string) {
   const chat = await resolvePreferredDirectChat(characterId);

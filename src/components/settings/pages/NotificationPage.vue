@@ -4,6 +4,7 @@ import { isIosApp, isNativeApp } from "@/native/platform";
 import { pushNotificationService } from "@/services/PushNotificationService";
 import { useNotificationStore } from "@/stores";
 import { useCloudPushStore } from "@/stores/cloudPush";
+import type { NotificationType } from "@/types/notification";
 import { onActivated, onMounted, ref } from "vue";
 import { formatClock } from "../settingsHelpers";
 import SettingsGroup from "../ui/SettingsGroup.vue";
@@ -53,6 +54,20 @@ async function testNotification() {
 
 function savePush() {
   void notificationStore.saveSettings();
+}
+
+// ===== 通知類型 =====
+const TYPE_ROWS: Array<{ type: NotificationType; label: string; description?: string }> = [
+  { type: "chat_message", label: "角色訊息" },
+  { type: "incoming_call", label: "來電" },
+  { type: "qzone_post", label: "噗浪新噗", description: "角色發了新噗" },
+  { type: "qzone_comment", label: "噗浪回應", description: "你發的、你回過的噗有新回應" },
+  { type: "diary_entry", label: "日記" },
+  { type: "chat_summary", label: "聊天總結" },
+];
+
+function isTypeOn(type: NotificationType): boolean {
+  return notificationStore.settings.typeSettings[type] ?? true;
 }
 
 // ===== 雲端推送鬧鐘 =====
@@ -128,6 +143,17 @@ onActivated(readPermission);
           <li>電腦瀏覽器：點網址列左側圖示 → 網站設定 → 通知 → 重置為「詢問」</li>
         </ul>
       </div>
+    </SettingsGroup>
+
+    <SettingsGroup title="通知類型" footer="噗浪短時間內的新噗、新回應會合成一則；正在看噗浪時不跳提示。">
+      <SettingsSwitchRow
+        v-for="row in TYPE_ROWS"
+        :key="row.type"
+        :model-value="isTypeOn(row.type)"
+        :label="row.label"
+        :description="row.description"
+        @update:model-value="(on: boolean) => notificationStore.toggleTypeEnabled(row.type, on)"
+      />
     </SettingsGroup>
 
     <SettingsGroup
