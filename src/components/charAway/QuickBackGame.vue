@@ -4,7 +4,7 @@
       <button class="quick-back-close" type="button" aria-label="關閉" @click="closeGame">×</button>
 
       <header class="quick-back-head">
-        <h2 class="quick-back-title">快回來！</h2>
+        <h2 class="quick-back-title">{{ title }}</h2>
         <p class="quick-back-sub">{{ subtitle }}</p>
       </header>
 
@@ -67,7 +67,7 @@
 
       <div v-else class="quick-back-result">
         <p class="result-text">
-          {{ won ? `催成功！${characterName} 馬上回來` : '沒催成功…5 分鐘後可以再試' }}
+          {{ won ? wonText : '沒催成功…5 分鐘後可以再試' }}
         </p>
         <button class="result-btn" type="button" @click="finishGame">好</button>
       </div>
@@ -83,11 +83,14 @@ type RpsMove = 'rock' | 'scissors' | 'paper'
 const props = withDefaults(
   defineProps<{
     kind: 'tap' | 'rps'
+    /** 暫離／睡覺／忙碌：換標題和結果文字 */
+    mode?: 'away' | 'sleep' | 'busy'
     characterName: string
     characterAvatar?: string
     tapTarget?: number
   }>(),
   {
+    mode: 'away',
     characterAvatar: '',
     tapTarget: 20,
   },
@@ -104,6 +107,18 @@ const finished = ref(false)
 const won = ref(false)
 
 // ---- 共用 ----
+const title = computed(() =>
+  props.mode === 'sleep' ? '起床重睡！' : props.mode === 'busy' ? '偷偷回我！' : '快回來！',
+)
+
+const wonText = computed(() =>
+  props.mode === 'sleep'
+    ? `吵醒${props.characterName}了，他會迷迷糊糊回你一句`
+    : props.mode === 'busy'
+      ? `${props.characterName}偷偷拿起手機了`
+      : `催成功！${props.characterName} 馬上回來`,
+)
+
 const subtitle = computed(() =>
   props.kind === 'tap'
     ? `10 秒內戳${props.characterName} ${props.tapTarget} 下`
