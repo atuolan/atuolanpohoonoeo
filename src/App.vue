@@ -106,14 +106,16 @@ import {
 import { useUserStore } from "@/stores";
 import { usePhoneCallStore } from "@/stores/phoneCall";
 import { useCallVoiceInputStore } from "@/stores/callVoiceInput";
+import { useQzoneStore } from "@/stores/qzone";
 import type { CharacterImportResult, StoredCharacter } from "@/types/character";
-import type { Chat, MultiCharMember, WaimaiOrderSnapshot } from "@/types/chat";
+import type { Chat, MultiCharMember, PlurkShareSnapshot, WaimaiOrderSnapshot } from "@/types/chat";
 import {
   consumePendingRuntimeDiagnostics,
   recordRuntimeDiagnostic,
   recordRuntimeError,
   updateRuntimeSessionStage,
 } from "@/utils/runtimeDiagnostics";
+import { plurkShareSummary } from "@/utils/plurkShare";
 import { applyServiceWorkerUpdate } from "@/utils/storagePersistence";
 import { isNativeApp } from "@/native/platform";
 import { getIncomingCallScheduler } from "./services/IncomingCallScheduler";
@@ -872,6 +874,8 @@ interface PendingInjectedMessage {
     cover?: string;
     lyrics?: string;
   };
+  plurkShare?: PlurkShareSnapshot;
+  followUpText?: string;
 }
 
 // 待注入的聊天訊息（用於遊戲分享成績、外賣分享等場景）
@@ -2433,6 +2437,32 @@ async function handleMusicShareToChat(payload: {
   navigateToPage("chat");
 }
 
+// 噗浪分享噗文／回應到聊天（用戶已選擇聊天）
+async function handlePlurkShareToChat(payload: {
+  chatId: string;
+  characterId: string;
+  snapshot: PlurkShareSnapshot;
+  text: string;
+}) {
+  const character = charactersStore.characters.find(
+    (c) => c.id === payload.characterId,
+  );
+  if (!character) return;
+
+  chatCharacterName.value =
+    character.nickname || character.data?.name || "角色";
+  chatCharacterAvatar.value = character.avatar || "";
+  currentChatCharacterId.value = payload.characterId;
+  currentChatId.value = payload.chatId;
+  pendingChatMessage.value = {
+    content: plurkShareSummary(payload.snapshot),
+    plurkShare: payload.snapshot,
+    followUpText: payload.text || undefined,
+  };
+  navigationHistory.value.push(currentPage.value);
+  navigateToPage("chat");
+}
+
 // 外賣商城分享/下單注入聊天
 async function handleDeliveryMallSendToChat(payload: {
   characterId: string;
@@ -2798,6 +2828,37 @@ function goBackFromTheater() {
 // 從噗浪導航到小劇場（記錄歷史，可帶指定 postId 直接打開內文）
 const pendingTheaterPostId = ref<string | undefined>(undefined);
 
+// 從聊天的噗文卡片／灰色小字打開噗浪回應串；返回時回到聊天
+const pendingPlurkOpen = ref<{ postId: string; commentId?: string; nonce: number } | null>(null);
+const qzoneOpenedFromChat = ref(false);
+
+async function openPlurkThreadFromChat(target: { postId: string; commentId?: string }) {
+  const qzone = useQzoneStore();
+  if (!qzone.isLoaded) await qzone.loadPosts();
+  if (!qzone.posts.some((p) => p.id === target.postId)) {
+    alert("這則噗已經不在了");
+    return;
+  }
+  pendingPlurkOpen.value = { ...target, nonce: Date.now() };
+  qzoneOpenedFromChat.value = true;
+  navigationHistory.value.push(currentPage.value);
+  navigateToPage("qzone");
+}
+
+// 噗浪的返回：從聊天點進來的，返回時回聊天
+function goBackFromQzone() {
+  if (qzoneOpenedFromChat.value) {
+    qzoneOpenedFromChat.value = false;
+    navigateBackWithFallback(() => goHome());
+    return;
+  }
+  goHome();
+}
+
+watch(currentPage, (p) => {
+  if (p !== "qzone" && p !== "chat") qzoneOpenedFromChat.value = false;
+});
+
 /** 噗浪：個人頁「偷看他的手機」、版務公告、偷偷說的線索 → 他的私聊的 PEEK */
 async function openPeekFromQzone(characterId: string) {
   const chat = await resolvePreferredDirectChat(characterId);
@@ -2921,7 +2982,7 @@ function handleGlobalSwipeBack() {
     },
     music: goHome,
     qzone: () => {
-      if (!qzoneScreenRef.value?.handleBack()) goHome();
+      if (!qzoneScreenRef.value?.handleBack()) goBackFromQzone();
     },
     user: goHome,
     weather: goHome,
@@ -3038,6 +3099,7 @@ useSwipeBack(handleGlobalSwipeBack, swipeBackEnabled);
       @incoming-call-consumed="pendingIncomingCallReason = ''"
       @open-chat="onOpenExistingChatEvent"
       @chat-switched="onChatSwitchedEvent"
+      @open-plurk-thread="(...args: any[]) => openPlurkThreadFromChat(args[0])"
     />
 
     <!-- 設定頁 -->
@@ -3082,7 +3144,10 @@ useSwipeBack(handleGlobalSwipeBack, swipeBackEnabled);
     <QZoneScreen
       v-else-if="currentPage === 'qzone'"
       ref="qzoneScreenRef"
-      @back="goHome"
+      :open-target="pendingPlurkOpen"
+      @back="goBackFromQzone"
+      @open-target-consumed="pendingPlurkOpen = null"
+      @share-to-chat="handlePlurkShareToChat"
       @navigate-theater="navigateToTheaterFromQzone"
       @open-api-settings="openAuxiliarySettingsFromQzone"
       @open-chat="startChat"

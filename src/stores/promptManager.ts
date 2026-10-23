@@ -800,6 +800,17 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
             : `${contentWithAway}\n{{charAwayGuide}}`;
         }
 
+        // 噗文分享的說明是宏 {{plurkShareGuide}}（沒有可留言的噗、也沒開傳噗時展開成空字串），插在【噗浪】段落最後
+        const contentWithShare = stored.prompts[onlineModeIndex].content;
+        if (!contentWithShare.includes("{{plurkShareGuide}}")) {
+          const shareAnchor =
+            contentWithShare.match(/[^\n]*適合發噗的時候[^\n]*/)?.[0] ??
+            [...contentWithShare.matchAll(/[^\n]*<plurk[\s>][^\n]*/g)].pop()?.[0];
+          stored.prompts[onlineModeIndex].content = shareAnchor
+            ? contentWithShare.replace(shareAnchor, () => `${shareAnchor}\n{{plurkShareGuide}}`)
+            : `${contentWithShare}\n{{plurkShareGuide}}`;
+        }
+
         // 角色狀態插在角色位置更新後面，跟其他放在 </content> 之後的動作放一起
         const onlineContent = stored.prompts[onlineModeIndex].content;
         const charStatusLine = defaultOnlineMode.content.match(/[^\n]*<char-status[^\n]*/)?.[0];

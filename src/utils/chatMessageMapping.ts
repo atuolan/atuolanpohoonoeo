@@ -173,6 +173,8 @@ export function convertStoredMessageToUiMessage(
     transferStatus,
     isMusicShare,
     musicShareData,
+    plurkShare: (m as any).plurkShare ? JSON.parse(JSON.stringify((m as any).plurkShare)) : undefined,
+    plurkActivity: (m as any).plurkActivity ? { ...(m as any).plurkActivity } : undefined,
     senderCharacterName: m.senderCharacterId
       ? (() => {
           if (chat.groupMetadata?.isMultiCharCard) {
@@ -340,6 +342,8 @@ export function convertToStorableMessage(m: any, charName: string): ChatMessage 
     musicShareData: m.musicShareData
       ? JSON.parse(JSON.stringify(m.musicShareData))
       : undefined,
+    plurkShare: m.plurkShare ? JSON.parse(JSON.stringify(m.plurkShare)) : undefined,
+    plurkActivity: m.plurkActivity ? { ...m.plurkActivity } : undefined,
     isAvatarChange: m.isAvatarChange,
     avatarChangeAction: m.avatarChangeAction,
     avatarChangeMood: m.avatarChangeMood,

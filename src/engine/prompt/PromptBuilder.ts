@@ -286,6 +286,8 @@ export interface PromptBuilderOptions {
   charStickyNote?: string;
   /** 角色暫時離開的標籤說明（{{charAwayGuide}} 宏）；不能用時是空字串或不傳 */
   charAwayGuide?: string;
+  /** 噗文分享的標籤說明與最近的噗（{{plurkShareGuide}} 宏）；沒有時是空字串或不傳 */
+  plurkShareGuide?: string;
   /** 角色剛暫離回來那一輪的說明（[剛忙完回來]／[被催回來]），附加在 timeInfo 後面 */
   charAwayReturnNote?: string;
   /** {{user}} 主畫面的心情便籤（用於 {{userMoodNote}} 宏；空的時候「心情便籤」條目不輸出） */
@@ -651,6 +653,7 @@ export class PromptBuilder {
         charStatus: formatCharStatusForPrompt(options.charStatus, options.charStatusUpdatedAt),
         charStickyNote: options.charStickyNote || "還沒寫過",
         charAwayGuide: options.charAwayGuide || "",
+        plurkShareGuide: options.plurkShareGuide || "",
         userMoodNote: options.userMoodNote || "",
         charPlanner: options.charPlanner || "",
         userCalendar: options.userCalendar || "",
@@ -806,6 +809,7 @@ export class PromptBuilder {
         charStatus: formatCharStatusForPrompt(options.charStatus, options.charStatusUpdatedAt),
         charStickyNote: options.charStickyNote || "還沒寫過",
         charAwayGuide: options.charAwayGuide || "",
+        plurkShareGuide: options.plurkShareGuide || "",
         userMoodNote: options.userMoodNote || "",
         charPlanner: options.charPlanner || "",
         userCalendar: options.userCalendar || "",
@@ -910,7 +914,28 @@ export class PromptBuilder {
       userName: this.options.userName || "{{user}}",
       charName: this.options.character.data.name,
       groupChat: !!this.options.groupChatMode,
+      charId: this.options.character?.id,
+      memberNames: this.buildMemberNames(),
     });
+  }
+
+  /** 群聊／多人卡的成員 id → 名字，給「偷偷說其實是誰發的」用 */
+  private buildMemberNames(): Record<string, string> | undefined {
+    const { groupChatMode, groupMembers, isMultiCharCard, multiCharMembers } = this.options;
+    const map: Record<string, string> = {};
+    if (isMultiCharCard && multiCharMembers?.length) {
+      for (const m of multiCharMembers) {
+        const name = (m.name || "").trim();
+        if (m.id && name) map[m.id] = name;
+      }
+    }
+    if (groupChatMode && groupMembers?.length) {
+      for (const m of groupMembers) {
+        const name = (m.nickname || m.name || "").trim();
+        if (m.characterId && name) map[m.characterId] = name;
+      }
+    }
+    return Object.keys(map).length > 0 ? map : undefined;
   }
 
   private formatMessageContentForMacro(m: ChatMessage): string {

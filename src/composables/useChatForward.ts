@@ -140,6 +140,7 @@ export function useChatForward(deps: {
           locationContent: m.locationContent,
           isMusicShare: m.isMusicShare,
           musicShareData: m.musicShareData ? { ...m.musicShareData } : undefined,
+          plurkShare: m.plurkShare ? JSON.parse(JSON.stringify(m.plurkShare)) : undefined,
           isGroupChatHistory: m.isGroupChatHistory,
           groupChatHistoryData: m.groupChatHistoryData
             ? JSON.parse(JSON.stringify(m.groupChatHistoryData))

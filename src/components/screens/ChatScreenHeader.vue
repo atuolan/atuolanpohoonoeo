@@ -20,6 +20,7 @@ import {
   PhoneIncoming,
   ScanSearch,
   ScrollText,
+  Send,
   Settings,
   ShieldCheck,
   SlidersHorizontal,
@@ -29,6 +30,7 @@ import {
   Utensils,
 } from "lucide-vue-next";
 import type { LastOutputState } from "@/composables/useStreamingWindow";
+import { PLURK_SHARE_COUNTS } from "@/utils/plurkShare";
 import { useThemeStore } from "@/stores/theme";
 import { isCssColorDark } from "@/utils/wallpaperLuminance";
 
@@ -77,6 +79,8 @@ const props = defineProps<{
   editNoticeChance: number;
   /** 允許角色暫時離開（預設 true） */
   charAwayEnabled?: boolean;
+  /** 讓他傳噗給你：提示詞列幾則最近的噗（0＝關閉） */
+  plurkShareCount?: number;
   chatEnableRealTimeAwareness: boolean;
   showFakeTimePanel: boolean;
   fakeTimeMode: "real" | "loop" | "offset" | "story";
@@ -120,6 +124,7 @@ const emit = defineEmits<{
   (e: "toggle-anti-truncation"): void;
   (e: "set-edit-notice-chance", value: number): void;
   (e: "set-char-away-enabled", value: boolean): void;
+  (e: "set-plurk-share-count", value: number): void;
   (e: "open-streaming-window"): void;
   (e: "open-last-output"): void;
   (e: "toggle-real-time-awareness"): void;
@@ -197,9 +202,22 @@ const showTimeHelp = ref(false);
 // 防截斷說明
 const showAntiTruncationHelp = ref(false);
 const showEditNoticePanel = ref(false);
+const showPlurkSharePanel = ref(false);
 
 function onEditNoticeChanceInput(event: Event) {
   emit("set-edit-notice-chance", Number((event.target as HTMLInputElement).value));
+}
+
+// 讓他傳噗給你：滑桿值是 PLURK_SHARE_COUNTS 的索引
+const plurkShareCountOptions = PLURK_SHARE_COUNTS as readonly number[];
+const plurkShareCountIndex = computed(() => {
+  const i = plurkShareCountOptions.indexOf(props.plurkShareCount ?? 0);
+  return i >= 0 ? i : 0;
+});
+
+function onPlurkShareCountInput(event: Event) {
+  const i = Number((event.target as HTMLInputElement).value);
+  emit("set-plurk-share-count", plurkShareCountOptions[i] ?? 0);
 }
 
 const FAKE_TIME_MODE_HINTS: Record<"real" | "loop" | "offset" | "story", string> = {
@@ -744,6 +762,33 @@ const isDarkBackground = computed(() =>
                 <input type="checkbox" aria-label="允許暫時離開" :checked="charAwayEnabled !== false" @change="emit('set-char-away-enabled', charAwayEnabled === false)" />
                 <span class="toggle-slider-mini"></span>
               </label>
+            </div>
+            <!-- 讓他傳噗給你 -->
+            <button
+              v-if="!chatFaceToFaceMode && !isGroupChat"
+              type="button"
+              class="dropdown-toggle-item f2f-panel-entry"
+              :aria-expanded="showPlurkSharePanel"
+              @click="showPlurkSharePanel = !showPlurkSharePanel"
+            >
+              <div class="toggle-item-info">
+                <Send :size="20" :stroke-width="1.75" />
+                <span>讓他傳噗給你</span>
+              </div>
+              <span class="last-output-hint">{{ (plurkShareCount ?? 0) > 0 ? `${plurkShareCount} 則` : '關閉' }}</span>
+            </button>
+            <div v-if="showPlurkSharePanel && !chatFaceToFaceMode && !isGroupChat" class="fake-time-panel">
+              <input
+                type="range"
+                min="0"
+                max="4"
+                step="1"
+                class="edit-notice-range"
+                aria-label="讓他傳噗給你"
+                :value="plurkShareCountIndex"
+                @input="onPlurkShareCountInput"
+              />
+              <p class="fake-time-hint">開了以後，聊天時他會看到河道和廣場上最近幾則噗，看到有趣的可能傳給你。則數越多越花 token。</p>
             </div>
             <div class="dropdown-divider"></div>
             <div class="dropdown-section-title">電話設定</div>

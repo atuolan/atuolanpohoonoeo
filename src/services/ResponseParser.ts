@@ -5,7 +5,13 @@
 
 import { stripPromptStatusNotes } from "@/utils/promptMessageContent";
 import type { CalendarEventData } from "@/types/calendar";
-import type { GroupActionType } from "@/types/chat";
+import type { GroupActionType, PlurkShareSnapshot } from "@/types/chat";
+import {
+  lookupPlurkShareCandidate,
+  plurkShareSummary,
+  PLURK_SHARE_NOTE_REGEX,
+  type ParsedPlurkComment,
+} from "@/utils/plurkShare";
 import type { ScheduleCallData } from "@/types/incomingCall";
 import { normalizeEventTime } from "@/utils/calendarEventFormat";
 import { CHAR_PLANNER_TAG_REGEX } from "@/utils/charPlanner";
@@ -47,6 +53,8 @@ export interface ParsedMessage {
   };
   isLocation?: boolean;
   locationContent?: string;
+  /** 角色傳給 user 的噗文卡片 */
+  plurkShare?: PlurkShareSnapshot;
   isReplyTo?: boolean;
   /** 模型抄的被引用訊息片段（通常只有開頭幾個字），ChatScreen 會再找出原訊息 */
   replyToContent?: string;
@@ -112,6 +120,8 @@ export interface ParsedResponse {
   /** 是否有噗浪發文 */
   hasPlurkPost?: boolean;
   plurkContent?: string;
+  /** 角色去分享的噗底下留言 */
+  plurkComment?: ParsedPlurkComment;
   /** 是否有來電預約 */
   hasScheduleCall?: boolean;
   /** 來電預約資料 */
@@ -162,7 +172,7 @@ export interface ParsedResponse {
  * 用於面對面模式等長文本場景，將特殊標籤從文字中拆分成獨立訊息
  */
 function hasInlineSpecialTags(content: string): boolean {
-  return /<(?:timetravel|voice|pay|transfer\s|refund|location|redpacket\s|waimai-pay\s|waimai-delivery|face-to-face-request\s|online-mode-request\s)[\s\S]*?>/i.test(
+  return /<(?:timetravel|voice|pay|transfer\s|refund|location|redpacket\s|waimai-pay\s|waimai-delivery|face-to-face-request\s|online-mode-request\s|share-plurk\s)[\s\S]*?>/i.test(
     content,
   );
 }
@@ -179,7 +189,7 @@ function hasInlineSpecialTags(content: string): boolean {
 function splitBySpecialTags(content: string): ParsedMessage[] {
   // 匹配所有需要拆分的特殊標籤（按出現順序）
   const tagRegex =
-    /<timetravel>([\s\S]*?)<\/timetravel>|<recall>\s*<voice>([\s\S]*?)<\/voice>\s*<\/recall>|<voice>([\s\S]*?)<\/voice>|<pay>([\d.]+)(?::([^<]*?))?<\/pay>|<transfer\s+amount=["']?([\d.]+)["']?\s*>([\s\S]*?)<\/transfer>|<refund>([\d.]+)<\/refund>|<location>([\s\S]*?)<\/location>|<redpacket\s+([^>]+)\/?>|<waimai-pay\s+([^>]*?)\s*\/?>|<waimai-delivery\s*\/?>|<face-to-face-request\s+([^>]*?)\s*\/?>|<online-mode-request\s+([^>]*?)\s*\/?>/gi;
+    /<timetravel>([\s\S]*?)<\/timetravel>|<recall>\s*<voice>([\s\S]*?)<\/voice>\s*<\/recall>|<voice>([\s\S]*?)<\/voice>|<pay>([\d.]+)(?::([^<]*?))?<\/pay>|<transfer\s+amount=["']?([\d.]+)["']?\s*>([\s\S]*?)<\/transfer>|<refund>([\d.]+)<\/refund>|<location>([\s\S]*?)<\/location>|<redpacket\s+([^>]+)\/?>|<waimai-pay\s+([^>]*?)\s*\/?>|<waimai-delivery\s*\/?>|<face-to-face-request\s+([^>]*?)\s*\/?>|<online-mode-request\s+([^>]*?)\s*\/?>|<share-plurk\s+([^>]*?)\s*\/?>/gi;
 
   interface TagMatch {
     index: number;
@@ -293,6 +303,17 @@ function splitBySpecialTags(content: string): ParsedMessage[] {
         isOnlineModeRequest: true,
         onlineModeRequestReason: extractAttr(attrs, "reason") || undefined,
       };
+    } else if (match[14] !== undefined) {
+      // <share-plurk ref="..."/>：用組提示詞時登記的候選噗做成卡片；查不到就丟掉
+      const attrs = match[14];
+      const snap = lookupPlurkShareCandidate(extractAttr(attrs, "ref") || "");
+      if (snap) {
+        const share = { ...snap, sharedBy: "char" as const };
+        msg = { content: plurkShareSummary(share), plurkShare: share };
+      } else {
+        // 查不到就只吃掉標籤，不留任何訊息
+        msg = { content: "" };
+      }
     } else {
       continue;
     }
@@ -315,6 +336,7 @@ function splitBySpecialTags(content: string): ParsedMessage[] {
   // 輔助函數：處理文字區塊，檢查是否包含 HTML 區塊需要進一步拆分
   function pushTextChunk(text: string) {
     const clean = text
+      .replace(/<plurk-comment\b[^>]*>[\s\S]*?<\/plurk-comment>/gi, "")
       .replace(PLURK_BLOCK_STRIP_PATTERN, "")
       .trim();
     if (!clean) return;
@@ -365,6 +387,7 @@ function parseTextOnlyContent(content: string): ParsedMessage {
 
   // 移除 <plurk> 標籤
   result.content = result.content
+    .replace(/<plurk-comment\b[^>]*>[\s\S]*?<\/plurk-comment>/gi, "")
     .replace(PLURK_BLOCK_STRIP_PATTERN, "")
     .trim();
 
@@ -566,6 +589,7 @@ function parseMessageContentWithoutTimetravel(content: string): ParsedMessage {
 
   // 移除 <plurk> 標籤（噗浪發文，不應顯示在聊天氣泡中）
   result.content = result.content
+    .replace(/<plurk-comment\b[^>]*>[\s\S]*?<\/plurk-comment>/gi, "")
     .replace(PLURK_BLOCK_STRIP_PATTERN, "")
     .trim();
 
@@ -1024,6 +1048,7 @@ export function parseAIResponse(rawResponse: string): ParsedResponse {
     .trim();
   // 角色照著歷史抄出來的 [轉帳狀態：…] 之類註記不是要說的話
   outputContent = stripPromptStatusNotes(outputContent);
+  outputContent = outputContent.replace(PLURK_SHARE_NOTE_REGEX, "");
   result.rawOutput = outputContent;
 
   // 2.5 從 outputContent 中預先移除 char-action 標籤，避免它們出現在訊息氣泡裡
@@ -1170,6 +1195,22 @@ export function parseAIResponse(rawResponse: string): ParsedResponse {
   if (plurkMatch) {
     result.hasPlurkPost = true;
     result.plurkContent = plurkMatch[0].trim();
+  }
+
+  // 5b. 檢查噗浪留言
+  const plurkCommentMatch = rawResponse.match(
+    /<plurk-comment\b([^>]*)>([\s\S]*?)<\/plurk-comment>/i,
+  );
+  if (plurkCommentMatch) {
+    const commentText = plurkCommentMatch[2].trim();
+    if (commentText) {
+      const comment: ParsedPlurkComment = { content: commentText };
+      const ref = extractAttr(plurkCommentMatch[1], "ref");
+      const qualifier = extractAttr(plurkCommentMatch[1], "qualifier");
+      if (ref) comment.ref = ref;
+      if (qualifier) comment.qualifier = qualifier;
+      result.plurkComment = comment;
+    }
   }
 
   // 6. 檢查來電預約標籤
@@ -1402,7 +1443,8 @@ function isNonEmptyMessage(msg: ParsedMessage): boolean {
     msg.isOnlineModeRequest ||
     msg.isCoupleAvatar ||
     msg.isShowPic ||
-    msg.isShowVid
+    msg.isShowVid ||
+    msg.plurkShare
   );
 
   return hasTextContent || hasSpecialContent;
@@ -1439,6 +1481,7 @@ function parseMessageContent(content: string): ParsedMessage {
 
   // 移除 <plurk> 標籤（已在上層處理發文）
   result.content = result.content
+    .replace(/<plurk-comment\b[^>]*>[\s\S]*?<\/plurk-comment>/gi, "")
     .replace(PLURK_BLOCK_STRIP_PATTERN, "")
     .trim();
 
@@ -1744,6 +1787,20 @@ function parseMessageContent(content: string): ParsedMessage {
       result.content = result.content
         .replace(/<recall-secret\s+[^>]*?\s*\/?>/gi, "")
         .trim();
+    }
+  }
+
+  // 檢查傳噗卡片 <share-plurk ref="..."/>（用組提示詞時登記的候選噗）
+  const sharePlurkMatch = result.content.match(/<share-plurk\s+([^>]*?)\s*\/?>/i);
+  if (sharePlurkMatch) {
+    const snap = lookupPlurkShareCandidate(extractAttr(sharePlurkMatch[1], "ref") || "");
+    result.content = result.content
+      .replace(/<share-plurk\s+[^>]*?\s*\/?>/gi, "")
+      .trim();
+    if (snap) {
+      const share = { ...snap, sharedBy: "char" as const };
+      result.plurkShare = share;
+      if (!result.content) result.content = plurkShareSummary(share);
     }
   }
 
@@ -2480,7 +2537,7 @@ export function parseAffinityUpdateTags(
  */
 export function needsParsing(content: string): boolean {
   // 檢查是否包含任何需要解析的標籤
-  return /<think>|<[^<>]*state[^<>]*>|<content>|<msg>|<update>|<UpdateVariable>|<timetravel>|<redpacket|<location>|<schedule-call|<calendar-event|<food-record|<time-jump|<time-advance|<送禮物>|<pay>|<transfer\s|<refund>|<avatar-change|<couple-avatar-|<voice>|<waimai-pay|<waimai-delivery|<face-to-face-request|<online-mode-request|<affinity-update|<char-status|<char-away|<sticky-note|<mood-reply|<plurk[\s>]|<!DOCTYPE\s|<html[\s>]/i.test(
+  return /<think>|<[^<>]*state[^<>]*>|<content>|<msg>|<update>|<UpdateVariable>|<timetravel>|<redpacket|<location>|<schedule-call|<calendar-event|<food-record|<time-jump|<time-advance|<送禮物>|<pay>|<transfer\s|<refund>|<avatar-change|<couple-avatar-|<voice>|<waimai-pay|<waimai-delivery|<face-to-face-request|<online-mode-request|<affinity-update|<char-status|<char-away|<sticky-note|<mood-reply|<plurk[\s>]|<plurk-comment|<share-plurk|<!DOCTYPE\s|<html[\s>]/i.test(
     content,
   );
 }

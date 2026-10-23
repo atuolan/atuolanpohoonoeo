@@ -4,6 +4,9 @@
  * 角色才知道對方領了、退了還是還沒動。
  */
 
+import type { PlurkShareSnapshot } from "@/types/chat";
+import { describePlurkShareForPrompt } from "@/utils/plurkShare";
+
 type TransferStatus = "sent" | "pending" | "received" | "refunded";
 type RequestStatus = "pending" | "accepted" | "rejected";
 
@@ -37,6 +40,7 @@ export interface PromptMessageLike {
   isWaimaiPaymentResult?: boolean;
   isWaimaiDelivery?: boolean;
   waimaiOrder?: { status?: string };
+  plurkShare?: PlurkShareSnapshot;
 }
 
 export interface PromptMessageNames {
@@ -44,6 +48,9 @@ export interface PromptMessageNames {
   charName: string;
   /** 群聊：使用者的轉帳不是給特定一個人 */
   groupChat?: boolean;
+  charId?: string;
+  /** 群聊成員 id → 名字（偷偷說是誰寫的） */
+  memberNames?: Record<string, string>;
 }
 
 /** 角色照著歷史寫出來的狀態註記要從回覆裡拿掉，不然會變成一個氣泡 */
@@ -113,6 +120,15 @@ export function describeMessageForPrompt(
   const original = m.content || "";
   // 撤回的訊息內容已經換成撤回提示，卡片不再算數
   if (m.isUserRecalled) return original;
+  // 分享噗文的卡片：內容只是畫面摘要，改用看得懂噗文的說明
+  if (m.plurkShare) {
+    return describePlurkShareForPrompt(m.plurkShare, {
+      userName: names.userName,
+      charId: names.charId,
+      memberNames: names.memberNames,
+      groupChat: names.groupChat,
+    });
+  }
 
   let text = original;
   const cards: string[] = [];
