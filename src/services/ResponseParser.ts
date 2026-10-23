@@ -21,7 +21,11 @@ import {
   CHAR_AWAY_MAX_MINUTES,
   CHAR_AWAY_MIN_MINUTES,
   CHAR_AWAY_REASON_MAX,
+  CHAR_BUSY_BACK_DEFAULT,
+  CHAR_SLEEP_BACK_DEFAULT,
   type ParsedCharAway,
+  type ParsedCharBusy,
+  type ParsedCharSleep,
 } from "@/services/charAway";
 import { PLURK_BLOCK_PATTERN, PLURK_BLOCK_STRIP_PATTERN } from "@/utils/plurkFormat";
 import { repairXmlTags } from "./XmlFuzzyRepair";
@@ -157,6 +161,16 @@ export interface ParsedResponse {
   hasCharAway?: boolean;
   /** 暫時離開資料 */
   charAwayData?: ParsedCharAway;
+  /** 是否有去睡覺 */
+  hasCharSleep?: boolean;
+  /** 去睡覺資料 */
+  charSleepData?: ParsedCharSleep;
+  /** 是否有忙碌行程 */
+  hasCharBusy?: boolean;
+  /** 忙碌行程資料 */
+  charBusyData?: ParsedCharBusy;
+  /** 是否有 <char-wake/>（偷回時真的起床／不忙了） */
+  hasCharWake?: boolean;
   /** 是否有便利貼 */
   hasStickyNote?: boolean;
   /** 便利貼資料（顯示在主畫面的心情便籤上） */
@@ -1310,6 +1324,21 @@ export function parseAIResponse(rawResponse: string): ParsedResponse {
     result.charAwayData = charAwayResult;
   }
 
+  // 11b2b. 檢查睡覺／忙碌／起床標籤
+  const charSleepResult = parseCharSleepTag(rawResponse);
+  if (charSleepResult) {
+    result.hasCharSleep = true;
+    result.charSleepData = charSleepResult;
+  }
+  const charBusyResult = parseCharBusyTag(rawResponse);
+  if (charBusyResult) {
+    result.hasCharBusy = true;
+    result.charBusyData = charBusyResult;
+  }
+  if (parseCharWakeTag(rawResponse)) {
+    result.hasCharWake = true;
+  }
+
   // 11c. 檢查便利貼標籤
   const stickyNoteResult = parseStickyNoteTag(rawResponse);
   if (stickyNoteResult) {
@@ -1328,13 +1357,16 @@ export function parseAIResponse(rawResponse: string): ParsedResponse {
   // <content> 外的文字不會進入 outputContent，因此這類系統控制標籤需要從 rawResponse 額外轉成卡片訊息。
   appendTopLevelModeRequestMessages(result.messages, rawResponse);
 
-  // 從所有訊息中移除 char-location、char-status、char-away、sticky-note、mood-reply、pic-note 與時間控制標籤（模型偶爾會寫在 <content> 裡）
+  // 從所有訊息中移除 char-location、char-status、char-away、char-sleep、char-busy、char-wake、sticky-note、mood-reply、pic-note 與時間控制標籤（模型偶爾會寫在 <content> 裡）
   for (const msg of result.messages) {
     if (msg.content) {
       msg.content = stripPicNote(msg.content)
         .replace(/<char-location\s+[^>]*?\s*\/?>(?:<\/char-location>)?/gi, "")
         .replace(CHAR_STATUS_TAG_REGEX, "")
         .replace(CHAR_AWAY_TAG_REGEX, "")
+        .replace(CHAR_SLEEP_TAG_REGEX, "")
+        .replace(CHAR_BUSY_TAG_REGEX, "")
+        .replace(CHAR_WAKE_TAG_REGEX, "")
         .replace(STICKY_NOTE_TAG_REGEX, "")
         .replace(MOOD_REPLY_TAG_REGEX, "")
         .replace(CHAR_PLANNER_TAG_REGEX, "")
@@ -2031,6 +2063,9 @@ function noteTagRegex(name: string): RegExp {
 const STICKY_NOTE_TAG_REGEX = noteTagRegex("sticky-note");
 const MOOD_REPLY_TAG_REGEX = noteTagRegex("mood-reply");
 const CHAR_AWAY_TAG_REGEX = noteTagRegex("char-away");
+const CHAR_SLEEP_TAG_REGEX = noteTagRegex("char-sleep");
+const CHAR_BUSY_TAG_REGEX = noteTagRegex("char-busy");
+const CHAR_WAKE_TAG_REGEX = noteTagRegex("char-wake");
 
 /** 取出引號包住的屬性值；跟 extractAttr 不同，值裡可以有另一種引號 */
 function extractQuotedAttr(attrs: string, name: string): string | undefined {
@@ -2111,6 +2146,79 @@ export function parseCharAwayTag(
     latest = { minutes, reason, backText };
   }
   return latest;
+}
+
+/**
+ * 解析 char-sleep 標籤（角色去睡覺）
+ * 同一則回覆有多個時取最後一個；沒有 wake 屬性的標籤直接略過
+ *
+ * @param rawResponse - 原始 AI 回覆
+ * @returns 解析後的睡覺，沒有有效標籤則返回 null
+ */
+export function parseCharSleepTag(
+  rawResponse: string,
+): ParsedCharSleep | null {
+  let latest: ParsedCharSleep | null = null;
+  for (const match of rawResponse.matchAll(CHAR_SLEEP_TAG_REGEX)) {
+    const attrs = match[1] ?? "";
+    const wake = (extractAttr(attrs, "wake") ?? "").trim();
+    if (!wake) continue;
+
+    const backText =
+      (extractAttr(attrs, "back") ?? "")
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(0, CHAR_AWAY_BACK_MAX) || CHAR_SLEEP_BACK_DEFAULT;
+
+    latest = { wake, backText };
+  }
+  return latest;
+}
+
+/**
+ * 解析 char-busy 標籤（角色去忙一段時間）
+ * 同一則回覆有多個時取最後一個；沒有 end 屬性的標籤直接略過
+ *
+ * @param rawResponse - 原始 AI 回覆
+ * @returns 解析後的忙碌，沒有有效標籤則返回 null
+ */
+export function parseCharBusyTag(
+  rawResponse: string,
+): ParsedCharBusy | null {
+  let latest: ParsedCharBusy | null = null;
+  for (const match of rawResponse.matchAll(CHAR_BUSY_TAG_REGEX)) {
+    const attrs = match[1] ?? "";
+    const end = (extractAttr(attrs, "end") ?? "").trim();
+    if (!end) continue;
+
+    const start = (extractAttr(attrs, "start") ?? "").trim();
+    const reason =
+      (extractAttr(attrs, "reason") ?? "")
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(0, CHAR_AWAY_REASON_MAX) || "有事";
+    const backText =
+      (extractAttr(attrs, "back") ?? "")
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(0, CHAR_AWAY_BACK_MAX) || CHAR_BUSY_BACK_DEFAULT;
+
+    latest = { start: start || undefined, end, reason, backText };
+  }
+  return latest;
+}
+
+/**
+ * 解析 char-wake 標籤（偷回那一輪真的起床／不忙了）
+ * 有 <char-wake/> 或 <char-wake></char-wake> 就是 true
+ *
+ * @param rawResponse - 原始 AI 回覆
+ */
+export function parseCharWakeTag(rawResponse: string): boolean {
+  for (const _match of rawResponse.matchAll(CHAR_WAKE_TAG_REGEX)) {
+    return true;
+  }
+  return false;
 }
 
 /** 取屬性值；屬性名前面要是開頭或空白，date 才不會抓到 end-date 的值 */
@@ -2537,7 +2645,7 @@ export function parseAffinityUpdateTags(
  */
 export function needsParsing(content: string): boolean {
   // 檢查是否包含任何需要解析的標籤
-  return /<think>|<[^<>]*state[^<>]*>|<content>|<msg>|<update>|<UpdateVariable>|<timetravel>|<redpacket|<location>|<schedule-call|<calendar-event|<food-record|<time-jump|<time-advance|<送禮物>|<pay>|<transfer\s|<refund>|<avatar-change|<couple-avatar-|<voice>|<waimai-pay|<waimai-delivery|<face-to-face-request|<online-mode-request|<affinity-update|<char-status|<char-away|<sticky-note|<mood-reply|<plurk[\s>]|<plurk-comment|<share-plurk|<!DOCTYPE\s|<html[\s>]/i.test(
+  return /<think>|<[^<>]*state[^<>]*>|<content>|<msg>|<update>|<UpdateVariable>|<timetravel>|<redpacket|<location>|<schedule-call|<calendar-event|<food-record|<time-jump|<time-advance|<送禮物>|<pay>|<transfer\s|<refund>|<avatar-change|<couple-avatar-|<voice>|<waimai-pay|<waimai-delivery|<face-to-face-request|<online-mode-request|<affinity-update|<char-status|<char-away|<char-sleep|<char-busy|<char-wake|<sticky-note|<mood-reply|<plurk[\s>]|<plurk-comment|<share-plurk|<!DOCTYPE\s|<html[\s>]/i.test(
     content,
   );
 }
