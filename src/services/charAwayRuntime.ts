@@ -25,9 +25,13 @@ import {
   createCharBusy,
   createCharSleep,
   endCharAway,
+  fastForwardAway,
+  fastForwardPlan,
   finishSneak,
   isCharAwayActive,
   isCharAwayPlanPending,
+  pauseCharAway,
+  resumeCharAway,
   recordAwayCall,
   recordSneakWin,
   recordUrgeAttempt,
@@ -39,6 +43,7 @@ import type {
   ParsedCharSleep,
 } from "@/services/charAway";
 import type { CharAway, Chat, ChatMessage } from "@/types/chat";
+import { computeChatNow, getChatClockShift } from "@/utils/fakeTime";
 
 export const CHAR_AWAY_CHANGED_EVENT = "aguaphone:char-away-changed";
 
@@ -144,12 +149,19 @@ export async function startCharSleep(
   if (!chat) return null;
 
   const now = Date.now();
-  if (!canUseCharSleep(chat, { faceToFace: false, now })) return null;
+  const shiftMs = getChatClockShift(chat, now);
+  if (!canUseCharSleep(chat, { faceToFace: false, now, shiftMs })) return null;
 
   const planStartAt = isCharAwayPlanPending(chat.charAwayPlan)
     ? chat.charAwayPlan!.startedAt
     : undefined;
-  const away = createCharSleep(parsed, now, startMessageId, planStartAt);
+  const away = createCharSleep(
+    parsed,
+    now,
+    startMessageId,
+    planStartAt,
+    shiftMs,
+  );
   if (!away) return null;
   await saveCharAway(chatId, away);
   scheduleReturn(chatId, away);
@@ -168,9 +180,10 @@ export async function startCharBusy(
   if (!chat) return null;
 
   const now = Date.now();
-  if (!canUseCharBusy(chat, { faceToFace: false, now })) return null;
+  const shiftMs = getChatClockShift(chat, now);
+  if (!canUseCharBusy(chat, { faceToFace: false, now, shiftMs })) return null;
 
-  const away = createCharBusy(parsed, now, startMessageId);
+  const away = createCharBusy(parsed, now, startMessageId, shiftMs);
   if (!away) return null;
 
   if (away.startedAt > now) {
@@ -244,6 +257,86 @@ export async function activatePlanIfDue(
     return true;
   } finally {
     activatingPlans.delete(chatId);
+  }
+}
+
+/**
+ * 面對面開關後同步暫停狀態：面對面時暫停進行中的與預約（清計時器、取消通知），
+ * 回線上後從剩下的時間繼續。重複呼叫不會重複暫停或恢復。
+ */
+export async function syncCharAwayF2F(
+  chatId: string,
+  faceToFace: boolean,
+  now = Date.now(),
+): Promise<void> {
+  const chat = await loadChatById(chatId);
+  if (!chat || chat.isGroupChat) return;
+  const away = chat.charAway;
+  const plan = chat.charAwayPlan;
+
+  if (faceToFace) {
+    if (away && !away.endedAt && !away.pausedAt) {
+      await saveCharAway(chatId, pauseCharAway(away, now));
+      clearReturnTimer(chatId);
+      await cancelScheduledNotification(notificationTag(chatId, away));
+    }
+    if (plan && !plan.endedAt && !plan.pausedAt) {
+      await saveCharAwayPlan(chatId, pauseCharAway(plan, now));
+      clearPlanTimer(chatId);
+      await cancelScheduledNotification(notificationTag(chatId, plan, true));
+    }
+    return;
+  }
+
+  if (away && !away.endedAt && away.pausedAt) {
+    const resumed = resumeCharAway(away, now);
+    await saveCharAway(chatId, resumed);
+    if (now >= resumed.returnAt - RETURN_GRACE_MS) {
+      await returnCharAwayIfDue(chatId, now);
+    } else {
+      scheduleReturn(chatId, resumed);
+      await scheduleReturnNotification(chat, resumed);
+    }
+  }
+  if (plan && !plan.endedAt && plan.pausedAt) {
+    const resumed = resumeCharAway(plan, now);
+    await saveCharAwayPlan(chatId, resumed);
+    schedulePlanStart(chatId, resumed);
+    await scheduleReturnNotification(chat, resumed);
+  }
+}
+
+/**
+ * 線上手動把劇情時間往後調（shiftBefore → shiftAfter）：
+ * 跨過他回來的劇情時間就立刻回來；預約跨過開始就開始、連結束也跨過就一起結束。
+ * 其他情況倒數不變。
+ */
+export async function fastForwardCharAway(
+  chatId: string,
+  shiftBefore: number,
+  shiftAfter: number,
+  now = Date.now(),
+): Promise<void> {
+  if (shiftAfter <= shiftBefore) return;
+  const chat = await loadChatById(chatId);
+  if (!chat || chat.isGroupChat) return;
+
+  const away = chat.charAway;
+  if (away && isCharAwayActive(away)) {
+    const next = fastForwardAway(away, now, shiftBefore, shiftAfter);
+    if (next) {
+      await saveCharAway(chatId, next);
+      await returnCharAwayIfDue(chatId, now);
+    }
+  }
+
+  const plan = (await loadChatById(chatId))?.charAwayPlan;
+  if (plan && isCharAwayPlanPending(plan)) {
+    const next = fastForwardPlan(plan, now, shiftBefore, shiftAfter);
+    if (next) {
+      await saveCharAwayPlan(chatId, next);
+      await activatePlanIfDue(chatId, now);
+    }
   }
 }
 
@@ -363,7 +456,7 @@ export async function recordCharAwayCall(
       callNotificationType: "unanswered",
       sentWhileAway: away.id,
     },
-  ]);
+  ], chat);
   await saveCharAway(chatId, recordAwayCall(away, now));
 }
 
@@ -427,7 +520,7 @@ export async function returnCharAwayIfDue(
         createdAt: ts,
         updatedAt: ts,
       },
-    ]);
+    ], chat);
 
 
     // App 在前景：排好的系統通知不需要了
@@ -510,13 +603,27 @@ export function startCharAwayRuntime(): void {
   }
 }
 
+/** 聊天的面對面狀態跟暫停狀態對不上（舊資料、在別處切換）時要同步 */
+function needsF2FSync(chat: Chat): boolean {
+  const f2f = chat.faceToFaceMode === true;
+  const items = [chat.charAway, chat.charAwayPlan].filter(
+    (a): a is CharAway => !!a && !a.endedAt,
+  );
+  return items.some((a) => (f2f ? !a.pausedAt : !!a.pausedAt));
+}
+
 /** 全部聊天掃一次：時間到的補回來，還沒到的重排計時器 */
 async function scanAll(): Promise<void> {
   try {
     const now = Date.now();
     const chats = await loadAllChats();
-    for (const chat of chats) {
-      if (chat.isGroupChat) continue;
+    for (const listed of chats) {
+      if (listed.isGroupChat) continue;
+      let chat = listed;
+      if (needsF2FSync(listed)) {
+        await syncCharAwayF2F(listed.id, listed.faceToFaceMode === true, now);
+        chat = (await loadChatById(listed.id)) ?? listed;
+      }
 
       const away = chat.charAway;
       if (away && isCharAwayActive(away)) {
@@ -641,11 +748,17 @@ async function characterName(chat: Chat): Promise<string> {
   return chat.name;
 }
 
-/** 加訊息到聊天（同 PeekLinks）：寫入 → 更新聊天摘要 → 通知畫面 */
+/** 加訊息到聊天（同 PeekLinks）：記劇情時間 → 寫入 → 更新聊天摘要 → 通知畫面 */
 async function appendToChat(
   chatId: string,
   messages: ChatMessage[],
+  chat: Chat,
 ): Promise<void> {
+  for (const m of messages) {
+    if (typeof m.storyTime !== "number") {
+      m.storyTime = computeChatNow(chat, new Date(m.createdAt)).getTime();
+    }
+  }
   await appendMessages(chatId, messages);
   await refreshChatDerivedMetadata(chatId).catch(() => undefined);
   try {

@@ -53,6 +53,7 @@ import {
   startCharAway,
   startCharBusy,
   startCharSleep,
+  syncCharAwayF2F,
   urgeCharAway,
   wakeCharAwayNow,
 } from "@/services/charAwayRuntime";
@@ -75,6 +76,8 @@ export function useCharAway(ctx: {
   characterName: Readonly<Ref<string>>;
   isGenerating: () => boolean;
   triggerAIResponse: () => Promise<void>;
+  /** 聊天時間減現實時間（AI 說的幾點用劇情時間換算）；沒給時當作 0 */
+  getClockShiftMs?: () => number;
 }) {
   const charAway = ref<CharAway | null>(null);
   const charAwayPlan = ref<CharAway | null>(null);
@@ -182,7 +185,11 @@ export function useCharAway(ctx: {
     if (!away) return null;
     if (message.id !== firstAwayEntryId.value) return null;
 
-    const text = buildAwayHintText(ctx.characterName.value, away);
+    const text = buildAwayHintText(
+      ctx.characterName.value,
+      away,
+      ctx.getClockShiftMs?.() ?? 0,
+    );
     const label = awayUrgeLabel(away);
     const { action, lockedText } = hintAction(away);
     return lockedText ? { text, label, action, lockedText } : { text, label, action };
@@ -207,7 +214,8 @@ export function useCharAway(ctx: {
     const away = charAway.value ?? undefined;
     const plan = charAwayPlan.value ?? undefined;
     const nowTs = Date.now();
-    const opts = { faceToFace: ctx.faceToFace.value, now: nowTs };
+    const shiftMs = ctx.getClockShiftMs?.() ?? 0;
+    const opts = { faceToFace: ctx.faceToFace.value, now: nowTs, shiftMs };
     const availability = {
       charAway: away,
       charAwayPlan: plan,
@@ -227,6 +235,7 @@ export function useCharAway(ctx: {
       canUseCharBusy(availability, opts),
       plan,
       nowTs,
+      shiftMs,
     );
 
     const entries = away
@@ -243,7 +252,7 @@ export function useCharAway(ctx: {
     const notes = [
       buildCharAwayReturnNote(away, leftCount),
       buildCharAwaySneakNote(away, leftCount),
-      buildCharAwayPlanNote(plan, nowTs),
+      buildCharAwayPlanNote(plan, nowTs, shiftMs),
     ].filter((note): note is string => !!note);
     const charAwayReturnNote = notes.length > 0 ? notes.join("\n\n") : undefined;
 
@@ -450,6 +459,12 @@ export function useCharAway(ctx: {
       window.removeEventListener(CHAR_AWAY_CHANGED_EVENT, handleCharAwayChanged);
     });
   }
+
+  // 面對面時暫停睡覺／忙碌／暫離，回線上從剩下的時間繼續（載入聊天時也會對齊）
+  watch(ctx.faceToFace, (faceToFace) => {
+    const chatId = ctx.currentChatId.value;
+    if (chatId) void syncCharAwayF2F(chatId, faceToFace);
+  });
 
   // --- 目前看著哪個聊天 ---
   watch(
