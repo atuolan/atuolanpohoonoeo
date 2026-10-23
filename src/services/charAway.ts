@@ -102,9 +102,9 @@ export function isNightTime(now: number): boolean {
   return hour >= CHAR_SLEEP_NIGHT_START_HOUR || hour < CHAR_SLEEP_NIGHT_END_HOUR;
 }
 
-/** 是否正在暫時離開 */
+/** 是否正在暫時離開（面對面暫停中不算） */
 export function isCharAwayActive(away: CharAway | undefined): boolean {
-  return !!away && !away.endedAt;
+  return !!away && !away.endedAt && !away.pausedAt;
 }
 
 /** 是否還在冷卻中（主動取消不算冷卻）；只擋同一種，睡覺不冷卻 */
@@ -123,9 +123,9 @@ export function isCharAwayCoolingDown(
   );
 }
 
-/** 有沒有預約好在等（endedAt 有值＝已取消或已開始） */
+/** 有沒有預約好在等（endedAt 有值＝已取消或已開始；面對面暫停中不算） */
 export function isCharAwayPlanPending(plan: CharAway | undefined): boolean {
-  return !!plan && !plan.endedAt;
+  return !!plan && !plan.endedAt && !plan.pausedAt;
 }
 
 /** 判斷能不能用時需要的聊天欄位 */
@@ -141,7 +141,7 @@ type AvailabilityChat = {
 /** 現在能不能用暫時離開 */
 export function canUseCharAway(
   chat: AvailabilityChat,
-  opts: { faceToFace: boolean; now: number },
+  opts: { faceToFace: boolean; now: number; shiftMs?: number },
 ): boolean {
   if (chat.charAwayEnabled === false) return false;
   if (chat.isGroupChat) return false;
@@ -151,22 +151,22 @@ export function canUseCharAway(
   return true;
 }
 
-/** 現在能不能去睡覺（只在晚上 20:00～05:59） */
+/** 現在能不能去睡覺（劇情時間的晚上 20:00～05:59） */
 export function canUseCharSleep(
   chat: AvailabilityChat,
-  opts: { faceToFace: boolean; now: number },
+  opts: { faceToFace: boolean; now: number; shiftMs?: number },
 ): boolean {
   if (chat.charSleepEnabled === false) return false;
   if (chat.isGroupChat) return false;
   if (opts.faceToFace) return false;
   if (isCharAwayActive(chat.charAway)) return false;
-  return isNightTime(opts.now);
+  return isNightTime(opts.now + (opts.shiftMs ?? 0));
 }
 
 /** 現在能不能排忙碌行程 */
 export function canUseCharBusy(
   chat: AvailabilityChat,
-  opts: { faceToFace: boolean; now: number },
+  opts: { faceToFace: boolean; now: number; shiftMs?: number },
 ): boolean {
   if (chat.charBusyEnabled === false) return false;
   if (chat.isGroupChat) return false;
@@ -207,9 +207,12 @@ export function createCharSleep(
   now: number,
   startMessageId?: string,
   planStartAt?: number,
+  shiftMs = 0,
 ): CharAway | null {
-  const wakeAt = nextClockAfter(parsed.wake, now);
-  if (wakeAt === null) return null;
+  // wake 是劇情時間的 HH:mm：用劇情時間找下一個，再換回現實時間
+  const wakeAtStory = nextClockAfter(parsed.wake, now + shiftMs);
+  if (wakeAtStory === null) return null;
+  const wakeAt = wakeAtStory - shiftMs;
 
   let returnAt = Math.min(
     now + CHAR_SLEEP_MAX_MS,
@@ -240,23 +243,25 @@ export function createCharBusy(
   parsed: ParsedCharBusy,
   now: number,
   startMessageId?: string,
+  shiftMs = 0,
 ): CharAway | null {
   if (!parseClock(parsed.end)) return null;
+  const storyNow = now + shiftMs;
 
-  let startedAt = now;
+  let startedAt = storyNow;
   if (parsed.start) {
     const startClock = parseClock(parsed.start);
     if (startClock) {
-      const todayAt = clockOnDay(now, startClock.h, startClock.m, 0);
-      const yesterdayAt = clockOnDay(now, startClock.h, startClock.m, -1);
+      const todayAt = clockOnDay(storyNow, startClock.h, startClock.m, 0);
+      const yesterdayAt = clockOnDay(storyNow, startClock.h, startClock.m, -1);
       // 剛過去的時間就當作現在開始（跨午夜時也要看昨天那個時刻）
       const inPastGrace = [todayAt, yesterdayAt].some(
-        (t) => t <= now && t > now - CHAR_BUSY_START_PAST_GRACE_MS,
+        (t) => t <= storyNow && t > storyNow - CHAR_BUSY_START_PAST_GRACE_MS,
       );
       if (!inPastGrace) {
-        const next = nextClockAfter(parsed.start, now);
+        const next = nextClockAfter(parsed.start, storyNow);
         if (next === null) return null;
-        if (next > now + 24 * 3_600_000) return null;
+        if (next > storyNow + 24 * 3_600_000) return null;
         startedAt = next;
       }
     }
@@ -269,13 +274,17 @@ export function createCharBusy(
     Math.max(startedAt + CHAR_BUSY_MIN_MS, endAt),
   );
 
+  // 換回現實時間（倒數、鬧鐘、通知都用現實時間）
+  const realStartedAt = startedAt - shiftMs;
+  const realReturnAt = returnAt - shiftMs;
+
   return {
-    id: `busy_${startedAt}`,
+    id: `busy_${realStartedAt}`,
     kind: "busy",
     reason: parsed.reason || "有事",
     backText: parsed.backText || CHAR_BUSY_BACK_DEFAULT,
-    startedAt,
-    returnAt,
+    startedAt: realStartedAt,
+    returnAt: realReturnAt,
     startMessageId,
     urgeCount: 0,
     callCount: 0,
@@ -369,6 +378,57 @@ export function wakeCharAway(away: CharAway, now: number): CharAway {
   };
 }
 
+/** 面對面開始：暫停（已結束或已暫停的原樣回傳） */
+export function pauseCharAway(away: CharAway, now: number): CharAway {
+  if (away.endedAt || away.pausedAt) return away;
+  return { ...away, pausedAt: now, updatedAt: now };
+}
+
+/** 回到線上：從剩下的時間繼續（沒暫停的原樣回傳） */
+export function resumeCharAway(away: CharAway, now: number): CharAway {
+  if (!away.pausedAt) return away;
+  const delta = Math.max(0, now - away.pausedAt);
+  const { pausedAt: _pausedAt, ...rest } = away;
+  return {
+    ...rest,
+    startedAt: away.startedAt + delta,
+    returnAt: away.returnAt + delta,
+    ...(typeof away.urgeLockedUntil === "number"
+      ? { urgeLockedUntil: away.urgeLockedUntil + delta }
+      : {}),
+    updatedAt: now,
+  };
+}
+
+/**
+ * 線上手動把劇情時間往後調：跨過他回來的劇情時間，就把 returnAt 拉到現在（立刻回來）。
+ * 沒跨過、或時間沒往後調，回 null（倒數不變）。
+ */
+export function fastForwardAway(
+  away: CharAway,
+  now: number,
+  shiftBefore: number,
+  shiftAfter: number,
+): CharAway | null {
+  if (shiftAfter <= shiftBefore) return null;
+  if (now + shiftAfter < away.returnAt + shiftBefore) return null;
+  return { ...away, returnAt: now, updatedAt: now };
+}
+
+/** 預約版：跨過開始就現在開始；結束也跨過就一起拉到現在。都沒跨過回 null */
+export function fastForwardPlan(
+  plan: CharAway,
+  now: number,
+  shiftBefore: number,
+  shiftAfter: number,
+): CharAway | null {
+  if (shiftAfter <= shiftBefore) return null;
+  const storyNow = now + shiftAfter;
+  if (storyNow < plan.startedAt + shiftBefore) return null;
+  const endCrossed = storyNow >= plan.returnAt + shiftBefore;
+  return { ...plan, startedAt: now, returnAt: endCrossed ? now : plan.returnAt, updatedAt: now };
+}
+
 /** 這一通電話加上前面 10 分鐘內的，是不是第 3 通（會把他吵醒） */
 export function shouldWakeByCall(
   away: CharAway | undefined,
@@ -425,6 +485,7 @@ export function buildCharBusyGuide(
   available: boolean,
   plan: CharAway | undefined,
   now: number,
+  shiftMs = 0,
 ): string {
   if (!available) return "";
   const lines = [
@@ -432,7 +493,7 @@ export function buildCharBusyGuide(
   ];
   if (isCharAwayPlanPending(plan) && plan) {
     lines.push(
-      `（你已經排了 ${planDayPrefix(plan.startedAt, now)}${formatClock(plan.startedAt)}～${formatClock(plan.returnAt)}「${plan.reason}」，再放一次會改掉原本的安排）`,
+      `（你已經排了 ${planDayPrefix(plan.startedAt + shiftMs, now + shiftMs)}${formatClock(plan.startedAt + shiftMs)}～${formatClock(plan.returnAt + shiftMs)}「${plan.reason}」，再放一次會改掉原本的安排）`,
     );
   }
   return lines.join("\n");
@@ -453,11 +514,12 @@ function planDayPrefix(startedAt: number, now: number): string {
 export function buildCharAwayPlanNote(
   plan: CharAway | undefined,
   now: number,
+  shiftMs = 0,
 ): string | null {
   if (!plan || !isCharAwayPlanPending(plan)) return null;
   return [
     "[接下來的行程]",
-    `{{char}} ${planDayPrefix(plan.startedAt, now)}${formatClock(plan.startedAt)}～${formatClock(plan.returnAt)} 要「${plan.reason}」，那段時間沒辦法回訊息。時間快到時可以自然地跟 {{user}} 說一聲。`,
+    `{{char}} ${planDayPrefix(plan.startedAt + shiftMs, now + shiftMs)}${formatClock(plan.startedAt + shiftMs)}～${formatClock(plan.returnAt + shiftMs)} 要「${plan.reason}」，那段時間沒辦法回訊息。時間快到時可以自然地跟 {{user}} 說一聲。`,
   ].join("\n");
 }
 
@@ -588,15 +650,19 @@ export function buildCharAwayReturnNote(
 }
 
 /** 聊天室上方的情境提示 */
-export function buildAwayHintText(charName: string, away: CharAway): string {
+export function buildAwayHintText(
+  charName: string,
+  away: CharAway,
+  shiftMs = 0,
+): string {
   const kind = awayKind(away);
   if (kind === "sleep") {
-    return `${charName}睡著了，大約 ${formatClock(away.returnAt)} 起床`;
+    return `${charName}睡著了，大約 ${formatClock(away.returnAt + shiftMs)} 起床`;
   }
   if (kind === "busy") {
-    return `${charName}在忙（${away.reason}），大約 ${formatClock(away.returnAt)} 忙完`;
+    return `${charName}在忙（${away.reason}），大約 ${formatClock(away.returnAt + shiftMs)} 忙完`;
   }
-  return `${charName}去忙了（${away.reason}），大約 ${formatClock(away.returnAt)} 回來`;
+  return `${charName}去忙了（${away.reason}），大約 ${formatClock(away.returnAt + shiftMs)} 回來`;
 }
 
 /** 「催他」小遊戲的按鈕文字 */
