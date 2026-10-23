@@ -16,6 +16,8 @@ export function useChatMessageActions(context: {
   currentCharacter: ComputedRef<any>;
   saveChatImmediate: () => Promise<void>;
   focusReplyInput?: () => void;
+  /** 接受「切回線上」之後（劇情時鐘要問怎麼接時間） */
+  onReturnedOnline?: () => void;
 }) {
   const editingMessageId = ref<string | null>(null);
   const editingContent = ref("");
@@ -185,6 +187,7 @@ export function useChatMessageActions(context: {
     msg.onlineModeRequestStatus = "accepted";
     context.chatFaceToFaceMode.value = false;
     await context.saveChatImmediate();
+    context.onReturnedOnline?.();
   }
 
   async function handleRejectOnlineModeRequest(id: string) {

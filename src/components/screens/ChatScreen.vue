@@ -36,6 +36,7 @@ import PhoneCallModal from "@/components/modals/PhoneCallModal.vue";
 import ProactiveMessageSettingsModal from "@/components/modals/ProactiveMessageSettingsModal.vue";
 import RedPacketVoiceClaimModal from "@/components/modals/RedPacketVoiceClaimModal.vue";
 import ScreenshotPreviewModal from "@/components/modals/ScreenshotPreviewModal.vue";
+import StoryClockReturnDialog from "@/components/modals/StoryClockReturnDialog.vue";
 import ForwardTargetPickerModal from "@/components/modals/ForwardTargetPickerModal.vue";
 import VideoCallModal from "@/components/modals/VideoCallModal.vue";
 import ToolConfirmationModal from "@/components/modals/ToolConfirmationModal.vue";
@@ -66,7 +67,8 @@ import { useChatAvatarChange } from "@/composables/useChatAvatarChange";
 import { useChatEventsExtraction } from "@/composables/useChatEventsExtraction";
 import { useChatExport } from "@/composables/useChatExport";
 import { useChatFakeTime } from "@/composables/useChatFakeTime";
-import { resolveStoryTime, stampStoryTimes } from "@/utils/fakeTime";
+import { resolveStoryTime, stampStoryTimes, computeRealignTarget, STORY_CLOCK_SYNC_THRESHOLD_MS } from "@/utils/fakeTime";
+import { fastForwardCharAway } from "@/services/charAwayRuntime";
 import { useChatFiles } from "@/composables/useChatFiles";
 import {
   enterGameScreen,
@@ -1590,11 +1592,28 @@ function restampStoryTime(sinceRealMs: number | null, turnId?: string) {
   }
 }
 
-async function advanceStoryTime(minutes: number) {
-  if (fakeTime.advanceBy(minutes)) await saveChat();
+/** 睡覺／忙碌換算「幾點」用的聊天時間差（沒開感知現實時間為 0） */
+function getCharAwayClockShift(): number {
+  return chatEnableRealTimeAwareness.value ? fakeTime.getClockShiftMs() : 0;
 }
 
-/** 劇情時間拉回最後一則訊息的時間 */
+/** 手動調了劇情時間：記下「調過」（進面對面時停在這個時間），跨過起床／忙完時間的就讓他回來 */
+async function afterManualStoryTimeChange(shiftBefore: number) {
+  fakeTime.markStoryPinned();
+  await saveChat();
+  const chatId = currentChatId.value;
+  const shiftAfter = getCharAwayClockShift();
+  if (chatId && shiftAfter > shiftBefore) {
+    await fastForwardCharAway(chatId, shiftBefore, shiftAfter);
+  }
+}
+
+async function advanceStoryTime(minutes: number) {
+  const before = getCharAwayClockShift();
+  if (fakeTime.advanceBy(minutes)) await afterManualStoryTimeChange(before);
+}
+
+/** 劇情時間拉回最後一則訊息的時間（面對面時修正按錯的時間） */
 async function resumeStoryFromLastMessage() {
   if (fakeTime.resumeFromLastMessage()) {
     showToast("已接續最後一則訊息的時間");
@@ -1606,6 +1625,7 @@ async function resumeStoryFromLastMessage() {
 
 /** 劇情時間跳到隔天早上 8 點 */
 async function jumpStoryToNextMorning() {
+  const before = getCharAwayClockShift();
   const next = new Date(fakeTime.getChatNow());
   next.setDate(next.getDate() + 1);
   next.setHours(8, 0, 0, 0);
@@ -1613,8 +1633,46 @@ async function jumpStoryToNextMorning() {
   const target = `${next.getFullYear()}-${pad(next.getMonth() + 1)}-${pad(next.getDate())}T08:00`;
   if (fakeTime.jumpToTime(target) === true) {
     showToast("已跳到隔天早上");
-    await saveChat();
+    await afterManualStoryTimeChange(before);
   }
+}
+
+/** 面板的對齊按鈕：劇情較慢回到現在，較快跳到之後第一個跟現實同一時刻 */
+async function realignStoryToReality() {
+  const before = getCharAwayClockShift();
+  if (fakeTime.realignToReality()) {
+    showToast("已對齊現實時間");
+    await afterManualStoryTimeChange(before);
+  }
+}
+
+// ===== 回到線上：劇情時鐘跟現實差很多時問要怎麼接 =====
+const storyReturnPrompt = ref<null | { gapMs: number; storyNow: number; realignTarget: number }>(null);
+
+/** 使用者把面對面切回線上之後呼叫：劇情時鐘跟現實差 10 分鐘以上就跳小視窗 */
+function promptStoryClockReturn() {
+  if (!chatEnableRealTimeAwareness.value || fakeTime.fakeTimeMode.value !== "story") return;
+  if (fakeTime.isStoryClockPaused.value) return;
+  const realNow = Date.now();
+  const storyNow = fakeTime.getChatNow().getTime();
+  const gapMs = storyNow - realNow;
+  if (Math.abs(gapMs) < STORY_CLOCK_SYNC_THRESHOLD_MS) return;
+  storyReturnPrompt.value = {
+    gapMs,
+    storyNow,
+    realignTarget: computeRealignTarget(storyNow, realNow),
+  };
+}
+
+/** 小視窗：接續劇情時間（點外面關掉也是這個） */
+function keepStoryClock() {
+  storyReturnPrompt.value = null;
+}
+
+/** 小視窗：回到現實時間／對齊現實的時刻 */
+async function confirmStoryClockRealign() {
+  storyReturnPrompt.value = null;
+  if (fakeTime.realignToReality()) await saveChat();
 }
 
 async function setFakeTimeMode(mode: "real" | "loop" | "offset" | "story") {
@@ -1633,8 +1691,9 @@ async function updateFakeTimeLoopEnd(value: string) {
 }
 
 async function updateOffsetStartDateTime(value: string) {
+  const before = getCharAwayClockShift();
   fakeTime.setOffsetFromDateTime(value);
-  await saveChat();
+  await afterManualStoryTimeChange(before);
 }
 
 function toggleRail() {
@@ -2508,6 +2567,7 @@ const charAwayCtl = useCharAway({
   characterName: displayCharacterName,
   isGenerating: () => isGenerating.value,
   triggerAIResponse: () => triggerAIResponse(),
+  getClockShiftMs: () => getCharAwayClockShift(),
 });
 const {
   headerStatusText: charAwayHeaderText,
@@ -3442,6 +3502,7 @@ const {
   effectivePersona,
   currentCharacter,
   saveChatImmediate,
+  onReturnedOnline: () => promptStoryClockReturn(),
   focusReplyInput: () => {
     const textarea = isInputExpanded.value
       ? expandedInputRef.value
@@ -8432,6 +8493,7 @@ function toggleChatSettingsMenu() {
 async function toggleFaceToFaceMode() {
   chatFaceToFaceMode.value = !chatFaceToFaceMode.value;
   await saveChat();
+  if (!chatFaceToFaceMode.value) promptStoryClockReturn();
 }
 
 // 面對面設定面板（全域面對面提示詞開關）
@@ -10425,6 +10487,7 @@ useChatCleanup({
       :formatted-fake-time="fakeTime.formattedFakeTime.value"
       :story-clock-paused="fakeTime.isStoryClockPaused.value"
       :story-opening-pending="fakeTime.isStoryOpeningPending.value"
+      :story-gap-ms="fakeTime.storyGapMs.value"
       :time-jump-input="timeJumpInput"
       :chat-do-not-disturb="chatDoNotDisturb"
       :enable-phone-decision="enablePhoneDecision"
@@ -10472,6 +10535,7 @@ useChatCleanup({
       @advance-story-time="onHeaderAdvanceStoryTime"
       @story-next-morning="jumpStoryToNextMorning"
       @resume-story-from-last="resumeStoryFromLastMessage"
+      @realign-story-time="realignStoryToReality"
       @toggle-chat-do-not-disturb="toggleChatDoNotDisturb"
       @toggle-phone-decision="togglePhoneDecisionFromMenu"
       @toggle-novel-ai-image="toggleNovelAIImage"
@@ -10733,6 +10797,16 @@ useChatCleanup({
         </div>
       </div>
     </Teleport>
+
+    <!-- 回到線上：劇情時鐘跟現實差很多時問要怎麼接 -->
+    <StoryClockReturnDialog
+      :open="!!storyReturnPrompt"
+      :gap-ms="storyReturnPrompt?.gapMs ?? 0"
+      :story-now="storyReturnPrompt?.storyNow ?? 0"
+      :realign-target="storyReturnPrompt?.realignTarget ?? 0"
+      @keep="keepStoryClock"
+      @realign="confirmStoryClockRealign"
+    />
 
     <!-- 訊息列表 -->
     <main
