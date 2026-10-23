@@ -7,6 +7,7 @@ import QualifierChip from "@/components/plurk/QualifierChip.vue";
 import { db, DB_STORES } from "@/db/database";
 import { useCharactersStore } from "@/stores";
 import type { Chat } from "@/types/chat";
+import { pickChatListEntries } from "@/utils/chatListEntries";
 
 const MAX_TEXT = 200;
 
@@ -61,9 +62,10 @@ async function loadChats() {
   try {
     await db.init();
     const all = await db.getAll<Chat>(DB_STORES.CHATS);
-    chats.value = all
-      .filter((c) => c.messages?.length > 0 || c.lastMessagePreview)
-      .sort((a, b) => b.updatedAt - a.updatedAt);
+    // 跟聊天列表一樣每個角色只留最新的一段聊天，不然開過幾段新對話就會重複出現
+    chats.value = pickChatListEntries(
+      all.filter((c) => c.messages?.length > 0 || c.lastMessagePreview),
+    );
   } catch (e) {
     console.error("[ShareToChat] 載入聊天列表失敗:", e);
     chats.value = [];

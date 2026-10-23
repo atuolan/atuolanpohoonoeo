@@ -3,6 +3,7 @@ import { db, DB_STORES } from "@/db/database";
 import { deleteChatCascade } from "@/storage/chatStorage";
 import { useCharactersStore } from "@/stores";
 import type { Chat } from "@/types/chat";
+import { pickChatListEntries } from "@/utils/chatListEntries";
 import { createDefaultGroupChat } from "@/types/chat";
 import { computed, onMounted, ref } from "vue";
 import { setLocalChatUnreadCount } from "@/storage/chatStorage";
@@ -40,21 +41,8 @@ async function loadChats() {
     await db.init();
     const chats = await db.getAll<Chat>(DB_STORES.CHATS);
 
-    // 按更新時間排序所有聊天
-    const sorted = chats.sort((a, b) => b.updatedAt - a.updatedAt);
-
-    // 每個角色（或群聊）只保留最新的一個入口顯示在主列表
-    // 但 pinnedToList === true 的聊天不受去重限制，可以同時出現在列表中
-    // 群聊用 chat.id 作為唯一 key（群聊沒有共用 characterId 的概念）
-    const seen = new Set<string>();
-    chatList.value = sorted.filter((c) => {
-      // 釘選到列表的聊天直接顯示，不參與去重
-      if (c.pinnedToList) return true;
-      const key = c.isGroupChat ? `group_${c.id}` : c.characterId;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
+    // 每個角色（或群聊）只保留最新的一個入口；釘選到列表的不參與去重
+    chatList.value = pickChatListEntries(chats);
   } catch (e) {
     console.error("載入對話失敗:", e);
   } finally {
