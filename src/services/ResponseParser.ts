@@ -2796,24 +2796,37 @@ function resolveStoryStamp(value: string, currentMs: number): number | null | un
 }
 
 /**
- * 解析面對面時間戳記（這段劇情發生的時間）。
- * 只看思考區塊之後的部分；取第一個內容非空、格式正確的。
- * 只寫 HH:mm：當作同一天；比目前早不到 6 小時當作寫錯，早 6 小時以上當作隔天。
- * 有日期：比目前早、或晚一年以上都不採用。
+ * 解析面對面時間戳記：回覆開頭寫這段劇情開始的時間，結尾寫結束的時間。
+ * 只看思考區塊之後的部分；空的、格式錯的跳過。
+ * - 開始：第一個格式正確的。只寫 HH:mm 當作同一天，比目前早不到 6 小時當作寫錯、早 6 小時以上當作隔天；
+ *   有日期時比目前早、或晚一年以上都不採用。
+ * - 結束：最後一個（至少要有兩個），以開始時間為基準換算；不晚於開始就不採用。
+ * - 開始不採用但結束有效：結束當作這段的時間（只有開始、沒有結束）。
  *
  * @param currentMs 目前的劇情時間
- * @returns 劇情時間（毫秒），或 null（沒寫、格式錯、不採用）
  */
-export function parseStoryStamp(rawResponse: string, currentMs: number): number | null {
+export function parseStoryStamps(
+  rawResponse: string,
+  currentMs: number,
+): { start: number | null; end: number | null } {
   const body = stripStateThinking(rawResponse).replace(/^[\s\S]*<\/think(?:ing)?>/i, "");
-  for (const match of body.matchAll(STORY_STAMP_REGEX)) {
-    const value = match[1].trim();
-    if (!value) continue;
-    const resolved = resolveStoryStamp(value, currentMs);
-    if (resolved === undefined) continue;
-    return resolved;
-  }
-  return null;
+  const values = [...body.matchAll(STORY_STAMP_REGEX)]
+    .map((m) => m[1].trim())
+    .filter((v) => v && resolveStoryStamp(v, currentMs) !== undefined);
+  if (values.length === 0) return { start: null, end: null };
+
+  const first = resolveStoryStamp(values[0], currentMs) ?? null;
+  const last =
+    values.length > 1
+      ? resolveStoryStamp(values[values.length - 1], first ?? currentMs) ?? null
+      : null;
+  if (first === null) return { start: last, end: null };
+  return { start: first, end: last !== null && last > first ? last : null };
+}
+
+/** 面對面時間戳記的開始時間（見 parseStoryStamps） */
+export function parseStoryStamp(rawResponse: string, currentMs: number): number | null {
+  return parseStoryStamps(rawResponse, currentMs).start;
 }
 
 /**

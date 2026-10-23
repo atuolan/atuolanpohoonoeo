@@ -77,3 +77,24 @@ describe("日期時間巨集跟著聊天時間", () => {
     expect(await b.macroEngine.substitute("{{time}}")).toBe("21:30");
   });
 });
+
+describe("劇情時鐘：頭尾各一個時間戳記", () => {
+  it("說明開頭寫開始時間、結尾寫結束時間", () => {
+    const text: string = build({ storyClockPaused: true }).buildStoryClockPrompt();
+    expect(text).toContain("第一行寫這段劇情開始的時間");
+    expect(text).toContain("最後一行寫這段劇情結束的時間");
+    expect(text).toContain("<!--t:21:50-->");
+  });
+
+  it("歷史訊息：每輪最後一則 AI 訊息補上那一輪的結束時間", () => {
+    const end = new Date(2026, 7, 19, 22, 10).getTime();
+    const start = new Date(2026, 7, 19, 21, 30).getTime();
+    const user = { is_user: true, createdAt: start, storyTime: start };
+    const a1 = { is_user: false, createdAt: start, storyTime: start, storyClockAfter: { offset: 0, pausedAt: end } };
+    const a2 = { is_user: false, createdAt: start, storyTime: start, storyClockAfter: { offset: 0, pausedAt: end } };
+    const ends: Map<unknown, number> = (PromptBuilder as any).collectTurnEndTimes([user, a1, a2]);
+    expect(ends.has(a1)).toBe(false);
+    expect(ends.get(a2)).toBe(end);
+    expect(ends.has(user)).toBe(false);
+  });
+});

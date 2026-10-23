@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseAIResponse, parseStoryStamp } from "./ResponseParser";
+import { parseAIResponse, parseStoryStamp, parseStoryStamps } from "./ResponseParser";
 
 const at = (y: number, mo: number, d: number, h: number, mi = 0) =>
   new Date(y, mo - 1, d, h, mi).getTime();
@@ -68,5 +68,50 @@ describe("parseAIResponse 拿掉時間戳記", () => {
     const text = parsed.messages.map((m) => m.content).join("\n");
     expect(text).not.toContain("<!--");
     expect(text).toContain("你好");
+  });
+});
+
+describe("parseStoryStamps 開始與結束", () => {
+  it("頭尾各一個：開始是第一個，結束是最後一個", () => {
+    expect(
+      parseStoryStamps("<!--t:2026-10-23 16:38-->正文……\n<!--t:16:50-->", NOW),
+    ).toEqual({ start: at(2026, 10, 23, 16, 38), end: at(2026, 10, 23, 16, 50) });
+  });
+
+  it("只有一個：只有開始", () => {
+    expect(parseStoryStamps("<!--t:16:38-->正文", NOW)).toEqual({
+      start: at(2026, 10, 23, 16, 38),
+      end: null,
+    });
+  });
+
+  it("結尾只寫 HH:mm 跨過午夜：當作隔天", () => {
+    const late = at(2026, 10, 23, 22, 0);
+    expect(parseStoryStamps("<!--t:23:30-->正文<!--t:01:10-->", late)).toEqual({
+      start: at(2026, 10, 23, 23, 30),
+      end: at(2026, 10, 24, 1, 10),
+    });
+  });
+
+  it("結束比開始早：結束當作寫錯", () => {
+    expect(parseStoryStamps("<!--t:16:38-->正文<!--t:16:30-->", NOW)).toEqual({
+      start: at(2026, 10, 23, 16, 38),
+      end: null,
+    });
+  });
+
+  it("開頭漏寫或寫錯、只有結尾有效：結尾當作這段的時間", () => {
+    expect(parseStoryStamps("<!--t:-->正文<!--t:16:50-->", NOW)).toEqual({
+      start: at(2026, 10, 23, 16, 50),
+      end: null,
+    });
+    expect(parseStoryStamps("<!--t:2026-10-23 10:00-->正文<!--t:16:50-->", NOW)).toEqual({
+      start: at(2026, 10, 23, 16, 50),
+      end: null,
+    });
+  });
+
+  it("parseStoryStamp 仍回傳開始時間", () => {
+    expect(parseStoryStamp("<!--t:16:38-->正文<!--t:16:50-->", NOW)).toBe(at(2026, 10, 23, 16, 38));
   });
 });
