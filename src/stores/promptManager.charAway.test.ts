@@ -26,6 +26,8 @@ const DEFAULT_CONTENT = contentOf(DEFAULT_PROMPT_DEFINITIONS, "onlineModeFeature
 const STATUS_LINE = DEFAULT_CONTENT.match(/[^\n]*<char-status[^\n]*/)![0];
 const STICKY_LINE = DEFAULT_CONTENT.match(/[^\n]*<sticky-note[^\n]*/)![0];
 const AWAY_LINE = "{{charAwayGuide}}";
+const SLEEP_LINE = "{{charSleepGuide}}";
+const BUSY_LINE = "{{charBusyGuide}}";
 
 /** 存一份線上模式功能被換成指定內容的設定，模擬舊用戶 */
 async function loadWithOnlineContent(content: string) {
@@ -71,5 +73,31 @@ describe("線上模式功能的角色暫時離開說明", () => {
     expect(
       contentOf(store.config.prompts, "onlineModeFeatures").split(AWAY_LINE).length - 1,
     ).toBe(1);
+  });
+
+  it("預設內容依序有 away、sleep、busy 三行，最後接封鎖那行", () => {
+    expect(DEFAULT_CONTENT).toContain(`${AWAY_LINE}\n${SLEEP_LINE}\n${BUSY_LINE}\n`);
+    expect(DEFAULT_CONTENT.match(/^\{\{charSleepGuide\}\}$/m)?.[0]).toBe(SLEEP_LINE);
+    expect(DEFAULT_CONTENT.match(/^\{\{charBusyGuide\}\}$/m)?.[0]).toBe(BUSY_LINE);
+  });
+
+  it("只有 {{charAwayGuide}} 的舊內容遷移後依序是 away、sleep、busy", async () => {
+    const store = await loadWithOnlineContent(
+      DEFAULT_CONTENT.replace(`${SLEEP_LINE}\n${BUSY_LINE}\n`, ""),
+    );
+    const content = contentOf(store.config.prompts, "onlineModeFeatures");
+    expect(content).toBe(DEFAULT_CONTENT);
+    expect(content.indexOf(AWAY_LINE)).toBeLessThan(content.indexOf(SLEEP_LINE));
+    expect(content.indexOf(SLEEP_LINE)).toBeLessThan(content.indexOf(BUSY_LINE));
+  });
+
+  it("已經有 sleep 和 busy 的不會再插第二次", async () => {
+    const store = await loadWithOnlineContent(DEFAULT_CONTENT);
+    await store.loadConfig();
+    await store.loadConfig();
+    const content = contentOf(store.config.prompts, "onlineModeFeatures");
+    expect(content.split(SLEEP_LINE).length - 1).toBe(1);
+    expect(content.split(BUSY_LINE).length - 1).toBe(1);
+    expect(content).toBe(DEFAULT_CONTENT);
   });
 });

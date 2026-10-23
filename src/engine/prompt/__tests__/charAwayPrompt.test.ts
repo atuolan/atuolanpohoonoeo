@@ -46,6 +46,23 @@ describe("{{charAwayGuide}} 展開角色暫時離開的標籤說明", () => {
   it("沒傳時不殘留宏", async () => {
     expect(await onlineFeatures({})).not.toContain("{{charAwayGuide}}");
   });
+
+  it("傳了睡覺和忙碌的說明就各自展開", async () => {
+    const text = await onlineFeatures({
+      charSleepGuide: '- 睡覺：<char-sleep reason="睡著了"/>',
+      charBusyGuide: '- 忙碌：<char-busy reason="上班中"/>',
+    });
+    expect(text).toContain('- 睡覺：<char-sleep reason="睡著了"/>');
+    expect(text).toContain('- 忙碌：<char-busy reason="上班中"/>');
+    expect(text).not.toContain("{{charSleepGuide}}");
+    expect(text).not.toContain("{{charBusyGuide}}");
+  });
+
+  it("睡覺和忙碌的說明沒傳時不殘留宏", async () => {
+    const text = await onlineFeatures({});
+    expect(text).not.toContain("{{charSleepGuide}}");
+    expect(text).not.toContain("{{charBusyGuide}}");
+  });
 });
 
 describe("回來的說明附在時間資訊後面", () => {
