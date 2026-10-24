@@ -47,7 +47,20 @@ export interface NovelAIImageSettings {
    * 之後使用者手動關閉就會永久保留，不會被反覆覆寫。
    */
   proxyDefaultEnforcedV1?: boolean;
+  /**
+   * API 來源：
+   * - official：NovelAI 官方（可走代理）
+   * - nai-compatible：第三方，NovelAI 原生格式（POST {customBaseUrl}/ai/generate-image）
+   * - openai：第三方，OpenAI 圖片格式（POST {customBaseUrl}/images/generations）
+   */
+  apiSource?: NovelAIApiSource;
+  /** 第三方 API 地址，例如 https://example.com/v1 */
+  customBaseUrl?: string;
+  /** OpenAI 格式用的模型名稱（由第三方決定，自由填寫） */
+  openaiModel?: string;
 }
+
+export type NovelAIApiSource = 'official' | 'nai-compatible' | 'openai';
 
 export interface NovelAIImageResponse {
   success: boolean;
@@ -127,6 +140,9 @@ export function createDefaultNovelAIImageSettings(): NovelAIImageSettings {
     ucPreset: 3,
     useProxy: true,
     proxyDefaultEnforcedV1: true,
+    apiSource: 'official',
+    customBaseUrl: '',
+    openaiModel: '',
   };
 }
 
@@ -292,6 +308,90 @@ function buildParameters(prompt: string, settings: NovelAIImageSettings): object
 /**
  * 使用 JSZip 解壓 NovelAI 回傳的 zip，取得圖片 base64
  */
+function arrayBufferToBase64(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  }
+  return btoa(binary);
+}
+
+function startsWithBytes(bytes: Uint8Array, magic: number[], offset = 0): boolean {
+  return magic.every((b, i) => bytes[offset + i] === b);
+}
+
+/** 直接是圖片檔（PNG / JPEG / WEBP / GIF）就回傳 true */
+function isRawImage(bytes: Uint8Array): boolean {
+  return (
+    startsWithBytes(bytes, [0x89, 0x50, 0x4e, 0x47]) ||
+    startsWithBytes(bytes, [0xff, 0xd8, 0xff]) ||
+    (startsWithBytes(bytes, [0x52, 0x49, 0x46, 0x46]) && startsWithBytes(bytes, [0x57, 0x45, 0x42, 0x50], 8)) ||
+    startsWithBytes(bytes, [0x47, 0x49, 0x46, 0x38])
+  );
+}
+
+/** 把圖片 URL（http 或 data:）轉成 base64 */
+async function imageUrlToBase64(url: string): Promise<string | null> {
+  const dataMatch = url.match(/^data:[^;,]*;base64,(.*)$/);
+  if (dataMatch) return dataMatch[1];
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    return arrayBufferToBase64(await res.arrayBuffer());
+  } catch (err) {
+    console.error('[NovelAI] 下載圖片網址失敗:', err);
+    return null;
+  }
+}
+
+/**
+ * 從 JSON 回應找圖片：
+ * OpenAI 格式 { data: [{ b64_json | url }] }，也容忍 { images: [...] }、{ image: ... }
+ */
+async function extractImageFromJson(json: unknown): Promise<string | null> {
+  if (!json || typeof json !== 'object') return null;
+  const obj = json as Record<string, unknown>;
+  const candidates: unknown[] = [];
+  if (Array.isArray(obj.data)) candidates.push(obj.data[0]);
+  if (Array.isArray(obj.images)) candidates.push(obj.images[0]);
+  candidates.push(obj.image, obj.b64_json, obj.url);
+
+  for (const item of candidates) {
+    if (!item) continue;
+    if (typeof item === 'string') {
+      if (/^(https?:|data:)/.test(item)) return imageUrlToBase64(item);
+      return item;
+    }
+    if (typeof item === 'object') {
+      const entry = item as Record<string, unknown>;
+      if (typeof entry.b64_json === 'string' && entry.b64_json) return entry.b64_json;
+      if (typeof entry.url === 'string' && entry.url) return imageUrlToBase64(entry.url);
+    }
+  }
+  return null;
+}
+
+/** 依回應內容判斷是 ZIP、圖片檔還是 JSON，取出 base64 圖片 */
+async function extractImageFromResponse(arrayBuffer: ArrayBuffer): Promise<string | null> {
+  const bytes = new Uint8Array(arrayBuffer);
+  if (startsWithBytes(bytes, [0x50, 0x4b])) return extractImageFromZip(arrayBuffer);
+  if (isRawImage(bytes)) return arrayBufferToBase64(arrayBuffer);
+  try {
+    const text = new TextDecoder().decode(bytes);
+    return await extractImageFromJson(JSON.parse(text));
+  } catch {
+    console.error('[NovelAI] 無法辨識的回應格式');
+    return null;
+  }
+}
+
+/** 第三方地址去掉結尾斜線 */
+function normalizeBaseUrl(url?: string): string {
+  return (url || '').trim().replace(/\/+$/, '');
+}
+
 async function extractImageFromZip(arrayBuffer: ArrayBuffer): Promise<string | null> {
   try {
     const zip = await JSZip.loadAsync(arrayBuffer);
@@ -392,18 +492,26 @@ async function fetchWithRetry(
  *    代表 Worker 代理到 NovelAI 時多次拿到 503，多半是 NAI 負載過高。
  *  - NovelAI 上游 503（其他）：直接顯示原文。
  */
+/** 從錯誤回應取出伺服器給的訊息（NovelAI 是 { message }，OpenAI／New API 是 { error: { message } }） */
+function extractErrorDetail(text: string): string {
+  try {
+    const json = JSON.parse(text);
+    if (typeof json?.message === 'string') return json.message;
+    if (typeof json?.error === 'string') return json.error;
+    if (typeof json?.error?.message === 'string') return json.error.message;
+  } catch {
+    // 非 JSON
+  }
+  return text.trim().slice(0, 300);
+}
+
 async function parseApiError(response: Response): Promise<string> {
   const text = await response.text().catch(() => '');
+  const detail = extractErrorDetail(text);
   switch (response.status) {
-    case 400: {
-      try {
-        const json = JSON.parse(text);
-        return `請求驗證失敗: ${json.message ?? text}`;
-      } catch {
-        return `請求驗證失敗: ${text}`;
-      }
-    }
-    case 401: return 'API Key 錯誤或無效，請檢查設定';
+    case 400: return `請求驗證失敗: ${detail}`;
+    case 401: return `API Key 錯誤或無效，請檢查設定${detail ? `\n${detail}` : ''}`;
+    case 404: return `找不到 API 路徑 (404)，請確認 API 地址與格式是否選對${detail ? `\n${detail}` : ''}`;
     case 402: return '需要有效訂閱才能使用此功能';
     case 429: return `請求過於頻繁 (429)，請稍後再試（已自動重試 3 次）`;
     case 500: return '伺服器內部錯誤 (500)，請稍後再試（已自動重試 3 次）';
@@ -423,9 +531,13 @@ async function parseApiError(response: Response): Promise<string> {
       } catch {
         // 非 JSON，走預設
       }
+      // 第三方中轉站（New API 等）會在 error.message 說明原因，例如沒有可用渠道
+      if (text.trim().startsWith('{') && detail) {
+        return `服務暫時不可用 (503)\n${detail}`;
+      }
       return '服務暫時不可用 (503)\n\n可能原因：\n1. NovelAI 服務器負載過高\n2. 網絡連接不穩定\n3. API Key 使用頻率過高\n\n建議：稍後重試或切換網絡環境（已自動重試 3 次，每次等待 10-30 秒）';
     }
-    default:  return `生成失敗: ${response.status} ${response.statusText}`;
+    default:  return `生成失敗: ${response.status} ${response.statusText}${detail ? `\n${detail}` : ''}`;
   }
 }
 
@@ -453,18 +565,43 @@ export async function generateImage(
       tagPrompts?.characterPrompt,
       tagPrompts?.userPrompt,
     );
-    const parameters = buildParameters(finalPrompt, settings);
-    const useProxy = settings.useProxy ?? false;
+    const apiSource = settings.apiSource ?? 'official';
+    const customBase = normalizeBaseUrl(settings.customBaseUrl);
+    if (apiSource !== 'official' && !customBase) {
+      return { success: false, error: '使用第三方 API 時請先填寫 API 地址' };
+    }
+    if (apiSource === 'openai' && !settings.openaiModel?.trim()) {
+      return { success: false, error: '使用 OpenAI 格式時請先填寫模型名稱' };
+    }
+    // 第三方一律直連，不走我們的 NovelAI 代理
+    const useProxy = apiSource === 'official' && (settings.useProxy ?? false);
 
     // iOS Safari 特殊處理：添加 keepalive 和更短的重試次數
     const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
     const maxRetries = isIOS ? 2 : 3; // iOS: 2次重試, 其他: 3次
 
-    const requestUrl = toProxyUrl(
-      'https://image.novelai.net/ai/generate-image',
-      useProxy,
-      settings.proxyBaseUrl,
-    );
+    let requestUrl: string;
+    let requestBody: object;
+    if (apiSource === 'openai') {
+      requestUrl = `${customBase}/images/generations`;
+      requestBody = {
+        model: settings.openaiModel!.trim(),
+        prompt: finalPrompt,
+        negative_prompt: settings.negativePrompt,
+        n: 1,
+        size: `${settings.width}x${settings.height}`,
+      };
+    } else {
+      requestUrl = apiSource === 'nai-compatible'
+        ? `${customBase}/ai/generate-image`
+        : toProxyUrl('https://image.novelai.net/ai/generate-image', useProxy, settings.proxyBaseUrl);
+      requestBody = {
+        input: finalPrompt,
+        model: settings.model,
+        action: 'generate',
+        parameters: buildParameters(finalPrompt, settings),
+      };
+    }
 
     // 注意：瀏覽器端 fetch 無法可靠地自訂 'User-Agent'（屬於 forbidden header）。
     // 在部分 iOS WebView 容器中，嘗試設置可能引發不可預期的代理/WAF 行為，導致 5xx（含 503）。
@@ -481,12 +618,7 @@ export async function generateImage(
           // 診斷用：讓代理端/日誌可識別此客戶端來源
           'X-Aguaphone-Client': 'aguaphone-pwa',
         },
-        body: JSON.stringify({
-          input: finalPrompt,
-          model: settings.model,
-          action: 'generate',
-          parameters,
-        }),
+        body: JSON.stringify(requestBody),
         // iOS Safari/WebView: 使用 keepalive 防止連接被提前關閉
         ...(isIOS && { keepalive: true }),
       },
@@ -524,7 +656,7 @@ export async function generateImage(
     }
 
     const arrayBuffer = await response.arrayBuffer();
-    const imageBase64 = await extractImageFromZip(arrayBuffer);
+    const imageBase64 = await extractImageFromResponse(arrayBuffer);
 
     if (!imageBase64) {
       return { success: false, error: '無法解析生成的圖片' };
@@ -556,4 +688,23 @@ export async function testApiKey(apiKey: string, useProxy = false, proxyBaseUrl?
   } catch {
     return false;
   }
+}
+
+/**
+ * 第三方（OpenAI 格式）取得模型清單：GET {baseUrl}/models
+ * 同時可用來確認地址與 Key 是否正確
+ */
+export async function fetchThirdPartyModels(baseUrl: string, apiKey: string): Promise<string[]> {
+  const base = normalizeBaseUrl(baseUrl);
+  if (!base) throw new Error('請先填寫 API 地址');
+  if (!apiKey) throw new Error('請先填寫 API Key');
+  const response = await fetch(`${base}/models`, {
+    headers: { Authorization: `Bearer ${apiKey}` },
+  });
+  if (!response.ok) throw new Error(await parseApiError(response));
+  const json = await response.json();
+  const list: unknown[] = Array.isArray(json?.data) ? json.data : [];
+  return list
+    .map((m) => (typeof m === 'string' ? m : (m as { id?: unknown })?.id))
+    .filter((id): id is string => typeof id === 'string' && id.length > 0);
 }
