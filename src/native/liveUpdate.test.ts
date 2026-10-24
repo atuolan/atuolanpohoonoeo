@@ -34,13 +34,18 @@ vi.mock("./updateReadyHint", () => ({ showUpdateReadyHint }));
 
 const bundle = { id: "b1", version: "new", downloaded: "", checksum: "", status: "pending" };
 
-function stubBrowser(page: string | null) {
+function fakeStorage() {
   const store = new Map<string, string>();
-  vi.stubGlobal("localStorage", {
+  return {
     getItem: (k: string) => store.get(k) ?? null,
     setItem: (k: string, v: string) => store.set(k, v),
     removeItem: (k: string) => store.delete(k),
-  });
+  };
+}
+
+function stubBrowser(page: string | null) {
+  vi.stubGlobal("localStorage", fakeStorage());
+  vi.stubGlobal("sessionStorage", fakeStorage());
   vi.stubGlobal("window", { history: { state: page === null ? null : { __aguaphone: true, page } } });
   vi.stubGlobal("document", { visibilityState: "visible" });
 }
@@ -166,6 +171,31 @@ describe("checkForLiveUpdate 記下檢查結果", () => {
     expect(liveUpdateState.lastCheck?.error).toContain("example.test：timeout");
     expect(liveUpdateState.lastCheck?.error).toContain("backup.test：HTTP 502");
     expect(updater.download).not.toHaveBeenCalled();
+  });
+
+  it("上次下載到一半 App 被關掉、一直停在下載中：刪掉重下", async () => {
+    stubBrowser(null);
+    updater.list.mockResolvedValue({ bundles: [{ ...bundle, id: "stuck", status: "downloading" }] });
+    const { checkForLiveUpdate, liveUpdateState } = await loadModule();
+    await checkForLiveUpdate();
+    expect(updater.delete).toHaveBeenCalledWith({ id: "stuck" });
+    expect(updater.download).toHaveBeenCalledTimes(1);
+    expect(liveUpdateState.lastCheck?.result).not.toBe("downloading");
+  });
+
+  it("這次開 App 才開始下載、網頁重新載入過：原生還在下載，不刪", async () => {
+    stubBrowser(null);
+    updater.download.mockReturnValueOnce(new Promise(() => {}));
+    const first = await loadModule();
+    void first.checkForLiveUpdate();
+    await vi.waitFor(() => expect(updater.download).toHaveBeenCalledTimes(1));
+
+    updater.list.mockResolvedValue({ bundles: [{ ...bundle, status: "downloading" }] });
+    const reloaded = await loadModule();
+    await reloaded.checkForLiveUpdate();
+    expect(updater.delete).not.toHaveBeenCalled();
+    expect(updater.download).toHaveBeenCalledTimes(1);
+    expect(reloaded.liveUpdateState.lastCheck?.result).toBe("downloading");
   });
 
   it("下載失敗：記下套件給的錯誤訊息", async () => {

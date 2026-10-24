@@ -40,6 +40,8 @@ const FAILED_VERSIONS_KEY = "aguaphone.liveUpdate.failedVersions";
 const MAX_FAILED_VERSIONS = 5;
 /** 上一次檢查更新做到哪一步，開發者選項的「熱更新」顯示（關掉 App 也留著，才看得出卡在哪） */
 const LAST_CHECK_KEY = "aguaphone.liveUpdate.lastCheck";
+/** 這次開 App 開始下載的版本；存 sessionStorage：網頁重新載入還在，App 被關掉就沒了 */
+const DOWNLOAD_STARTED_KEY = "aguaphone.liveUpdate.downloadStarted";
 
 export type LiveUpdateCheckResult =
   LiveUpdateDecision | "checking" | "downloading" | "downloaded" | "error";
@@ -114,6 +116,27 @@ function writePendingBundle(id: string | null): void {
     else localStorage.removeItem(PENDING_BUNDLE_KEY);
   } catch {
     // 存不了就等下次檢查再下載
+  }
+}
+
+/**
+ * 這版是不是這次開 App 才開始下載的（中間網頁重新載入過也算，原生那邊還在下載）。
+ * 不是的話，代表上次下載到一半 App 就被關掉（iOS 切到背景很容易被收掉），
+ * 套件裡那份會永遠停在「下載中」。
+ */
+function startedDownloadThisLaunch(version: string): boolean {
+  try {
+    return sessionStorage.getItem(DOWNLOAD_STARTED_KEY) === version;
+  } catch {
+    return false;
+  }
+}
+
+function markDownloadStarted(version: string): void {
+  try {
+    sessionStorage.setItem(DOWNLOAD_STARTED_KEY, version);
+  } catch {
+    // 存不了頂多網頁重新載入後重下一次
   }
 }
 
@@ -257,11 +280,12 @@ export async function checkForLiveUpdate(): Promise<void> {
 
     const { bundles } = await CapacitorUpdater.list();
     let bundle = bundles.find((b) => b.version === manifest.version);
-    if (bundle?.status === "downloading") {
+    if (bundle?.status === "downloading" && startedDownloadThisLaunch(manifest.version)) {
       recordCheck({ result: "downloading" });
       return;
     }
-    if (bundle?.status === "error") {
+    // 下載失敗的、上次下載到一半被關掉的：刪掉重下（已下載完的檔案套件有快取，不會從頭來）
+    if (bundle?.status === "error" || bundle?.status === "downloading") {
       await CapacitorUpdater.delete({ id: bundle.id }).catch(() => {});
       bundle = undefined;
     }
@@ -269,6 +293,7 @@ export async function checkForLiveUpdate(): Promise<void> {
       console.info(`[LiveUpdate] 下載新版 ${manifest.version}（${origin}）`);
       recordCheck({ result: "downloading" });
       liveUpdateState.downloadPercent = 0;
+      markDownloadStarted(manifest.version);
       bundle = await CapacitorUpdater.download({
         url: `${origin}/${LIVE_UPDATE_MANIFEST}`,
         version: manifest.version,
