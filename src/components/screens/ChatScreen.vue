@@ -1,9 +1,18 @@
 <script setup lang="ts">
 import { getActiveTimbreWeights, MINIMAX_LANGUAGES } from "@/api/MiniMaxTTSApi";
 import {
+  applySavedNovelAIImageSettings,
+  AVAILABLE_MODELS as novelAIModels,
   AVAILABLE_SAMPLERS as novelAISamplers,
   fetchThirdPartyModels,
+  getQualityPresetOptions,
+  getUcPresetOptions,
+  isV3Model,
+  isV5Model,
   PRESET_SIZES as novelAISizePresets,
+  resolveQualityPreset,
+  resolveUcPresetId,
+  supportsVarietyBoost,
 } from "@/api/NovelAIImageApi";
 import {
   createImageMessage,
@@ -8649,8 +8658,8 @@ function exportNovelAIConfig() {
     noiseSchedule: settingsStore.novelAIImage.noiseSchedule,
     dynamicThresholding: settingsStore.novelAIImage.dynamicThresholding,
     varietyBoost: settingsStore.novelAIImage.varietyBoost,
-    qualityToggle: settingsStore.novelAIImage.qualityToggle,
-    ucPreset: settingsStore.novelAIImage.ucPreset,
+    qualityPreset: settingsStore.novelAIImage.qualityPreset,
+    ucPresetId: settingsStore.novelAIImage.ucPresetId,
     useProxy: settingsStore.novelAIImage.useProxy,
     proxyBaseUrl: settingsStore.novelAIImage.proxyBaseUrl,
     apiSource: settingsStore.novelAIImage.apiSource,
@@ -8669,6 +8678,42 @@ function exportNovelAIConfig() {
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
+
+// NAI 設定畫面：依模型決定能選哪些預設、哪些進階選項
+const naiIsOpenAIFormat = computed(
+  () => settingsStore.novelAIImage.apiSource === "openai",
+);
+// 套用官方預設要看的模型：OpenAI 格式看填的模型名稱（不是 NAI 模型就不套）
+const naiPresetModel = computed(() =>
+  naiIsOpenAIFormat.value
+    ? settingsStore.novelAIImage.openaiModel?.trim() || ""
+    : settingsStore.novelAIImage.model,
+);
+const naiUcPresetOptions = computed(() =>
+  getUcPresetOptions(naiPresetModel.value),
+);
+const naiQualityPresetOptions = computed(() =>
+  getQualityPresetOptions(naiPresetModel.value),
+);
+const naiIsMediumModel = computed(
+  () => settingsStore.novelAIImage.model === "nai-diffusion-5-full-medium",
+);
+
+// 換模型時，把這個模型沒有的選項換成可用的，選單才不會變空白
+watch(naiPresetModel, (model) => {
+  const nai = settingsStore.novelAIImage;
+  const known = novelAIModels.find((m) => m.value === model)?.value;
+  if (known) {
+    // 快速版送出時固定 Heavy，不要蓋掉使用者原本的選擇
+    if (known !== "nai-diffusion-5-full-medium") {
+      nai.ucPresetId = resolveUcPresetId(known, nai.ucPresetId);
+    }
+    nai.qualityPreset = resolveQualityPreset(known, nai.qualityPreset);
+  }
+  if (!naiIsOpenAIFormat.value && !isV3Model(model) && nai.noiseSchedule === "native") {
+    nai.noiseSchedule = "karras";
+  }
+});
 
 // NAI 第三方（OpenAI 格式）模型清單
 const naiThirdPartyModels = ref<string[]>([]);
@@ -8720,14 +8765,12 @@ async function handleNAIConfigImport(event: Event) {
       return;
     }
 
-    // 逐一寫入設定（跳過元資料欄位）
-    const skipKeys = ["_type", "_version", "_exportedAt"];
-    for (const [key, value] of Object.entries(config)) {
-      if (skipKeys.includes(key)) continue;
-      if (key in settingsStore.novelAIImage && value !== undefined) {
-        (settingsStore.novelAIImage as Record<string, unknown>)[key] = value;
-      }
-    }
+    // 寫入設定（跳過元資料欄位）；舊版匯出的 ucPreset／qualityToggle 會轉成新欄位
+    const savedConfig = { ...config };
+    delete savedConfig._type;
+    delete savedConfig._version;
+    delete savedConfig._exportedAt;
+    applySavedNovelAIImageSettings(settingsStore.novelAIImage, savedConfig);
 
     await settingsStore.saveSettings();
     alert("NAI 配置已成功導入！");
@@ -12830,20 +12873,24 @@ useChatCleanup({
                   class="setting-select"
                   v-model="settingsStore.novelAIImage.model"
                 >
-                  <option value="nai-diffusion-3">NAI Diffusion V3</option>
-                  <option value="nai-diffusion-4-curated-preview">
-                    NAI Diffusion V4 Curated
-                  </option>
-                  <option value="nai-diffusion-4-full">
-                    NAI Diffusion V4 Full
-                  </option>
-                  <option value="nai-diffusion-4-5-curated">
-                    NAI Diffusion V4.5 Curated
-                  </option>
-                  <option value="nai-diffusion-4-5-full">
-                    NAI Diffusion V4.5 Full
+                  <option
+                    v-for="m in novelAIModels"
+                    :key="m.value"
+                    :value="m.value"
+                  >
+                    {{ m.label }}
                   </option>
                 </select>
+                <span
+                  class="setting-hint"
+                  v-if="isV5Model(settingsStore.novelAIImage.model)"
+                >
+                  {{
+                    naiIsMediumModel
+                      ? "快速版：步數、採樣器、負面預設由官方固定"
+                      : "V5 最新模型；Opus 的免費生成有次數上限"
+                  }}
+                </span>
               </div>
 
               <!-- 尺寸選擇 -->
@@ -12870,11 +12917,17 @@ useChatCleanup({
               </div>
 
               <!-- 生成步數 -->
-              <div class="setting-group">
+              <div class="setting-group" v-if="!naiIsOpenAIFormat">
                 <label class="setting-label"
-                  >生成步數: {{ settingsStore.novelAIImage.steps }}</label
+                  >生成步數:
+                  {{
+                    naiIsMediumModel
+                      ? "14（快速版固定）"
+                      : settingsStore.novelAIImage.steps
+                  }}</label
                 >
                 <input
+                  v-if="!naiIsMediumModel"
                   type="range"
                   class="setting-range"
                   v-model.number="settingsStore.novelAIImage.steps"
@@ -12882,10 +12935,13 @@ useChatCleanup({
                   max="50"
                   step="1"
                 />
+                <span class="setting-hint"
+                  >Opus 免費生成只到 28 步，超過會扣 Anlas</span
+                >
               </div>
 
               <!-- CFG Scale -->
-              <div class="setting-group">
+              <div class="setting-group" v-if="!naiIsOpenAIFormat">
                 <label class="setting-label"
                   >CFG Scale: {{ settingsStore.novelAIImage.scale }}</label
                 >
@@ -12894,13 +12950,16 @@ useChatCleanup({
                   class="setting-range"
                   v-model.number="settingsStore.novelAIImage.scale"
                   min="1"
-                  max="15"
+                  max="10"
                   step="0.5"
                 />
               </div>
 
               <!-- 採樣器 -->
-              <div class="setting-group">
+              <div
+                class="setting-group"
+                v-if="!naiIsOpenAIFormat && !naiIsMediumModel"
+              >
                 <label class="setting-label">採樣器</label>
                 <select
                   class="setting-select"
@@ -12925,7 +12984,55 @@ useChatCleanup({
                   rows="3"
                   placeholder="不想出現的元素..."
                 ></textarea>
+                <span class="setting-hint" v-if="naiUcPresetOptions.length"
+                  >會接在下面「負面提示詞預設」的後面</span
+                >
               </div>
+
+              <!-- 負面提示詞預設與品質標籤：照官方網頁版在送出前加上 -->
+              <template v-if="naiUcPresetOptions.length">
+                <div class="setting-group">
+                  <label class="setting-label">負面提示詞預設</label>
+                  <span class="setting-hint" v-if="naiIsMediumModel"
+                    >快速版固定用 Heavy</span
+                  >
+                  <select
+                    v-else
+                    class="setting-select"
+                    v-model="settingsStore.novelAIImage.ucPresetId"
+                  >
+                    <option
+                      v-for="opt in naiUcPresetOptions"
+                      :key="opt.value"
+                      :value="opt.value"
+                    >
+                      {{ opt.label }}
+                    </option>
+                  </select>
+                  <span class="setting-hint" v-if="!naiIsMediumModel"
+                    >官方預設是 Heavy，會自動加在負面提示詞最前面</span
+                  >
+                </div>
+
+                <div class="setting-group">
+                  <label class="setting-label">品質標籤</label>
+                  <select
+                    class="setting-select"
+                    v-model="settingsStore.novelAIImage.qualityPreset"
+                  >
+                    <option
+                      v-for="opt in naiQualityPresetOptions"
+                      :key="opt.value"
+                      :value="opt.value"
+                    >
+                      {{ opt.label }}
+                    </option>
+                  </select>
+                  <span class="setting-hint"
+                    >自動在提示詞最後加上官方的品質標籤（如 masterpiece）</span
+                  >
+                </div>
+              </template>
 
               <!-- 正面提示詞前綴 -->
               <div class="setting-group">
@@ -12955,6 +13062,7 @@ useChatCleanup({
                 >
               </div>
 
+              <template v-if="!naiIsOpenAIFormat">
               <!-- 進階設定分隔線 -->
               <div class="setting-divider">進階設定</div>
 
@@ -12968,7 +13076,12 @@ useChatCleanup({
                   <option value="karras">Karras</option>
                   <option value="exponential">Exponential</option>
                   <option value="polyexponential">Polyexponential</option>
-                  <option value="native">Native</option>
+                  <option
+                    value="native"
+                    v-if="isV3Model(settingsStore.novelAIImage.model)"
+                  >
+                    Native
+                  </option>
                 </select>
               </div>
 
@@ -12988,22 +13101,11 @@ useChatCleanup({
                 />
               </div>
 
-              <!-- UC Preset -->
-              <div class="setting-group">
-                <label class="setting-label">負面提示詞預設強度</label>
-                <select
-                  class="setting-select"
-                  v-model.number="settingsStore.novelAIImage.ucPreset"
-                >
-                  <option :value="0">Heavy</option>
-                  <option :value="1">Light</option>
-                  <option :value="2">Human Focus</option>
-                  <option :value="3">無</option>
-                </select>
-              </div>
-
               <!-- 開關選項 -->
-              <div class="setting-row">
+              <div
+                class="setting-row"
+                v-if="supportsVarietyBoost(settingsStore.novelAIImage.model)"
+              >
                 <div class="setting-label">
                   <span>Variety Boost</span>
                   <span class="setting-hint">增加生成多樣性</span>
@@ -13017,7 +13119,10 @@ useChatCleanup({
                 </label>
               </div>
 
-              <div class="setting-row">
+              <div
+                class="setting-row"
+                v-if="isV3Model(settingsStore.novelAIImage.model)"
+              >
                 <div class="setting-label">
                   <span>Decrisper</span>
                   <span class="setting-hint">動態閾值，減少過飽和</span>
@@ -13039,10 +13144,11 @@ useChatCleanup({
                   class="setting-input"
                   v-model.number="settingsStore.novelAIImage.seed"
                   min="0"
-                  max="4294967295"
+                  max="4294967288"
                   placeholder="0"
                 />
               </div>
+              </template>
             </div>
 
             <footer class="modal-footer nai-footer">

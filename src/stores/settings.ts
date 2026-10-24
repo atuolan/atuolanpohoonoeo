@@ -3,6 +3,7 @@ import {
   type MiniMaxTTSSettings,
 } from "@/api/MiniMaxTTSApi";
 import {
+  applySavedNovelAIImageSettings,
   createDefaultNovelAIImageSettings,
   type NovelAIImageSettings,
 } from "@/api/NovelAIImageApi";
@@ -548,7 +549,7 @@ export const useSettingsStore = defineStore("settings", () => {
 
           // 載入 NovelAI 圖像生成設定
           if (saved.novelAIImage) {
-            Object.assign(novelAIImage, saved.novelAIImage);
+            applySavedNovelAIImageSettings(novelAIImage, saved.novelAIImage);
             // 舊資料相容：補上新欄位預設值
             if (novelAIImage.positivePromptPrefix === undefined)
               novelAIImage.positivePromptPrefix = "";
