@@ -11,7 +11,16 @@ export type NovelAIModel =
   | 'nai-diffusion-4-curated-preview'
   | 'nai-diffusion-4-full'
   | 'nai-diffusion-4-5-curated'
-  | 'nai-diffusion-4-5-full';
+  | 'nai-diffusion-4-5-full'
+  | 'nai-diffusion-5-full'
+  | 'nai-diffusion-5-full-medium'
+  | 'nai-diffusion-5-curated';
+
+/** 負面提示詞預設（官方網頁版 params_version 4 送的 ucPresetId） */
+export type NovelAIUcPresetId = 'heavy' | 'light' | 'human' | 'furry' | 'none';
+
+/** 品質標籤預設（官方網頁版 params_version 4 送的 qualityPresetId） */
+export type NovelAIQualityPreset = 'standard' | 'light' | 'none';
 
 export interface NovelAIImageSettings {
   enabled: boolean;
@@ -35,8 +44,14 @@ export interface NovelAIImageSettings {
   noiseSchedule?: string;
   dynamicThresholding?: boolean; // Decrisper
   varietyBoost?: boolean; // skip_cfg_above_sigma
+  /** 品質標籤：加在提示詞最後（官方網頁版在送出前加，伺服器不會自己加） */
+  qualityPreset?: NovelAIQualityPreset;
+  /** 負面提示詞預設：加在負面提示詞前面（同上，送出前加） */
+  ucPresetId?: NovelAIUcPresetId;
+  /** @deprecated 舊版欄位，只用來轉換成 qualityPreset */
   qualityToggle?: boolean;
-  ucPreset?: number; // 0=Heavy, 1=Light, 2=Human Focus, 3=None
+  /** @deprecated 舊版欄位（0=Heavy, 1=Light, 2=Human Focus, 3=None），只用來轉換成 ucPresetId */
+  ucPreset?: number;
   /** 啟用代理模式：透過 Cloudflare Worker 轉發請求，大陸用戶免 VPN */
   useProxy?: boolean;
   /** Cloudflare Worker 代理地址，例如 https://nai-proxy.aguacloud.uk */
@@ -70,6 +85,7 @@ export interface NovelAIImageResponse {
 
 // ── 常數 ──────────────────────────────────────────────────────
 
+/** 舊版的預設負面提示詞；現在改用官方 Heavy 預設，只留著判斷使用者有沒有改過 */
 export const DEFAULT_NEGATIVE_PROMPT =
   'lowres, bad anatomy, bad hands, text, error, missing fingers, extra digit, fewer digits, cropped, worst quality, low quality, normal quality, jpeg artifacts, signature, watermark, username, blurry';
 
@@ -81,17 +97,21 @@ export const AVAILABLE_SAMPLERS = [
   { value: 'k_euler', label: 'Euler' },
   { value: 'k_euler_ancestral', label: 'Euler Ancestral' },
   { value: 'k_dpmpp_2s_ancestral', label: 'DPM++ 2S Ancestral' },
+  { value: 'k_dpmpp_2m_sde', label: 'DPM++ 2M SDE' },
   { value: 'k_dpmpp_2m', label: 'DPM++ 2M' },
   { value: 'k_dpmpp_sde', label: 'DPM++ SDE' },
   { value: 'ddim_v3', label: 'DDIM' },
 ];
 
 export const AVAILABLE_MODELS: { value: NovelAIModel; label: string }[] = [
-  { value: 'nai-diffusion-3', label: 'NAI Diffusion 3' },
-  { value: 'nai-diffusion-4-curated-preview', label: 'NAI Diffusion 4 Curated' },
-  { value: 'nai-diffusion-4-full', label: 'NAI Diffusion 4 Full' },
-  { value: 'nai-diffusion-4-5-curated', label: 'NAI Diffusion 4.5 Curated' },
-  { value: 'nai-diffusion-4-5-full', label: 'NAI Diffusion 4.5 Full' },
+  { value: 'nai-diffusion-5-full', label: 'NAI Diffusion V5 Full' },
+  { value: 'nai-diffusion-5-full-medium', label: 'NAI Diffusion V5 Full（快速）' },
+  { value: 'nai-diffusion-5-curated', label: 'NAI Diffusion V5 Curated' },
+  { value: 'nai-diffusion-4-5-full', label: 'NAI Diffusion V4.5 Full' },
+  { value: 'nai-diffusion-4-5-curated', label: 'NAI Diffusion V4.5 Curated' },
+  { value: 'nai-diffusion-4-full', label: 'NAI Diffusion V4 Full' },
+  { value: 'nai-diffusion-4-curated-preview', label: 'NAI Diffusion V4 Curated' },
+  { value: 'nai-diffusion-3', label: 'NAI Diffusion V3' },
 ];
 
 export const NOISE_SCHEDULES = [
@@ -101,12 +121,213 @@ export const NOISE_SCHEDULES = [
   { value: 'native', label: 'Native' },
 ];
 
-export const UC_PRESETS = [
-  { value: 0, label: 'Heavy' },
-  { value: 1, label: 'Light' },
-  { value: 2, label: 'Human Focus' },
-  { value: 3, label: '無' },
-];
+// ── 各模型的官方預設（對照 novelai.net 網頁版，資料來源 LlmKira/novelai-python） ──
+
+export function isV5Model(model: string): boolean {
+  return model.startsWith('nai-diffusion-5');
+}
+
+export function isKnownNovelAIModel(model: string): model is NovelAIModel {
+  return AVAILABLE_MODELS.some((m) => m.value === model);
+}
+
+/** V5 Full 快速版：網頁版固定 14 步、Euler Ancestral、Heavy 負面預設 */
+function isV5Medium(model: string): boolean {
+  return model === 'nai-diffusion-5-full-medium';
+}
+
+/** V4 起不支援 Native 噪聲排程與 Decrisper */
+export function isV3Model(model: string): boolean {
+  return model === 'nai-diffusion-3';
+}
+
+/** V5 沒有 Variety Boost（網頁版 cfgDelay=false） */
+export function supportsVarietyBoost(model: string): boolean {
+  return !isV5Model(model);
+}
+
+const V5_UC_HEAVY =
+  'nsfw, lowres, artistic error, film grain, scan artifacts, worst quality, bad quality, jpeg artifacts, very displeasing, chromatic aberration, dithering, halftone, screentone, multiple views, logo, too many watermarks, negative space, blank page';
+const FURRY_FOCUS_UC =
+  'nsfw, {worst quality}, distracting watermark, unfinished, bad quality, {widescreen}, upscale, {sequence}, {{grandfathered content}}, blurred foreground, chromatic aberration, sketch, everyone, [sketch background], simple, [flat colors], ych (character), outline, multiple scenes, [[horror (theme)]], comic';
+
+/** 每個模型可選的負面預設與文字；順序就是網頁版選單順序 */
+const UC_PRESET_TEXTS: Record<NovelAIModel, Partial<Record<NovelAIUcPresetId, string>>> = {
+  'nai-diffusion-3': {
+    heavy:
+      'nsfw, lowres, {bad}, error, fewer, extra, missing, worst quality, jpeg artifacts, bad quality, watermark, unfinished, displeasing, chromatic aberration, signature, extra digits, artistic error, username, scan, [abstract]',
+    light: 'nsfw, lowres, jpeg artifacts, worst quality, watermark, blurry, very displeasing',
+    human:
+      'nsfw, lowres, {bad}, error, fewer, extra, missing, worst quality, jpeg artifacts, bad quality, watermark, unfinished, displeasing, chromatic aberration, signature, extra digits, artistic error, username, scan, [abstract], bad anatomy, bad hands, @_@, mismatched pupils, heart-shaped pupils, glowing eyes',
+    // V3 選「無」時網頁版仍會補 lowres（只在使用者負面提示詞是空的時候）
+    none: 'lowres',
+  },
+  'nai-diffusion-4-curated-preview': {
+    heavy:
+      'blurry, lowres, error, film grain, scan artifacts, worst quality, bad quality, jpeg artifacts, very displeasing, chromatic aberration, logo, dated, signature, multiple views, gigantic breasts',
+    light:
+      'blurry, lowres, error, worst quality, bad quality, jpeg artifacts, very displeasing, logo, dated, signature',
+    none: '',
+  },
+  'nai-diffusion-4-full': {
+    heavy:
+      'nsfw, blurry, lowres, error, film grain, scan artifacts, worst quality, bad quality, jpeg artifacts, very displeasing, chromatic aberration, multiple views, logo, too many watermarks, white blank page, blank page',
+    light:
+      'nsfw, blurry, lowres, error, worst quality, bad quality, jpeg artifacts, very displeasing, white blank page, blank page',
+    none: '',
+  },
+  'nai-diffusion-4-5-curated': {
+    heavy:
+      'blurry, lowres, upscaled, artistic error, film grain, scan artifacts, worst quality, bad quality, jpeg artifacts, very displeasing, chromatic aberration, halftone, multiple views, logo, too many watermarks, negative space, blank page',
+    light:
+      'blurry, lowres, upscaled, artistic error, scan artifacts, jpeg artifacts, logo, too many watermarks, negative space, blank page',
+    human:
+      'blurry, lowres, upscaled, artistic error, film grain, scan artifacts, bad anatomy, bad hands, worst quality, bad quality, jpeg artifacts, very displeasing, chromatic aberration, halftone, multiple views, logo, too many watermarks, @_@, mismatched pupils, glowing eyes, negative space, blank page',
+    none: '',
+  },
+  'nai-diffusion-4-5-full': {
+    heavy: V5_UC_HEAVY,
+    light:
+      'nsfw, lowres, artistic error, scan artifacts, worst quality, bad quality, jpeg artifacts, multiple views, very displeasing, too many watermarks, negative space, blank page',
+    furry: FURRY_FOCUS_UC,
+    human: `${V5_UC_HEAVY}, @_@, mismatched pupils, glowing eyes, bad anatomy`,
+    none: '',
+  },
+  'nai-diffusion-5-full': {},
+  'nai-diffusion-5-full-medium': {},
+  'nai-diffusion-5-curated': {},
+};
+const V5_UC_PRESETS: Partial<Record<NovelAIUcPresetId, string>> = {
+  heavy: V5_UC_HEAVY,
+  light:
+    'nsfw, lowres, bad hands, bad anatomy, artistic error, sepia, white haze, worst quality, very displeasing, jpeg artifacts, 0::ai-generated::',
+  furry: FURRY_FOCUS_UC,
+  human: `${V5_UC_HEAVY}, @_@, mismatched pupils, glowing eyes, bad anatomy`,
+  none: '',
+};
+UC_PRESET_TEXTS['nai-diffusion-5-full'] = V5_UC_PRESETS;
+UC_PRESET_TEXTS['nai-diffusion-5-full-medium'] = V5_UC_PRESETS;
+UC_PRESET_TEXTS['nai-diffusion-5-curated'] = V5_UC_PRESETS;
+
+const UC_PRESET_LABELS: Record<NovelAIUcPresetId, string> = {
+  heavy: 'Heavy',
+  light: 'Light',
+  human: 'Human Focus',
+  furry: 'Furry Focus',
+  none: '無',
+};
+
+/** 品質標籤（加在提示詞最後）；V5 才有 Light */
+const QUALITY_SUFFIXES: Record<NovelAIModel, Partial<Record<NovelAIQualityPreset, string>>> = {
+  'nai-diffusion-3': { standard: 'best quality, amazing quality, very aesthetic, absurdres' },
+  'nai-diffusion-4-curated-preview': { standard: 'rating:general, amazing quality, very aesthetic, absurdres' },
+  'nai-diffusion-4-full': { standard: 'no text, best quality, very aesthetic, absurdres' },
+  'nai-diffusion-4-5-curated': { standard: 'location, masterpiece, no text, -0.8::feet::, rating:general' },
+  'nai-diffusion-4-5-full': { standard: 'location, very aesthetic, masterpiece, no text' },
+  'nai-diffusion-5-full': {},
+  'nai-diffusion-5-full-medium': {},
+  'nai-diffusion-5-curated': {},
+};
+const V5_QUALITY: Partial<Record<NovelAIQualityPreset, string>> = {
+  standard: 'very aesthetic, masterpiece, no text',
+  light: 'very aesthetic, amazing quality, no text',
+};
+QUALITY_SUFFIXES['nai-diffusion-5-full'] = V5_QUALITY;
+QUALITY_SUFFIXES['nai-diffusion-5-full-medium'] = V5_QUALITY;
+QUALITY_SUFFIXES['nai-diffusion-5-curated'] = V5_QUALITY;
+
+const QUALITY_LABELS: Record<NovelAIQualityPreset, string> = {
+  standard: '標準',
+  light: '輕量',
+  none: '關閉',
+};
+
+export function getUcPresetOptions(model: string): { value: NovelAIUcPresetId; label: string }[] {
+  if (!isKnownNovelAIModel(model)) return [];
+  return (Object.keys(UC_PRESET_TEXTS[model]) as NovelAIUcPresetId[]).map((id) => ({
+    value: id,
+    label: UC_PRESET_LABELS[id],
+  }));
+}
+
+export function getQualityPresetOptions(model: string): { value: NovelAIQualityPreset; label: string }[] {
+  if (!isKnownNovelAIModel(model)) return [];
+  const ids = [...(Object.keys(QUALITY_SUFFIXES[model]) as NovelAIQualityPreset[]), 'none' as const];
+  return ids.map((id) => ({ value: id, label: QUALITY_LABELS[id] }));
+}
+
+/** 這個模型實際要用的負面預設：選的不存在時退回 Heavy（快速版固定 Heavy） */
+export function resolveUcPresetId(model: NovelAIModel, preset?: NovelAIUcPresetId): NovelAIUcPresetId {
+  if (isV5Medium(model)) return 'heavy';
+  const available = UC_PRESET_TEXTS[model];
+  if (preset && preset in available) return preset;
+  return 'heavy';
+}
+
+/** 這個模型實際要用的品質標籤：Light 只有 V5，其他模型退回標準 */
+export function resolveQualityPreset(model: NovelAIModel, preset?: NovelAIQualityPreset): NovelAIQualityPreset {
+  if (!preset || preset === 'none') return preset ?? 'standard';
+  return preset in QUALITY_SUFFIXES[model] ? preset : 'standard';
+}
+
+/** 照網頁版在提示詞最後補品質標籤；已經有了就不重複加 */
+function applyQualityTags(prompt: string, model: NovelAIModel, preset: NovelAIQualityPreset): string {
+  const suffix = QUALITY_SUFFIXES[model][preset];
+  if (!suffix || prompt.includes(suffix)) return prompt;
+  return prompt ? `${prompt}, ${suffix}` : suffix;
+}
+
+/**
+ * 照網頁版組負面提示詞：預設文字在前、使用者的在後。
+ * 提示詞本身要 nsfw 時，預設裡的 nsfw 拿掉（網頁版同樣處理）。
+ */
+function buildNegativePrompt(
+  model: NovelAIModel,
+  presetId: NovelAIUcPresetId,
+  userNegative: string,
+  prompt: string,
+): string {
+  let presetText = UC_PRESET_TEXTS[model][presetId] ?? '';
+  const userText = userNegative.trim();
+  if (presetText === 'lowres' && userText) presetText = '';
+  if (/\bnsfw\b/i.test(prompt)) {
+    presetText = presetText
+      .split(',')
+      .map((t) => t.trim())
+      .filter((t) => t && t.toLowerCase() !== 'nsfw')
+      .join(', ');
+  }
+  return [presetText, userText].filter(Boolean).join(', ');
+}
+
+/**
+ * 把存檔／匯入的設定套進 target，並把舊欄位轉成新欄位：
+ * qualityToggle → qualityPreset、ucPreset 編號 → ucPresetId。
+ * 要看 saved 本身有沒有新欄位，不能看 target（target 已經有新預設值）。
+ */
+export function applySavedNovelAIImageSettings(
+  target: NovelAIImageSettings,
+  saved: Partial<NovelAIImageSettings>,
+): void {
+  Object.assign(target, saved);
+  if (!saved.qualityPreset) {
+    target.qualityPreset = saved.qualityToggle === false ? 'none' : 'standard';
+  }
+  if (!saved.ucPresetId) {
+    const legacyPreset = saved.ucPreset ?? 3;
+    const untouchedDefaults =
+      legacyPreset === 3 && (saved.negativePrompt ?? DEFAULT_NEGATIVE_PROMPT) === DEFAULT_NEGATIVE_PROMPT;
+    if (untouchedDefaults) {
+      // 從沒改過舊預設（「無」＋舊版負面提示詞）：換成官方預設，避免跟 Heavy 重複
+      target.ucPresetId = 'heavy';
+      target.negativePrompt = '';
+    } else {
+      const legacy: NovelAIUcPresetId[] = ['heavy', 'light', 'human', 'none'];
+      target.ucPresetId = legacy[legacyPreset] ?? 'none';
+    }
+  }
+  if (target.scale > 10) target.scale = 10;
+}
 
 export const PRESET_SIZES = [
   { label: '直式 (832×1216)', width: 832, height: 1216 },
@@ -128,7 +349,8 @@ export function createDefaultNovelAIImageSettings(): NovelAIImageSettings {
     steps: 28,
     scale: 5,
     sampler: 'k_euler_ancestral',
-    negativePrompt: DEFAULT_NEGATIVE_PROMPT,
+    // 官方預設：負面用 Heavy 預設，使用者自己的負面提示詞留空
+    negativePrompt: '',
     positivePromptPrefix: '',
     positivePromptSuffix: '',
     useUserTag: false,
@@ -136,8 +358,8 @@ export function createDefaultNovelAIImageSettings(): NovelAIImageSettings {
     noiseSchedule: 'karras',
     dynamicThresholding: false,
     varietyBoost: true,
-    qualityToggle: true,
-    ucPreset: 3,
+    qualityPreset: 'standard',
+    ucPresetId: 'heavy',
     useProxy: true,
     proxyDefaultEnforcedV1: true,
     apiSource: 'official',
@@ -177,16 +399,12 @@ function toProxyUrl(url: string, useProxy: boolean, proxyBase?: string): string 
 
 /**
  * 根據模型計算 skip_cfg_above_sigma（Variety Boost）
- * 移植自 novelai.js calculateSkipCfgAboveSigma
+ * 照網頁版：基準值（V3/V4 = 19、V4.5 = 58）依圖片面積相對 832×1216 縮放後無條件進位；V5 不支援
  */
 function getSkipCfgAboveSigma(model: NovelAIModel, width: number, height: number): number | null {
-  if (model === 'nai-diffusion-3') return 19;
-  if (model.includes('4-5')) return 59.04722600415217;
-  // NAI4 curated/full
-  const pixels = width * height;
-  // 根據解析度調整，與 novelai.js 保持一致
-  if (pixels <= 512 * 768) return 19;
-  return 19.343056794463642;
+  if (!supportsVarietyBoost(model)) return null;
+  const base = model.startsWith('nai-diffusion-4-5') ? 58 : 19;
+  return Math.ceil(base * Math.sqrt((width * height) / (832 * 1216)));
 }
 
 /**
@@ -226,83 +444,102 @@ function buildPromptWithTags(
 }
 
 /**
- * 建立完整的 parameters payload，對齊 novelai.js 的參數結構
+ * 建立完整的 parameters payload，對齊 novelai.net 網頁版（params_version 4）。
+ * 品質標籤與負面預設由呼叫端先套進 prompt / negativePrompt，這裡只送預設名稱。
  */
-function buildParameters(prompt: string, settings: NovelAIImageSettings): object {
+function buildParameters(
+  prompt: string,
+  negativePrompt: string,
+  settings: NovelAIImageSettings,
+  presets: { ucPresetId: NovelAIUcPresetId; qualityPreset: NovelAIQualityPreset },
+): object {
+  const model = settings.model;
+  const isV3 = isV3Model(model);
+  const isV5 = isV5Model(model);
+  const isMedium = isV5Medium(model);
+
   const seed = settings.seed && settings.seed > 0
     ? settings.seed
-    : Math.floor(Math.random() * 4294967295);
+    : Math.floor(Math.random() * (4294967295 - 7)) + 1;
 
-  const skipCfg = settings.varietyBoost
-    ? getSkipCfgAboveSigma(settings.model, settings.width, settings.height)
-    : null;
+  // 快速版網頁版固定 14 步、Euler Ancestral
+  const sampler = isMedium ? 'k_euler_ancestral' : settings.sampler;
+  const steps = isMedium ? 14 : settings.steps;
+  // API 的 scale 上限是 10
+  const scale = Math.min(Math.max(settings.scale, 0), 10);
 
-  const isNAI3 = settings.model === 'nai-diffusion-3';
-  const isNAI4plus = settings.model.includes('nai-diffusion-4');
+  // DDIM 不帶噪聲排程；V4 起沒有 Native，改用 Karras
+  let noiseSchedule: string | undefined = settings.noiseSchedule ?? 'karras';
+  if (sampler === 'ddim_v3') noiseSchedule = undefined;
+  else if (!isV3 && noiseSchedule === 'native') noiseSchedule = 'karras';
 
-  const base = {
-    params_version: 3,
+  const legacyUc = model === 'nai-diffusion-4-full' || model === 'nai-diffusion-4-curated-preview';
+
+  const base: Record<string, unknown> = {
+    params_version: 4,
     width: settings.width,
     height: settings.height,
-    scale: settings.scale,
-    sampler: settings.sampler,
-    steps: settings.steps,
-    seed,
+    scale,
+    sampler,
+    steps,
     n_samples: 1,
-    ucPreset: settings.ucPreset ?? 3,
-    qualityToggle: settings.qualityToggle ?? true,
-    dynamic_thresholding: settings.dynamicThresholding ?? false,
+    ucPresetId: presets.ucPresetId,
+    qualityPresetId: presets.qualityPreset,
+    autoSmea: false,
+    // Decrisper 只有 V3 支援
+    dynamic_thresholding: isV3 ? settings.dynamicThresholding ?? false : false,
     controlnet_strength: 1,
     legacy: false,
-    legacy_uc: false,
     add_original_image: true,
     cfg_rescale: settings.cfgRescale ?? 0,
-    noise_schedule: settings.noiseSchedule ?? 'karras',
-    skip_cfg_above_sigma: skipCfg,
+    ...(noiseSchedule && { noise_schedule: noiseSchedule }),
     legacy_v3_extend: false,
-    negative_prompt: settings.negativePrompt,
+    skip_cfg_above_sigma: settings.varietyBoost
+      ? getSkipCfgAboveSigma(model, settings.width, settings.height)
+      : null,
+    seed,
+    negative_prompt: negativePrompt,
+    image_format: 'png',
     // Euler Ancestral 修正
-    ...(settings.sampler === 'k_euler_ancestral' && {
+    ...(sampler === 'k_euler_ancestral' && noiseSchedule !== 'native' && {
       deliberate_euler_ancestral_bug: false,
       prefer_brownian: true,
     }),
   };
 
-  if (isNAI3) {
+  if (isV3) {
     return {
       ...base,
-      sm: true,
-      sm_dyn: true,
+      // 網頁版 V3 預設不開 SMEA
+      sm: false,
+      sm_dyn: false,
       reference_image_multiple: [],
       reference_information_extracted_multiple: [],
       reference_strength_multiple: [],
     };
   }
 
-  if (isNAI4plus) {
-    // NAI4/4.5 使用 v4_prompt 結構
-    return {
-      ...base,
-      autoSmea: false,
-      normalize_reference_strength_multiple: false,
-      inpaintImg2ImgStrength: 1,
-      reference_image_multiple_cached: [],
-      reference_strength_multiple: [],
+  // V4 / V4.5 / V5 使用 v4_prompt 結構
+  return {
+    ...base,
+    use_coords: false,
+    legacy_uc: legacyUc,
+    normalize_reference_strength_multiple: true,
+    inpaintImg2ImgStrength: 1,
+    characterPrompts: [],
+    tag_hint_qt: 1,
+    tag_hint_uc_preset: 2,
+    ...(isV5 && { straight_alpha: true }),
+    v4_prompt: {
+      caption: { base_caption: prompt, char_captions: [] },
       use_coords: false,
-      characterPrompts: [],
-      v4_prompt: {
-        caption: { base_caption: prompt, char_captions: [] },
-        use_coords: false,
-        use_order: true,
-      },
-      v4_negative_prompt: {
-        caption: { base_caption: settings.negativePrompt, char_captions: [] },
-        legacy_uc: false,
-      },
-    };
-  }
-
-  return base;
+      use_order: true,
+    },
+    v4_negative_prompt: {
+      caption: { base_caption: negativePrompt, char_captions: [] },
+      legacy_uc: legacyUc,
+    },
+  };
 }
 
 /**
@@ -559,13 +796,27 @@ export async function generateImage(
   }
 
   try {
-    const finalPrompt = buildPromptWithTags(
+    const basePrompt = buildPromptWithTags(
       prompt,
       settings,
       tagPrompts?.characterPrompt,
       tagPrompts?.userPrompt,
     );
     const apiSource = settings.apiSource ?? 'official';
+    const openaiModel = settings.openaiModel?.trim() ?? '';
+
+    // 品質標籤與負面預設照網頁版在送出前套上；OpenAI 格式只有模型名稱是 NAI 模型才套
+    const presetModel = apiSource === 'openai'
+      ? (isKnownNovelAIModel(openaiModel) ? openaiModel : null)
+      : (isKnownNovelAIModel(settings.model) ? settings.model : null);
+    const ucPresetId = presetModel ? resolveUcPresetId(presetModel, settings.ucPresetId) : 'none';
+    const qualityPreset = presetModel ? resolveQualityPreset(presetModel, settings.qualityPreset) : 'none';
+    const finalPrompt = presetModel
+      ? applyQualityTags(basePrompt, presetModel, qualityPreset)
+      : basePrompt;
+    const negativePrompt = presetModel
+      ? buildNegativePrompt(presetModel, ucPresetId, settings.negativePrompt || '', basePrompt)
+      : (settings.negativePrompt || '');
     const customBase = normalizeBaseUrl(settings.customBaseUrl);
     if (apiSource !== 'official' && !customBase) {
       return { success: false, error: '使用第三方 API 時請先填寫 API 地址' };
@@ -581,27 +832,37 @@ export async function generateImage(
     const maxRetries = isIOS ? 2 : 3; // iOS: 2次重試, 其他: 3次
 
     let requestUrl: string;
-    let requestBody: object;
+    let requestBody: string | FormData;
     if (apiSource === 'openai') {
       requestUrl = `${customBase}/images/generations`;
-      requestBody = {
-        model: settings.openaiModel!.trim(),
+      requestBody = JSON.stringify({
+        model: openaiModel,
         prompt: finalPrompt,
-        negative_prompt: settings.negativePrompt,
+        negative_prompt: negativePrompt,
         n: 1,
         size: `${settings.width}x${settings.height}`,
-      };
+      });
     } else {
       requestUrl = apiSource === 'nai-compatible'
         ? `${customBase}/ai/generate-image`
         : toProxyUrl('https://image.novelai.net/ai/generate-image', useProxy, settings.proxyBaseUrl);
-      requestBody = {
+      const requestJson = JSON.stringify({
         input: finalPrompt,
         model: settings.model,
         action: 'generate',
-        parameters: buildParameters(finalPrompt, settings),
-      };
+        parameters: buildParameters(finalPrompt, negativePrompt, settings, { ucPresetId, qualityPreset }),
+      });
+      if (apiSource === 'official') {
+        // 官方網頁版 params_version 4 用 multipart/form-data，JSON 放在名為 request 的欄位
+        const form = new FormData();
+        form.append('request', new Blob([requestJson], { type: 'application/json' }), 'blob');
+        requestBody = form;
+      } else {
+        // 第三方中轉站多半只解析 JSON
+        requestBody = requestJson;
+      }
     }
+    const isMultipart = requestBody instanceof FormData;
 
     // 注意：瀏覽器端 fetch 無法可靠地自訂 'User-Agent'（屬於 forbidden header）。
     // 在部分 iOS WebView 容器中，嘗試設置可能引發不可預期的代理/WAF 行為，導致 5xx（含 503）。
@@ -612,13 +873,14 @@ export async function generateImage(
         method: 'POST',
         headers: {
           Authorization: `Bearer ${settings.apiKey}`,
-          'Content-Type': 'application/json',
+          // multipart 的 Content-Type（含 boundary）交給瀏覽器自己帶
+          ...(!isMultipart && { 'Content-Type': 'application/json' }),
           Accept: '*/*',
           // 'User-Agent': NAI_USER_AGENT,
           // 診斷用：讓代理端/日誌可識別此客戶端來源
           'X-Aguaphone-Client': 'aguaphone-pwa',
         },
-        body: JSON.stringify(requestBody),
+        body: requestBody,
         // iOS Safari/WebView: 使用 keepalive 防止連接被提前關閉
         ...(isIOS && { keepalive: true }),
       },
