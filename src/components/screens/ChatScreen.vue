@@ -2,6 +2,7 @@
 import { getActiveTimbreWeights, MINIMAX_LANGUAGES } from "@/api/MiniMaxTTSApi";
 import {
   AVAILABLE_SAMPLERS as novelAISamplers,
+  fetchThirdPartyModels,
   PRESET_SIZES as novelAISizePresets,
 } from "@/api/NovelAIImageApi";
 import {
@@ -8652,6 +8653,9 @@ function exportNovelAIConfig() {
     ucPreset: settingsStore.novelAIImage.ucPreset,
     useProxy: settingsStore.novelAIImage.useProxy,
     proxyBaseUrl: settingsStore.novelAIImage.proxyBaseUrl,
+    apiSource: settingsStore.novelAIImage.apiSource,
+    customBaseUrl: settingsStore.novelAIImage.customBaseUrl,
+    openaiModel: settingsStore.novelAIImage.openaiModel,
   };
 
   const json = JSON.stringify(config, null, 2);
@@ -8664,6 +8668,34 @@ function exportNovelAIConfig() {
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
+}
+
+// NAI 第三方（OpenAI 格式）模型清單
+const naiThirdPartyModels = ref<string[]>([]);
+const naiModelsLoading = ref(false);
+const naiModelsMessage = ref("");
+
+async function loadNAIThirdPartyModels() {
+  naiModelsLoading.value = true;
+  naiModelsMessage.value = "";
+  try {
+    const models = await fetchThirdPartyModels(
+      settingsStore.novelAIImage.customBaseUrl || "",
+      settingsStore.novelAIImage.apiKey,
+    );
+    naiThirdPartyModels.value = models;
+    naiModelsMessage.value = models.length
+      ? `連線成功，共 ${models.length} 個模型`
+      : "連線成功，但沒有列出模型，請手動填寫";
+    if (!settingsStore.novelAIImage.openaiModel?.trim() && models.length) {
+      settingsStore.novelAIImage.openaiModel = models[0];
+    }
+  } catch (e) {
+    naiThirdPartyModels.value = [];
+    naiModelsMessage.value = e instanceof Error ? e.message : "取得模型失敗";
+  } finally {
+    naiModelsLoading.value = false;
+  }
 }
 
 // NAI 配置導入
@@ -12627,7 +12659,59 @@ useChatCleanup({
               <!-- 代理設定 -->
               <div class="setting-divider">連線/代理</div>
 
-              <div class="setting-row">
+              <div class="setting-group">
+                <label class="setting-label">API 來源</label>
+                <select
+                  class="setting-select"
+                  v-model="settingsStore.novelAIImage.apiSource"
+                >
+                  <option value="official">NovelAI 官方</option>
+                  <option value="openai">第三方（OpenAI 格式）</option>
+                  <option value="nai-compatible">第三方（NovelAI 格式）</option>
+                </select>
+                <span class="setting-hint">
+                  網址結尾是 /v1 的中轉站（New API、One API）選 OpenAI 格式
+                </span>
+              </div>
+
+              <div
+                class="setting-group"
+                v-if="
+                  settingsStore.novelAIImage.apiSource === 'openai' ||
+                  settingsStore.novelAIImage.apiSource === 'nai-compatible'
+                "
+              >
+                <label class="setting-label">API 地址</label>
+                <input
+                  type="text"
+                  class="setting-input"
+                  v-model="settingsStore.novelAIImage.customBaseUrl"
+                  :placeholder="
+                    settingsStore.novelAIImage.apiSource === 'openai'
+                      ? 'https://example.com/v1'
+                      : 'https://example.com'
+                  "
+                  autocomplete="off"
+                  autocorrect="off"
+                  autocapitalize="off"
+                  spellcheck="false"
+                />
+                <span class="setting-hint">
+                  {{
+                    settingsStore.novelAIImage.apiSource === "openai"
+                      ? "會送到「地址/images/generations」，通常要填到 /v1"
+                      : "會送到「地址/ai/generate-image」，填到 /ai 前面為止"
+                  }}
+                </span>
+              </div>
+
+              <div
+                class="setting-row"
+                v-if="
+                  (settingsStore.novelAIImage.apiSource ?? 'official') ===
+                  'official'
+                "
+              >
                 <div class="setting-label">
                   <span>使用代理（預設代理可不填地址）</span>
                   <span class="setting-hint">
@@ -12646,7 +12730,11 @@ useChatCleanup({
 
               <div
                 class="setting-group"
-                v-if="settingsStore.novelAIImage.useProxy"
+                v-if="
+                  settingsStore.novelAIImage.useProxy &&
+                  (settingsStore.novelAIImage.apiSource ?? 'official') ===
+                    'official'
+                "
               >
                 <label class="setting-label">代理地址（可選）</label>
                 <input
@@ -12666,22 +12754,77 @@ useChatCleanup({
 
               <!-- API Key -->
               <div class="setting-group">
-                <label class="setting-label">NovelAI API Key</label>
+                <label class="setting-label">{{
+                  (settingsStore.novelAIImage.apiSource ?? "official") ===
+                  "official"
+                    ? "NovelAI API Key"
+                    : "API Key"
+                }}</label>
                 <input
                   type="text"
                   class="setting-input api-key-field masked"
                   v-model="settingsStore.novelAIImage.apiKey"
-                  placeholder="pst-xxxx..."
+                  :placeholder="
+                    (settingsStore.novelAIImage.apiSource ?? 'official') ===
+                    'official'
+                      ? 'pst-xxxx...'
+                      : 'sk-xxxx...'
+                  "
                   autocomplete="off"
                   autocorrect="off"
                   autocapitalize="off"
                   spellcheck="false"
                 />
-                <span class="setting-hint">從 NovelAI 帳戶設定取得</span>
+                <span class="setting-hint">{{
+                  (settingsStore.novelAIImage.apiSource ?? "official") ===
+                  "official"
+                    ? "從 NovelAI 帳戶設定取得"
+                    : "填第三方站給你的 Key"
+                }}</span>
               </div>
 
-              <!-- 模型選擇 -->
-              <div class="setting-group">
+              <!-- 模型選擇：OpenAI 格式由第三方決定模型名稱 -->
+              <div
+                class="setting-group"
+                v-if="settingsStore.novelAIImage.apiSource === 'openai'"
+              >
+                <label class="setting-label">模型</label>
+                <div class="nai-model-row">
+                  <input
+                    type="text"
+                    class="setting-input"
+                    v-model="settingsStore.novelAIImage.openaiModel"
+                    list="nai-third-party-models"
+                    placeholder="例如 nai-diffusion-4-5-full"
+                    autocomplete="off"
+                    autocorrect="off"
+                    autocapitalize="off"
+                    spellcheck="false"
+                  />
+                  <datalist id="nai-third-party-models">
+                    <option
+                      v-for="m in naiThirdPartyModels"
+                      :key="m"
+                      :value="m"
+                    />
+                  </datalist>
+                  <button
+                    class="nai-fetch-models-btn"
+                    :disabled="naiModelsLoading"
+                    @click="loadNAIThirdPartyModels"
+                  >
+                    {{ naiModelsLoading ? "讀取中…" : "取得模型" }}
+                  </button>
+                </div>
+                <span class="setting-hint">
+                  {{
+                    naiModelsMessage ||
+                    "按「取得模型」可順便確認地址和 Key 對不對，再從清單選"
+                  }}
+                </span>
+              </div>
+
+              <div class="setting-group" v-else>
                 <label class="setting-label">模型</label>
                 <select
                   class="setting-select"
@@ -17205,6 +17348,37 @@ body.is-night-mode {
 
     input:checked + .toggle-slider::before {
       transform: translateX(20px);
+    }
+  }
+
+  .nai-model-row {
+    display: flex;
+    gap: 8px;
+    align-items: stretch;
+
+    .setting-input {
+      flex: 1;
+      min-width: 0;
+    }
+  }
+
+  .nai-fetch-models-btn {
+    flex-shrink: 0;
+    padding: 0 14px;
+    border-radius: 12px;
+    border: 1px solid var(--color-border, #e2e8f0);
+    background: var(--color-background, #f8f9fa);
+    color: var(--color-text-secondary, #666);
+    font-size: 13px;
+    cursor: pointer;
+
+    &:disabled {
+      opacity: 0.6;
+      cursor: default;
+    }
+
+    &:active:not(:disabled) {
+      transform: scale(0.96);
     }
   }
 
