@@ -14,6 +14,12 @@ import {
   loadGiftMemories,
   type GiftMemory,
 } from "@/services/giftMemories";
+import {
+  hasUnreadDiary,
+  loadGiftDiaryMeta,
+  runAutoGiftDiary,
+  saveGiftDiaryMeta,
+} from "@/services/giftDiary";
 import { getGiftIcon } from "@/utils/giftIcon";
 
 interface GiftCabinetGroup {
@@ -31,6 +37,7 @@ const groups = ref<GiftCabinetGroup[]>([]);
 const selectedCharacterId = ref<string | null>(null);
 const cardMemory = ref<GiftMemory | null>(null);
 const loading = ref(false);
+const autoDiary = ref(true);
 
 const selectedGroup = computed(() => {
   if (!selectedCharacterId.value) return null;
@@ -103,9 +110,28 @@ async function reload(): Promise<void> {
   }
 }
 
-function openCharacter(characterId: string): void {
+async function openCharacter(characterId: string): Promise<void> {
   selectedCharacterId.value = characterId;
   cardMemory.value = null;
+  try {
+    const meta = await loadGiftDiaryMeta(characterId);
+    autoDiary.value = meta.autoDiary;
+  } catch (error) {
+    console.warn("[GiftCabinet] 讀取日記設定失敗", error);
+  }
+}
+
+async function toggleAutoDiary(): Promise<void> {
+  const characterId = selectedCharacterId.value;
+  if (!characterId) return;
+  const next = !autoDiary.value;
+  autoDiary.value = next;
+  try {
+    const meta = await loadGiftDiaryMeta(characterId);
+    await saveGiftDiaryMeta(characterId, { ...meta, autoDiary: next });
+  } catch (error) {
+    console.warn("[GiftCabinet] 儲存日記設定失敗", error);
+  }
 }
 
 function backToList(): void {
@@ -119,6 +145,7 @@ function openCard(memory: GiftMemory): void {
 
 function closeCard(): void {
   cardMemory.value = null;
+  void reload();
 }
 
 function handleMemoriesChanged(): void {
@@ -126,7 +153,12 @@ function handleMemoriesChanged(): void {
 }
 
 onMounted(() => {
-  void reload();
+  void reload().then(() => {
+    // 每次掛上只跑一輪；寫好後會觸發 GIFT_MEMORIES_CHANGED_EVENT 重新讀
+    for (const group of groups.value) {
+      void runAutoGiftDiary(group.characterId).catch(() => {});
+    }
+  });
   if (typeof window !== "undefined") {
     window.addEventListener(GIFT_MEMORIES_CHANGED_EVENT, handleMemoriesChanged);
   }
@@ -150,10 +182,13 @@ onBeforeUnmount(() => {
         class="character-row"
         @click="openCharacter(group.characterId)"
       >
-        <img v-if="group.avatar" class="character-avatar" :src="group.avatar" alt="" />
-        <div v-else class="character-avatar avatar-fallback">
-          {{ group.name.slice(0, 1) }}
-        </div>
+        <span class="avatar-wrap">
+          <img v-if="group.avatar" class="character-avatar" :src="group.avatar" alt="" />
+          <span v-else class="character-avatar avatar-fallback">
+            {{ group.name.slice(0, 1) }}
+          </span>
+          <span v-if="hasUnreadDiary(group.memories)" class="unread-dot"></span>
+        </span>
         <div class="character-info">
           <div class="character-name">{{ group.name }}</div>
           <div class="character-counts">
@@ -172,9 +207,24 @@ onBeforeUnmount(() => {
 
     <!-- 第二層：該角色的禮物 -->
     <div v-else class="cabinet-detail">
-      <button type="button" class="detail-back" @click="backToList">
-        ‹ {{ selectedGroup.name }}
-      </button>
+      <div class="detail-head">
+        <button type="button" class="detail-back" @click="backToList">
+          ‹ {{ selectedGroup.name }}
+        </button>
+        <div class="auto-diary">
+          <span class="auto-diary-label">讓{{ selectedGroup?.name }}自己寫日記</span>
+          <button
+            type="button"
+            class="auto-toggle"
+            :class="{ on: autoDiary }"
+            role="switch"
+            :aria-checked="autoDiary"
+            @click="toggleAutoDiary"
+          >
+            <span class="toggle-knob"></span>
+          </button>
+        </div>
+      </div>
 
       <section class="gift-section">
         <h3 class="section-title">我送的</h3>
@@ -191,6 +241,7 @@ onBeforeUnmount(() => {
             </span>
             <span class="cell-name">{{ memory.name }}</span>
             <span class="cell-date">{{ formatShortDate(memory.sentAt) }}</span>
+            <span v-if="hasUnreadDiary([memory])" class="unread-dot cell-dot"></span>
           </button>
         </div>
         <p v-else class="section-empty">還沒有</p>
@@ -211,6 +262,7 @@ onBeforeUnmount(() => {
             </span>
             <span class="cell-name">{{ memory.name }}</span>
             <span class="cell-date">{{ formatShortDate(memory.sentAt) }}</span>
+            <span v-if="hasUnreadDiary([memory])" class="unread-dot cell-dot"></span>
           </button>
         </div>
         <p v-else class="section-empty">還沒有</p>
@@ -261,6 +313,22 @@ onBeforeUnmount(() => {
   &:active {
     background: var(--color-surface-hover, #f0f0f0);
   }
+}
+
+.avatar-wrap {
+  position: relative;
+  flex-shrink: 0;
+  display: flex;
+}
+
+.unread-dot {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ef4444;
 }
 
 .character-avatar {
@@ -328,6 +396,53 @@ onBeforeUnmount(() => {
   color: var(--color-text-secondary, #666);
 }
 
+.detail-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.auto-diary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.auto-diary-label {
+  font-size: 11px;
+  color: var(--color-text-secondary, #666);
+}
+
+.auto-toggle {
+  display: flex;
+  align-items: center;
+  width: 38px;
+  height: 22px;
+  padding: 2px;
+  border: none;
+  border-radius: 11px;
+  background: var(--color-border, #ddd);
+  cursor: pointer;
+  transition: background 0.2s;
+
+  &.on {
+    background: var(--color-primary, #7dd3a8);
+  }
+}
+
+.toggle-knob {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--color-on-primary-contrast, #fff);
+  transition: transform 0.2s;
+
+  .auto-toggle.on & {
+    transform: translateX(16px);
+  }
+}
+
 .detail-back {
   display: inline-flex;
   align-items: center;
@@ -363,6 +478,7 @@ onBeforeUnmount(() => {
 }
 
 .gift-cell {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -406,6 +522,11 @@ onBeforeUnmount(() => {
   color: var(--color-text-secondary, #666);
 }
 
+.cell-dot {
+  top: 6px;
+  right: 6px;
+}
+
 .section-empty {
   margin: 0;
   padding: 8px 2px;
@@ -430,6 +551,18 @@ body.is-night-mode {
   .avatar-fallback,
   .cell-icon {
     background: var(--color-surface-hover);
+  }
+
+  .auto-diary-label {
+    color: var(--color-text-secondary);
+  }
+
+  .auto-toggle {
+    background: var(--color-border);
+
+    &.on {
+      background: var(--color-primary);
+    }
   }
 
   .empty-title,

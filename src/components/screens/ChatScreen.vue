@@ -36,6 +36,7 @@ import {
   loadGiftMemories,
   type GiftMemory,
 } from "@/services/giftMemories";
+import { runAutoGiftDiary } from "@/services/giftDiary";
 import { formatGiftTag } from "@/utils/giftTag";
 import MediaSendDrawer from "@/components/common/MediaSendDrawer.vue";
 import AISummaryPanel from "@/components/modals/AISummaryPanel.vue";
@@ -4520,6 +4521,8 @@ watch(
     giftMemoriesForChar.value = characterId
       ? await loadGiftMemories(characterId).catch(() => [])
       : [];
+    // 他偶爾自己寫禮物日記（每天最多擲一次，背景跑）
+    if (characterId && !isGroupChat.value) void runAutoGiftDiary(characterId);
   },
   { immediate: true },
 );
