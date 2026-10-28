@@ -1,11 +1,16 @@
 <script setup lang="ts">
 import { db, DB_STORES } from "@/db/database";
 import { deleteChatCascade } from "@/storage/chatStorage";
-import { useCharactersStore } from "@/stores";
+import { useCharactersStore, useSettingsStore } from "@/stores";
+import ChatSkinTryOnBanner from "@/components/common/ChatSkinTryOnBanner.vue";
+import { getChatSkinPiece } from "@/data/chatSkins";
+import { resolveChatListSkin } from "@/utils/chatSkinResolve";
+import { useChatSkinsStore } from "@/stores/chatSkins";
+import { useGameEconomyStore } from "@/stores/gameEconomy";
 import type { Chat } from "@/types/chat";
 import { pickChatListEntries } from "@/utils/chatListEntries";
 import { createDefaultGroupChat } from "@/types/chat";
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { setLocalChatUnreadCount } from "@/storage/chatStorage";
 import { setChatRowsArchived } from "@/services/chatArchiveService";
 import {
@@ -33,6 +38,47 @@ const emit = defineEmits<{
 
 // Stores
 const charactersStore = useCharactersStore();
+const settingsStore = useSettingsStore();
+
+// ===== 聊天裝扮：聊天列表（只有全域） =====
+const chatSkinsStore = useChatSkinsStore();
+const gameEconomyStore = useGameEconomyStore();
+const chatListSkin = computed(() => {
+  const loadout = gameEconomyStore.getChatSkinLoadout("global");
+  return resolveChatListSkin({ owned: loadout.owned, equipped: loadout.equipped, tryOn: chatSkinsStore.tryOn });
+});
+const chatListSkinAttrs = computed(() =>
+  chatListSkin.value ? { "data-skin-chatlist": chatListSkin.value.seriesId } : {},
+);
+const chatListSkinStyle = computed<Record<string, string>>(() => {
+  const piece = chatListSkin.value;
+  if (!piece) return {};
+  return settingsStore.nightMode ? piece.vars.night : piece.vars.day;
+});
+const chatListTryOnPiece = computed(() => {
+  const tryOn = chatSkinsStore.tryOn;
+  if (!tryOn || tryOn.slot !== "chatList") return null;
+  return getChatSkinPiece(tryOn.pieceId) ?? null;
+});
+
+async function buyTryOnChatListSkin() {
+  const piece = chatListTryOnPiece.value;
+  if (!piece) return;
+  if (!confirm(`用 ${piece.price.toLocaleString()} 買下 ${piece.name}？`)) return;
+  const result = gameEconomyStore.purchaseChatSkinPiece("global", piece.id);
+  if (!result.success) {
+    alert(result.error === "insufficient_funds" ? "金幣不夠" : result.error === "already_owned" ? "已經擁有這件了" : "買不到這件");
+    return;
+  }
+  gameEconomyStore.equipChatSkin("global", piece.slot, piece.id);
+  await gameEconomyStore.saveState("global");
+  chatSkinsStore.endTryOn();
+}
+
+// 離開列表頁（回主畫面、點進聊天）就結束試穿
+onUnmounted(() => {
+  if (chatSkinsStore.tryOn?.slot === "chatList") chatSkinsStore.endTryOn();
+});
 
 // 狀態
 const currentTab = ref<"chats" | "contacts">("chats");
@@ -478,7 +524,11 @@ async function toggleLockChat() {
 </script>
 
 <template>
-  <div class="screen-container chat-list-screen">
+  <div
+    class="screen-container chat-list-screen"
+    v-bind="chatListSkinAttrs"
+    :style="chatListSkinStyle"
+  >
     <!-- 頂部：標題列 → 搜尋 → 小切換 -->
     <div class="chat-list-topbar">
       <header class="topbar-header">
@@ -581,6 +631,14 @@ async function toggleLockChat() {
       </nav>
     </div>
 
+    <ChatSkinTryOnBanner
+      v-if="chatListTryOnPiece"
+      :piece-name="chatListTryOnPiece.name"
+      :price="chatListTryOnPiece.price"
+      @buy="buyTryOnChatListSkin"
+      @end="chatSkinsStore.endTryOn()"
+    />
+
     <!-- 內容區域 -->
     <main class="content">
       <!-- 載入中 -->
@@ -617,6 +675,7 @@ async function toggleLockChat() {
               class="chat-item"
               :class="{
                 unread: !!chat.unreadCount,
+                pinned: !!chat.pinnedToList,
                 selecting: selectMode,
                 selected: selectedChatIds.includes(chat.id),
               }"
@@ -644,6 +703,7 @@ async function toggleLockChat() {
                   <UsersRound :size="22" :stroke-width="1.8" />
                 </div>
                 <div v-else class="avatar-placeholder">{{ getCharacterName(chat).charAt(0) }}</div>
+                <span v-if="chat.unreadCount" class="unread-count">{{ chat.unreadCount > 99 ? "99+" : chat.unreadCount }}</span>
               </div>
               <div class="chat-info">
                 <div class="chat-header">
@@ -654,7 +714,7 @@ async function toggleLockChat() {
                   <span v-if="getCharacterStatus(chat)" class="chat-status">· {{ getCharacterStatus(chat) }}</span>
                   <span class="chat-meta">
                     <Lock v-if="chat.lockedFromDelete" class="meta-icon" :size="12" :stroke-width="2" aria-label="已鎖定，無法刪除" />
-                    <Pin v-else-if="chat.pinnedToList" class="meta-icon" :size="12" :stroke-width="2" aria-label="已置頂" />
+                    <Pin v-else-if="chat.pinnedToList" class="meta-icon pin-icon" :size="12" :stroke-width="2" aria-label="已置頂" />
                     <span class="chat-time">{{ formatTime(chat.updatedAt) }}</span>
                     <span
                       v-if="chat.unreadCount"
@@ -1306,6 +1366,11 @@ async function toggleLockChat() {
   height: 8px;
   border-radius: 50%;
   background: var(--color-primary, #7dd3a8);
+}
+
+/* 未讀數字：平常不顯示，聊天裝扮才打開 */
+.unread-count {
+  display: none;
 }
 
 .chat-preview {

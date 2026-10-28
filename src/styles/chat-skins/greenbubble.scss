@@ -486,3 +486,263 @@ body.is-night-mode .chat-screen[data-skin-input="greenbubble"] {
     }
   }
 }
+
+// ==========================================
+// 5. 聊天列表 [data-skin-chatlist="greenbubble"]
+// ==========================================
+.chat-list-screen[data-skin-chatlist="greenbubble"] {
+  background: var(--skin-list-bg, var(--color-background));
+
+  .chat-list-topbar {
+    gap: 8px;
+    padding: max(8px, calc(var(--safe-top, 0px) + 4px)) 12px 8px;
+    background: var(--skin-list-bg, var(--color-background));
+  }
+
+  // 標題置中：絕對定位，返回鍵把右邊的按鈕推到最右
+  .topbar-header {
+    position: relative;
+  }
+
+  .header-back {
+    margin-left: -6px;
+    margin-right: auto;
+    color: var(--skin-list-icon, var(--color-text));
+  }
+
+  .header-title {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    max-width: 55%;
+    text-align: center;
+    font-size: 17px;
+    line-height: 24px;
+    font-weight: 600;
+    letter-spacing: 0;
+    color: var(--skin-list-name, var(--color-text));
+    pointer-events: none;
+  }
+
+  .header-action {
+    width: 40px;
+    height: 40px;
+    background: transparent;
+    border: none;
+    color: var(--skin-list-icon, var(--color-text));
+  }
+
+  .header-text-btn {
+    color: var(--skin-list-accent, var(--color-primary));
+  }
+
+  .search-bar {
+    height: 36px;
+    padding: 0 12px;
+    gap: 8px;
+    border: none;
+    border-radius: 6px;
+    background: var(--skin-list-search-bg, var(--color-surface));
+    color: var(--skin-list-secondary, var(--color-text-muted));
+
+    &:focus-within {
+      border: none;
+    }
+
+    input {
+      font-size: 15px;
+      color: var(--skin-list-name, var(--color-text));
+
+      &::placeholder {
+        color: var(--skin-list-secondary, var(--color-text-muted));
+      }
+    }
+  }
+
+  // 對話／聯繫人：平的文字分頁＋綠色底線
+  .seg-tabs {
+    align-self: stretch;
+    gap: 24px;
+    padding: 0 4px;
+    border: none;
+    border-radius: 0;
+    background: transparent;
+  }
+
+  .seg-tab {
+    height: 32px;
+    padding: 0 2px;
+    border-radius: 0;
+    border-bottom: 2px solid transparent;
+    font-size: 14px;
+    color: var(--skin-list-secondary, var(--color-text-secondary));
+
+    &.active {
+      background: transparent;
+      color: var(--skin-list-name, var(--color-text));
+      font-weight: 600;
+      border-bottom-color: var(--skin-list-accent, var(--color-primary));
+    }
+  }
+
+  .seg-count {
+    color: var(--skin-list-secondary, var(--color-text-muted));
+  }
+
+  // 每一列：白色長條、滿版、分隔線從名字那欄開始
+  .chat-list {
+    padding: 0 0 16px;
+  }
+
+  .chat-section + .chat-section {
+    margin-top: 8px;
+  }
+
+  .section-label {
+    padding: 8px 16px 6px;
+    color: var(--skin-list-secondary, var(--color-text-muted));
+  }
+
+  .chat-item {
+    position: relative;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    border-radius: 0;
+    background: var(--skin-list-row-bg, var(--color-surface));
+
+    &::after {
+      content: "";
+      position: absolute;
+      left: 76px;
+      right: 0;
+      bottom: 0;
+      height: 0.5px;
+      background: var(--skin-list-divider, var(--color-border));
+    }
+
+    &:last-child::after {
+      display: none;
+    }
+
+    &:hover,
+    &:active,
+    &.pinned,
+    &.selected {
+      background: var(--skin-list-row-pinned-bg, var(--color-surface-hover));
+    }
+
+    &.unread .chat-name {
+      font-weight: 400;
+    }
+
+    &.unread .chat-preview {
+      color: var(--skin-list-secondary, var(--color-text-secondary));
+    }
+
+    &.selected .select-box {
+      background: var(--skin-list-accent, var(--color-primary));
+      border-color: var(--skin-list-accent, var(--color-primary));
+    }
+  }
+
+  // 方圓頭像＋右上角紅色未讀數字
+  .chat-avatar {
+    position: relative;
+    overflow: visible;
+    border-radius: 6px;
+
+    img,
+    .group-avatar-placeholder,
+    .avatar-placeholder {
+      border-radius: 6px;
+    }
+  }
+
+  .unread-count {
+    position: absolute;
+    top: -6px;
+    right: -6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    box-sizing: border-box;
+    border-radius: 9px;
+    background: var(--skin-list-badge-bg, #fa5151);
+    color: #fff;
+    font-size: 11px;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .unread-dot,
+  .pin-icon {
+    display: none;
+  }
+
+  .chat-info {
+    gap: 4px;
+    padding-top: 0;
+  }
+
+  .chat-name {
+    font-size: 17px;
+    font-weight: 400;
+    color: var(--skin-list-name, var(--color-text));
+  }
+
+  .inline-badge {
+    border-radius: 3px;
+    border-color: var(--skin-list-divider, var(--color-border));
+    color: var(--skin-list-secondary, var(--color-text-muted));
+  }
+
+  .chat-status,
+  .chat-time,
+  .meta-icon,
+  .preview-icon,
+  .chat-file-label {
+    color: var(--skin-list-secondary, var(--color-text-muted));
+  }
+
+  .chat-time {
+    align-self: flex-start;
+  }
+
+  .chat-preview {
+    font-size: 14px;
+    line-height: 20px;
+    -webkit-line-clamp: 1;
+    color: var(--skin-list-secondary, var(--color-text-secondary));
+  }
+
+  // 聯繫人：維持格子，只換顏色和頭像形狀
+  .contact-card {
+    background: var(--skin-list-row-bg, var(--color-surface));
+    border-color: transparent;
+    border-radius: 8px;
+  }
+
+  .contact-avatar {
+    border-radius: 6px;
+    border-color: var(--skin-list-divider, var(--color-border));
+  }
+
+  .contact-name {
+    color: var(--skin-list-name, var(--color-text));
+  }
+
+  .contact-hint,
+  .empty-state,
+  .loading {
+    color: var(--skin-list-secondary, var(--color-text-muted));
+  }
+
+  .select-bar {
+    background: var(--skin-list-bg, var(--color-background));
+    border-top-color: var(--skin-list-divider, var(--color-border));
+  }
+}
