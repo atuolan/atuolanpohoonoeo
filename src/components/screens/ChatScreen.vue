@@ -81,7 +81,7 @@ import { _delay, _escapeRegex, _messageRenderDelay, countTurns, formatClaimAmoun
 import { findQuotedMessage } from "@/utils/replyQuote";
 import { setDebugInfoLine } from "@/utils/debugOverlay";
 import { pickGenerationToggles } from "@/utils/generationToggles";
-import { diceCommandFromTag, formatDiceRoll, parseDiceCommand, runDiceCommand } from "@/utils/diceRoller";
+import { diceCommandFromTag, extractDiceTags, formatDiceRoll, parseDiceCommand, runDiceCommand, type DiceTagRequest } from "@/utils/diceRoller";
 import { useChatAffinity } from "@/composables/useChatAffinity";
 import { useCharAway } from "@/composables/useCharAway";
 import { useChatBlock } from "@/composables/useChatBlock";
@@ -2037,7 +2037,8 @@ const showGiftDrawer = ref(false);
 // 獲取最後一條 AI 訊息
 const lastAIMessage = computed(() => {
   for (let i = messages.value.length - 1; i >= 0; i--) {
-    if (messages.value[i].role === "ai") {
+    // 骰子結果卡片不算：繼續生成、滑動切換都要接在角色真正的回覆上
+    if (messages.value[i].role === "ai" && !messages.value[i].isDiceRoll) {
       return messages.value[i];
     }
   }
@@ -3897,6 +3898,30 @@ function appendUserDiceRoll(text: string): void {
   });
 }
 
+// 多人卡面對面：角色的 <dice> 從正文抽出來後，在這輪回覆後面公布結果（帶這輪的 turnId，重新生成時一起刪）
+function appendCharDiceRolls(requests: DiceTagRequest[], turnId?: string): void {
+  const members = groupMetadata.value?.multiCharMembers ?? [];
+  const fallbackName = currentCharacter.value?.data?.name || props.characterName;
+  requests.forEach((req, i) => {
+    const name = req.name || fallbackName;
+    const roll = runDiceCommand(diceCommandFromTag(req), name);
+    if (!roll) return;
+    const member = members.find((m) => (m.name || "").trim() === name.trim());
+    messages.value.push({
+      id: `msg_${Date.now()}_${i}_dice`,
+      role: "ai",
+      content: formatDiceRoll(roll),
+      timestamp: Date.now() + i,
+      turnId: turnId || undefined,
+      senderCharacterId: member?.id,
+      senderCharacterName: name,
+      senderCharacterAvatar: member?.avatar,
+      isDiceRoll: true,
+      diceRoll: roll,
+    });
+  });
+}
+
 // 發送訊息（只添加用戶訊息，不觸發 AI）
 function addUserMessage() {
   const text = inputText.value.trim();
@@ -5007,6 +5032,8 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
 
   const controller = startResult.controller!;
   let latestFinalContent = "";
+  // 多人卡面對面這輪回覆裡的 <dice>，回覆處理完才擲
+  let pendingDiceRequests: DiceTagRequest[] = [];
   let usedStreamingWindowForCurrentGeneration = false;
   let remoteGenerationStarted = false;
   // 本輪生成對串流視窗的擁有權 ID。串流視窗是模組級單例，但 aiGeneration store
@@ -6613,9 +6640,15 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
           : fullContent;
       fullContent = rawFullContent;
       // 圖片備註只存進那則圖片訊息，不進聊天內容
-      const { content: finalContent, note: picNote } = extractPicNote(
+      const { content: picStrippedContent, note: picNote } = extractPicNote(
         processAiOutputTemplate(applyAIOutputRegex(fullContent)),
       );
+      // 多人卡面對面是小說式一整段：<dice> 先從正文抽出來（群聊解析器自己會處理）
+      const { content: finalContent, requests: diceRequests } =
+        isGroupChat.value && !useGroupChatParser.value
+          ? extractDiceTags(picStrippedContent)
+          : { content: picStrippedContent, requests: [] as DiceTagRequest[] };
+      pendingDiceRequests = diceRequests;
       if (picNote && turnImageMessage) {
         const imageMessage = messages.value.find((m) => m.id === turnImageMessage.id);
         if (imageMessage) imageMessage.imageNote = picNote;
@@ -7835,6 +7868,12 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
 
     // 處理禮物接收（標記為已接收並記錄重要事件）
     await processGiftReceived();
+    if (pendingDiceRequests.length > 0) {
+      appendCharDiceRolls(pendingDiceRequests, generationTurnId);
+      pendingDiceRequests = [];
+      scrollToBottom();
+      await saveChatImmediate();
+    }
     await settleTransfersAfterReply();
 
     // 發送聊天訊息通知（如果用戶不在此聊天頁面）
@@ -10586,9 +10625,11 @@ function toStoredRemoteMessage(message: Message, fallbackName: string): ChatMess
 }
 
 async function landRemoteGenerationTask(task: BgGenerationTaskView): Promise<void> {
-  const { content: finalContent, note: picNote } = extractPicNote(
+  const { content: picStrippedContent, note: picNote } = extractPicNote(
     processAiOutputTemplate(applyAIOutputRegex(task.content || "")),
   );
+  // 後台生成一律走單人解析器：<dice> 先從正文抽出來，落地到目前聊天時再擲
+  const { content: finalContent, requests: diceRequests } = extractDiceTags(picStrippedContent);
   const landedAt = Date.now();
   const baseId = `msg_${landedAt}_${task.taskId}`;
   const characterName = currentCharacter.value?.data?.name || props.characterName || "角色";
@@ -10659,6 +10700,7 @@ async function landRemoteGenerationTask(task: BgGenerationTaskView): Promise<voi
     }
 
     await applyRemoteParsedMessageSideEffects(remoteMessages);
+    if (isGroupChat.value) appendCharDiceRolls(diceRequests, turnId);
     completeChatGeneration(finalContent);
     scrollToBottom();
     applyTimeAfterReply(finalContent, false, turnId);

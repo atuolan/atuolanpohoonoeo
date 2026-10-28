@@ -164,6 +164,35 @@ export function diceCommandFromTag(attrs: {
   return { kind: "roll", expr: attrs.expr?.trim() || "d", reason };
 }
 
+export interface DiceTagRequest {
+  name: string;
+  expr?: string;
+  reason?: string;
+  target?: string;
+}
+
+const DICE_TAG_RE = /[ \t]*<dice\s+([^>]*?)\s*\/?>(?:\s*<\/dice>)?[ \t]*\n?/gi;
+
+function readAttr(attrs: string, name: string): string | undefined {
+  const m = attrs.match(new RegExp(`\\b${name}\\s*=\\s*["']([^"']*)["']`, "i"));
+  return m ? m[1].trim() || undefined : undefined;
+}
+
+/** 面對面小說式回覆：把 <dice> 標籤從正文抽出來，回覆處理完再公布結果 */
+export function extractDiceTags(content: string): { content: string; requests: DiceTagRequest[] } {
+  const requests: DiceTagRequest[] = [];
+  const stripped = content.replace(DICE_TAG_RE, (_tag, attrs: string) => {
+    requests.push({
+      name: readAttr(attrs, "name") || "",
+      expr: readAttr(attrs, "expr"),
+      reason: readAttr(attrs, "reason"),
+      target: readAttr(attrs, "target"),
+    });
+    return "";
+  });
+  return { content: requests.length > 0 ? stripped : content, requests };
+}
+
 export const DICE_HELP_TEXT = [
   "🎲 骰子機器人指令",
   ".r 擲骰：.r（1D100）、.r 2d6+3 攻擊、.rd20",
