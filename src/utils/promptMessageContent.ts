@@ -112,7 +112,7 @@ function describeRedpacket(m: PromptMessageLike): string {
   const claims = m.redpacketState?.claims ?? [];
   const expired = m.redpacketState?.expired && !m.redpacketState.fullyClaimed;
   if (claims.length === 0) return `${tag}[紅包狀態：${expired ? "沒有人領，已過期" : "還沒有人領"}]`;
-  const who = claims.map((c) => `${c.claimerName}領了 ${formatAmount(c.cents / 100)} 元`).join("、");
+  const who = claims.map((c) => `${c.claimerName}領了 $${formatAmount(c.cents / 100)}`).join("、");
   const remaining = m.redpacketState?.remainingCount;
   const tail = m.redpacketState?.fullyClaimed ? "，已領完" : expired ? "，已過期" : remaining && remaining > 0 ? `，還剩 ${remaining} 份` : "";
   return `${tag}[紅包狀態：${who}${tail}]`;

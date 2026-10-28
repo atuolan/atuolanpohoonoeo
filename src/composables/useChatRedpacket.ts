@@ -66,7 +66,7 @@ export function useChatRedpacket(context: {
     return {
       id: `msg_claim_${timestamp}_${suffix}`,
       role: "user",
-      content: `${options.claimerName}領取了${options.payerName}的${options.kind}${formatClaimAmount(options.amount)}元`,
+      content: `${options.claimerName}領取了${options.payerName}的${options.kind} $${formatClaimAmount(options.amount)}`,
       timestamp,
       isTransactionClaimNotice: true,
     };
@@ -93,7 +93,7 @@ export function useChatRedpacket(context: {
         idSuffix: "rpc_user",
       }),
     );
-    context.showToast?.(`你領到 ¥${yuan.toFixed(2)}`);
+    context.showToast?.(`你領到 $${yuan.toFixed(2)}`);
     await context.saveChatImmediate();
   }
 
@@ -110,7 +110,7 @@ export function useChatRedpacket(context: {
       context.messages.value.push({
         id: `msg_rp_refund_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
         role: "user",
-        content: `紅包超過 24 小時沒領完，已退回 ${formatClaimAmount(yuan)} 元`,
+        content: `紅包超過 24 小時沒領完，已退回 $${formatClaimAmount(yuan)}`,
         timestamp: Date.now(),
         isTransactionClaimNotice: true,
       });

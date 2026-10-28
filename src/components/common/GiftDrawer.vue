@@ -243,7 +243,7 @@
                     >隨機分成 {{ redpacketCount }} 份，先搶先得</template
                   >
                   <template v-else-if="redpacketType === 'split'"
-                    >每人 {{ splitPerPerson }} 元</template
+                    >每人 ${{ splitPerPerson }}</template
                   >
                   <template v-else
                     >只有 {{ redpacketTarget || "指定的人" }} 能領</template
