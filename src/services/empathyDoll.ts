@@ -13,27 +13,29 @@ export interface DollZone {
   intimate?: boolean;
   /** 熱區（棉花娃娃 viewBox 0 0 240 340 的座標），一個部位可以有左右兩塊 */
   shapes: Array<{ x: number; y: number; w: number; h: number }>;
+  /** 「顯示可以碰的地方」時名字排在娃娃哪一側、哪個高度，線拉到 (ax, ay) */
+  callout: { side: "left" | "right"; y: number; ax: number; ay: number };
 }
 
 /** 後面的蓋在前面上；熱區對齊 CottonDoll.vue 的身體 */
 export const DOLL_ZONES: DollZone[] = [
-  { id: "head", label: "頭", shapes: [{ x: 62, y: 28, w: 116, h: 46 }] },
-  { id: "ear", label: "耳朵", shapes: [{ x: 10, y: 106, w: 38, h: 40 }, { x: 192, y: 106, w: 38, h: 40 }] },
-  { id: "earlobe", label: "耳垂", intimate: true, shapes: [{ x: 12, y: 132, w: 24, h: 20 }, { x: 204, y: 132, w: 24, h: 20 }] },
-  { id: "cheek", label: "臉頰", shapes: [{ x: 44, y: 142, w: 46, h: 34 }, { x: 150, y: 142, w: 46, h: 34 }] },
-  { id: "lips", label: "嘴唇", intimate: true, shapes: [{ x: 102, y: 148, w: 36, h: 26 }] },
-  { id: "neck", label: "脖子", intimate: true, shapes: [{ x: 94, y: 180, w: 52, h: 14 }] },
-  { id: "hand", label: "手", shapes: [{ x: 40, y: 202, w: 38, h: 58 }, { x: 162, y: 202, w: 38, h: 58 }] },
-  { id: "collarbone", label: "鎖骨", intimate: true, shapes: [{ x: 90, y: 194, w: 60, h: 12 }] },
-  { id: "chest", label: "胸口", intimate: true, shapes: [{ x: 84, y: 206, w: 72, h: 28 }] },
-  { id: "nipple", label: "乳頭", intimate: true, shapes: [{ x: 92, y: 210, w: 20, h: 20 }, { x: 128, y: 210, w: 20, h: 20 }] },
-  { id: "belly", label: "肚子", shapes: [{ x: 86, y: 234, w: 68, h: 28 }] },
-  { id: "navel", label: "肚臍", intimate: true, shapes: [{ x: 110, y: 244, w: 20, h: 20 }] },
-  { id: "waist", label: "腰", intimate: true, shapes: [{ x: 72, y: 236, w: 16, h: 34 }, { x: 152, y: 236, w: 16, h: 34 }] },
-  { id: "thigh", label: "大腿", intimate: true, shapes: [{ x: 90, y: 280, w: 28, h: 30 }, { x: 122, y: 280, w: 28, h: 30 }] },
-  { id: "innerThigh", label: "大腿內側", intimate: true, shapes: [{ x: 108, y: 284, w: 24, h: 26 }] },
-  { id: "groin", label: "下身", intimate: true, shapes: [{ x: 104, y: 262, w: 32, h: 22 }] },
-  { id: "foot", label: "腳", shapes: [{ x: 86, y: 304, w: 36, h: 24 }, { x: 118, y: 304, w: 36, h: 24 }] },
+  { id: "head", label: "頭", shapes: [{ x: 62, y: 28, w: 116, h: 46 }], callout: { side: "left", y: 50, ax: 100, ay: 52 } },
+  { id: "ear", label: "耳朵", shapes: [{ x: 10, y: 106, w: 38, h: 40 }, { x: 192, y: 106, w: 38, h: 40 }], callout: { side: "left", y: 104, ax: 24, ay: 120 } },
+  { id: "earlobe", label: "耳垂", intimate: true, shapes: [{ x: 12, y: 132, w: 24, h: 20 }, { x: 204, y: 132, w: 24, h: 20 }], callout: { side: "left", y: 128, ax: 22, ay: 144 } },
+  { id: "cheek", label: "臉頰", shapes: [{ x: 44, y: 142, w: 46, h: 34 }, { x: 150, y: 142, w: 46, h: 34 }], callout: { side: "left", y: 160, ax: 64, ay: 158 } },
+  { id: "lips", label: "嘴唇", intimate: true, shapes: [{ x: 102, y: 148, w: 36, h: 26 }], callout: { side: "right", y: 146, ax: 128, ay: 160 } },
+  { id: "neck", label: "脖子", intimate: true, shapes: [{ x: 94, y: 180, w: 52, h: 14 }], callout: { side: "left", y: 186, ax: 104, ay: 187 } },
+  { id: "hand", label: "手", shapes: [{ x: 40, y: 202, w: 38, h: 58 }, { x: 162, y: 202, w: 38, h: 58 }], callout: { side: "left", y: 226, ax: 54, ay: 232 } },
+  { id: "collarbone", label: "鎖骨", intimate: true, shapes: [{ x: 90, y: 194, w: 60, h: 12 }], callout: { side: "right", y: 170, ax: 140, ay: 200 } },
+  { id: "chest", label: "胸口", intimate: true, shapes: [{ x: 84, y: 206, w: 72, h: 28 }], callout: { side: "right", y: 194, ax: 152, ay: 216 } },
+  { id: "nipple", label: "乳頭", intimate: true, shapes: [{ x: 92, y: 210, w: 20, h: 20 }, { x: 128, y: 210, w: 20, h: 20 }], callout: { side: "right", y: 218, ax: 138, ay: 220 } },
+  { id: "belly", label: "肚子", shapes: [{ x: 86, y: 234, w: 68, h: 28 }], callout: { side: "right", y: 242, ax: 146, ay: 244 } },
+  { id: "navel", label: "肚臍", intimate: true, shapes: [{ x: 110, y: 244, w: 20, h: 20 }], callout: { side: "right", y: 266, ax: 120, ay: 254 } },
+  { id: "waist", label: "腰", intimate: true, shapes: [{ x: 72, y: 236, w: 16, h: 34 }, { x: 152, y: 236, w: 16, h: 34 }], callout: { side: "left", y: 256, ax: 80, ay: 252 } },
+  { id: "thigh", label: "大腿", intimate: true, shapes: [{ x: 90, y: 280, w: 28, h: 30 }, { x: 122, y: 280, w: 28, h: 30 }], callout: { side: "left", y: 288, ax: 100, ay: 296 } },
+  { id: "innerThigh", label: "大腿內側", intimate: true, shapes: [{ x: 108, y: 284, w: 24, h: 26 }], callout: { side: "right", y: 314, ax: 122, ay: 298 } },
+  { id: "groin", label: "下身", intimate: true, shapes: [{ x: 104, y: 262, w: 32, h: 22 }], callout: { side: "right", y: 290, ax: 128, ay: 274 } },
+  { id: "foot", label: "腳", shapes: [{ x: 86, y: 304, w: 36, h: 24 }, { x: 118, y: 304, w: 36, h: 24 }], callout: { side: "left", y: 320, ax: 100, ay: 318 } },
 ];
 
 /** 整隻抱住用的部位 id */

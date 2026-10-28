@@ -72,7 +72,14 @@ interface Particle {
 const particles = ref<Particle[]>([]);
 let particleSeq = 0;
 
-function startHold(zoneId: string, event: PointerEvent) {
+/** 名字那端在娃娃外面一點，先水平走到部位上方再拉過去 */
+function calloutPoints(c: { side: "left" | "right"; y: number; ax: number; ay: number }): string {
+  const edge = c.side === "left" ? -4 : 244;
+  const elbow = c.side === "left" ? Math.min(c.ax - 10, 16) : Math.max(c.ax + 10, 224);
+  return `${edge},${c.y} ${elbow},${c.y} ${c.ax},${c.ay}`;
+}
+
+function startHold(zoneId: string, event: PointerEvent, tiltToPoint = true) {
   if (props.sending) return;
   event.preventDefault();
   // 鎖住指標：娃娃傾斜時部位會移開，不鎖的話會觸發 pointerleave 提早結束
@@ -88,7 +95,7 @@ function startHold(zoneId: string, event: PointerEvent) {
   // 往碰的那一側微微傾斜
   const stage = (event.currentTarget as HTMLElement).closest(".doll-stage") as HTMLElement | null;
   const rect = stage?.getBoundingClientRect();
-  if (rect && zoneId !== DOLL_WHOLE_ZONE) {
+  if (rect && zoneId !== DOLL_WHOLE_ZONE && tiltToPoint) {
     tilt.value = {
       x: ((event.clientX - rect.left) / rect.width - 0.5) * 14,
       y: ((event.clientY - rect.top) / rect.height - 0.5) * -10,
@@ -109,21 +116,23 @@ function endHold(event: PointerEvent) {
   emit("update:touches", addDollTouch(props.touches, { action, zone: zoneId, holdMs: duration }));
   // 表情多停一下再回去
   reactionTimer = window.setTimeout(() => (reaction.value = null), 700);
-  spawnParticle(event, action);
+  spawnParticle(event, action, zoneId);
 }
 
-function spawnParticle(event: PointerEvent, action: string) {
+function spawnParticle(event: PointerEvent, action: string, zoneId: string) {
   const stage = document.querySelector(".doll-stage") as HTMLElement | null;
   const rect = stage?.getBoundingClientRect();
   if (!rect) return;
   const label = action === DOLL_HUG_ACTION ? "♡" : DOLL_ACTIONS.find((a) => a.id === action)?.label ?? "♡";
   const isHug = action === DOLL_HUG_ACTION;
+  const fromLabel = (event.target as HTMLElement | null)?.classList?.contains("callout-label");
+  const callout = zones.value.find((z) => z.id === zoneId)?.callout;
   const id = ++particleSeq;
   particles.value.push({
     id,
     text: label,
-    x: isHug ? rect.width / 2 : event.clientX - rect.left,
-    y: isHug ? rect.height * 0.3 : event.clientY - rect.top,
+    x: isHug ? rect.width / 2 : fromLabel && callout ? (callout.ax / 240) * rect.width : event.clientX - rect.left,
+    y: isHug ? rect.height * 0.3 : fromLabel && callout ? (callout.ay / 340) * rect.height : event.clientY - rect.top,
   });
   window.setTimeout(() => (particles.value = particles.value.filter((p) => p.id !== id)), 900);
 }
@@ -226,9 +235,35 @@ onBeforeUnmount(() => {
                   @pointerdown="startHold(zone.id, $event)"
                   @pointerup="endHold($event)"
                   @pointercancel="endHold($event)"
+                />
+              </template>
+              <!-- 顯示可以碰的地方：名字排在兩側，細線拉到部位；名字也能按 -->
+              <template v-if="showZones">
+                <svg class="callout-lines" viewBox="0 0 240 340" preserveAspectRatio="none" aria-hidden="true">
+                  <g v-for="zone in zones" :key="`line-${zone.id}`">
+                    <polyline
+                      :points="calloutPoints(zone.callout)"
+                      fill="none"
+                      :stroke="activeZone === zone.id ? '#e8708a' : 'rgba(138, 90, 68, 0.55)'"
+                      stroke-width="1"
+                      vector-effect="non-scaling-stroke"
+                    />
+                    <circle :cx="zone.callout.ax" :cy="zone.callout.ay" r="2.2" :fill="zone.intimate ? '#e8708a' : '#c98b6b'" />
+                  </g>
+                </svg>
+                <button
+                  v-for="zone in zones"
+                  :key="`label-${zone.id}`"
+                  type="button"
+                  class="callout-label"
+                  :class="[zone.callout.side, { active: activeZone === zone.id, intimate: zone.intimate }]"
+                  :style="{ top: `${(zone.callout.y / 340) * 100}%` }"
+                  @pointerdown="startHold(zone.id, $event, false)"
+                  @pointerup="endHold($event)"
+                  @pointercancel="endHold($event)"
                 >
-                  <span v-if="showZones && i === 0 && shape.w * shape.h >= 800" class="zone-label">{{ zone.label }}</span>
-                </div>
+                  {{ zone.label }}
+                </button>
               </template>
             </template>
             <span
@@ -454,11 +489,10 @@ onBeforeUnmount(() => {
   touch-action: none;
 
   &.shown {
-    border: 1.5px dashed rgba(201, 139, 107, 0.7);
-    background: rgba(255, 255, 255, 0.18);
+    border: 1px dashed rgba(201, 139, 107, 0.45);
 
     &.intimate {
-      border-color: rgba(232, 112, 138, 0.75);
+      border-color: rgba(232, 112, 138, 0.5);
     }
   }
 
@@ -467,19 +501,58 @@ onBeforeUnmount(() => {
   }
 }
 
-.zone-label {
+.callout-lines {
   position: absolute;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
-  padding: 0 4px;
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.85);
-  color: #8a5a44;
-  font-size: 9px;
-  line-height: 1.5;
-  white-space: nowrap;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
   pointer-events: none;
+}
+
+.callout-label {
+  position: absolute;
+  transform: translateY(-50%);
+  padding: 2px 7px;
+  border: 1px solid rgba(201, 139, 107, 0.45);
+  border-radius: 999px;
+  background: var(--color-surface, #fff);
+  color: #8a5a44;
+  font-size: 11px;
+  line-height: 1.4;
+  white-space: nowrap;
+  touch-action: none;
+  cursor: pointer;
+
+  &.left {
+    right: calc(100% + 2px);
+  }
+
+  &.right {
+    left: calc(100% + 2px);
+  }
+
+  &.intimate {
+    border-color: rgba(232, 112, 138, 0.55);
+    color: #c0506a;
+  }
+
+  &.active {
+    background: #ffe3e8;
+    border-color: #e8708a;
+  }
+}
+
+body.is-night-mode .callout-label {
+  color: #f0d6c8;
+
+  &.intimate {
+    color: #ff9fb3;
+  }
+
+  &.active {
+    background: rgba(232, 112, 138, 0.25);
+  }
 }
 
 .doll-particle {
