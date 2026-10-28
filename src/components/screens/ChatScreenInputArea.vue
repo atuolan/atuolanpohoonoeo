@@ -30,6 +30,8 @@ const props = defineProps<{
   chatFaceToFaceMode: boolean;
   /** 群聊：電話改成群通話，沒有視訊 */
   isGroupChat?: boolean;
+  /** 這個角色綁了共感娃娃（單人線上才傳 true） */
+  hasEmpathyDoll?: boolean;
   /** 群聊打 @ 時可以點名的成員 */
   mentionCandidates?: Array<{ id: string; name: string; avatar: string }>;
   isInputFocused: boolean;
@@ -87,6 +89,7 @@ const emit = defineEmits<{
   (e: "handleStickerSelect", sticker: any): void;
   (e: "closeStickerPanel"): void;
   (e: "openGiftDrawer"): void;
+  (e: "openEmpathyDoll"): void;
   (e: "handleFeatureClick", type: string): void;
   (e: "closeExpandedInput"): void;
   (e: "sendFromExpanded"): void;
@@ -815,6 +818,24 @@ const isDarkBackground = computed(() =>
             </div>
             <span class="feature-label">禮物</span>
           </button>
+          <button
+            v-if="hasEmpathyDoll"
+            class="feature-item"
+            @click="
+              emit('openEmpathyDoll');
+              emit('update:showMoreFeatures', false);
+            "
+          >
+            <div class="feature-icon doll-feature-icon">
+              <svg viewBox="0 0 24 24" fill="currentColor">
+                <circle cx="12" cy="7" r="4.5" />
+                <circle cx="8.2" cy="3.6" r="1.6" />
+                <circle cx="15.8" cy="3.6" r="1.6" />
+                <path d="M7 13.5c0-1.4 2.2-2.2 5-2.2s5 .8 5 2.2v3.2c0 .8.9 1 1.6.6l.9-.5c.6-.3 1.2.4.8.9l-1.8 2.2c-.4.5-1 .8-1.6.8H15l.6 1.6c.2.5-.2 1-.7 1h-1.2c-.4 0-.7-.2-.8-.6L12.4 21h-.8l-.5 1.4c-.1.4-.4.6-.8.6H9.1c-.5 0-.9-.5-.7-1L9 20.4H8.1c-.6 0-1.2-.3-1.6-.8l-1.8-2.2c-.4-.5.2-1.2.8-.9l.9.5c.7.4 1.6.2 1.6-.6z" />
+              </svg>
+            </div>
+            <span class="feature-label">共感娃娃</span>
+          </button>
           <button class="feature-item" @click="emit('handleFeatureClick', 'phone')">
             <div class="feature-icon">
               <svg viewBox="0 0 24 24" fill="currentColor">
@@ -1474,6 +1495,10 @@ const isDarkBackground = computed(() =>
     // 對齊主題色族 → --color-error
     color: var(--color-error, #e53935) !important;
   }
+}
+
+.doll-feature-icon svg {
+  color: #c98b6b !important;
 }
 
 .input-wrapper {
