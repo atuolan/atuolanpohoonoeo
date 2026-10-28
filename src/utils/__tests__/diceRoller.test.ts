@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   checkOutcome,
   diceCommandFromTag,
+  extractDiceTags,
   formatDiceRoll,
   parseDiceCommand,
   rollExpression,
@@ -114,5 +115,22 @@ describe("diceCommandFromTag", () => {
     expect(diceCommandFromTag({ reason: "聆聽", target: "50" })).toEqual({ kind: "check", reason: "聆聽", target: 50 });
     expect(diceCommandFromTag({ expr: "1d6", reason: "傷害" })).toEqual({ kind: "roll", expr: "1d6", reason: "傷害" });
     expect(diceCommandFromTag({})).toEqual({ kind: "roll", expr: "d", reason: undefined });
+  });
+});
+
+describe("extractDiceTags", () => {
+  it("抽出標籤、從正文拿掉，獨占一行的連換行一起拿掉", () => {
+    const { content, requests } = extractDiceTags(
+      "她屏住呼吸，側耳細聽。\n<dice name=\"基拉奇\" reason=\"聆聽\" target=\"50\"/>\n走廊盡頭傳來腳步聲。<dice name='雪拉比' expr=\"1d6\"></dice>",
+    );
+    expect(content).toBe("她屏住呼吸，側耳細聽。\n走廊盡頭傳來腳步聲。");
+    expect(requests).toEqual([
+      { name: "基拉奇", expr: undefined, reason: "聆聽", target: "50" },
+      { name: "雪拉比", expr: "1d6", reason: undefined, target: undefined },
+    ]);
+  });
+
+  it("沒有標籤時原樣回傳", () => {
+    expect(extractDiceTags("沒有骰子")).toEqual({ content: "沒有骰子", requests: [] });
   });
 });
