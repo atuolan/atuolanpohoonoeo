@@ -47,6 +47,8 @@ interface PersonaOption {
 const props = defineProps<{
   /** 貼齊螢幕邊緣（聊天外觀設定） */
   docked?: boolean;
+  /** 聊天裝扮的頂欄不顯示頭像：點名字改成打開 AI 記憶管理 */
+  nameOpensMemory?: boolean;
   displayAvatar: string;
   characterName: string;
   isGroupChat: boolean;
@@ -402,7 +404,11 @@ const isDarkBackground = computed(() =>
       </svg>
     </div>
 
-    <div class="chat-info">
+    <div
+      class="chat-info"
+      :class="{ 'name-opens-memory': nameOpensMemory, 'has-memory': hasMemoryBadge }"
+      @click="nameOpensMemory && emit('open-ai-summary')"
+    >
       <div class="chat-name-row">
         <h1 class="chat-name">{{ isGroupChat ? groupDisplayName : displayCharacterName }}</h1>
         <button v-if="!isGroupChat && currentCharacter" class="nickname-edit-btn" title="編輯暱稱" @click.stop="emit('start-nickname-edit')">
