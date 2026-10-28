@@ -42,6 +42,7 @@ export interface PromptMessageLike {
   isDollTouch?: boolean;
   dollTouchText?: string;
   dollTouchRound?: number;
+  dollLookNote?: string;
   messageType?: string;
   audioTranscript?: string;
   isFaceToFaceRequest?: boolean;
@@ -167,7 +168,7 @@ export function describeMessageForPrompt(
   }
   if (m.isDollTouch && m.dollTouchText) {
     text = text.replace(DOLL_TAG_RE, "");
-    cards.push(formatDollTag(m.dollTouchText) + dollPromptNote(names, m.dollTouchRound));
+    cards.push(formatDollTag(m.dollTouchText) + dollPromptNote(names, m.dollTouchRound, m.dollLookNote));
   }
   if (m.isFaceToFaceRequest || m.isOnlineModeRequest) {
     text = text.replace(MODE_REQUEST_TAGS, "");

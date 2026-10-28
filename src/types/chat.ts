@@ -431,6 +431,10 @@ export interface ChatMessage {
   dollTouchText?: string;
   /** 30 分鐘內第幾次 */
   dollTouchRound?: number;
+  /** 當時娃娃的造型（「娃娃穿著…」），用來判斷有沒有換裝 */
+  dollLookKey?: string;
+  /** 跟上一次比換了造型時才有，寫進提示詞 */
+  dollLookNote?: string;
   /** 是否為轉帳 */
   isTransfer?: boolean;
   /** 轉帳金額 */

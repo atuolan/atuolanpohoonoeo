@@ -94,6 +94,8 @@ export interface ChatScreenMessage {
   isDollTouch?: boolean;
   dollTouchText?: string;
   dollTouchRound?: number;
+  dollLookKey?: string;
+  dollLookNote?: string;
   isTransfer?: boolean;
   transferAmount?: number;
   transferReceived?: boolean;

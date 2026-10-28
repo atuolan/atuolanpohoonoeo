@@ -329,6 +329,8 @@ export function convertToStorableMessage(m: any, charName: string): ChatMessage 
     isDollTouch: m.isDollTouch,
     dollTouchText: m.dollTouchText,
     dollTouchRound: m.dollTouchRound,
+    dollLookKey: m.dollLookKey,
+    dollLookNote: m.dollLookNote,
     isTransfer: m.isTransfer,
     transferAmount: m.transferAmount,
     transferReceived: m.transferReceived,
