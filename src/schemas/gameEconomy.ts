@@ -140,10 +140,17 @@ export const GamblingStatsSchema = z.object({
 
 /** 裝飾品狀態 Schema */
 export const DecorationStateSchema = z.object({
-  ownedFrames: z.array(z.string()).default([]),
-  ownedBubbles: z.array(z.string()).default([]),
+  ownedFrames: z.array(z.string()).default(() => []),
+  /** 已下架的佔位氣泡，只留著讓舊資料讀得進來（載入時會退款並清空） */
+  ownedBubbles: z.array(z.string()).default(() => []),
   equippedFrameId: z.string().nullable().default(null),
   equippedBubbleId: z.string().nullable().default(null),
+  /** 聊天裝扮：已擁有的部件 ID */
+  ownedChatSkins: z.array(z.string()).default(() => []),
+  /** 聊天裝扮：全域搭配（欄位 → 部件 ID；沒有 key = 不裝） */
+  equippedChatSkins: z.record(z.string(), z.string()).default(() => ({})),
+  /** 聊天裝扮：全域「用我自己的顏色」 */
+  chatSkinOwnColors: z.record(z.string(), z.boolean()).default(() => ({})),
 });
 
 // ===== 完整遊戲狀態 =====
@@ -183,12 +190,15 @@ export const ChatGameStateSchema = z.object({
   currentIdleSession: IdleSessionSchema.nullable().default(null),
 
   // 裝飾
-  decorations: DecorationStateSchema.default({
+  decorations: DecorationStateSchema.default(() => ({
     ownedFrames: [],
     ownedBubbles: [],
     equippedFrameId: null,
     equippedBubbleId: null,
-  }),
+    ownedChatSkins: [],
+    equippedChatSkins: {},
+    chatSkinOwnColors: {},
+  })),
 
   // 背包
   inventory: z.array(InventoryItemSchema).default([]),

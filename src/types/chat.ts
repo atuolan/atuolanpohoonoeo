@@ -4,6 +4,7 @@
  */
 
 import type { BlockState } from "@/types/block";
+import type { ChatSkinOverrides } from "@/utils/chatSkinResolve";
 import type { AuthorsNoteMetadata } from "./prompt";
 import type { PromptRoleType } from "./promptManager";
 import type { ToolActivityRecord } from "./toolActivity";
@@ -1215,6 +1216,9 @@ export interface Chat {
 
   /** 歸檔時間：有值（非 0）代表已歸檔（不在聊天列表顯示、角色不再主動找使用者）；取消歸檔寫 0 */
   archivedAt?: number;
+
+  /** 聊天裝扮：這個聊天另外指定的部件與「用我自己的顏色」；沒有 = 全部跟全域 */
+  skins?: ChatSkinOverrides;
 
   // --- 外觀設定 ---
   /** 聊天專屬外觀設定 */

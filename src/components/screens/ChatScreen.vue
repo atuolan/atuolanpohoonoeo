@@ -63,6 +63,7 @@ import { loadDiaryBook } from "@/services/diaryBook";
 import GroupMemberVoices from "@/components/modals/GroupMemberVoices.vue";
 import CharPlannerSheet from "@/components/modals/CharPlannerSheet.vue";
 import FaceToFacePanel from "@/components/modals/f2f-panel/FaceToFacePanel.vue";
+import ChatSkinTryOnBanner from "@/components/common/ChatSkinTryOnBanner.vue";
 import FavoriteAudioModal from "@/components/modals/FavoriteAudioModal.vue";
 import GameScorePickerModal from "@/components/modals/GameScorePickerModal.vue";
 import GroupCallModal from "@/components/modals/GroupCallModal.vue";
@@ -318,6 +319,8 @@ import {
 import { chatPerfEnabled, chatPerfMark } from "@/utils/chatPerformanceDebug";
 import { shouldReloadAfterGeneration } from "@/utils/chatGenerationReload";
 import { resolveBarStyle } from "@/utils/chatAppearanceVars";
+import { buildChatSkinAttrs, buildChatSkinVars, resolveChatSkins } from "@/utils/chatSkinResolve";
+import { getChatSkinPiece } from "@/data/chatSkins";
 import {
   hasMoreHistoryFromMetadata,
   prependUniqueMessages,
@@ -1799,6 +1802,7 @@ const isExtractingEvents = ref(false);
 import { getMacroEngine } from "@/engine/macros/MacroEngine";
 import { useAffinityStore } from "@/stores/affinity";
 import { useChatVariablesStore } from "@/stores/chatVariables";
+import { useChatSkinsStore } from "@/stores/chatSkins";
 import { useGameEconomyStore } from "@/stores/gameEconomy";
 import {
   createDefaultImportantEventsLog,
@@ -3620,6 +3624,67 @@ function handleQuickInputWheel(e: WheelEvent) {
   container.scrollLeft += delta;
 }
 
+// ===== 聊天裝扮 =====
+const chatSkinsStore = useChatSkinsStore();
+const resolvedChatSkins = computed(() => {
+  const loadout = gameEconomyStore.getChatSkinLoadout(GLOBAL_WALLET_ID);
+  return resolveChatSkins({
+    chatId: currentChatId.value,
+    owned: loadout.owned,
+    equipped: loadout.equipped,
+    ownColors: loadout.ownColors,
+    chatOverrides: chatSkinsStore.getChatOverrides(currentChatId.value),
+    tryOn: chatSkinsStore.tryOn,
+  });
+});
+const chatSkinAttrs = computed(() => buildChatSkinAttrs(resolvedChatSkins.value));
+const chatSkinMessageLayout = computed(() => resolvedChatSkins.value.message?.piece.messageLayout);
+const chatSkinHidesHeaderAvatar = computed(() => !!resolvedChatSkins.value.header?.piece.hidesHeaderAvatar);
+/** 正在這個聊天試穿的部件 */
+const chatSkinTryOnPiece = computed(() => {
+  const tryOn = chatSkinsStore.tryOn;
+  if (!tryOn || tryOn.chatId !== currentChatId.value) return null;
+  return getChatSkinPiece(tryOn.pieceId) ?? null;
+});
+
+async function buyTryOnChatSkin() {
+  const piece = chatSkinTryOnPiece.value;
+  if (!piece) return;
+  if (!confirm(`用 ${piece.price.toLocaleString()} 買下 ${piece.name}？`)) return;
+  const result = gameEconomyStore.purchaseChatSkinPiece(GLOBAL_WALLET_ID, piece.id);
+  if (!result.success) {
+    showToast(
+      result.error === "insufficient_funds" ? "金幣不夠" : result.error === "already_owned" ? "已經擁有這件了" : "買不到這件",
+    );
+    return;
+  }
+  gameEconomyStore.equipChatSkin(GLOBAL_WALLET_ID, piece.slot, piece.id);
+  await gameEconomyStore.saveState(GLOBAL_WALLET_ID);
+  chatSkinsStore.endTryOn();
+  const override = chatSkinsStore.getChatOverrides(currentChatId.value).slots?.[piece.slot];
+  showToast(override !== undefined && override !== piece.id ? "已裝到全域，這個聊天另外指定了別的" : `已裝上 ${piece.name}`);
+}
+
+// 試穿只在那個聊天：換到別的聊天或離開聊天就結束
+watch(currentChatId, (_chatId, previousChatId) => {
+  if (chatSkinsStore.tryOn && chatSkinsStore.tryOn.chatId === previousChatId) chatSkinsStore.endTryOn();
+});
+onUnmounted(() => {
+  if (chatSkinsStore.tryOn && chatSkinsStore.tryOn.chatId === currentChatId.value) chatSkinsStore.endTryOn();
+});
+
+// 外觀設定改了這個聊天的裝扮：寫回聊天資料並存檔
+watch(
+  () => chatSkinsStore.editRevision,
+  () => {
+    const chatId = currentChatId.value;
+    if (!chatId || chatSkinsStore.lastEditedChatId !== chatId || !currentChatData.value) return;
+    const overrides = chatSkinsStore.getChatOverrides(chatId);
+    currentChatData.value.skins = Object.keys(overrides).length > 0 ? JSON.parse(JSON.stringify(overrides)) : undefined;
+    void saveChat();
+  },
+);
+
 // ===== 外觀設定 composable =====
 const { chatAppearance, saveAppearance, applyChatAppearance } = useChatAppearance({
   chatScreenRef,
@@ -3628,6 +3693,7 @@ const { chatAppearance, saveAppearance, applyChatAppearance } = useChatAppearanc
   chatStore,
   saveChat,
   getPendingAppearance: () => props.pendingAppearance,
+  getSkinVars: () => buildChatSkinVars(resolvedChatSkins.value, settingsStore.nightMode),
   onAppearanceApplied: () => emit("appearanceApplied"),
 });
 const headerBarStyle = computed(() =>
@@ -9461,6 +9527,7 @@ async function loadOrCreateChat(overrideChatId?: string) {
         chatDoNotDisturb.value = chat.doNotDisturb === true;
         // 載入面對面模式設定（默認為 false）
         chatFaceToFaceMode.value = chat.faceToFaceMode === true;
+        chatSkinsStore.primeChatOverrides(chat.id, chat.skins);
         // 載入人稱模式設定；舊聊天用 thirdPersonMode 遷移 {{char}} 人稱
         chatCharNarrativePerson.value =
           chat.charNarrativePerson === "third" || chat.charNarrativePerson === "first"
@@ -10972,11 +11039,13 @@ useChatCleanup({
   <div
     ref="chatScreenRef"
     class="screen-container chat-screen"
+    v-bind="chatSkinAttrs"
     @click="closeMenus"
   >
     <!-- 標題欄 -->
     <ChatScreenHeader
       :docked="headerBarStyle.docked"
+      :name-opens-memory="chatSkinHidesHeaderAvatar"
       :display-avatar="displayAvatar"
       :character-name="props.characterName"
       :is-group-chat="isGroupChat"
@@ -11086,6 +11155,13 @@ useChatCleanup({
       @start-new-conversation="onStartNewConversation"
       @toggle-block-character="toggleBlockCharacter"
       @clear-chat-history="clearChatHistory"
+    />
+    <ChatSkinTryOnBanner
+      v-if="chatSkinTryOnPiece"
+      :piece-name="chatSkinTryOnPiece.name"
+      :price="chatSkinTryOnPiece.price"
+      @buy="buyTryOnChatSkin"
+      @end="chatSkinsStore.endTryOn()"
     />
     <Teleport to="body">
       <Transition name="f2f-sheet">
@@ -11573,7 +11649,7 @@ useChatCleanup({
               ['single', 'last'].includes(getGroupPosition(index))
             "
             :group-position="getGroupPosition(index)"
-            :layout="themeStore.chatMessageLayout"
+            :layout="chatSkinMessageLayout ?? themeStore.chatMessageLayout"
             :char-frame-id="chatAppearance?.avatarFrames?.charFrameId ?? null"
             :user-frame-id="chatAppearance?.avatarFrames?.userFrameId ?? null"
             :avatar-shape="(chatAppearance?.useCustom && chatAppearance.avatar?.shape) || themeStore.avatarStyle.shape"
@@ -11775,7 +11851,7 @@ useChatCleanup({
           :avatar="displayAvatar"
           :sender-name="characterName"
           :show-time="false"
-          :layout="themeStore.chatMessageLayout"
+          :layout="chatSkinMessageLayout ?? themeStore.chatMessageLayout"
           :char-frame-id="chatAppearance?.avatarFrames?.charFrameId ?? null"
           :avatar-shape="(chatAppearance?.useCustom && chatAppearance.avatar?.shape) || themeStore.avatarStyle.shape"
           :character-name="characterName"

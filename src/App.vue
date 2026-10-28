@@ -109,6 +109,9 @@ import { useCallVoiceInputStore } from "@/stores/callVoiceInput";
 import { useQzoneStore } from "@/stores/qzone";
 import type { CharacterImportResult, StoredCharacter } from "@/types/character";
 import type { Chat, MultiCharMember, PlurkShareSnapshot, WaimaiOrderSnapshot } from "@/types/chat";
+import { getChatSkinPiece } from "@/data/chatSkins";
+import { useChatSkinsStore } from "@/stores/chatSkins";
+import { pickChatListEntries } from "@/utils/chatListEntries";
 import {
   consumePendingRuntimeDiagnostics,
   recordRuntimeDiagnostic,
@@ -123,6 +126,12 @@ import { PendingCall } from "./types";
 
 // 時間動態主題
 const { backgroundColor, textColor, isDark } = useTimeTheme();
+
+// 全局事件處理：打開商店
+function handleOpenShopEvent() {
+  navigationHistory.value.push(currentPage.value);
+  navigateToPage("shop");
+}
 
 // 啟用 per-組件自訂 CSS 聚合器（AI 創建型工具產出的 customCSS 會自動注入並作用域化）
 useWidgetCustomCSS();
@@ -1782,6 +1791,8 @@ onMounted(async () => {
     });
   }
 
+  window.addEventListener("aguaphone:open-shop", handleOpenShopEvent);
+
   // App 裡點原生通知（含點通知冷啟動 App）
   if (isNativeApp()) {
     void import("@/native/notifications").then(({ onNativeNotificationTap }) =>
@@ -1791,6 +1802,7 @@ onMounted(async () => {
 });
 
 onUnmounted(() => {
+  window.removeEventListener("aguaphone:open-shop", handleOpenShopEvent);
   if (typeof document !== "undefined") {
     document.removeEventListener(
       "visibilitychange",
@@ -2315,6 +2327,21 @@ function openExistingChat(chatId: string, characterId: string) {
   currentChatCharacterId.value = characterId;
   navigationHistory.value.push(currentPage.value);
   navigateToPage("chat");
+}
+
+/** 商店試穿：打開聊天列表最上面那個聊天（不含歸檔），試穿那一件 */
+async function handleChatSkinTryOn(pieceId: string) {
+  const piece = getChatSkinPiece(pieceId);
+  if (!piece) return;
+  await db.init();
+  const chats = await db.getAll<Chat>(DB_STORES.CHATS);
+  const top = pickChatListEntries(chats.filter((c) => !c.archivedAt))[0];
+  if (!top) {
+    alert("先開一個聊天才能試穿");
+    return;
+  }
+  useChatSkinsStore().startTryOn({ chatId: top.id, slot: piece.slot, pieceId });
+  openExistingChat(top.id, top.characterId);
 }
 
 // ChatScreen 內部切換聊天檔案時同步 chatId（不重建組件）
@@ -3168,7 +3195,11 @@ useSwipeBack(handleGlobalSwipeBack, swipeBackEnabled);
     <WeatherScreen v-else-if="currentPage === 'weather'" @back="goHome" />
 
     <!-- 商城 -->
-    <ShopScreen v-else-if="currentPage === 'shop'" @back="goBackFromQuickNav" />
+    <ShopScreen
+      v-else-if="currentPage === 'shop'"
+      @back="goBackFromQuickNav"
+      @try-on-chat-skin="handleChatSkinTryOn"
+    />
 
     <!-- 遊戲中心 -->
     <GameCenterScreen

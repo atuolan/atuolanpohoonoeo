@@ -37,6 +37,7 @@ import { registerAguaInlineCard } from "./components/common/AguaInlineCard";
 import { initAutoBackup } from "./services/AutoBackupService";
 import { isNativeApp } from "./native/platform";
 import "./styles/global.scss";
+import "./styles/chat-skins/greenbubble.scss";
 import {
   beginRuntimeSession,
   consumePendingRuntimeDiagnostics,

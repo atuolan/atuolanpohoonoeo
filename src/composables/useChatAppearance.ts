@@ -1,4 +1,5 @@
 import { nextTick, ref, watch, type Ref } from "vue";
+import { CHAT_SKIN_VAR_PROPS } from "@/data/chatSkins";
 import type { ChatAppearance, GlobalChatAppearance } from "@/types/chat";
 import {
   ALL_CHAT_APPEARANCE_PROPS,
@@ -24,6 +25,8 @@ interface ChatAppearanceContext {
   };
   saveChat: () => void | Promise<void>;
   getPendingAppearance?: () => ChatAppearance | undefined;
+  /** 聊天裝扮部件的配色變數，排在玩家外觀之後 */
+  getSkinVars?: () => Record<string, string>;
   onAppearanceApplied?: () => void;
 }
 
@@ -47,7 +50,7 @@ export function useChatAppearance(context: ChatAppearanceContext) {
     const container = context.chatScreenRef.value;
     if (!container) return;
 
-    for (const property of ALL_CHAT_APPEARANCE_PROPS) {
+    for (const property of [...ALL_CHAT_APPEARANCE_PROPS, ...CHAT_SKIN_VAR_PROPS]) {
       container.style.removeProperty(property);
     }
     const vars = buildChatAppearanceVars(appearance, {
@@ -56,6 +59,7 @@ export function useChatAppearance(context: ChatAppearanceContext) {
       globalChat: context.themeStore.globalChatAppearance,
       globalBubble: context.themeStore.bubbleStyle,
     });
+    Object.assign(vars, context.getSkinVars?.() ?? {});
     for (const [property, value] of Object.entries(vars)) {
       container.style.setProperty(property, value);
     }
@@ -80,6 +84,17 @@ export function useChatAppearance(context: ChatAppearanceContext) {
     },
     { deep: true },
   );
+
+  // 換了裝扮部件（裝上、卸下、試穿、自己的顏色）也要重新套用
+  if (context.getSkinVars) {
+    watch(
+      context.getSkinVars,
+      () => {
+        nextTick(() => applyChatAppearance(chatAppearance.value));
+      },
+      { deep: true },
+    );
+  }
 
   if (context.getPendingAppearance) {
     watch(

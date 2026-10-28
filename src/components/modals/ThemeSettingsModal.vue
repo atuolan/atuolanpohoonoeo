@@ -27,6 +27,7 @@ import { toPickerHex } from "@/utils/simpleGradient";
 import { deriveColorsFromPrimary, normalizeHex } from "@/utils/wallpaperLuminance";
 import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
 import ChatAppearancePreview from "./theme-settings/ChatAppearancePreview.vue";
+import ChatSkinSettingsSection from "./theme-settings/ChatSkinSettingsSection.vue";
 import BarStyleFields from "./theme-settings/BarStyleFields.vue";
 import BubbleEffectsFields from "./theme-settings/BubbleEffectsFields.vue";
 import GradientColorField from "./theme-settings/GradientColorField.vue";
@@ -39,6 +40,8 @@ import type {
   PreviewState,
   PreviewTarget,
 } from "./theme-settings/types";
+import { resolveChatSkins, hasAnyChatSkin } from "@/utils/chatSkinResolve";
+import { useChatSkinsStore } from "@/stores/chatSkins";
 
 // 從聊天頁開啟：可在「全域外觀」與「這個聊天專屬」之間切換；
 // 從聊天以外開啟（沒有 chatAppearance）：只編輯全域外觀
@@ -137,9 +140,9 @@ const activeTab = ref<Tab>("overall");
 const activeSection = ref<Section>("theme");
 const contentRef = ref<HTMLElement | null>(null);
 
-// 裝飾（頭像框）只屬於單一聊天；只編輯全域時不顯示
+// 裝飾分頁在全域外觀與單聊皆顯示
 const visibleTabs = computed(() =>
-  TABS.filter((tab) => tab.id !== "decorations" || (!!props.chatId && !isGlobalOnly.value)),
+  TABS.filter((tab) => tab.id !== "decorations" || isGlobalOnly.value || !!props.chatId),
 );
 const previewFocusElement = computed(() => SECTION_FOCUS[activeSection.value] ?? null);
 
@@ -923,19 +926,30 @@ function toOwnedItems(ids: string[] | undefined) {
 
 const decorations = computed(() => gameEconomyStore.getDecorations(GLOBAL_WALLET_ID));
 const ownedFrames = computed(() => toOwnedItems(decorations.value?.ownedFrames));
-const ownedBubbles = computed(() => toOwnedItems(decorations.value?.ownedBubbles));
-const equippedBubbleId = computed(() => decorations.value?.equippedBubbleId ?? null);
+const chatSkinsStore = useChatSkinsStore();
+
+const hasEquippedChatSkin = computed(() => {
+  const loadout = gameEconomyStore.getChatSkinLoadout(GLOBAL_WALLET_ID);
+  const resolved = resolveChatSkins({
+    chatId: props.chatId ?? null,
+    owned: loadout.owned,
+    equipped: loadout.equipped,
+    ownColors: loadout.ownColors,
+    chatOverrides: props.chatId ? chatSkinsStore.getChatOverrides(props.chatId) : null,
+    tryOn: null,
+  });
+  return hasAnyChatSkin(resolved);
+});
+
+function openShopFromSkins() {
+  emit("close");
+  window.dispatchEvent(new CustomEvent("aguaphone:open-shop"));
+}
 
 const FRAME_TARGETS = [
   { key: "userFrameId", section: "userFrame", title: "我的頭像框", hint: "只套用在這個聊天" },
   { key: "charFrameId", section: "charFrame", title: "角色頭像框", hint: "只套用在這個聊天" },
 ] as const;
-
-// 聊天氣泡是全域裝備，會立即生效到所有聊天
-async function equipBubble(bubbleId: string | null) {
-  gameEconomyStore.equipBubble(GLOBAL_WALLET_ID, bubbleId);
-  await gameEconomyStore.saveState(GLOBAL_WALLET_ID);
-}
 
 // ===== 重置 / 儲存 =====
 const resetLabel = computed(() => (useCustomAppearance.value ? "恢復成和全域外觀一樣…" : "全域外觀恢復預設…"));
@@ -1072,6 +1086,9 @@ function cancel() {
           <div class="ts-body">
             <!-- 固定預覽：不隨設定捲走；點裡面的東西會跳到對應設定卡 -->
             <div class="ts-preview-pane">
+              <p v-if="hasEquippedChatSkin" class="ts-skin-hint">
+                已裝聊天裝扮，實際樣子請在聊天畫面看
+              </p>
               <ChatAppearancePreview
                 v-if="layoutMode === 'wide'"
                 :state="previewState"
@@ -1693,124 +1710,92 @@ function cancel() {
                 </section>
 
                 <!-- ===== 裝飾 ===== -->
-                <template v-if="activeTab === 'decorations' && chatId">
-                  <section
-                    v-for="target in FRAME_TARGETS"
-                    :key="target.key"
-                    class="settings-card"
-                    :class="{ active: activeSection === target.section }"
-                    :data-section="target.section"
-                    @pointerdown="activateSection(target.section)"
-                  >
-                    <div class="card-head">
-                      <h3 class="section-title">{{ target.title }}</h3>
-                    </div>
-                    <p class="section-hint">{{ target.hint }}</p>
-                    <div v-if="ownedFrames.length > 0" class="decoration-grid">
-                      <button
-                        class="decoration-item"
-                        :class="{ active: tempAvatarFrames[target.key] === null }"
-                        @click="tempAvatarFrames[target.key] = null"
-                      >
-                        <span class="decoration-icon none">
-                          <svg viewBox="0 0 24 24" fill="currentColor">
-                            <path
-                              d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
+                <template v-if="activeTab === 'decorations'">
+                  <!-- 頭像框是單聊設定，維持原本只在單聊出現 -->
+                  <template v-if="chatId && !isGlobalOnly">
+                    <section
+                      v-for="target in FRAME_TARGETS"
+                      :key="target.key"
+                      class="settings-card"
+                      :class="{ active: activeSection === target.section }"
+                      :data-section="target.section"
+                      @pointerdown="activateSection(target.section)"
+                    >
+                      <div class="card-head">
+                        <h3 class="section-title">{{ target.title }}</h3>
+                      </div>
+                      <p class="section-hint">{{ target.hint }}</p>
+                      <div v-if="ownedFrames.length > 0" class="decoration-grid">
+                        <button
+                          class="decoration-item"
+                          :class="{ active: tempAvatarFrames[target.key] === null }"
+                          @click="tempAvatarFrames[target.key] = null"
+                        >
+                          <span class="decoration-icon none">
+                            <svg viewBox="0 0 24 24" fill="currentColor">
+                              <path
+                                d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
+                              />
+                            </svg>
+                          </span>
+                          <span class="decoration-name">無</span>
+                        </button>
+                        <button
+                          v-for="frame in ownedFrames"
+                          :key="`${target.key}-${frame.id}`"
+                          class="decoration-item"
+                          :class="{ active: tempAvatarFrames[target.key] === frame.id }"
+                          @click="tempAvatarFrames[target.key] = frame.id"
+                        >
+                          <span
+                            v-if="isAvatarFrameSvg(frame.id)"
+                            class="decoration-icon svg-frame"
+                            :class="frame.rarity"
+                            v-html="getAvatarFrameSvg(frame.id, 'circle')"
+                          ></span>
+                          <span v-else-if="isAvatarFrameImage(frame.id)" class="decoration-icon image-frame" :class="frame.rarity">
+                            <img
+                              v-if="getAvatarFrameLayers(frame.id)?.background"
+                              class="frame-layer-bg"
+                              :src="getLayerSrc(getAvatarFrameLayers(frame.id)?.background)"
+                              alt=""
                             />
-                          </svg>
-                        </span>
-                        <span class="decoration-name">無</span>
-                      </button>
-                      <button
-                        v-for="frame in ownedFrames"
-                        :key="`${target.key}-${frame.id}`"
-                        class="decoration-item"
-                        :class="{ active: tempAvatarFrames[target.key] === frame.id }"
-                        @click="tempAvatarFrames[target.key] = frame.id"
-                      >
-                        <span
-                          v-if="isAvatarFrameSvg(frame.id)"
-                          class="decoration-icon svg-frame"
-                          :class="frame.rarity"
-                          v-html="getAvatarFrameSvg(frame.id, 'circle')"
-                        ></span>
-                        <span v-else-if="isAvatarFrameImage(frame.id)" class="decoration-icon image-frame" :class="frame.rarity">
-                          <img
-                            v-if="getAvatarFrameLayers(frame.id)?.background"
-                            class="frame-layer-bg"
-                            :src="getLayerSrc(getAvatarFrameLayers(frame.id)?.background)"
-                            alt=""
-                          />
-                          <img
-                            v-if="getAvatarFrameLayers(frame.id)?.overlay"
-                            class="frame-layer-overlay"
-                            :src="getLayerSrc(getAvatarFrameLayers(frame.id)?.overlay)"
-                            alt=""
-                          />
-                          <img
-                            v-if="getAvatarFrameLayers(frame.id)?.decoration"
-                            class="frame-layer-decoration"
-                            :src="getLayerSrc(getAvatarFrameLayers(frame.id)?.decoration)"
-                            alt=""
-                          />
-                        </span>
-                        <span v-else class="decoration-icon" :class="frame.rarity">
-                          <svg viewBox="0 0 24 24" fill="currentColor">
-                            <path
-                              d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3z"
+                            <img
+                              v-if="getAvatarFrameLayers(frame.id)?.overlay"
+                              class="frame-layer-overlay"
+                              :src="getLayerSrc(getAvatarFrameLayers(frame.id)?.overlay)"
+                              alt=""
                             />
-                          </svg>
-                        </span>
-                        <span class="decoration-name">{{ frame.name }}</span>
-                      </button>
-                    </div>
-                    <div v-else class="empty-decorations">
-                      <p>還沒有購買頭像框</p>
-                      <p class="hint">前往商城購買裝飾品</p>
-                    </div>
-                  </section>
+                            <img
+                              v-if="getAvatarFrameLayers(frame.id)?.decoration"
+                              class="frame-layer-decoration"
+                              :src="getLayerSrc(getAvatarFrameLayers(frame.id)?.decoration)"
+                              alt=""
+                            />
+                          </span>
+                          <span v-else class="decoration-icon" :class="frame.rarity">
+                            <svg viewBox="0 0 24 24" fill="currentColor">
+                              <path
+                                d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3z"
+                              />
+                            </svg>
+                          </span>
+                          <span class="decoration-name">{{ frame.name }}</span>
+                        </button>
+                      </div>
+                      <div v-else class="empty-decorations">
+                        <p>還沒有購買頭像框</p>
+                        <p class="hint">前往商城購買裝飾品</p>
+                      </div>
+                    </section>
+                  </template>
 
-                  <section
-                    class="settings-card"
-                    :class="{ active: activeSection === 'bubbleDeco' }"
-                    data-section="bubbleDeco"
-                    @pointerdown="activateSection('bubbleDeco')"
-                  >
-                    <div class="card-head">
-                      <h3 class="section-title">聊天氣泡</h3>
-                    </div>
-                    <p class="section-hint">全域裝備：會立即套用到所有聊天</p>
-                    <div v-if="ownedBubbles.length > 0" class="decoration-grid">
-                      <button class="decoration-item" :class="{ active: equippedBubbleId === null }" @click="equipBubble(null)">
-                        <span class="decoration-icon none">
-                          <svg viewBox="0 0 24 24" fill="currentColor">
-                            <path
-                              d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
-                            />
-                          </svg>
-                        </span>
-                        <span class="decoration-name">無</span>
-                      </button>
-                      <button
-                        v-for="bubble in ownedBubbles"
-                        :key="bubble.id"
-                        class="decoration-item"
-                        :class="{ active: equippedBubbleId === bubble.id }"
-                        @click="equipBubble(bubble.id)"
-                      >
-                        <span class="decoration-icon" :class="bubble.rarity">
-                          <svg viewBox="0 0 24 24" fill="currentColor">
-                            <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z" />
-                          </svg>
-                        </span>
-                        <span class="decoration-name">{{ bubble.name }}</span>
-                      </button>
-                    </div>
-                    <div v-else class="empty-decorations">
-                      <p>還沒有購買聊天氣泡</p>
-                      <p class="hint">前往商城購買裝飾品</p>
-                    </div>
-                  </section>
+                  <!-- 聊天裝扮設定區塊 -->
+                  <ChatSkinSettingsSection
+                    :scope="isGlobalOnly ? 'global' : 'chat'"
+                    :chat-id="chatId"
+                    @open-shop="openShopFromSkins"
+                  />
                 </template>
 
                 <!-- 恢復預設：放在最底下，不跟「完成」擠在一起 -->
@@ -2062,6 +2047,17 @@ function cancel() {
     stroke-linecap: round;
     stroke-linejoin: round;
   }
+}
+
+.ts-skin-hint {
+  font-size: 11.5px;
+  color: var(--color-primary);
+  text-align: center;
+  margin: 0 0 6px;
+  padding: 4px 8px;
+  background: var(--color-primary-light);
+  border-radius: 6px;
+  font-weight: 500;
 }
 
 .ts-preview-collapsed {
