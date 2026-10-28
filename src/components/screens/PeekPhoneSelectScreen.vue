@@ -918,8 +918,8 @@ watch(
   border-radius: 16px;
   flex-shrink: 0;
   overflow: hidden;
-  background: var(--p-chip);
-  color: var(--p-ink);
+  background: var(--p-owner);
+  color: #ffffff;
   font-size: 13px;
   font-weight: 700;
   display: flex;
