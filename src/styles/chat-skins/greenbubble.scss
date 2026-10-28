@@ -122,13 +122,54 @@
       border-radius: 4px;
     }
 
+    // 引用回覆：放在氣泡下方的灰色小方框，「名字：內容」一行接著寫，最多兩行
+    // 寬度跟著自己的文字，不跟泡泡同寬（短引用不會被擠成一字一行）
     .reply-quote-floating {
+      order: 1;
+      margin: 4px 0 0;
+      contain: none !important;
+      width: fit-content !important;
+      max-width: 100% !important;
+      text-align: left;
+      padding: 6px 10px;
       border-radius: 4px !important;
-      background: var(--bubble-ai-bg, rgba(255, 255, 255, 0.18));
-      border: 1px solid var(--color-border);
+      background: var(--skin-quote-bg, rgba(0, 0, 0, 0.06));
+      border: none;
+      backdrop-filter: none;
+      -webkit-backdrop-filter: none;
+      animation: none;
+
+      &:hover {
+        transform: none;
+      }
 
       .reply-bar {
-        border-radius: 4px 0 0 4px;
+        display: none;
+      }
+
+      .reply-body {
+        display: -webkit-box;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 2;
+        overflow: hidden;
+        padding: 0;
+        font-size: 13px;
+        line-height: 1.45;
+        color: var(--skin-quote-text, var(--color-text-muted));
+      }
+
+      .reply-name,
+      .reply-text {
+        display: inline;
+        font-size: inherit;
+        font-weight: normal;
+        color: inherit;
+        opacity: 1;
+        white-space: normal;
+      }
+
+      .reply-name::after {
+        content: "：";
       }
     }
 
