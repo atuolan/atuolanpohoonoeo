@@ -4,6 +4,7 @@ import {
   buildChatSkinVars,
   hasAnyChatSkin,
   normalizeChatSkinOverrides,
+  resolveChatListSkin,
   resolveChatSkins,
   type ResolveChatSkinsInput,
 } from "@/utils/chatSkinResolve";
@@ -109,5 +110,48 @@ describe("normalizeChatSkinOverrides", () => {
         ownColors: { input: true, bogus: true } as never,
       }),
     ).toEqual({ slots: { header: "greenbubble-header" }, ownColors: { input: true } });
+  });
+});
+
+describe("resolveChatListSkin", () => {
+  const owned = ["greenbubble-chatList"];
+
+  it("沒裝 → null；全域有裝 → 用全域", () => {
+    expect(resolveChatListSkin({ owned, equipped: {} })).toBeNull();
+    expect(resolveChatListSkin({ owned, equipped: { chatList: "greenbubble-chatList" } })?.id).toBe(
+      "greenbubble-chatList",
+    );
+  });
+
+  it("沒擁有、找不到、欄位不對 → null", () => {
+    expect(resolveChatListSkin({ owned: [], equipped: { chatList: "greenbubble-chatList" } })).toBeNull();
+    expect(resolveChatListSkin({ owned, equipped: { chatList: "no-such" } })).toBeNull();
+    expect(
+      resolveChatListSkin({ owned: ["greenbubble-header"], equipped: { chatList: "greenbubble-header" } }),
+    ).toBeNull();
+  });
+
+  it("試穿聊天列表優先，不用擁有；試穿別的欄位不影響", () => {
+    expect(
+      resolveChatListSkin({
+        owned: [],
+        equipped: {},
+        tryOn: { chatId: null, slot: "chatList", pieceId: "greenbubble-chatList" },
+      })?.id,
+    ).toBe("greenbubble-chatList");
+    expect(
+      resolveChatListSkin({
+        owned: [],
+        equipped: {},
+        tryOn: { chatId: "c1", slot: "header", pieceId: "greenbubble-header" },
+      }),
+    ).toBeNull();
+  });
+
+  it("聊天畫面的搭配不會出現聊天列表", () => {
+    const resolved = resolveChatSkins(
+      input({ owned: [...ALL, "greenbubble-chatList"], equipped: { chatList: "greenbubble-chatList" } }),
+    );
+    expect(Object.keys(resolved)).toEqual([]);
   });
 });

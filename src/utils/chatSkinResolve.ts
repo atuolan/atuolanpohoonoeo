@@ -22,9 +22,9 @@ export interface ChatSkinOverrides {
   ownColors?: Partial<Record<ChatSkinSlot, boolean>>;
 }
 
-/** 試穿只存在記憶體 */
+/** 試穿只存在記憶體；試穿聊天列表時 chatId 是 null */
 export interface ChatSkinTryOn {
-  chatId: string;
+  chatId: string | null;
   slot: ChatSkinSlot;
   pieceId: string;
 }
@@ -118,4 +118,21 @@ export function normalizeChatSkinOverrides(overrides: ChatSkinOverrides | null |
   if (Object.keys(slots).length > 0) result.slots = slots;
   if (Object.keys(ownColors).length > 0) result.ownColors = ownColors;
   return result;
+}
+
+export interface ResolveChatListSkinInput {
+  owned: readonly string[];
+  equipped: Partial<Record<string, string>>;
+  tryOn?: ChatSkinTryOn | null;
+}
+
+/** 聊天列表只有全域：試穿 → 全域（要擁有）→ 不裝 */
+export function resolveChatListSkin(input: ResolveChatListSkinInput): ChatSkinPiece | null {
+  const tryOn = input.tryOn;
+  if (tryOn && tryOn.slot === "chatList") {
+    const piece = pieceForSlot("chatList", tryOn.pieceId);
+    if (piece) return piece;
+  }
+  const piece = pieceForSlot("chatList", input.equipped.chatList);
+  return piece && input.owned.includes(piece.id) ? piece : null;
 }

@@ -40,7 +40,7 @@ import type {
   PreviewState,
   PreviewTarget,
 } from "./theme-settings/types";
-import { resolveChatSkins, hasAnyChatSkin } from "@/utils/chatSkinResolve";
+import { resolveChatSkins } from "@/utils/chatSkinResolve";
 import { useChatSkinsStore } from "@/stores/chatSkins";
 
 // 從聊天頁開啟：可在「全域外觀」與「這個聊天專屬」之間切換；
@@ -928,9 +928,10 @@ const decorations = computed(() => gameEconomyStore.getDecorations(GLOBAL_WALLET
 const ownedFrames = computed(() => toOwnedItems(decorations.value?.ownedFrames));
 const chatSkinsStore = useChatSkinsStore();
 
-const hasEquippedChatSkin = computed(() => {
+/** 預覽要畫的聊天裝扮（全域＋這個聊天另選，跟聊天畫面同一套規則） */
+const previewChatSkins = computed(() => {
   const loadout = gameEconomyStore.getChatSkinLoadout(GLOBAL_WALLET_ID);
-  const resolved = resolveChatSkins({
+  return resolveChatSkins({
     chatId: props.chatId ?? null,
     owned: loadout.owned,
     equipped: loadout.equipped,
@@ -938,8 +939,11 @@ const hasEquippedChatSkin = computed(() => {
     chatOverrides: props.chatId ? chatSkinsStore.getChatOverrides(props.chatId) : null,
     tryOn: null,
   });
-  return hasAnyChatSkin(resolved);
 });
+/** 裝了訊息部件時，預覽照部件的排版 */
+const previewLayout = computed(
+  () => previewChatSkins.value.message?.piece.messageLayout ?? themeStore.chatMessageLayout,
+);
 
 function openShopFromSkins() {
   emit("close");
@@ -1086,14 +1090,13 @@ function cancel() {
           <div class="ts-body">
             <!-- 固定預覽：不隨設定捲走；點裡面的東西會跳到對應設定卡 -->
             <div class="ts-preview-pane">
-              <p v-if="hasEquippedChatSkin" class="ts-skin-hint">
-                已裝聊天裝扮，實際樣子請在聊天畫面看
-              </p>
               <ChatAppearancePreview
                 v-if="layoutMode === 'wide'"
                 :state="previewState"
                 :focus="previewFocusElement"
-                :layout="themeStore.chatMessageLayout"
+                :layout="previewLayout"
+                :skins="previewChatSkins"
+                :night="settingsStore.nightMode"
                 @select="onPreviewSelect"
               />
               <button
@@ -1111,7 +1114,9 @@ function cancel() {
                     :scene="previewScene"
                     :state="previewState"
                     :focus="previewFocusElement"
-                    :layout="themeStore.chatMessageLayout"
+                    :layout="previewLayout"
+                    :skins="previewChatSkins"
+                    :night="settingsStore.nightMode"
                     @select="onPreviewSelect"
                   />
                 </div>
@@ -2049,16 +2054,6 @@ function cancel() {
   }
 }
 
-.ts-skin-hint {
-  font-size: 11.5px;
-  color: var(--color-primary);
-  text-align: center;
-  margin: 0 0 6px;
-  padding: 4px 8px;
-  background: var(--color-primary-light);
-  border-radius: 6px;
-  font-weight: 500;
-}
 
 .ts-preview-collapsed {
   width: 100%;

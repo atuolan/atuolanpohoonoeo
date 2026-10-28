@@ -13,6 +13,8 @@ import {
   scheduleSelfHostedAutoSync,
 } from "@/services/selfHostedSyncState";
 import type { StickerCategory, StickerItem } from "@/types/sticker";
+import { useGameEconomyStore } from "@/stores/gameEconomy";
+import { buildSkinStickerCategories } from "@/utils/chatSkinStickers";
 import { defineStore } from "pinia";
 import { computed, ref } from "vue";
 
@@ -53,6 +55,11 @@ export const useStickerStore = defineStore("sticker", () => {
   // 是否已初始化
   const initialized = ref(false);
 
+  // 已擁有的聊天裝扮表情包（唯讀、不寫資料庫）
+  const skinPackCategories = computed(() =>
+    buildSkinStickerCategories(useGameEconomyStore().getChatSkinLoadout("global").owned),
+  );
+
   // 所有分類（我的表情固定在最前面，其後為系統 emoji + 其他自定義表情）
   const allCategories = computed(() => {
     // 將系統 emoji 轉換為統一格式
@@ -77,10 +84,19 @@ export const useStickerStore = defineStore("sticker", () => {
 
     return [
       ...(defaultPack ? [defaultPack] : []),
+      ...skinPackCategories.value,
       ...systemCategories,
       ...otherCustomCategories,
     ];
   });
+
+  /** 給角色看的表情包名稱：自訂表情＋已擁有的聊天裝扮表情包（不含系統 emoji） */
+  const aiStickerNames = computed(() =>
+    [...customCategories.value, ...skinPackCategories.value]
+      .flatMap((cat) => cat.stickers)
+      .map((s) => s.name)
+      .filter((name) => name && name.trim()),
+  );
 
   // 初始化：從 IndexedDB 載入自定義表情
   async function init() {
@@ -560,6 +576,7 @@ export const useStickerStore = defineStore("sticker", () => {
   return {
     customCategories,
     allCategories,
+    aiStickerNames,
     initialized,
     init,
     addSticker,

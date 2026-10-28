@@ -2333,6 +2333,13 @@ function openExistingChat(chatId: string, characterId: string) {
 async function handleChatSkinTryOn(pieceId: string) {
   const piece = getChatSkinPiece(pieceId);
   if (!piece) return;
+  // 聊天列表：打開訊息 App 的列表頁試穿，不需要任何聊天
+  if (piece.slot === "chatList") {
+    useChatSkinsStore().startTryOn({ chatId: null, slot: piece.slot, pieceId });
+    navigationHistory.value.push(currentPage.value);
+    navigateToPage("chat-list");
+    return;
+  }
   await db.init();
   const chats = await db.getAll<Chat>(DB_STORES.CHATS);
   const top = pickChatListEntries(chats.filter((c) => !c.archivedAt))[0];

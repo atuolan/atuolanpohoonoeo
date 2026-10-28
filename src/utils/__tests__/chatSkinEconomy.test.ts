@@ -37,42 +37,60 @@ describe("buyChatSkinPiece", () => {
 
     expect(buyChatSkinPiece(stateWith(50000), "no-such")).toEqual({ success: false, error: "item_not_found" });
   });
+
+  it("單買表情包：扣款、加入擁有、記交易，不會被裝上", () => {
+    const state = stateWith(20000);
+    const r = buyChatSkinPiece(state, "greenbubble-stickers", 3000);
+    expect(r).toEqual({ success: true, price: 15000, pieceIds: ["greenbubble-stickers"], newBalance: 5000 });
+    expect(state.decorations.ownedChatSkins).toEqual(["greenbubble-stickers"]);
+    expect(state.decorations.equippedChatSkins).toEqual({});
+    expect(state.transactions[state.transactions.length - 1].description).toBe("購買 綠泡泡．表情包");
+  });
 });
 
 describe("buyChatSkinBundle", () => {
-  it("全沒有：59,500 買到四件，一筆交易", () => {
-    const state = stateWith(60000);
+  it("全沒有：84,000 買到六樣，一筆交易", () => {
+    const state = stateWith(85000);
     const before = state.transactions.length;
     const r = buyChatSkinBundle(state, "greenbubble", 2000);
     expect(r.success).toBe(true);
-    expect(state.wallet).toBe(500);
-    expect(state.decorations.ownedChatSkins.length).toBe(4);
+    expect(state.wallet).toBe(1000);
+    expect(state.decorations.ownedChatSkins.length).toBe(6);
     expect(state.transactions.length).toBe(before + 1);
     expect(state.transactions[state.transactions.length - 1].description).toBe(
-      "購買 綠泡泡 組合包（訊息、背景、頂欄、輸入區）",
+      "購買 綠泡泡 組合包（訊息、背景、頂欄、輸入區、聊天列表、表情包）",
     );
   });
 
-  it("已有訊息：只買另外三件，38,500", () => {
-    const state = stateWith(40000);
-    state.decorations.ownedChatSkins.push("greenbubble-message");
-    const r = buyChatSkinBundle(state, "greenbubble");
-    expect(r).toMatchObject({ success: true, price: 38500 });
-    expect(state.decorations.ownedChatSkins.slice().sort()).toEqual(
-      ["greenbubble-header", "greenbubble-input", "greenbubble-message", "greenbubble-wallpaper"],
+  it("已有第一份四件：只買聊天列表和表情包，24,500", () => {
+    const state = stateWith(30000);
+    state.decorations.ownedChatSkins.push(
+      "greenbubble-message",
+      "greenbubble-wallpaper",
+      "greenbubble-header",
+      "greenbubble-input",
     );
+    const r = buyChatSkinBundle(state, "greenbubble");
+    expect(r).toMatchObject({ success: true, price: 24500, pieceIds: ["greenbubble-chatList", "greenbubble-stickers"] });
+    expect(state.wallet).toBe(5500);
   });
 
   it("金幣不夠 → 一件都不給、不扣款", () => {
-    const state = stateWith(59000);
+    const state = stateWith(83000);
     expect(buyChatSkinBundle(state, "greenbubble")).toEqual({ success: false, error: "insufficient_funds" });
-    expect(state.wallet).toBe(59000);
+    expect(state.wallet).toBe(83000);
     expect(state.decorations.ownedChatSkins).toEqual([]);
   });
 
   it("只剩一件 → already_owned；找不到系列 → item_not_found", () => {
     const state = stateWith(99999);
-    state.decorations.ownedChatSkins.push("greenbubble-message", "greenbubble-header", "greenbubble-input");
+    state.decorations.ownedChatSkins.push(
+      "greenbubble-message",
+      "greenbubble-wallpaper",
+      "greenbubble-header",
+      "greenbubble-input",
+      "greenbubble-stickers",
+    );
     expect(buyChatSkinBundle(state, "greenbubble")).toEqual({ success: false, error: "already_owned" });
     expect(buyChatSkinBundle(state, "no-such")).toEqual({ success: false, error: "item_not_found" });
   });
@@ -96,6 +114,14 @@ describe("equip / ownColors", () => {
     expect(state.decorations.chatSkinOwnColors).toEqual({ message: true });
     setChatSkinOwnColorsOnState(state, "message", false);
     expect(state.decorations.chatSkinOwnColors).toEqual({});
+  });
+
+  it("聊天列表可以裝到全域；表情包不能裝", () => {
+    const state = stateWith(0);
+    state.decorations.ownedChatSkins.push("greenbubble-chatList", "greenbubble-stickers");
+    expect(equipChatSkinOnState(state, "chatList", "greenbubble-chatList")).toBe(true);
+    expect(state.decorations.equippedChatSkins.chatList).toBe("greenbubble-chatList");
+    expect(equipChatSkinOnState(state, "chatList", "greenbubble-stickers")).toBe(false);
   });
 });
 

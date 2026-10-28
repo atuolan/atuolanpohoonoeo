@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
-import { ArrowLeft, Check, Sparkles } from "lucide-vue-next";
+import { ArrowLeft, Check, Sparkles, X } from "lucide-vue-next";
 import { db, DB_STORES } from "@/db/database";
 import type { Chat } from "@/types/chat";
 import {
@@ -8,8 +8,12 @@ import {
   CHAT_SKIN_SLOT_LABELS,
   computeBundlePrice,
   getChatSkinSeries,
+  getChatSkinShopItem,
+  getChatSkinStickerPack,
   getSeriesPieces,
+  getSeriesShopItems,
   type ChatSkinPiece,
+  type ChatSkinStickerPack,
 } from "@/data/chatSkins";
 import { useGameEconomyStore } from "@/stores/gameEconomy";
 
@@ -40,10 +44,30 @@ const bundleQuote = computed(() => {
   return computeBundlePrice(selectedSeriesId.value, loadout.value.owned);
 });
 
+const currentStickerPack = computed(() => getChatSkinStickerPack(currentSeries.value?.stickerPackId));
+/** 表情包預覽彈窗 */
+const stickerPreviewPack = ref<ChatSkinStickerPack | null>(null);
+
+/** 組合包內容：「訊息、背景、…、表情包」 */
+const bundleContentText = computed(() =>
+  (bundleQuote.value?.pieceIds ?? [])
+    .map((id) => getChatSkinShopItem(id)?.label ?? "")
+    .filter(Boolean)
+    .join("、"),
+);
+
+/** 試穿聊天列表不需要有聊天 */
+function canTryOn(piece: ChatSkinPiece): boolean {
+  return piece.slot === "chatList" || hasChatForTryOn.value;
+}
+
 function getOwnedCount(seriesId: string): number {
-  const pieces = getSeriesPieces(seriesId);
   const ownedSet = new Set(loadout.value.owned);
-  return pieces.filter((p) => ownedSet.has(p.id)).length;
+  return getSeriesShopItems(seriesId).filter((item) => ownedSet.has(item.id)).length;
+}
+
+function getItemCount(seriesId: string): number {
+  return getSeriesShopItems(seriesId).length;
 }
 
 function selectSeries(id: string) {
@@ -96,7 +120,8 @@ async function handlePurchaseBundle() {
     return;
   }
   await gameEconomyStore.saveState("global");
-  if (confirm("買好了！要現在裝上嗎？")) {
+  const boughtStickers = result.pieceIds.some((id) => !!getChatSkinStickerPack(id));
+  if (confirm(boughtStickers ? "買好了！表情包已加入表情包面板。要現在裝上其他部件嗎？" : "買好了！要現在裝上嗎？")) {
     const pieces = currentPieces.value;
     for (const piece of pieces) {
       gameEconomyStore.equipChatSkin("global", piece.slot, piece.id);
@@ -111,8 +136,20 @@ async function handleEquip(piece: ChatSkinPiece) {
 }
 
 function handleTryOn(piece: ChatSkinPiece) {
-  if (!hasChatForTryOn.value) return;
+  if (!canTryOn(piece)) return;
   emit("tryOn", piece.id);
+}
+
+async function handlePurchaseStickerPack(pack: ChatSkinStickerPack) {
+  if (!confirm(`用 ${pack.price.toLocaleString()} 買下 ${pack.name}？`)) return;
+  const result = gameEconomyStore.purchaseChatSkinPiece("global", pack.id);
+  if (!result.success) {
+    if (result.error === "insufficient_funds") alert("金幣不夠");
+    return;
+  }
+  await gameEconomyStore.saveState("global");
+  stickerPreviewPack.value = null;
+  alert("已加入表情包面板");
 }
 </script>
 
@@ -137,7 +174,7 @@ function handleTryOn(piece: ChatSkinPiece) {
           <div class="series-name">{{ series.name }}</div>
           <div class="series-desc">{{ series.description }}</div>
           <div class="series-progress">
-            已擁有 {{ getOwnedCount(series.id) }}／{{ series.pieceIds.length }}
+            已擁有 {{ getOwnedCount(series.id) }}／{{ getItemCount(series.id) }}
           </div>
         </div>
       </div>
@@ -188,15 +225,7 @@ function handleTryOn(piece: ChatSkinPiece) {
       <!-- 組合包區塊 -->
       <div v-if="bundleQuote" class="bundle-box">
         <div class="bundle-content-line">
-          包含：{{
-            bundleQuote.pieceIds
-              .map((id) => {
-                const p = currentPieces.find((item) => item.id === id);
-                return p ? CHAT_SKIN_SLOT_LABELS[p.slot] : "";
-              })
-              .filter(Boolean)
-              .join("、")
-          }}
+          包含：{{ bundleContentText }}
         </div>
         <div class="bundle-pricing">
           <span class="original-price">{{ bundleQuote.originalPrice.toLocaleString() }}</span>
@@ -226,7 +255,7 @@ function handleTryOn(piece: ChatSkinPiece) {
             <div class="piece-name">{{ piece.name }}</div>
             <div class="piece-price">{{ piece.price.toLocaleString() }} 金幣</div>
             <div
-              v-if="!loadout.owned.includes(piece.id) && !hasChatForTryOn"
+              v-if="!loadout.owned.includes(piece.id) && !canTryOn(piece)"
               class="try-on-hint"
             >
               先開一個聊天才能試穿
@@ -237,7 +266,7 @@ function handleTryOn(piece: ChatSkinPiece) {
             <template v-if="!loadout.owned.includes(piece.id)">
               <button
                 class="action-btn try-on-btn"
-                :disabled="!hasChatForTryOn"
+                :disabled="!canTryOn(piece)"
                 @click="handleTryOn(piece)"
               >
                 試穿
@@ -262,6 +291,39 @@ function handleTryOn(piece: ChatSkinPiece) {
           </div>
         </div>
 
+        <!-- 表情包（不佔欄位，沒有試穿和裝上） -->
+        <div
+          v-if="currentStickerPack"
+          class="piece-row sticker-pack-row"
+          @click="stickerPreviewPack = currentStickerPack"
+        >
+          <div class="piece-thumb slot-stickers">
+            <img
+              :src="previewNight ? currentStickerPack.previewImage.night : currentStickerPack.previewImage.day"
+              :alt="currentStickerPack.name"
+            />
+          </div>
+          <div class="piece-info">
+            <div class="piece-slot-badge">表情包</div>
+            <div class="piece-name">{{ currentStickerPack.name }}</div>
+            <div class="piece-price">{{ currentStickerPack.price.toLocaleString() }} 金幣</div>
+          </div>
+          <div class="piece-actions">
+            <template v-if="!loadout.owned.includes(currentStickerPack.id)">
+              <button class="action-btn try-on-btn" @click.stop="stickerPreviewPack = currentStickerPack">
+                預覽
+              </button>
+              <button class="action-btn buy-btn" @click.stop="handlePurchaseStickerPack(currentStickerPack)">
+                購買
+              </button>
+            </template>
+            <div v-else class="status-badge in-use">
+              <Check :size="14" />
+              已擁有
+            </div>
+          </div>
+        </div>
+
         <!-- 即將推出 -->
         <div
           v-for="slotName in currentSeries.upcomingSlots"
@@ -275,6 +337,41 @@ function handleTryOn(piece: ChatSkinPiece) {
         </div>
       </div>
     </div>
+
+    <!-- 表情包預覽 -->
+    <Teleport to="body">
+      <div
+        v-if="stickerPreviewPack"
+        class="sticker-preview-overlay"
+        @click.self="stickerPreviewPack = null"
+      >
+        <div class="sticker-preview-sheet" role="dialog" :aria-label="stickerPreviewPack.name">
+          <div class="sticker-preview-head">
+            <span class="sticker-preview-title">{{ stickerPreviewPack.name }}</span>
+            <button class="sticker-preview-close" aria-label="關閉" @click="stickerPreviewPack = null">
+              <X :size="18" />
+            </button>
+          </div>
+          <p class="sticker-preview-desc">{{ stickerPreviewPack.description }}</p>
+          <div class="sticker-preview-grid">
+            <img
+              v-for="sticker in stickerPreviewPack.stickers"
+              :key="sticker.name"
+              :src="sticker.file"
+              :alt="sticker.name"
+              :title="sticker.name"
+            />
+          </div>
+          <button
+            v-if="!loadout.owned.includes(stickerPreviewPack.id)"
+            class="buy-bundle-btn"
+            @click="handlePurchaseStickerPack(stickerPreviewPack)"
+          >
+            購買 {{ stickerPreviewPack.price.toLocaleString() }} 金幣
+          </button>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -670,5 +767,83 @@ body.is-night-mode .try-on-btn {
 
 body.is-night-mode .upcoming-row {
   background: rgba(255, 255, 255, 0.02);
+}
+
+.sticker-pack-row {
+  cursor: pointer;
+}
+
+.piece-thumb.slot-stickers img {
+  object-fit: contain;
+}
+
+.sticker-preview-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.4);
+}
+
+.sticker-preview-sheet {
+  width: 100%;
+  max-width: 480px;
+  max-height: 80vh;
+  overflow-y: auto;
+  box-sizing: border-box;
+  padding: 16px 16px calc(16px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom)));
+  border-radius: 16px 16px 0 0;
+  background: var(--color-surface, #fff);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.sticker-preview-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.sticker-preview-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--color-text, #333);
+}
+
+.sticker-preview-close {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--color-text-secondary, #666);
+  cursor: pointer;
+}
+
+.sticker-preview-desc {
+  margin: 0;
+  font-size: 13px;
+  color: var(--color-text-secondary, #666);
+}
+
+.sticker-preview-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.sticker-preview-grid img {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: contain;
+  border-radius: 8px;
+  background: var(--color-background, #f5f5f5);
 }
 </style>

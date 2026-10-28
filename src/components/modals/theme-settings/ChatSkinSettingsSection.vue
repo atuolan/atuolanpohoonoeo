@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import {
+  ALL_CHAT_SKIN_SLOTS,
   CHAT_SKIN_SLOTS,
   CHAT_SKIN_SLOT_LABELS,
   OWN_COLOR_SLOTS,
@@ -32,6 +33,9 @@ const chatOverrides = computed(() => {
   if (props.scope !== "chat" || !props.chatId) return {};
   return chatSkinsStore.getChatOverrides(props.chatId);
 });
+
+/** 全域列出全部欄位；單聊沒有聊天列表（列表頁不屬於任何聊天） */
+const visibleSlots = computed(() => (props.scope === "global" ? ALL_CHAT_SKIN_SLOTS : CHAT_SKIN_SLOTS));
 
 function ownedPiecesForSlot(slot: ChatSkinSlot) {
   const pieces = getPiecesForSlot(slot);
@@ -119,7 +123,7 @@ function setChatOwnColors(slot: ChatSkinSlot, mode: "inherit" | "on" | "off") {
 
     <!-- 欄位設定列表 -->
     <div v-else class="slots-list">
-      <div v-for="slot in CHAT_SKIN_SLOTS" :key="slot" class="slot-row">
+      <div v-for="slot in visibleSlots" :key="slot" class="slot-row">
         <div class="slot-header">
           <span class="slot-label">{{ CHAT_SKIN_SLOT_LABELS[slot] }}</span>
         </div>
