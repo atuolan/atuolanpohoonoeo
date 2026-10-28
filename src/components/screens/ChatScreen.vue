@@ -11891,7 +11891,7 @@ useChatCleanup({
         :character-name="characterName"
         :character-avatar="characterAvatar"
         :touches="pendingDollTouches"
-        :intimate="!!empathyDollMemory?.doll?.intimate"
+        :intimate="empathyDollMemory?.doll?.intimate !== false"
         :look="normalizeDollLook(empathyDollMemory?.doll?.look)"
         @update:look="setDollLook"
         :sending="dollSending"

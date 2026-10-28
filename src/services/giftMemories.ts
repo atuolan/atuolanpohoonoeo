@@ -37,7 +37,7 @@ export interface GiftMemory {
   /** 聊天訊息 id，點寶箱時用來找卡 */
   messageId?: string;
   entries: GiftDiaryEntry[];
-  /** 共感娃娃（intimate：親密部位，預設關；look：換裝，讀的時候用 normalizeDollLook 補齊） */
+  /** 共感娃娃（intimate：親密部位，沒設過當作開；look：換裝，讀的時候用 normalizeDollLook 補齊） */
   doll?: { boundAt: number; intimate?: boolean; look?: unknown };
 }
 
