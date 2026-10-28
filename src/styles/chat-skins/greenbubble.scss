@@ -33,6 +33,19 @@
       }
     }
 
+    // 有心聲：不發光，改在氣泡右外側放小紅點（像沒聽過的語音），對齊尖角高度
+    .bubble .thought-dot {
+      display: block;
+      position: absolute;
+      top: calc(var(--avatar-size, 40px) / 2 - 4px);
+      left: calc(100% + 8px);
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #fa5151;
+      pointer-events: none;
+    }
+
     // 頭像對齊泡泡頂端（成組排版原本貼底，長訊息時頭像會離尖角很遠）
     > .avatar-container {
       align-self: flex-start !important;
