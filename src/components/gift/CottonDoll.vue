@@ -54,13 +54,17 @@ const eyeMode = computed(() => {
     case "pinch":
     case "bite":
     case "lick":
+    case "tickle":
+    case "suck":
       return "squeeze";
     case "poke":
     case "blow":
+    case "pat":
       return "surprised";
     case "stroke":
     case "kiss":
     case "hug":
+    case "knead":
       return "happy";
     default:
       return props.look.eyes;
@@ -70,11 +74,15 @@ const mouthMode = computed(() => {
   switch (props.reaction) {
     case "poke":
     case "blow":
+    case "pat":
+    case "suck":
       return "o";
     case "kiss":
       return "kiss";
     case "pinch":
     case "bite":
+    case "tickle":
+    case "knead":
       return "wavy";
     case "lick":
       return "tongue";

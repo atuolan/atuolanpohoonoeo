@@ -32,7 +32,8 @@ describe("zonesFor", () => {
   it("沒開親密時只有一般部位", () => {
     expect(zonesFor(false).some((z) => z.intimate)).toBe(false);
     expect(zonesFor(true).some((z) => z.id === "groin")).toBe(true);
-    expect(zonesFor(false).map((z) => z.id)).toEqual(["head", "ear", "cheek", "hand", "belly"]);
+    expect(zonesFor(false).map((z) => z.id)).toEqual(["head", "ear", "cheek", "hand", "belly", "foot"]);
+    expect(zonesFor(true).map((z) => z.id)).toContain("nipple");
   });
 });
 

@@ -195,11 +195,12 @@ const TUNES: Array<{ key: keyof DollTune; label: string; min: number; max: numbe
 .wardrobe {
   display: flex;
   flex-direction: column;
-  min-height: 0;
+  width: 100%;
 }
 
 .wardrobe-tabs {
   display: flex;
+  flex-shrink: 0;
   gap: 6px;
   padding: 0 16px 10px;
   overflow-x: auto;
