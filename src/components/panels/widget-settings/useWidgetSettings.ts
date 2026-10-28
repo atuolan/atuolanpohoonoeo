@@ -58,6 +58,9 @@ export function useWidgetSettings(
     characterLayout.value = layoutId;
   }
 
+  // App 圖標（fluid-button）連到哪個 App；只換 label，customStyle 原樣保留
+  const appLabel = ref<string>(widget.data?.label || "");
+
   // 當前編輯的樣式（本地副本）
   const localStyle = ref<WidgetCustomStyle>({
     backgroundColor: widget.data?.customStyle?.backgroundColor,
@@ -241,7 +244,7 @@ export function useWidgetSettings(
       characterBgOpacity: undefined,
       shape: undefined,
       // 重置回統一的預設外觀（和預設佈局、新增組件一樣），不是清空成組件內建的舊配色
-      ...getDefaultWidgetStyle(widget.type, widget.data?.label),
+      ...getDefaultWidgetStyle(widget.type, appLabel.value || widget.data?.label),
     };
     backgroundType.value = "solid";
     currentVinylStyle.value = "classic";
@@ -349,6 +352,10 @@ export function useWidgetSettings(
       customStyle: hasCustomStyle ? cleanStyle : undefined,
     };
 
+    if (widget.type === "fluid-button" && appLabel.value) {
+      updateData.label = appLabel.value;
+    }
+
     // 時鐘特有設定
     if (widget.type === "clock") {
       updateData.clockStyle = clockStyleValue.value;
@@ -395,6 +402,7 @@ export function useWidgetSettings(
       calendarColors,
       boundCharacterId,
       characterLayout,
+      appLabel,
     ],
     () => canvasStore.previewWidgetData(widget.id, buildUpdateData()),
     { deep: true },
@@ -575,7 +583,7 @@ export function useWidgetSettings(
   // 預覽用預設圖標組件（依 iconName 或 widget label 解析）
   const previewIconComponent = computed(() => {
     return resolveWidgetIcon(
-      localStyle.value.iconName || widget.data?.label,
+      localStyle.value.iconName || appLabel.value || widget.data?.label,
     );
   });
 
@@ -606,6 +614,8 @@ export function useWidgetSettings(
     characterLayouts,
     characterLayout,
     selectCharacterLayout,
+    // App 圖標目標
+    appLabel,
     // 樣式狀態
     localStyle,
     // 時鐘

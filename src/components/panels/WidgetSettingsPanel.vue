@@ -39,6 +39,8 @@ const {
   characterLayouts,
   characterLayout,
   selectCharacterLayout,
+  // App 圖標目標
+  appLabel,
   // 樣式狀態
   localStyle,
   // 時鐘
@@ -120,7 +122,7 @@ onMounted(() => {
         :widget="widget"
         :preview-data="previewData"
         :local-style="localStyle"
-        :label="widget.data?.label"
+        :label="previewData.label"
         :icon-preview-blob-style="iconPreviewBlobStyle"
         :icon-preview-icon-style="iconPreviewIconStyle"
         :preview-uses-custom-image="previewUsesCustomImage"
@@ -285,6 +287,7 @@ onMounted(() => {
         class="settings-section"
       >
         <IconSettings
+          v-model:app-label="appLabel"
           :local-style="localStyle"
           @show-picker="showIconPicker = true"
           @reset-icon-scale="resetIconScale"

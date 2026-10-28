@@ -106,6 +106,12 @@ export const appLayouts: LayoutOption[] = [
   { id: "sketch", name: "速寫", desc: "手繪歪圓框（線描）" },
 ];
 
+// App 圖標可切換的目標 App（label 決定點擊後開啟的頁面與預設圖標；與 AddWidgetPanel 的 APP 清單一致）
+export const appTargets: string[] = [
+  "訊息", "設置", "空間", "音樂", "健身", "錢包", "相冊", "收藏", "遊戲",
+  "外賣", "購物", "世界書", "角色", "使用者", "頭盔TA", "閱讀", "書架", "占卜",
+];
+
 // 黑膠唱片子風格選項（與 styleLayouts 一致）
 export const vinylStyles: LayoutOption[] = [
   { id: "pop", name: "普普風", desc: "新粗野派立體互動" },

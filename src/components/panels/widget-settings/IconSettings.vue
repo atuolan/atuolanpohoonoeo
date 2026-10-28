@@ -1,17 +1,43 @@
 <script setup lang="ts">
 import type { WidgetCustomStyle } from "@/types";
 import { Crosshair, Image as ImageIcon, RotateCcw } from "lucide-vue-next";
+import { appTargets } from "./widgetSettingsOptions";
 
 defineProps<{ localStyle: WidgetCustomStyle }>();
+
+// 這個圖標點下去打開哪個 App；只換目標，顏色／形狀／圖片照舊
+const appLabel = defineModel<string>("appLabel");
 
 const emit = defineEmits<{
   "show-picker": [];
   "reset-icon-scale": [];
   "center-icon-offset": [];
 }>();
+
+// 舊資料的「偷窺TA」就是現在的「頭盔TA」
+function isCurrentApp(target: string) {
+  const label = appLabel.value === "偷窺TA" ? "頭盔TA" : appLabel.value;
+  return label === target;
+}
 </script>
 
 <template>
+  <div v-if="appLabel !== undefined" class="setting-group">
+    <div class="group-label">打開哪個 App</div>
+    <div class="app-target-grid">
+      <button
+        v-for="target in appTargets"
+        :key="target"
+        type="button"
+        :class="['app-target', { active: isCurrentApp(target) }]"
+        @click="appLabel = target"
+      >
+        {{ target }}
+      </button>
+    </div>
+    <p class="app-target-hint">只換打開的 App，顏色、形狀、自訂圖片都不變</p>
+  </div>
+
   <div class="setting-group">
     <div class="group-label">當前圖標</div>
     <div class="current-icon">
@@ -142,6 +168,35 @@ const emit = defineEmits<{
 
 <style lang="scss" scoped>
 @use "../../../styles/widget-settings-shared";
+
+// 打開哪個 App
+.app-target-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+  gap: 6px;
+}
+
+.app-target {
+  padding: 8px 4px;
+  border-radius: 10px;
+  background: #f3f4f6;
+  font-size: 13px;
+  color: #374151;
+  transition: all 0.2s;
+
+  &.active {
+    background: #fdebe4;
+    color: #c2603f;
+    font-weight: 600;
+    box-shadow: inset 0 0 0 1.5px #e07a5f;
+  }
+}
+
+.app-target-hint {
+  margin-top: 8px;
+  font-size: 11px;
+  color: #9ca3af;
+}
 
 // 圖標設定
 .current-icon {
