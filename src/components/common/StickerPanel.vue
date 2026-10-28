@@ -52,7 +52,7 @@ const longPressState = ref<{
   triggered: boolean;
 } | null>(null);
 const suppressNextClickStickerId = ref<string | null>(null);
-let longPressTimer: ReturnType<typeof window.setTimeout> | null = null;
+let longPressTimer: number | null = null;
 
 // 添加表情彈窗
 const showAddModal = ref(false);

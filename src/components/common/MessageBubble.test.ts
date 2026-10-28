@@ -1,6 +1,4 @@
-// @ts-expect-error Node types are not part of the app tsconfig.
 import { readFileSync } from "node:fs";
-// @ts-expect-error Node types are not part of the app tsconfig.
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
