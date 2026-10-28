@@ -3,6 +3,7 @@ import {
   initRedPacketState,
   applyClaim as applyRedpacketClaim,
   canClaim as canClaimRedpacket,
+  expireRedPackets,
 } from "@/services/RedPacketService";
 import { useGameEconomyStore } from "@/stores/gameEconomy";
 import { ref, type Ref } from "vue";
@@ -96,6 +97,28 @@ export function useChatRedpacket(context: {
     await context.saveChatImmediate();
   }
 
+  /** 超過 24 小時沒領完的紅包標成過期；使用者發的把剩下的錢退回錢包 */
+  async function expireOldRedpackets(): Promise<void> {
+    const expired = expireRedPackets(context.messages.value);
+    if (expired.length === 0) return;
+    let refunded = false;
+    for (const { refundCents } of expired) {
+      if (refundCents <= 0) continue;
+      const yuan = refundCents / 100;
+      gameEconomyStore.earnMoney(GLOBAL_WALLET_ID, yuan, "transfer", "紅包過期退回");
+      refunded = true;
+      context.messages.value.push({
+        id: `msg_rp_refund_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        role: "user",
+        content: `紅包超過 24 小時沒領完，已退回 ${formatClaimAmount(yuan)} 元`,
+        timestamp: Date.now(),
+        isTransactionClaimNotice: true,
+      });
+    }
+    if (refunded) await gameEconomyStore.saveState(GLOBAL_WALLET_ID);
+    await context.saveChatImmediate();
+  }
+
   const onMessageClaimRedpacket = async (...args: unknown[]) => {
     const id = typeof args[0] === "string" ? args[0] : "";
     if (!id) return;
@@ -112,6 +135,10 @@ export function useChatRedpacket(context: {
         const pre = canClaimRedpacket(msg, userName, true);
         if (!pre.ok) {
           if (pre.reason === "exhausted") context.showToast?.("紅包已被領完");
+          if (pre.reason === "expired") {
+            context.showToast?.("紅包已過期");
+            await expireOldRedpackets();
+          }
           return;
         }
         voiceClaimModalState.value = {
@@ -128,6 +155,9 @@ export function useChatRedpacket(context: {
     if (!check.ok) {
       if (check.reason === "exhausted") {
         context.showToast?.("紅包已被領完");
+      } else if (check.reason === "expired") {
+        context.showToast?.("紅包已過期");
+        await expireOldRedpackets();
       } else if (check.reason === "not-target") {
         const target = (msg.redpacketData.target || "").trim();
         const aiMemberNames: string[] = [];
@@ -173,6 +203,7 @@ export function useChatRedpacket(context: {
     voiceClaimModalState,
     createTransactionClaimNoticeMessage,
     executeUserRedpacketClaim,
+    expireOldRedpackets,
     onMessageClaimRedpacket,
     handleVoiceRedpacketSubmit,
     getUserDisplayName,
