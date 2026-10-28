@@ -7,6 +7,7 @@
  * @requirements 5.1, 5.2, 10.3
  */
 import PixelRod from "@/components/common/PixelRod.vue";
+import GiftCabinet from "@/components/gift/GiftCabinet.vue";
 import {
     getAvatarFrameLayers,
     getAvatarFrameSvg,
@@ -27,25 +28,19 @@ import {
 import { useGameEconomyStore } from "@/stores/gameEconomy";
 import {
     ArrowLeft,
-    Cake,
     Check,
-    Coffee,
     Coins,
-    Diamond,
     Fish,
-    Flower2,
     Frame,
-    Gem,
     Gift,
-    Heart,
     MessageCircle,
     Package,
     ShoppingBag,
     Sparkles,
-    Star,
     X,
 } from "lucide-vue-next";
 import { computed, onMounted, ref } from "vue";
+import { getGiftIcon } from "@/utils/giftIcon";
 
 const emit = defineEmits<{
   back: [];
@@ -72,6 +67,9 @@ const categories: CategoryTab[] = [
   { id: "gift", label: "禮物", icon: Gift, items: GIFT_ITEMS },
   { id: "consumable", label: "道具", icon: Package, items: CONSUMABLE_ITEMS },
 ];
+
+// 商城／禮物櫃
+const view = ref<"shop" | "cabinet">("shop");
 
 // 當前選擇的分類
 const activeCategory = ref<ShopCategory>("frame");
@@ -339,57 +337,6 @@ function getRarityLabel(rarity: string): string {
   return labels[rarity] || rarity;
 }
 
-// 取得禮物圖標
-function getGiftIcon(itemId: string) {
-  const iconMap: Record<string, typeof Gift> = {
-    // Common
-    gift_flower: Flower2,
-    gift_chocolate: Cake,
-    gift_cake: Cake,
-    gift_cola: Coffee,
-    gift_mug_simple: Coffee,
-    gift_plush_bear: Heart,
-    // Uncommon
-    gift_lotion: Sparkles,
-    gift_toner: Sparkles,
-    gift_mug_cat: Coffee,
-    gift_plush_bunny: Heart,
-    gift_charm_star: Star,
-    gift_earring_pearl: Sparkles,
-    gift_crystal_clear: Gem,
-    // Rare
-    gift_necklace_silver: Sparkles,
-    gift_ring_silver: Sparkles,
-    gift_crystal_rose: Gem,
-    gift_crystal_amethyst: Gem,
-    gift_crystal_citrine: Gem,
-    gift_earring_crystal: Sparkles,
-    gift_plush_giant: Heart,
-    gift_charm_moon: Star,
-    gift_skincare_set: Gift,
-    // Epic
-    gift_necklace_gold: Sparkles,
-    gift_ring_gold: Sparkles,
-    gift_crystal_obsidian: Gem,
-    gift_crystal_moonstone: Gem,
-    gift_crystal_labradorite: Gem,
-    gift_crystal_aquamarine: Gem,
-    gift_earring_diamond: Diamond,
-    gift_charm_custom: Star,
-    gift_limited_box: Gift,
-    // Legendary
-    gift_diamond: Diamond,
-    gift_necklace_custom: Sparkles,
-    gift_crystal_ruby: Gem,
-    gift_crystal_sapphire: Gem,
-    gift_crystal_emerald: Gem,
-    gift_ring_diamond: Diamond,
-    gift_charm_diamond: Diamond,
-    gift_crystal_alexandrite: Gem,
-  };
-  return iconMap[itemId] || Gift;
-}
-
 // 載入遊戲狀態
 onMounted(async () => {
   await gameEconomyStore.loadState(GLOBAL_WALLET_ID);
@@ -403,10 +350,22 @@ onMounted(async () => {
       <button class="back-btn" @click="emit('back')">
         <ArrowLeft :size="20" />
       </button>
-      <h1>
-        <ShoppingBag :size="20" />
-        商城
-      </h1>
+      <div class="view-switch">
+        <button
+          class="view-switch-btn"
+          :class="{ active: view === 'shop' }"
+          @click="view = 'shop'"
+        >
+          商城
+        </button>
+        <button
+          class="view-switch-btn"
+          :class="{ active: view === 'cabinet' }"
+          @click="view = 'cabinet'"
+        >
+          禮物櫃
+        </button>
+      </div>
       <div class="balance-display">
         <Coins :size="16" />
         <span>{{ balance.toLocaleString() }}</span>
@@ -414,7 +373,7 @@ onMounted(async () => {
     </header>
 
     <!-- 分類標籤 -->
-    <div class="category-tabs">
+    <div v-if="view === 'shop'" class="category-tabs">
       <button
         v-for="category in categories"
         :key="category.id"
@@ -428,7 +387,7 @@ onMounted(async () => {
     </div>
 
     <!-- 商品列表 -->
-    <div class="shop-content">
+    <div v-if="view === 'shop'" class="shop-content">
       <div class="items-grid">
         <div
           v-for="item in currentItems"
@@ -573,6 +532,9 @@ onMounted(async () => {
         <span>此分類暫無商品</span>
       </div>
     </div>
+
+    <!-- 禮物櫃 -->
+    <GiftCabinet v-if="view === 'cabinet'" />
 
     <!-- 購買確認彈窗 -->
     <teleport to="body">
@@ -901,6 +863,36 @@ onMounted(async () => {
     font-size: 14px;
     font-weight: 600;
     color: #92400e;
+  }
+}
+
+.view-switch {
+  flex: 1;
+  display: flex;
+  padding: 3px;
+  border-radius: 20px;
+  background: var(--color-surface-hover, #f0f0f0);
+}
+
+.view-switch-btn {
+  flex: 1;
+  padding: 7px 14px;
+  border: none;
+  border-radius: 17px;
+  background: transparent;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text-secondary, #666);
+  cursor: pointer;
+  transition: all 0.2s;
+
+  &.active {
+    background: var(--color-primary, #7dd3a8);
+    color: var(--color-on-primary-contrast, #fff);
+  }
+
+  &:active {
+    transform: scale(0.98);
   }
 }
 
@@ -1696,6 +1688,19 @@ onMounted(async () => {
 // 頁面本體跟著主題變數變深，但分類標籤、價格、購買彈窗寫死淺色；
 // body.is-night-mode 由 theme store 同步切換，保持巢狀讓 scoped 附在內層元素上。
 body.is-night-mode {
+  .view-switch {
+    background: var(--color-surface-hover);
+  }
+
+  .view-switch-btn {
+    color: var(--color-text-secondary);
+
+    &.active {
+      background: var(--color-primary, #7dd3a8);
+      color: var(--color-on-primary-contrast, #fff);
+    }
+  }
+
   .screen-header .balance-display,
   .item-price {
     background: rgba(255, 183, 77, 0.15);
