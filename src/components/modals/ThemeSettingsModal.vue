@@ -923,19 +923,11 @@ function toOwnedItems(ids: string[] | undefined) {
 
 const decorations = computed(() => gameEconomyStore.getDecorations(GLOBAL_WALLET_ID));
 const ownedFrames = computed(() => toOwnedItems(decorations.value?.ownedFrames));
-const ownedBubbles = computed(() => toOwnedItems(decorations.value?.ownedBubbles));
-const equippedBubbleId = computed(() => decorations.value?.equippedBubbleId ?? null);
 
 const FRAME_TARGETS = [
   { key: "userFrameId", section: "userFrame", title: "我的頭像框", hint: "只套用在這個聊天" },
   { key: "charFrameId", section: "charFrame", title: "角色頭像框", hint: "只套用在這個聊天" },
 ] as const;
-
-// 聊天氣泡是全域裝備，會立即生效到所有聊天
-async function equipBubble(bubbleId: string | null) {
-  gameEconomyStore.equipBubble(GLOBAL_WALLET_ID, bubbleId);
-  await gameEconomyStore.saveState(GLOBAL_WALLET_ID);
-}
 
 // ===== 重置 / 儲存 =====
 const resetLabel = computed(() => (useCustomAppearance.value ? "恢復成和全域外觀一樣…" : "全域外觀恢復預設…"));
@@ -1766,48 +1758,6 @@ function cancel() {
                     </div>
                     <div v-else class="empty-decorations">
                       <p>還沒有購買頭像框</p>
-                      <p class="hint">前往商城購買裝飾品</p>
-                    </div>
-                  </section>
-
-                  <section
-                    class="settings-card"
-                    :class="{ active: activeSection === 'bubbleDeco' }"
-                    data-section="bubbleDeco"
-                    @pointerdown="activateSection('bubbleDeco')"
-                  >
-                    <div class="card-head">
-                      <h3 class="section-title">聊天氣泡</h3>
-                    </div>
-                    <p class="section-hint">全域裝備：會立即套用到所有聊天</p>
-                    <div v-if="ownedBubbles.length > 0" class="decoration-grid">
-                      <button class="decoration-item" :class="{ active: equippedBubbleId === null }" @click="equipBubble(null)">
-                        <span class="decoration-icon none">
-                          <svg viewBox="0 0 24 24" fill="currentColor">
-                            <path
-                              d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
-                            />
-                          </svg>
-                        </span>
-                        <span class="decoration-name">無</span>
-                      </button>
-                      <button
-                        v-for="bubble in ownedBubbles"
-                        :key="bubble.id"
-                        class="decoration-item"
-                        :class="{ active: equippedBubbleId === bubble.id }"
-                        @click="equipBubble(bubble.id)"
-                      >
-                        <span class="decoration-icon" :class="bubble.rarity">
-                          <svg viewBox="0 0 24 24" fill="currentColor">
-                            <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z" />
-                          </svg>
-                        </span>
-                        <span class="decoration-name">{{ bubble.name }}</span>
-                      </button>
-                    </div>
-                    <div v-else class="empty-decorations">
-                      <p>還沒有購買聊天氣泡</p>
                       <p class="hint">前往商城購買裝飾品</p>
                     </div>
                   </section>

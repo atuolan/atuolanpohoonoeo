@@ -16,7 +16,6 @@ import {
     isAvatarFrameSvg,
 } from "@/data/avatarFrames";
 import {
-    BUBBLE_ITEMS,
     CONSUMABLE_ITEMS,
     FRAME_ITEMS,
     GIFT_ITEMS,
@@ -33,7 +32,6 @@ import {
     Fish,
     Frame,
     Gift,
-    MessageCircle,
     Package,
     ShoppingBag,
     Sparkles,
@@ -62,7 +60,6 @@ interface CategoryTab {
 
 const categories: CategoryTab[] = [
   { id: "frame", label: "頭像框", icon: Frame, items: FRAME_ITEMS },
-  { id: "bubble", label: "氣泡", icon: MessageCircle, items: BUBBLE_ITEMS },
   { id: "rod", label: "魚竿", icon: Fish, items: ROD_ITEMS },
   { id: "gift", label: "禮物", icon: Gift, items: GIFT_ITEMS },
   { id: "consumable", label: "道具", icon: Package, items: CONSUMABLE_ITEMS },
@@ -90,7 +87,6 @@ const ownedDecorations = computed(() => {
   const decorations = gameEconomyStore.getDecorations(GLOBAL_WALLET_ID);
   return {
     frames: decorations?.ownedFrames || [],
-    bubbles: decorations?.ownedBubbles || [],
   };
 });
 
@@ -138,9 +134,6 @@ function isOwned(item: ShopItem, variant?: ShopItemVariant | null): boolean {
     }
     return ownedDecorations.value.frames.includes(item.id);
   }
-  if (item.category === "bubble") {
-    return ownedDecorations.value.bubbles.includes(item.id);
-  }
   return false;
 }
 
@@ -179,7 +172,7 @@ function canPurchase(
   } else {
     // 無變體的裝飾品不可重複購買
     if (
-      (item.category === "frame" || item.category === "bubble") &&
+      item.category === "frame" &&
       isOwned(item)
     ) {
       return false;
@@ -213,7 +206,7 @@ function openPurchaseModal(item: ShopItem) {
   } else {
     // 無變體的裝飾品，已擁有則不能打開
     if (
-      (item.category === "frame" || item.category === "bubble") &&
+      item.category === "frame" &&
       isOwned(item)
     ) {
       return;

@@ -1,14 +1,14 @@
 /**
  * 商城商品定義
  *
- * 定義所有可購買的商品，包含頭像框、聊天氣泡、魚竿、禮物、消耗品
+ * 定義所有可購買的商品，包含頭像框、魚竿、禮物、消耗品
  *
  * @requirements 5.1
  */
 import type { Rarity } from "@/schemas/gameEconomy";
 
 /** 商品分類 */
-export type ShopCategory = "frame" | "bubble" | "gift" | "rod" | "consumable";
+export type ShopCategory = "frame" | "gift" | "rod" | "consumable";
 
 /** 消耗品效果類型 */
 export type ConsumableEffectType = "work_efficiency" | "fishing_efficiency";
@@ -283,56 +283,6 @@ export const FRAME_ITEMS: ShopItem[] = [
     category: "frame",
     rarity: "epic",
     icon: "frame-emperor-arrived",
-  },
-];
-
-// ===== 聊天氣泡 =====
-
-export const BUBBLE_ITEMS: ShopItem[] = [
-  {
-    id: "bubble_pink",
-    name: "夢幻粉",
-    description: "粉嫩可愛的聊天氣泡",
-    price: 12000,
-    category: "bubble",
-    rarity: "common",
-    icon: "bubble-pink",
-  },
-  {
-    id: "bubble_cyber",
-    name: "賽博龐克",
-    description: "科技感十足的霓虹風格",
-    price: 12000,
-    category: "bubble",
-    rarity: "common",
-    icon: "bubble-cyber",
-  },
-  {
-    id: "bubble_ink",
-    name: "水墨風",
-    description: "古典雅致的水墨畫風格",
-    price: 12000,
-    category: "bubble",
-    rarity: "common",
-    icon: "bubble-ink",
-  },
-  {
-    id: "bubble_neon",
-    name: "霓虹閃爍",
-    description: "動態閃爍的霓虹燈效果",
-    price: 20000,
-    category: "bubble",
-    rarity: "rare",
-    icon: "bubble-neon",
-  },
-  {
-    id: "bubble_galaxy",
-    name: "星河漫步",
-    description: "璀璨星空的夢幻氣泡",
-    price: 38000,
-    category: "bubble",
-    rarity: "epic",
-    icon: "bubble-galaxy",
   },
 ];
 
@@ -970,7 +920,6 @@ export const CONSUMABLE_ITEMS: ShopItem[] = [
 /** 所有商品列表 */
 export const SHOP_ITEMS: ShopItem[] = [
   ...FRAME_ITEMS,
-  ...BUBBLE_ITEMS,
   ...ROD_ITEMS,
   ...GIFT_ITEMS,
   ...CONSUMABLE_ITEMS,

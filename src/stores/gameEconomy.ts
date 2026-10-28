@@ -13,6 +13,7 @@ import {
     getRandomTrash,
     getTrashCatchRate,
 } from "@/data/fishTypes";
+import { type ChatSkinSlot } from "@/data/chatSkins";
 import {
     FRAME_ITEMS,
     getShopItemById,
@@ -20,6 +21,14 @@ import {
     type ShopItem,
     type ShopItemVariant,
 } from "@/data/shopItems";
+import {
+    buyChatSkinBundle,
+    buyChatSkinPiece,
+    equipChatSkinOnState,
+    refundRetiredBubbles,
+    setChatSkinOwnColorsOnState,
+    type ChatSkinPurchaseResult,
+} from "@/utils/chatSkinEconomy";
 import { db, DB_STORES } from "@/db/database";
 import {
     createDefaultGameState,
@@ -442,6 +451,10 @@ export const useGameEconomyStore = defineStore("gameEconomy", () => {
         }
         gameStates.value.set(chatId, state);
         _dbLoadedIds.add(chatId);
+        // 佔位聊天氣泡已下架：買過的照原價退款（只會退一次）
+        if (refundRetiredBubbles(state).changed) {
+          await saveState(chatId);
+        }
         // 合併同類型魚竿並清理損壞的魚竿
         const rodCountBefore = state.fishingRods.length;
         consolidateFishingRods(chatId);
@@ -873,6 +886,9 @@ export const useGameEconomyStore = defineStore("gameEconomy", () => {
         ownedBubbles: [],
         equippedFrameId: null,
         equippedBubbleId: null,
+        ownedChatSkins: [],
+        equippedChatSkins: {},
+        chatSkinOwnColors: {},
       };
     }
     if (!state.decorations.ownedFrames) {
@@ -884,8 +900,6 @@ export const useGameEconomyStore = defineStore("gameEconomy", () => {
 
     if (category === "frame") {
       return state.decorations.ownedFrames.includes(itemId);
-    } else if (category === "bubble") {
-      return state.decorations.ownedBubbles.includes(itemId);
     }
     return false;
   }
@@ -935,7 +949,6 @@ export const useGameEconomyStore = defineStore("gameEconomy", () => {
     // 根據商品類型處理
     switch (item.category) {
       case "frame":
-      case "bubble":
         return purchaseDecoration(chatId, item, itemId, variant);
       case "rod":
         return purchaseRod(chatId, item, quantity);
@@ -986,7 +999,7 @@ export const useGameEconomyStore = defineStore("gameEconomy", () => {
   }
 
   /**
-   * 購買裝飾品（頭像框、聊天氣泡）
+   * 購買裝飾品（頭像框）
    * @param chatId 聊天 ID
    * @param item 商品
    * @param actualId 實際購買的 ID（變體商品為 baseId_variantId）
@@ -1012,8 +1025,6 @@ export const useGameEconomyStore = defineStore("gameEconomy", () => {
     // 加入已擁有清單（使用實際 ID，變體商品為 baseId_variantId）
     if (item.category === "frame") {
       state.decorations.ownedFrames.push(actualId);
-    } else if (item.category === "bubble") {
-      state.decorations.ownedBubbles.push(actualId);
     }
 
     // 記錄交易（顯示變體名稱）
@@ -1178,6 +1189,41 @@ export const useGameEconomyStore = defineStore("gameEconomy", () => {
     return true;
   }
 
+  // ===== 聊天裝扮 =====
+
+  function purchaseChatSkinPiece(chatId: string, pieceId: string): ChatSkinPurchaseResult {
+    const result = buyChatSkinPiece(getState(chatId), pieceId);
+    if (result.success) _scheduleAutoSave(chatId);
+    return result;
+  }
+
+  function purchaseChatSkinBundle(chatId: string, seriesId: string): ChatSkinPurchaseResult {
+    const result = buyChatSkinBundle(getState(chatId), seriesId);
+    if (result.success) _scheduleAutoSave(chatId);
+    return result;
+  }
+
+  function equipChatSkin(chatId: string, slot: ChatSkinSlot, pieceId: string | null): boolean {
+    const ok = equipChatSkinOnState(getState(chatId), slot, pieceId);
+    if (ok) _scheduleAutoSave(chatId);
+    return ok;
+  }
+
+  function setChatSkinOwnColors(chatId: string, slot: ChatSkinSlot, value: boolean): void {
+    setChatSkinOwnColorsOnState(getState(chatId), slot, value);
+    _scheduleAutoSave(chatId);
+  }
+
+  /** 唯讀取用（不補欄位），給聊天畫面和設定頁算搭配 */
+  function getChatSkinLoadout(chatId: string) {
+    const d = getState(chatId).decorations;
+    return {
+      owned: d?.ownedChatSkins ?? [],
+      equipped: d?.equippedChatSkins ?? {},
+      ownColors: d?.chatSkinOwnColors ?? {},
+    };
+  }
+
   /**
    * [開發用] 免費獲得頭像框
    * @param chatId 聊天 ID
@@ -1192,6 +1238,9 @@ export const useGameEconomyStore = defineStore("gameEconomy", () => {
         ownedBubbles: [],
         equippedFrameId: null,
         equippedBubbleId: null,
+        ownedChatSkins: [],
+        equippedChatSkins: {},
+        chatSkinOwnColors: {},
       };
     }
     if (!state.decorations.ownedFrames) {
@@ -1216,6 +1265,9 @@ export const useGameEconomyStore = defineStore("gameEconomy", () => {
         ownedBubbles: [],
         equippedFrameId: null,
         equippedBubbleId: null,
+        ownedChatSkins: [],
+        equippedChatSkins: {},
+        chatSkinOwnColors: {},
       };
     }
     if (!state.decorations.ownedFrames) {
@@ -1228,28 +1280,6 @@ export const useGameEconomyStore = defineStore("gameEconomy", () => {
       }
     }
     _scheduleAutoSave(chatId);
-  }
-
-  /**
-   * 裝備聊天氣泡
-   * @param chatId 聊天 ID
-   * @param bubbleId 氣泡 ID（null 表示卸下）
-   * @returns 是否成功
-   */
-  function equipBubble(chatId: string, bubbleId: string | null): boolean {
-    const state = getState(chatId);
-
-    // 如果要裝備，檢查是否擁有
-    if (
-      bubbleId !== null &&
-      !state.decorations.ownedBubbles.includes(bubbleId)
-    ) {
-      return false;
-    }
-
-    state.decorations.equippedBubbleId = bubbleId;
-    _scheduleAutoSave(chatId);
-    return true;
   }
 
   /**
@@ -1317,6 +1347,9 @@ export const useGameEconomyStore = defineStore("gameEconomy", () => {
         ownedBubbles: [],
         equippedFrameId: null,
         equippedBubbleId: null,
+        ownedChatSkins: [],
+        equippedChatSkins: {},
+        chatSkinOwnColors: {},
       };
     }
     if (!state.decorations.ownedFrames) {
@@ -2154,9 +2187,15 @@ export const useGameEconomyStore = defineStore("gameEconomy", () => {
     purchaseItem,
     ownsDecoration,
 
+    // 聊天裝扮
+    purchaseChatSkinPiece,
+    purchaseChatSkinBundle,
+    equipChatSkin,
+    setChatSkinOwnColors,
+    getChatSkinLoadout,
+
     // 裝備切換
     equipFrame,
-    equipBubble,
     equipRod,
     getEquippedRod,
     getFishingRods,
