@@ -6,30 +6,28 @@
 export const EMPATHY_DOLL_ITEM_ID = "gift_empathy_doll";
 export const EMPATHY_DOLL_NAME = "共感娃娃";
 
-export type DollSide = "front" | "back";
-
 export interface DollZone {
   id: string;
   label: string;
-  side: DollSide;
   /** 親密部位：角色的娃娃開了親密互動才出現 */
   intimate?: boolean;
+  /** 熱區（棉花娃娃 viewBox 0 0 240 340 的座標），一個部位可以有左右兩塊 */
+  shapes: Array<{ x: number; y: number; w: number; h: number }>;
 }
 
+/** 後面的蓋在前面上；熱區對齊 CottonDoll.vue 的身體 */
 export const DOLL_ZONES: DollZone[] = [
-  { id: "head", label: "頭", side: "front" },
-  { id: "ear", label: "耳朵", side: "front" },
-  { id: "cheek", label: "臉頰", side: "front" },
-  { id: "lips", label: "嘴唇", side: "front", intimate: true },
-  { id: "neck", label: "脖子", side: "front", intimate: true },
-  { id: "hand", label: "手", side: "front" },
-  { id: "chest", label: "胸口", side: "front", intimate: true },
-  { id: "belly", label: "肚子", side: "front" },
-  { id: "waist", label: "腰", side: "front", intimate: true },
-  { id: "thigh", label: "大腿", side: "front", intimate: true },
-  { id: "groin", label: "下身", side: "front", intimate: true },
-  { id: "back", label: "背", side: "back" },
-  { id: "butt", label: "臀部", side: "back", intimate: true },
+  { id: "head", label: "頭", shapes: [{ x: 62, y: 28, w: 116, h: 46 }] },
+  { id: "ear", label: "耳朵", shapes: [{ x: 10, y: 106, w: 38, h: 40 }, { x: 192, y: 106, w: 38, h: 40 }] },
+  { id: "cheek", label: "臉頰", shapes: [{ x: 44, y: 142, w: 46, h: 34 }, { x: 150, y: 142, w: 46, h: 34 }] },
+  { id: "lips", label: "嘴唇", intimate: true, shapes: [{ x: 102, y: 148, w: 36, h: 26 }] },
+  { id: "neck", label: "脖子", intimate: true, shapes: [{ x: 94, y: 184, w: 52, h: 16 }] },
+  { id: "hand", label: "手", shapes: [{ x: 40, y: 202, w: 38, h: 58 }, { x: 162, y: 202, w: 38, h: 58 }] },
+  { id: "chest", label: "胸口", intimate: true, shapes: [{ x: 84, y: 200, w: 72, h: 32 }] },
+  { id: "belly", label: "肚子", shapes: [{ x: 86, y: 232, w: 68, h: 30 }] },
+  { id: "waist", label: "腰", intimate: true, shapes: [{ x: 72, y: 236, w: 16, h: 34 }, { x: 152, y: 236, w: 16, h: 34 }] },
+  { id: "thigh", label: "大腿", intimate: true, shapes: [{ x: 90, y: 280, w: 28, h: 36 }, { x: 122, y: 280, w: 28, h: 36 }] },
+  { id: "groin", label: "下身", intimate: true, shapes: [{ x: 104, y: 262, w: 32, h: 22 }] },
 ];
 
 /** 整隻抱住用的部位 id */
@@ -76,8 +74,8 @@ export interface DollTouch {
   strength: DollStrength;
 }
 
-export function zonesFor(intimate: boolean, side?: DollSide): DollZone[] {
-  return DOLL_ZONES.filter((z) => (intimate || !z.intimate) && (!side || z.side === side));
+export function zonesFor(intimate: boolean): DollZone[] {
+  return DOLL_ZONES.filter((z) => intimate || !z.intimate);
 }
 
 /** 加一次碰觸：同動作同部位合併，次數加一、按住時間累加、強度取最強 */
@@ -150,10 +148,11 @@ interface DollNames {
   charName: string;
 }
 
-/** 提示詞裡娃娃訊息後面的說明 */
-export function dollPromptNote(names: DollNames, round?: number): string {
+/** 提示詞裡娃娃訊息後面的說明；lookNote 是換過造型時的「娃娃穿著…」 */
+export function dollPromptNote(names: DollNames, round?: number, lookNote?: string): string {
   const again = round && round > 1 ? `；這是 30 分鐘內第 ${round} 次` : "";
-  return `（${names.userName} 對共感娃娃做了這些，${names.charName} 的身體同時感覺得到${again}）`;
+  const look = lookNote ? `${lookNote}；` : "";
+  return `（${look}${names.userName} 對共感娃娃做了這些，${names.charName} 的身體同時感覺得到${again}）`;
 }
 
 /** 送禮那則訊息後面說明這是什麼 */

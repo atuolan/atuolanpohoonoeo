@@ -32,7 +32,7 @@ describe("zonesFor", () => {
   it("沒開親密時只有一般部位", () => {
     expect(zonesFor(false).some((z) => z.intimate)).toBe(false);
     expect(zonesFor(true).some((z) => z.id === "groin")).toBe(true);
-    expect(zonesFor(true, "back").map((z) => z.id)).toEqual(["back", "butt"]);
+    expect(zonesFor(false).map((z) => z.id)).toEqual(["head", "ear", "cheek", "hand", "belly"]);
   });
 });
 
@@ -48,5 +48,8 @@ describe("dollRoundOf / dollPromptNote", () => {
     const names = { userName: "小雨", charName: "言澈" };
     expect(dollPromptNote(names, 1)).not.toContain("第");
     expect(dollPromptNote(names, 3)).toContain("言澈 的身體同時感覺得到；這是 30 分鐘內第 3 次");
+    expect(dollPromptNote(names, 1, "娃娃穿著女僕裝")).toBe(
+      "（娃娃穿著女僕裝；小雨 對共感娃娃做了這些，言澈 的身體同時感覺得到）",
+    );
   });
 });

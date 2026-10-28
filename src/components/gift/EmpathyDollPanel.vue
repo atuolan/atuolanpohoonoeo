@@ -1,11 +1,13 @@
 <script setup lang="ts">
 /**
- * 共感娃娃互動面板
- *
- * 選動作 → 點／按住娃娃部位 → 累積碰觸 → 「戳完了」送出
+ * 共感娃娃面板
+ * 互動：選動作 → 點／按住部位（或整隻抱住）→ 累積碰觸 → 「戳完了」送出
+ * 換裝：DollWardrobe，改了立刻反映在娃娃上
  */
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
-import type { CSSProperties } from "vue";
+import { computed, onBeforeUnmount, ref } from "vue";
+import CottonDoll from "@/components/gift/CottonDoll.vue";
+import DollWardrobe from "@/components/gift/DollWardrobe.vue";
+import type { DollLook } from "@/data/dollWardrobe";
 import {
   DOLL_ACTIONS,
   DOLL_HOLD_MIN_MS,
@@ -14,7 +16,6 @@ import {
   addDollTouch,
   describeDollTouches,
   zonesFor,
-  type DollSide,
   type DollTouch,
 } from "@/services/empathyDoll";
 
@@ -23,101 +24,40 @@ const props = defineProps<{
   characterAvatar?: string;
   touches: DollTouch[];
   intimate: boolean;
+  look: DollLook;
   sending?: boolean;
 }>();
 
 const emit = defineEmits<{
   "update:touches": [DollTouch[]];
   "update:intimate": [boolean];
+  "update:look": [DollLook];
   send: [];
   close: [];
 }>();
 
-// ===== 基本狀態 =====
-const actionId = ref<string>("stroke");
-const side = ref<DollSide>("front");
+const tab = ref<"play" | "dress">("play");
+const actionId = ref("stroke");
 const menuOpen = ref(false);
 
-const currentActionLabel = computed<string>(
-  () => DOLL_ACTIONS.find((a) => a.id === actionId.value)?.label ?? "摸",
-);
+const zones = computed(() => zonesFor(props.intimate));
+const summary = computed(() => describeDollTouches(props.touches));
 
-const visibleZones = computed(() => zonesFor(props.intimate, side.value));
+/** 碰越多、按越久，臉越紅 */
+const flush = computed(() => {
+  const score = props.touches.reduce((sum, t) => sum + t.count + t.holdMs / 2000, 0);
+  return Math.min(1, score / 10);
+});
 
-const summary = computed<string>(() => describeDollTouches(props.touches));
-
-const initial = computed<string>(() => (props.characterName || "?").slice(0, 1));
-
-function onIntimateChange(event: Event): void {
-  const checked = (event.target as HTMLInputElement | null)?.checked ?? false;
-  emit("update:intimate", checked);
-}
-
-// ===== 部位熱區幾何（舞台座標 240 x 380）=====
-interface ZoneShape {
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-  radius: string;
-}
-
-const ZONE_SHAPES: Record<string, ZoneShape[]> = {
-  head: [{ x: 76, y: 16, w: 88, h: 46, radius: "50%" }],
-  ear: [
-    { x: 32, y: 84, w: 36, h: 36, radius: "50%" },
-    { x: 172, y: 84, w: 36, h: 36, radius: "50%" },
-  ],
-  cheek: [
-    { x: 60, y: 96, w: 40, h: 40, radius: "50%" },
-    { x: 140, y: 96, w: 40, h: 40, radius: "50%" },
-  ],
-  lips: [{ x: 100, y: 132, w: 40, h: 26, radius: "50%" }],
-  neck: [{ x: 102, y: 152, w: 36, h: 20, radius: "10px" }],
-  hand: [
-    { x: 22, y: 202, w: 36, h: 60, radius: "50%" },
-    { x: 182, y: 202, w: 36, h: 60, radius: "50%" },
-  ],
-  chest: [{ x: 84, y: 176, w: 72, h: 46, radius: "50%" }],
-  belly: [{ x: 82, y: 218, w: 76, h: 44, radius: "50%" }],
-  waist: [
-    { x: 60, y: 226, w: 24, h: 40, radius: "12px" },
-    { x: 156, y: 226, w: 24, h: 40, radius: "12px" },
-  ],
-  thigh: [
-    { x: 84, y: 296, w: 32, h: 52, radius: "16px" },
-    { x: 124, y: 296, w: 32, h: 52, radius: "16px" },
-  ],
-  groin: [{ x: 102, y: 258, w: 36, h: 26, radius: "12px" }],
-  back: [{ x: 74, y: 168, w: 92, h: 108, radius: "26px" }],
-  butt: [{ x: 82, y: 250, w: 76, h: 52, radius: "26px" }],
-};
-
-function shapesOf(zoneId: string): ZoneShape[] {
-  return ZONE_SHAPES[zoneId] ?? [];
-}
-
-function shapeStyle(shape: ZoneShape): CSSProperties {
-  return {
-    left: `${shape.x}px`,
-    top: `${shape.y}px`,
-    width: `${shape.w}px`,
-    height: `${shape.h}px`,
-    borderRadius: shape.radius,
-  };
-}
-
-// ===== 按住計時 =====
-const stageRef = ref<HTMLElement | null>(null);
+// ===== 碰觸 =====
 const activeZone = ref<string | null>(null);
+const hugging = ref(false);
 const holdMs = ref(0);
-const holding = ref(false);
-const hugHolding = ref(false);
-
+const reaction = ref<string | null>(null);
+const tilt = ref({ x: 0, y: 0 });
 let holdStartedAt = 0;
 let holdTimer: number | undefined;
-let hugStartedAt = 0;
-let lastPoint = { x: 120, y: 180 };
+let reactionTimer: number | undefined;
 
 interface Particle {
   id: number;
@@ -125,259 +65,181 @@ interface Particle {
   x: number;
   y: number;
 }
-
 const particles = ref<Particle[]>([]);
 let particleSeq = 0;
 
-function stagePoint(event: PointerEvent): { x: number; y: number } {
-  const rect = stageRef.value?.getBoundingClientRect();
-  if (!rect) return { x: 120, y: 180 };
-  return { x: event.clientX - rect.left, y: event.clientY - rect.top };
-}
-
-function startTimer(): void {
-  stopTimer();
-  holdTimer = window.setInterval(() => {
-    holdMs.value = performance.now() - holdStartedAt;
-  }, 80);
-}
-
-function stopTimer(): void {
-  if (holdTimer !== undefined) {
-    window.clearInterval(holdTimer);
-    holdTimer = undefined;
+function startHold(zoneId: string, event: PointerEvent) {
+  if (props.sending) return;
+  event.preventDefault();
+  // 鎖住指標：娃娃傾斜時部位會移開，不鎖的話會觸發 pointerleave 提早結束
+  (event.currentTarget as Element | null)?.setPointerCapture?.(event.pointerId);
+  const action = zoneId === DOLL_WHOLE_ZONE ? DOLL_HUG_ACTION : actionId.value;
+  if (zoneId === DOLL_WHOLE_ZONE) hugging.value = true;
+  else activeZone.value = zoneId;
+  clearTimeout(reactionTimer);
+  reaction.value = action;
+  holdStartedAt = performance.now();
+  holdMs.value = 0;
+  holdTimer = window.setInterval(() => (holdMs.value = performance.now() - holdStartedAt), 80);
+  // 往碰的那一側微微傾斜
+  const stage = (event.currentTarget as HTMLElement).closest(".doll-stage") as HTMLElement | null;
+  const rect = stage?.getBoundingClientRect();
+  if (rect && zoneId !== DOLL_WHOLE_ZONE) {
+    tilt.value = {
+      x: ((event.clientX - rect.left) / rect.width - 0.5) * 14,
+      y: ((event.clientY - rect.top) / rect.height - 0.5) * -10,
+    };
   }
 }
 
-function spawnParticle(x: number, y: number, text: string): void {
-  const id = ++particleSeq;
-  particles.value = [...particles.value, { id, text, x, y }];
-  window.setTimeout(() => {
-    particles.value = particles.value.filter((p) => p.id !== id);
-  }, 800);
-}
-
-function commitTouch(
-  action: string,
-  zone: string,
-  durationMs: number,
-  point: { x: number; y: number },
-  text: string,
-): void {
-  emit(
-    "update:touches",
-    addDollTouch(props.touches, { action, zone, holdMs: durationMs }),
-  );
-  spawnParticle(point.x, point.y, text);
-}
-
-function startZoneHold(zoneId: string, event: PointerEvent): void {
-  if (props.sending) return;
-  event.preventDefault();
-  // 鎖住指標：娃娃抖動時部位會移開，不鎖的話會觸發 pointerleave 提早結束
-  (event.currentTarget as Element | null)?.setPointerCapture?.(event.pointerId);
-  activeZone.value = zoneId;
-  lastPoint = stagePoint(event);
-  holdStartedAt = performance.now();
-  holdMs.value = 0;
-  holding.value = true;
-  startTimer();
-}
-
-function endZoneHold(event?: PointerEvent): void {
-  const zoneId = activeZone.value;
+function endHold(event: PointerEvent) {
+  const zoneId = hugging.value ? DOLL_WHOLE_ZONE : activeZone.value;
   if (!zoneId) return;
-  if (event) lastPoint = stagePoint(event);
-  const duration = Math.max(0, performance.now() - holdStartedAt);
+  const duration = performance.now() - holdStartedAt;
+  const action = zoneId === DOLL_WHOLE_ZONE ? DOLL_HUG_ACTION : actionId.value;
+  window.clearInterval(holdTimer);
   activeZone.value = null;
-  holding.value = false;
+  hugging.value = false;
   holdMs.value = 0;
-  stopTimer();
-  commitTouch(actionId.value, zoneId, duration, lastPoint, currentActionLabel.value);
+  tilt.value = { x: 0, y: 0 };
+  emit("update:touches", addDollTouch(props.touches, { action, zone: zoneId, holdMs: duration }));
+  // 表情多停一下再回去
+  reactionTimer = window.setTimeout(() => (reaction.value = null), 700);
+  spawnParticle(event, action);
 }
 
-function startHug(event: PointerEvent): void {
-  if (props.sending) return;
-  (event.currentTarget as Element | null)?.setPointerCapture?.(event.pointerId);
-  hugHolding.value = true;
-  hugStartedAt = performance.now();
+function spawnParticle(event: PointerEvent, action: string) {
+  const stage = document.querySelector(".doll-stage") as HTMLElement | null;
+  const rect = stage?.getBoundingClientRect();
+  if (!rect) return;
+  const label = action === DOLL_HUG_ACTION ? "♡" : DOLL_ACTIONS.find((a) => a.id === action)?.label ?? "♡";
+  const isHug = action === DOLL_HUG_ACTION;
+  const id = ++particleSeq;
+  particles.value.push({
+    id,
+    text: label,
+    x: isHug ? rect.width / 2 : event.clientX - rect.left,
+    y: isHug ? rect.height * 0.3 : event.clientY - rect.top,
+  });
+  window.setTimeout(() => (particles.value = particles.value.filter((p) => p.id !== id)), 900);
 }
 
-function endHug(): void {
-  if (!hugHolding.value) return;
-  hugHolding.value = false;
-  const duration = Math.max(0, performance.now() - hugStartedAt);
-  commitTouch(DOLL_HUG_ACTION, DOLL_WHOLE_ZONE, duration, { x: 120, y: 150 }, "抱住");
-}
+const holdingLong = computed(() => holdMs.value >= DOLL_HOLD_MIN_MS);
 
-const showHoldHint = computed<boolean>(() => holding.value && holdMs.value >= DOLL_HOLD_MIN_MS);
-
-function onWindowPointerUp(): void {
-  if (activeZone.value) endZoneHold();
-  if (hugHolding.value) endHug();
-}
-
-onMounted(() => {
-  window.addEventListener("pointerup", onWindowPointerUp);
-  window.addEventListener("pointercancel", onWindowPointerUp);
+const stageStyle = computed(() => {
+  if (hugging.value) return { transform: "scale(1.04, 0.95)" };
+  const { x, y } = tilt.value;
+  return { transform: `perspective(700px) rotateY(${x}deg) rotateX(${y}deg)` };
 });
 
+function zoneStyle(shape: { x: number; y: number; w: number; h: number }) {
+  return {
+    left: `${(shape.x / 240) * 100}%`,
+    top: `${(shape.y / 340) * 100}%`,
+    width: `${(shape.w / 240) * 100}%`,
+    height: `${(shape.h / 340) * 100}%`,
+  };
+}
+
 onBeforeUnmount(() => {
-  window.removeEventListener("pointerup", onWindowPointerUp);
-  window.removeEventListener("pointercancel", onWindowPointerUp);
-  stopTimer();
+  window.clearInterval(holdTimer);
+  clearTimeout(reactionTimer);
 });
 </script>
 
 <template>
   <Teleport to="body">
     <div class="doll-panel">
-      <header class="doll-panel__top">
-        <button type="button" class="doll-panel__text-btn" @click="emit('close')">先這樣</button>
-        <h2 class="doll-panel__title">{{ characterName }}的共感娃娃</h2>
-        <div class="doll-panel__menu-wrap">
-          <button
-            type="button"
-            class="doll-panel__gear"
-            :class="{ 'is-open': menuOpen }"
-            aria-label="設定"
-            @click="menuOpen = !menuOpen"
-          >
-            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7">
-              <circle cx="12" cy="12" r="3.2" />
-              <path d="M12 2.6v2.2M12 19.2v2.2M2.6 12h2.2M19.2 12h2.2M5.3 5.3l1.6 1.6M17.1 17.1l1.6 1.6M18.7 5.3l-1.6 1.6M6.9 17.1l-1.6 1.6" stroke-linecap="round" />
-            </svg>
-          </button>
-          <div v-if="menuOpen" class="doll-panel__menu">
-            <label class="doll-switch">
-              <span class="doll-switch__label">親密互動</span>
+      <header class="doll-header">
+        <button type="button" class="header-btn" @click="emit('close')">先這樣</button>
+        <h2 class="doll-title">{{ characterName }}的共感娃娃</h2>
+        <div class="header-menu">
+          <button type="button" class="header-btn icon" aria-label="設定" @click="menuOpen = !menuOpen">⚙</button>
+          <div v-if="menuOpen" class="menu-pop">
+            <label class="menu-row">
+              <span>親密互動</span>
               <input
-                class="doll-switch__input"
                 type="checkbox"
                 :checked="intimate"
-                @change="onIntimateChange"
+                @change="emit('update:intimate', ($event.target as HTMLInputElement).checked)"
               />
-              <span class="doll-switch__track"><span class="doll-switch__thumb"></span></span>
             </label>
           </div>
         </div>
       </header>
 
-      <div class="doll-panel__scroll">
-        <div class="doll-panel__actions">
+      <div class="doll-tabs">
+        <button type="button" :class="{ active: tab === 'play' }" @click="tab = 'play'">互動</button>
+        <button type="button" :class="{ active: tab === 'dress' }" @click="tab = 'dress'">換裝</button>
+      </div>
+
+      <main class="doll-main" :class="`tab-${tab}`">
+        <div v-if="tab === 'play'" class="action-row">
           <button
-            v-for="action in DOLL_ACTIONS"
-            :key="action.id"
+            v-for="a in DOLL_ACTIONS"
+            :key="a.id"
             type="button"
-            class="doll-action"
-            :class="{ 'is-active': action.id === actionId }"
-            @click="actionId = action.id"
+            class="action-chip"
+            :class="{ active: actionId === a.id }"
+            @click="actionId = a.id"
           >
-            {{ action.label }}
+            {{ a.label }}
           </button>
         </div>
 
         <div class="doll-stage-wrap">
-          <div
-            ref="stageRef"
-            class="doll-stage"
-            :class="{ 'is-holding': holding, 'is-hugging': hugHolding }"
-          >
-            <svg class="doll-stage__svg" viewBox="0 0 240 380" fill="none" aria-hidden="true">
-              <ellipse class="doll-body" cx="188" cy="226" rx="17" ry="36" transform="rotate(14 188 226)" />
-              <ellipse class="doll-body" cx="52" cy="226" rx="17" ry="36" transform="rotate(-14 52 226)" />
-              <rect class="doll-body" x="92" y="258" width="24" height="96" rx="12" />
-              <rect class="doll-body" x="124" y="258" width="24" height="96" rx="12" />
-              <ellipse class="doll-body" cx="120" cy="208" rx="58" ry="74" />
-              <circle class="doll-body" cx="52" cy="104" r="13" />
-              <circle class="doll-body" cx="188" cy="104" r="13" />
-
-              <template v-if="side === 'front'">
-                <circle class="doll-body" cx="120" cy="96" r="68" />
-                <path class="doll-stitch" d="M120 30v16M108 30v16M132 30v16" />
-                <path class="doll-stitch" d="M120 158v98" />
-                <path class="doll-stitch" d="M96 276h48" />
+          <div class="doll-stage" :class="{ holding: !!activeZone }" :style="stageStyle">
+            <CottonDoll :look="look" :reaction="reaction" :flush="flush" />
+            <template v-if="tab === 'play'">
+              <template v-for="zone in zones" :key="zone.id">
+                <div
+                  v-for="(shape, i) in zone.shapes"
+                  :key="`${zone.id}-${i}`"
+                  class="doll-zone"
+                  :class="{ active: activeZone === zone.id }"
+                  :style="zoneStyle(shape)"
+                  :aria-label="zone.label"
+                  @pointerdown="startHold(zone.id, $event)"
+                  @pointerup="endHold($event)"
+                  @pointercancel="endHold($event)"
+                />
               </template>
-              <template v-else>
-                <circle class="doll-body" cx="120" cy="96" r="68" />
-                <circle class="doll-hair" cx="120" cy="96" r="68" />
-                <path class="doll-stitch" d="M120 34v124" />
-                <path class="doll-stitch" d="M96 276h48" />
-              </template>
-            </svg>
-
-            <div v-if="side === 'front'" class="doll-stage__face">
-              <img v-if="characterAvatar" class="doll-stage__face-img" :src="characterAvatar" alt="" />
-              <span v-else class="doll-stage__face-letter">{{ initial }}</span>
-            </div>
-
-            <template v-for="zone in visibleZones" :key="zone.id">
-              <div
-                v-for="(shape, index) in shapesOf(zone.id)"
-                :key="`${zone.id}-${index}`"
-                class="doll-zone"
-                :class="{ 'is-active': activeZone === zone.id }"
-                :style="shapeStyle(shape)"
-                :aria-label="zone.label"
-                @pointerdown="startZoneHold(zone.id, $event)"
-                @pointerup="endZoneHold($event)"
-                @pointercancel="endZoneHold($event)"
-              />
             </template>
-
             <span
-              v-for="particle in particles"
-              :key="particle.id"
+              v-for="p in particles"
+              :key="p.id"
               class="doll-particle"
-              :style="{ left: `${particle.x}px`, top: `${particle.y}px` }"
-            >
-              {{ particle.text }}
-            </span>
-
-            <span v-if="showHoldHint" class="doll-hold-hint">按住中…</span>
+              :style="{ left: `${p.x}px`, top: `${p.y}px` }"
+            >{{ p.text }}</span>
           </div>
-
-          <button type="button" class="doll-flip" @click="side = side === 'front' ? 'back' : 'front'">
-            翻過來
-          </button>
-
-          <button
-            type="button"
-            class="doll-hug"
-            :class="{ 'is-holding': hugHolding }"
-            @pointerdown.prevent="startHug($event)"
-            @pointerup="endHug"
-            @pointercancel="endHug"
-          >
-            抱住
-          </button>
+          <span v-if="tab === 'play' && holdingLong" class="hold-hint">按住中…</span>
         </div>
-      </div>
 
-      <footer class="doll-panel__footer">
-        <div class="doll-summary">
-          <p v-if="touches.length" class="doll-summary__text">這次：{{ summary }}</p>
-          <p v-else class="doll-summary__empty">選一個動作，點或按住娃娃</p>
-        </div>
-        <div class="doll-panel__buttons">
-          <button
-            v-if="touches.length"
-            type="button"
-            class="doll-btn doll-btn--ghost"
-            @click="emit('update:touches', [])"
-          >
-            清除
-          </button>
-          <button
-            type="button"
-            class="doll-btn doll-btn--primary"
-            :disabled="!touches.length || sending"
-            @click="emit('send')"
-          >
+        <button
+          v-if="tab === 'play'"
+          type="button"
+          class="hug-btn"
+          :class="{ active: hugging }"
+          @pointerdown="startHold(DOLL_WHOLE_ZONE, $event)"
+          @pointerup="endHold($event)"
+          @pointercancel="endHold($event)"
+        >
+          {{ hugging ? "抱緊緊…" : "按住抱住" }}
+        </button>
+
+        <DollWardrobe v-if="tab === 'dress'" :look="look" @update:look="emit('update:look', $event)" />
+      </main>
+
+      <footer v-if="tab === 'play'" class="doll-footer">
+        <p v-if="touches.length" class="summary">這次：{{ summary }}</p>
+        <p v-else class="summary muted">選一個動作，點或按住娃娃</p>
+        <div class="footer-actions">
+          <button v-if="touches.length" type="button" class="clear-btn" @click="emit('update:touches', [])">清除</button>
+          <button type="button" class="send-btn" :disabled="!touches.length || sending" @click="emit('send')">
             {{ sending ? "送出中…" : "戳完了" }}
           </button>
         </div>
-        <p class="doll-note">「先這樣」的話，累積的會在你下次傳訊息時一起送出。</p>
+        <p class="footer-note">按「先這樣」的話，累積的會在你下次傳訊息時一起送出。</p>
       </footer>
     </div>
   </Teleport>
@@ -390,488 +252,292 @@ onBeforeUnmount(() => {
   z-index: 1250;
   display: flex;
   flex-direction: column;
-  background: var(--color-background, #f8f5f0);
-  color: var(--color-text, #2f2a24);
-  box-sizing: border-box;
+  background:
+    radial-gradient(circle at 50% 38%, rgba(255, 255, 255, 0.75), transparent 60%),
+    var(--color-background, #f8f2ea);
   padding-top: var(--safe-area-inset-top, env(safe-area-inset-top));
   padding-bottom: var(--safe-area-inset-bottom, env(safe-area-inset-bottom));
+  box-sizing: border-box;
+  user-select: none;
+  -webkit-user-select: none;
+}
 
-  &__top {
-    flex: 0 0 auto;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 10px 14px;
-    border-bottom: 1px solid var(--color-border, #e6ded2);
-    background: var(--color-surface, #fff);
+.doll-header {
+  display: grid;
+  grid-template-columns: 72px 1fr 72px;
+  align-items: center;
+  padding: 10px 12px;
+}
+
+.doll-title {
+  margin: 0;
+  text-align: center;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--color-text, #3a2f2a);
+}
+
+.header-btn {
+  justify-self: start;
+  padding: 6px 8px;
+  border: none;
+  background: none;
+  color: var(--color-text-secondary, #8a7a70);
+  font-size: 14px;
+  cursor: pointer;
+
+  &.icon {
+    justify-self: end;
+    font-size: 18px;
   }
+}
 
-  &__text-btn {
-    flex: 0 0 auto;
+.header-menu {
+  position: relative;
+  justify-self: end;
+}
+
+.menu-pop {
+  position: absolute;
+  right: 0;
+  top: 100%;
+  z-index: 2;
+  min-width: 150px;
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: var(--color-surface, #fff);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.14);
+}
+
+.menu-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 14px;
+  color: var(--color-text, #333);
+
+  input {
+    width: 18px;
+    height: 18px;
+    accent-color: var(--color-primary, #c98b6b);
+  }
+}
+
+.doll-tabs {
+  display: flex;
+  gap: 4px;
+  margin: 0 auto 6px;
+  padding: 3px;
+  border-radius: 999px;
+  background: var(--color-surface-hover, rgba(0, 0, 0, 0.05));
+
+  button {
+    padding: 6px 22px;
     border: none;
+    border-radius: 999px;
     background: transparent;
-    color: var(--color-text-secondary, #8a7f70);
+    color: var(--color-text-secondary, #8a7a70);
     font-size: 14px;
-    padding: 6px 4px;
-    cursor: pointer;
-  }
-
-  &__title {
-    flex: 1 1 auto;
-    min-width: 0;
-    margin: 0;
-    font-size: 15px;
     font-weight: 600;
-    text-align: center;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  &__menu-wrap {
-    position: relative;
-    flex: 0 0 auto;
-  }
-
-  &__gear {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 34px;
-    height: 34px;
-    border: none;
-    border-radius: 50%;
-    background: transparent;
-    color: var(--color-text-secondary, #8a7f70);
     cursor: pointer;
 
-    &.is-open,
-    &:hover {
-      background: var(--color-surface-hover, #f1ece3);
-    }
-  }
-
-  &__menu {
-    position: absolute;
-    right: 0;
-    top: 42px;
-    z-index: 2;
-    min-width: 172px;
-    padding: 10px 12px;
-    border: 1px solid var(--color-border, #e6ded2);
-    border-radius: 14px;
-    background: var(--color-surface, #fff);
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
-  }
-
-  &__scroll {
-    flex: 1 1 auto;
-    min-height: 0;
-    overflow-y: auto;
-    overflow-x: hidden;
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    padding: 12px 14px 8px;
-    box-sizing: border-box;
-  }
-
-  &__actions {
-    flex: 0 0 auto;
-    display: flex;
-    gap: 8px;
-    overflow-x: auto;
-    overflow-y: hidden;
-    padding: 2px 0 6px;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;
-
-    &::-webkit-scrollbar {
-      display: none;
-    }
-  }
-
-  &__footer {
-    flex: 0 0 auto;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    padding: 12px 14px 10px;
-    box-sizing: border-box;
-    border-top: 1px solid var(--color-border, #e6ded2);
-    border-radius: 18px 18px 0 0;
-    background: var(--color-surface, #fff);
-    box-shadow: 0 -6px 20px rgba(0, 0, 0, 0.06);
-  }
-
-  &__buttons {
-    display: flex;
-    gap: 10px;
-    align-items: center;
-    box-sizing: border-box;
-
-    .doll-btn--ghost {
-      flex: 0 0 auto;
-    }
-
-    .doll-btn--primary {
-      flex: 1 1 auto;
+    &.active {
+      background: var(--color-surface, #fff);
+      color: var(--color-text, #3a2f2a);
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
     }
   }
 }
 
-.doll-action {
+.doll-main {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.action-row {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 4px 16px 8px;
+  overflow-x: auto;
+  scrollbar-width: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+.action-chip {
   flex: 0 0 auto;
-  padding: 7px 16px;
-  border: 1px solid var(--color-border, #e6ded2);
+  min-width: 52px;
+  padding: 8px 14px;
+  border: 1px solid var(--color-border, #e6ddd3);
   border-radius: 999px;
   background: var(--color-surface, #fff);
-  color: var(--color-text, #2f2a24);
+  color: var(--color-text, #3a2f2a);
   font-size: 14px;
-  line-height: 1.3;
-  white-space: nowrap;
   cursor: pointer;
-  box-sizing: border-box;
 
-  &.is-active {
-    background: var(--color-primary, #d98c6a);
-    border-color: var(--color-primary, #d98c6a);
+  &.active {
+    border-color: var(--color-primary, #c98b6b);
+    background: var(--color-primary, #c98b6b);
     color: var(--color-on-primary-contrast, #fff);
-    font-weight: 600;
   }
 }
 
 .doll-stage-wrap {
-  flex: 1 1 auto;
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 10px;
-  padding-bottom: 8px;
-  box-sizing: border-box;
+  padding: 6px 0 4px;
 }
 
 .doll-stage {
   position: relative;
-  width: 240px;
-  max-width: 100%;
-  height: 380px;
-  flex: 0 0 auto;
-  box-sizing: border-box;
+  width: min(240px, 62vw);
+  aspect-ratio: 240 / 340;
+  transition: transform 0.18s ease;
   touch-action: none;
-  user-select: none;
-  -webkit-user-select: none;
-  transition: transform 0.16s ease;
 
-  --doll-fill: #f3e3cf;
-  --doll-stroke: #c9a988;
-
-  &.is-holding {
-    animation: doll-shake 0.4s ease-in-out infinite;
-  }
-
-  &.is-hugging {
-    transform: scale(0.95);
-  }
-
-  &__svg {
-    display: block;
-    width: 100%;
-    height: 100%;
-    overflow: visible;
-  }
-
-  &__face {
-    position: absolute;
-    left: 76px;
-    top: 52px;
-    width: 88px;
-    height: 88px;
-    border-radius: 50%;
-    overflow: hidden;
-    background: #e7d3bc;
-    box-shadow: inset 0 0 0 2px rgba(201, 169, 136, 0.7);
-    pointer-events: none;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-
-  &__face-img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    display: block;
-  }
-
-  &__face-letter {
-    font-size: 30px;
-    font-weight: 700;
-    color: #8a6f55;
+  &.holding {
+    animation: doll-wobble 0.5s ease-in-out infinite;
   }
 }
 
-.doll-body {
-  fill: var(--doll-fill);
-  stroke: var(--doll-stroke);
-  stroke-width: 2.5;
-}
-
-.doll-hair {
-  fill: #6b5a4a;
-  stroke: var(--doll-stroke);
-  stroke-width: 2.5;
-}
-
-.doll-stitch {
-  stroke: var(--doll-stroke);
-  stroke-width: 1.6;
-  stroke-dasharray: 4 5;
-  stroke-linecap: round;
-  fill: none;
-  opacity: 0.75;
+.tab-dress .doll-stage {
+  width: min(150px, 40vw);
 }
 
 .doll-zone {
   position: absolute;
-  box-sizing: border-box;
   border-radius: 50%;
-  background: transparent;
-  touch-action: none;
-  user-select: none;
-  -webkit-user-select: none;
   cursor: pointer;
-  transition: background-color 0.14s ease, box-shadow 0.14s ease;
+  touch-action: none;
 
-  &.is-active {
-    background: var(--color-primary, #d98c6a);
-    opacity: 0.32;
-    box-shadow: 0 0 0 6px var(--color-primary, #d98c6a);
+  &.active {
+    background: radial-gradient(circle, rgba(255, 140, 160, 0.38), transparent 70%);
   }
 }
 
 .doll-particle {
   position: absolute;
-  transform: translate(-50%, -50%);
+  pointer-events: none;
   font-size: 16px;
   font-weight: 700;
-  color: var(--color-primary, #d98c6a);
-  pointer-events: none;
-  animation: doll-float 0.8s ease-out forwards;
+  color: #e8708a;
+  transform: translate(-50%, -50%);
+  animation: doll-float 0.9s ease-out forwards;
   white-space: nowrap;
 }
 
-.doll-hold-hint {
-  position: absolute;
-  left: 50%;
-  bottom: 6px;
-  transform: translateX(-50%);
-  padding: 3px 10px;
-  border-radius: 999px;
-  background: var(--color-surface, #fff);
-  border: 1px solid var(--color-border, #e6ded2);
-  color: var(--color-text-secondary, #8a7f70);
+.hold-hint {
+  margin-top: 2px;
   font-size: 12px;
-  pointer-events: none;
-  white-space: nowrap;
+  color: var(--color-text-secondary, #8a7a70);
 }
 
-.doll-flip {
-  flex: 0 0 auto;
-  padding: 6px 18px;
-  border: 1px solid var(--color-border, #e6ded2);
-  border-radius: 999px;
-  background: var(--color-surface, #fff);
-  color: var(--color-text-secondary, #8a7f70);
-  font-size: 13px;
-  cursor: pointer;
-  box-sizing: border-box;
-}
-
-.doll-hug {
-  flex: 0 0 auto;
-  width: 100%;
-  max-width: 320px;
-  padding: 12px 16px;
-  border: 1px solid var(--color-border, #e6ded2);
+.hug-btn {
+  width: min(320px, calc(100% - 32px));
+  margin: 6px 0 12px;
+  padding: 12px;
+  border: 1px solid var(--color-border, #e6ddd3);
   border-radius: 16px;
-  background: var(--color-surface-hover, #f1ece3);
-  color: var(--color-text, #2f2a24);
+  background: var(--color-surface, #fff);
+  color: var(--color-text, #3a2f2a);
   font-size: 15px;
   font-weight: 600;
-  cursor: pointer;
-  box-sizing: border-box;
   touch-action: none;
-  user-select: none;
-  -webkit-user-select: none;
-  transition: transform 0.14s ease, background-color 0.14s ease;
+  cursor: pointer;
 
-  &.is-holding {
-    transform: scale(0.96);
-    background: var(--color-primary, #d98c6a);
-    border-color: var(--color-primary, #d98c6a);
-    color: var(--color-on-primary-contrast, #fff);
+  &.active {
+    background: #ffe3e8;
+    border-color: #f3a6b5;
   }
 }
 
-.doll-summary {
-  box-sizing: border-box;
-  max-height: 3.9em;
+.doll-footer {
+  padding: 12px 16px 10px;
+  border-radius: 20px 20px 0 0;
+  background: var(--color-surface, #fff);
+  box-shadow: 0 -4px 18px rgba(0, 0, 0, 0.06);
+}
+
+.summary {
+  margin: 0 0 10px;
+  max-height: 4.5em;
   overflow-y: auto;
-  line-height: 1.3;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--color-text, #3a2f2a);
 
-  &__text {
-    margin: 0;
-    font-size: 13px;
-    color: var(--color-text, #2f2a24);
-    word-break: break-word;
-  }
-
-  &__empty {
-    margin: 0;
-    font-size: 13px;
-    color: var(--color-text-secondary, #8a7f70);
+  &.muted {
+    color: var(--color-text-secondary, #8a7a70);
   }
 }
 
-.doll-btn {
+.footer-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.clear-btn,
+.send-btn {
   padding: 12px 16px;
   border-radius: 14px;
   font-size: 15px;
-  font-weight: 600;
+  font-weight: 700;
   cursor: pointer;
-  box-sizing: border-box;
-  border: 1px solid var(--color-border, #e6ded2);
-  background: var(--color-surface, #fff);
-  color: var(--color-text, #2f2a24);
-
-  &--ghost {
-    color: var(--color-text-secondary, #8a7f70);
-  }
-
-  &--primary {
-    border-color: var(--color-primary, #d98c6a);
-    background: var(--color-primary, #d98c6a);
-    color: var(--color-on-primary-contrast, #fff);
-
-    &:disabled {
-      opacity: 0.5;
-      cursor: default;
-    }
-  }
 }
 
-.doll-note {
-  margin: 0;
-  font-size: 11px;
-  line-height: 1.4;
-  color: var(--color-text-secondary, #8a7f70);
+.clear-btn {
+  border: 1px solid var(--color-border, #e6ddd3);
+  background: transparent;
+  color: var(--color-text-secondary, #8a7a70);
 }
 
-// ===== 開關 =====
-.doll-switch {
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  cursor: pointer;
-
-  &__label {
-    font-size: 13px;
-    color: var(--color-text, #2f2a24);
-  }
-
-  &__input {
-    position: absolute;
-    opacity: 0;
-    width: 1px;
-    height: 1px;
-    pointer-events: none;
-  }
-
-  &__track {
-    position: relative;
-    display: block;
-    flex: 0 0 auto;
-    width: 40px;
-    height: 24px;
-    border-radius: 999px;
-    background: var(--color-border, #e6ded2);
-    transition: background-color 0.18s ease;
-  }
-
-  &__thumb {
-    position: absolute;
-    left: 3px;
-    top: 3px;
-    width: 18px;
-    height: 18px;
-    border-radius: 50%;
-    background: #fff;
-    transition: transform 0.18s ease;
-  }
-
-  &__input:checked ~ &__track {
-    background: var(--color-primary, #d98c6a);
-  }
-
-  &__input:checked ~ &__track &__thumb {
-    transform: translateX(16px);
-  }
-}
-
-// ===== 夜晚模式 =====
-body.is-night-mode .doll-panel {
-  background: var(--color-background, #1c1917);
-  color: var(--color-text, #efe8df);
-}
-
-body.is-night-mode .doll-panel__top,
-body.is-night-mode .doll-panel__footer,
-body.is-night-mode .doll-panel__menu {
-  background: var(--color-surface, #26221e);
-  border-color: var(--color-border, #3a332c);
-}
-
-body.is-night-mode .doll-panel .doll-action,
-body.is-night-mode .doll-panel .doll-flip,
-body.is-night-mode .doll-panel .doll-btn {
-  background: var(--color-surface, #26221e);
-  color: var(--color-text, #efe8df);
-  border-color: var(--color-border, #3a332c);
-}
-
-body.is-night-mode .doll-panel .doll-action.is-active,
-body.is-night-mode .doll-panel .doll-btn--primary {
-  background: var(--color-primary, #d98c6a);
-  border-color: var(--color-primary, #d98c6a);
+.send-btn {
+  flex: 1;
+  border: none;
+  background: var(--color-primary, #c98b6b);
   color: var(--color-on-primary-contrast, #fff);
+
+  &:disabled {
+    opacity: 0.45;
+    cursor: default;
+  }
 }
 
-body.is-night-mode .doll-panel .doll-hug {
-  background: var(--color-surface-hover, #322c26);
+.footer-note {
+  margin: 8px 0 0;
+  font-size: 11px;
+  color: var(--color-text-secondary, #8a7a70);
 }
 
-body.is-night-mode .doll-stage {
-  --doll-fill: #4a3f36;
-  --doll-stroke: #8a7563;
+body.is-night-mode .doll-panel {
+  background:
+    radial-gradient(circle at 50% 38%, rgba(255, 255, 255, 0.06), transparent 60%),
+    var(--color-background, #1c1a24);
 }
 
-body.is-night-mode .doll-stage .doll-hold-hint {
-  background: var(--color-surface, #26221e);
+body.is-night-mode .hug-btn.active {
+  background: rgba(243, 166, 181, 0.2);
 }
 
-@keyframes doll-shake {
+@keyframes doll-wobble {
   0%,
   100% {
-    transform: translateX(0) rotate(0deg);
+    translate: 0 0;
   }
-  25% {
-    transform: translateX(-2px) rotate(-0.6deg);
-  }
-  75% {
-    transform: translateX(2px) rotate(0.6deg);
+  50% {
+    translate: 0 -2px;
   }
 }
 
@@ -882,23 +548,10 @@ body.is-night-mode .doll-stage .doll-hold-hint {
   }
   25% {
     opacity: 1;
-    transform: translate(-50%, -70%) scale(1);
   }
   100% {
     opacity: 0;
-    transform: translate(-50%, -150%) scale(1.05);
-  }
-}
-
-@media (max-width: 360px) {
-  .doll-panel__scroll {
-    padding-left: 10px;
-    padding-right: 10px;
-  }
-
-  .doll-panel__footer {
-    padding-left: 10px;
-    padding-right: 10px;
+    transform: translate(-50%, -160%) scale(1.1);
   }
 }
 </style>

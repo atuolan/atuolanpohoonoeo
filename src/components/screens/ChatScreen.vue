@@ -28,6 +28,7 @@ import ChatGameModals from "@/components/screens/ChatGameModals.vue";
 import GiftDrawer from "@/components/common/GiftDrawer.vue";
 import GiftMemoryCard from "@/components/gift/GiftMemoryCard.vue";
 import EmpathyDollPanel from "@/components/gift/EmpathyDollPanel.vue";
+import { dollLookKey, normalizeDollLook, type DollLook } from "@/data/dollWardrobe";
 import {
   describeDollTouches,
   dollRoundOf,
@@ -4556,6 +4557,18 @@ function setPendingDollTouches(touches: DollTouch[]) {
   pendingDollTouches.value = touches;
   if (currentChatId.value) savePendingDollTouches(currentChatId.value, touches);
 }
+/** 換裝：先更新畫面，存檔稍等一下合併連續的修改 */
+let dollLookSaveTimer: ReturnType<typeof setTimeout> | undefined;
+function setDollLook(look: DollLook) {
+  const memory = empathyDollMemory.value;
+  if (!memory?.doll) return;
+  const updated = { ...memory, doll: { ...memory.doll, look } };
+  giftMemoriesForChar.value = giftMemoriesForChar.value.map((m) => (m.id === memory.id ? updated : m));
+  clearTimeout(dollLookSaveTimer);
+  dollLookSaveTimer = setTimeout(() => {
+    void updateGiftMemory(memory.characterId, memory.id, { doll: updated.doll }).catch(() => null);
+  }, 400);
+}
 async function setDollIntimate(intimate: boolean) {
   const memory = empathyDollMemory.value;
   if (!memory?.doll) return;
@@ -4571,6 +4584,9 @@ function flushPendingDollTouches(): boolean {
   if (!pendingDollTouches.value.length || !hasEmpathyDoll.value) return false;
   const text = describeDollTouches(pendingDollTouches.value);
   const now = Date.now();
+  // 換過造型（或第一次）才把「娃娃穿著…」寫進提示詞
+  const lookKey = dollLookKey(normalizeDollLook(empathyDollMemory.value?.doll?.look));
+  const lastLookKey = [...messages.value].reverse().find((m) => m.isDollTouch)?.dollLookKey;
   messages.value.push({
     id: `msg_${now}_doll`,
     role: "user",
@@ -4579,6 +4595,8 @@ function flushPendingDollTouches(): boolean {
     isDollTouch: true,
     dollTouchText: text,
     dollTouchRound: dollRoundOf(messages.value, now),
+    dollLookKey: lookKey,
+    ...(lookKey !== lastLookKey ? { dollLookNote: lookKey } : {}),
     ...(isBlockedByChar.value ? { sentWhileBlocked: true } : {}),
     ...(charAwayCtl.activeAwayId.value ? { sentWhileAway: charAwayCtl.activeAwayId.value } : {}),
   });
@@ -5216,6 +5234,7 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
       isDollTouch: m.isDollTouch,
       dollTouchText: m.dollTouchText,
       dollTouchRound: m.dollTouchRound,
+      dollLookNote: m.dollLookNote,
       audioTranscript: m.audioTranscript,
       isFaceToFaceRequest: m.isFaceToFaceRequest,
       faceToFaceRequestReason: m.faceToFaceRequestReason,
@@ -11873,6 +11892,8 @@ useChatCleanup({
         :character-avatar="characterAvatar"
         :touches="pendingDollTouches"
         :intimate="!!empathyDollMemory?.doll?.intimate"
+        :look="normalizeDollLook(empathyDollMemory?.doll?.look)"
+        @update:look="setDollLook"
         :sending="dollSending"
         @update:touches="setPendingDollTouches"
         @update:intimate="setDollIntimate"
