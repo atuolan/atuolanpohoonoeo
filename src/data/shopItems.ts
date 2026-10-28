@@ -481,6 +481,7 @@ export const GIFT_ITEMS: ShopItem[] = [
     category: "gift",
     rarity: "common",
     icon: "gift-flower",
+    giftUse: { consumable: true, hint: "一起把它插進玻璃瓶，換水的時候順便聊了整個下午" },
   },
   {
     id: "gift_chocolate",
@@ -490,6 +491,7 @@ export const GIFT_ITEMS: ShopItem[] = [
     category: "gift",
     rarity: "common",
     icon: "gift-chocolate",
+    giftUse: { consumable: true, hint: "一人一半剝開來吃，最後那顆你推給我、我推給你" },
   },
   {
     id: "gift_cake",
@@ -499,6 +501,7 @@ export const GIFT_ITEMS: ShopItem[] = [
     category: "gift",
     rarity: "common",
     icon: "gift-cake",
+    giftUse: { consumable: true, hint: "同一個盤子分著吃，把奶油抹在對方鼻尖上" },
   },
   {
     id: "gift_cola",
@@ -508,6 +511,7 @@ export const GIFT_ITEMS: ShopItem[] = [
     category: "gift",
     rarity: "common",
     icon: "gift-cola",
+    giftUse: { consumable: true, hint: "分著喝同一瓶，氣泡衝上鼻子時兩人一起笑出來" },
   },
   {
     id: "gift_mug_simple",
@@ -517,6 +521,7 @@ export const GIFT_ITEMS: ShopItem[] = [
     category: "gift",
     rarity: "common",
     icon: "gift-mug",
+    giftUse: { hint: "早上你泡咖啡、我泡茶，兩個杯子並排在桌上" },
   },
   {
     id: "gift_plush_bear",
@@ -526,6 +531,7 @@ export const GIFT_ITEMS: ShopItem[] = [
     category: "gift",
     rarity: "common",
     icon: "gift-plush",
+    giftUse: { hint: "睡前把它塞進對方懷裡，說這樣就不怕做噩夢" },
   },
 
   // ===== Uncommon 優良禮物 =====
@@ -537,6 +543,7 @@ export const GIFT_ITEMS: ShopItem[] = [
     category: "gift",
     rarity: "uncommon",
     icon: "gift-lotion",
+    giftUse: { consumable: true, hint: "洗完澡幫你把乳液抹在背上，手心的溫度慢慢化開" },
   },
   {
     id: "gift_toner",
@@ -546,6 +553,7 @@ export const GIFT_ITEMS: ShopItem[] = [
     category: "gift",
     rarity: "uncommon",
     icon: "gift-toner",
+    giftUse: { consumable: true, hint: "早上一起站在鏡子前拍化妝水，互相說今天也要加油" },
   },
   {
     id: "gift_mug_cat",
@@ -555,6 +563,7 @@ export const GIFT_ITEMS: ShopItem[] = [
     category: "gift",
     rarity: "uncommon",
     icon: "gift-mug-cat",
+    giftUse: { hint: "搶著要用有貓耳朵的那個，最後乾杯交換喝" },
   },
   {
     id: "gift_plush_bunny",
@@ -564,6 +573,7 @@ export const GIFT_ITEMS: ShopItem[] = [
     category: "gift",
     rarity: "uncommon",
     icon: "gift-plush-bunny",
+    giftUse: { hint: "把它放在枕頭中間，兩顆頭各靠一隻耳朵睡著" },
   },
   {
     id: "gift_charm_star",
@@ -573,6 +583,7 @@ export const GIFT_ITEMS: ShopItem[] = [
     category: "gift",
     rarity: "uncommon",
     icon: "gift-charm",
+    giftUse: { hint: "掛在兩個人的包包上，走路時看它一閃一閃的" },
   },
   {
     id: "gift_earring_pearl",
@@ -582,6 +593,7 @@ export const GIFT_ITEMS: ShopItem[] = [
     category: "gift",
     rarity: "uncommon",
     icon: "gift-earring",
+    giftUse: { hint: "幫對方戴上時手有點抖，珍珠在耳垂旁輕輕晃" },
   },
   {
     id: "gift_crystal_clear",
@@ -591,6 +603,7 @@ export const GIFT_ITEMS: ShopItem[] = [
     category: "gift",
     rarity: "uncommon",
     icon: "gift-crystal",
+    giftUse: { hint: "放在窗台晒一整天太陽，晚上一起捧著說好像變亮了" },
   },
 
   // ===== Rare 稀有禮物 =====
@@ -602,6 +615,7 @@ export const GIFT_ITEMS: ShopItem[] = [
     category: "gift",
     rarity: "rare",
     icon: "gift-necklace",
+    giftUse: { hint: "從背後幫你扣上釦子，指尖在後頸停了一秒" },
   },
   {
     id: "gift_ring_silver",
@@ -611,6 +625,7 @@ export const GIFT_ITEMS: ShopItem[] = [
     category: "gift",
     rarity: "rare",
     icon: "gift-ring",
+    giftUse: { hint: "套上手指時尺寸剛好，兩個人都安靜了一下" },
   },
   {
     id: "gift_crystal_rose",
@@ -620,6 +635,7 @@ export const GIFT_ITEMS: ShopItem[] = [
     category: "gift",
     rarity: "rare",
     icon: "gift-crystal-rose",
+    giftUse: { hint: "把它放在枕邊，說希望明天的約會也這麼粉紅" },
   },
   {
     id: "gift_crystal_amethyst",
@@ -629,6 +645,7 @@ export const GIFT_ITEMS: ShopItem[] = [
     category: "gift",
     rarity: "rare",
     icon: "gift-crystal-amethyst",
+    giftUse: { hint: "睡前一起看著它發呆，聊到聲音越來越小" },
   },
   {
     id: "gift_crystal_citrine",
@@ -638,6 +655,7 @@ export const GIFT_ITEMS: ShopItem[] = [
     category: "gift",
     rarity: "rare",
     icon: "gift-crystal-citrine",
+    giftUse: { hint: "擺在撲滿旁邊，說要一起存錢去看海" },
   },
   {
     id: "gift_earring_crystal",
@@ -647,6 +665,7 @@ export const GIFT_ITEMS: ShopItem[] = [
     category: "gift",
     rarity: "rare",
     icon: "gift-earring-crystal",
+    giftUse: { hint: "在路燈下轉頭看它閃，你笑說像抓到了一顆星" },
   },
   {
     id: "gift_plush_giant",
@@ -656,6 +675,7 @@ export const GIFT_ITEMS: ShopItem[] = [
     category: "gift",
     rarity: "rare",
     icon: "gift-plush-giant",
+    giftUse: { hint: "兩個人一起抱住它，剛好把彼此的距離填滿" },
   },
   {
     id: "gift_charm_moon",
@@ -665,6 +685,7 @@ export const GIFT_ITEMS: ShopItem[] = [
     category: "gift",
     rarity: "rare",
     icon: "gift-charm-moon",
+    giftUse: { hint: "說好在不同城市也看同一個月亮，然後低頭看它" },
   },
   {
     id: "gift_skincare_set",
@@ -674,6 +695,7 @@ export const GIFT_ITEMS: ShopItem[] = [
     category: "gift",
     rarity: "rare",
     icon: "gift-skincare",
+    giftUse: { consumable: true, hint: "一人敷一片面膜躺著聊天，講到面膜都乾了" },
   },
 
   // ===== Epic 史詩禮物 =====
@@ -685,6 +707,7 @@ export const GIFT_ITEMS: ShopItem[] = [
     category: "gift",
     rarity: "epic",
     icon: "gift-necklace-gold",
+    giftUse: { hint: "穿上最好看的那件衣服，讓你替我戴上它" },
   },
   {
     id: "gift_ring_gold",
@@ -694,6 +717,7 @@ export const GIFT_ITEMS: ShopItem[] = [
     category: "gift",
     rarity: "epic",
     icon: "gift-ring-gold",
+    giftUse: { hint: "在餐桌前練習戴一次，說等以後再正式來" },
   },
   {
     id: "gift_crystal_obsidian",
@@ -703,6 +727,7 @@ export const GIFT_ITEMS: ShopItem[] = [
     category: "gift",
     rarity: "epic",
     icon: "gift-crystal-obsidian",
+    giftUse: { hint: "放在枕頭下，說今晚壞夢都交給它擋" },
   },
   {
     id: "gift_crystal_moonstone",
@@ -712,6 +737,7 @@ export const GIFT_ITEMS: ShopItem[] = [
     category: "gift",
     rarity: "epic",
     icon: "gift-crystal-moonstone",
+    giftUse: { hint: "關燈後一起盯著它，等那道藍光慢慢浮出來" },
   },
   {
     id: "gift_crystal_labradorite",
@@ -721,6 +747,7 @@ export const GIFT_ITEMS: ShopItem[] = [
     category: "gift",
     rarity: "epic",
     icon: "gift-crystal-labradorite",
+    giftUse: { hint: "轉動它找那道藍綠光，兩個人湊得很近" },
   },
   {
     id: "gift_crystal_aquamarine",
@@ -730,6 +757,7 @@ export const GIFT_ITEMS: ShopItem[] = [
     category: "gift",
     rarity: "epic",
     icon: "gift-crystal-aquamarine",
+    giftUse: { hint: "說要帶著它去看一次海，先在海邊撿貝殼" },
   },
   {
     id: "gift_earring_diamond",
@@ -739,6 +767,7 @@ export const GIFT_ITEMS: ShopItem[] = [
     category: "gift",
     rarity: "epic",
     icon: "gift-earring-diamond",
+    giftUse: { hint: "在餐廳的燈下轉頭，讓它替你說今天很漂亮" },
   },
   {
     id: "gift_charm_custom",
@@ -748,6 +777,7 @@ export const GIFT_ITEMS: ShopItem[] = [
     category: "gift",
     rarity: "epic",
     icon: "gift-charm-custom",
+    giftUse: { hint: "一起去刻上兩個人的名字，笑說筆畫好多" },
   },
   {
     id: "gift_limited_box",
@@ -757,6 +787,7 @@ export const GIFT_ITEMS: ShopItem[] = [
     category: "gift",
     rarity: "epic",
     icon: "gift-limited",
+    giftUse: { hint: "一起數三聲才打開，裡面的東西兩個人都搶" },
   },
 
   // ===== Legendary 傳說禮物 =====
@@ -768,6 +799,7 @@ export const GIFT_ITEMS: ShopItem[] = [
     category: "gift",
     rarity: "legendary",
     icon: "gift-diamond",
+    giftUse: { hint: "放在掌心看了很久，然後說這顆要留給你" },
   },
   {
     id: "gift_necklace_custom",
@@ -777,6 +809,7 @@ export const GIFT_ITEMS: ShopItem[] = [
     category: "gift",
     rarity: "legendary",
     icon: "gift-necklace-custom",
+    giftUse: { hint: "討論了很久要刻什麼字，最後只刻了日期" },
   },
   {
     id: "gift_crystal_ruby",
@@ -786,6 +819,7 @@ export const GIFT_ITEMS: ShopItem[] = [
     category: "gift",
     rarity: "legendary",
     icon: "gift-ruby",
+    giftUse: { hint: "燈光下一起看它的紅，說像那天你臉紅的樣子" },
   },
   {
     id: "gift_crystal_sapphire",
@@ -795,6 +829,7 @@ export const GIFT_ITEMS: ShopItem[] = [
     category: "gift",
     rarity: "legendary",
     icon: "gift-sapphire",
+    giftUse: { hint: "把它貼在窗邊比對天空，說今天的天不夠藍" },
   },
   {
     id: "gift_crystal_emerald",
@@ -804,6 +839,7 @@ export const GIFT_ITEMS: ShopItem[] = [
     category: "gift",
     rarity: "legendary",
     icon: "gift-emerald",
+    giftUse: { hint: "一起在陽光下轉著看，說像春天剛長出來的葉子" },
   },
   {
     id: "gift_ring_diamond",
@@ -813,6 +849,7 @@ export const GIFT_ITEMS: ShopItem[] = [
     category: "gift",
     rarity: "legendary",
     icon: "gift-ring-diamond",
+    giftUse: { hint: "單膝跪下的那一刻，手心裡全是汗" },
   },
   {
     id: "gift_charm_diamond",
@@ -822,6 +859,7 @@ export const GIFT_ITEMS: ShopItem[] = [
     category: "gift",
     rarity: "legendary",
     icon: "gift-charm-diamond",
+    giftUse: { hint: "親手把它掛在你的包包上，說這樣就帶我出門了" },
   },
   {
     id: "gift_crystal_alexandrite",
@@ -831,6 +869,7 @@ export const GIFT_ITEMS: ShopItem[] = [
     category: "gift",
     rarity: "legendary",
     icon: "gift-alexandrite",
+    giftUse: { hint: "白天一起看它是綠的，晚上開燈又變成紅色" },
   },
 ];
 
