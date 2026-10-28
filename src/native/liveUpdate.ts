@@ -42,6 +42,9 @@ const MAX_FAILED_VERSIONS = 5;
 const LAST_CHECK_KEY = "aguaphone.liveUpdate.lastCheck";
 /** 這次開 App 開始下載的版本；存 sessionStorage：網頁重新載入還在，App 被關掉就沒了 */
 const DOWNLOAD_STARTED_KEY = "aguaphone.liveUpdate.downloadStarted";
+/** 下載失敗時同一次開 App 內最多試幾次、每次之間等多久 */
+const DOWNLOAD_ATTEMPTS = 4;
+const DOWNLOAD_RETRY_DELAY_MS = 3000;
 
 export type LiveUpdateCheckResult =
   LiveUpdateDecision | "checking" | "downloading" | "downloaded" | "error";
@@ -254,6 +257,38 @@ function offerBundle(bundle: BundleInfo): void {
   offerHint(bundle);
 }
 
+/**
+ * 下載新版。套件只要有一個檔失敗整批就算失敗（進度停在 70% 後報錯），但下載好的檔會留在快取，
+ * 網路不穩（大陸走 VPN）時多試幾次、輪流換網站，每次都接著上次的進度。
+ */
+async function downloadBundle(manifest: LiveUpdateManifest, firstOrigin: string): Promise<BundleInfo> {
+  const origins = [firstOrigin, ...LIVE_UPDATE_ORIGINS.filter((o) => o !== firstOrigin)];
+  const errors: string[] = [];
+  for (let attempt = 0; attempt < DOWNLOAD_ATTEMPTS; attempt++) {
+    const origin = origins[attempt % origins.length];
+    if (attempt > 0) {
+      await new Promise((resolve) => setTimeout(resolve, DOWNLOAD_RETRY_DELAY_MS));
+      // 失敗的那筆還在清單裡，同一版要先刪掉才能再下載
+      const { bundles } = await CapacitorUpdater.list();
+      for (const b of bundles) {
+        if (b.version === manifest.version) await CapacitorUpdater.delete({ id: b.id }).catch(() => {});
+      }
+    }
+    liveUpdateState.downloadPercent = 0;
+    try {
+      return await CapacitorUpdater.download({
+        url: `${origin}/${LIVE_UPDATE_MANIFEST}`,
+        version: manifest.version,
+        manifest: toDownloadEntries(manifest, origin),
+      });
+    } catch (err) {
+      errors.push(`第 ${attempt + 1} 次（${new URL(origin).host}）：${describeError(err)}`);
+      recordCheck({ error: errors.join("；") });
+    }
+  }
+  throw new Error(errors.join("；"));
+}
+
 export async function checkForLiveUpdate(): Promise<void> {
   if (checking) return;
   checking = true;
@@ -292,13 +327,8 @@ export async function checkForLiveUpdate(): Promise<void> {
     if (!bundle) {
       console.info(`[LiveUpdate] 下載新版 ${manifest.version}（${origin}）`);
       recordCheck({ result: "downloading" });
-      liveUpdateState.downloadPercent = 0;
       markDownloadStarted(manifest.version);
-      bundle = await CapacitorUpdater.download({
-        url: `${origin}/${LIVE_UPDATE_MANIFEST}`,
-        version: manifest.version,
-        manifest: toDownloadEntries(manifest, origin),
-      });
+      bundle = await downloadBundle(manifest, origin);
     }
 
     writePendingBundle(bundle.id);

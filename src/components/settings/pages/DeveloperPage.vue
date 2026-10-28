@@ -63,7 +63,9 @@ const resultLabel = computed(() => {
     case "checking":
       return "檢查中…";
     case "downloading":
-      return state?.downloadPercent != null ? `下載中 ${state.downloadPercent}%` : "下載中…";
+      if (state?.downloadPercent == null) return "下載中…";
+      // 更新套件的進度最多只報到 70%，之後是在下載剩下的檔，全部好了才跳到 100%
+      return state.downloadPercent === 70 ? "下載中 70%（剩下的檔還在下載）" : `下載中 ${state.downloadPercent}%`;
     case "up-to-date":
       return "已經是最新版";
     case "downloaded":

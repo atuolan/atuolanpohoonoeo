@@ -198,12 +198,34 @@ describe("checkForLiveUpdate 記下檢查結果", () => {
     expect(reloaded.liveUpdateState.lastCheck?.result).toBe("downloading");
   });
 
-  it("下載失敗：記下套件給的錯誤訊息", async () => {
+  it("下載一直失敗：試幾次、輪流換網站，記下每次套件給的錯誤訊息", async () => {
     stubBrowser(null);
-    updater.download.mockRejectedValueOnce({ message: "file hash mismatch" });
+    updater.download.mockRejectedValue({ message: "file hash mismatch" });
     const { checkForLiveUpdate, liveUpdateState } = await loadModule();
-    await checkForLiveUpdate();
-    expect(liveUpdateState.lastCheck).toMatchObject({ result: "error", error: "file hash mismatch" });
+    const done = checkForLiveUpdate();
+    await vi.runAllTimersAsync();
+    await done;
+    expect(updater.download).toHaveBeenCalledTimes(4);
+    const urls = updater.download.mock.calls.map(([opts]) => (opts as { url: string }).url);
+    expect(urls[0]).toContain("example.test");
+    expect(urls[1]).toContain("backup.test");
+    expect(liveUpdateState.lastCheck?.result).toBe("error");
+    expect(liveUpdateState.lastCheck?.error).toContain("第 4 次（backup.test）：file hash mismatch");
     expect(liveUpdateState.downloadPercent).toBeNull();
+  });
+
+  it("下載失敗一次：刪掉失敗的那筆，換網站再試就成功", async () => {
+    stubBrowser(null);
+    updater.download.mockRejectedValueOnce({ message: "One or more files failed to download" });
+    updater.list
+      .mockResolvedValueOnce({ bundles: [] })
+      .mockResolvedValueOnce({ bundles: [{ ...bundle, id: "failed", status: "error" }] });
+    const { checkForLiveUpdate, liveUpdateState } = await loadModule();
+    const done = checkForLiveUpdate();
+    await vi.runAllTimersAsync();
+    await done;
+    expect(updater.delete).toHaveBeenCalledWith({ id: "failed" });
+    expect(updater.download).toHaveBeenCalledTimes(2);
+    expect(liveUpdateState.lastCheck?.result).toBe("downloaded");
   });
 });
