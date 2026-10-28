@@ -24,6 +24,7 @@ import { describeRealDataForPrompt, describeRealPhotosForPrompt } from "@/utils/
 import { buildPlannerPromptText, toDateString } from "@/utils/charPlanner";
 import { computeChatNow } from "@/utils/fakeTime";
 import { isWorldInfoEntryEnabled } from "@/utils/worldInfoEntryState";
+import { findPeekMember, peekGroupInfo } from "@/utils/peekMember";
 import { useSettingsStore } from "@/stores/settings";
 import { useUserStore } from "@/stores/user";
 import type { StoredCharacter } from "@/types/character";
@@ -229,7 +230,7 @@ export const usePeekPhoneStore = defineStore("peekPhone", () => {
     const userStore = useUserStore();
     const chatPersonaId = chat.metadata?.personaOverride?.personaId ?? null;
     const resolvedId = userStore.resolvePersonaForChat(
-      characterId,
+      chat.characterId || characterId,
       chatPersonaId,
     );
     if (resolvedId) {
@@ -278,7 +279,9 @@ export const usePeekPhoneStore = defineStore("peekPhone", () => {
   ): Promise<PeekSources> {
     const { userName, userDescription } = resolveUserInfo(chat, charId);
     const now = computeChatNow(chat);
-    const planner = await loadCharPlanner(cId).catch(() => null);
+    // 多人卡成員：待辦行程是整段多人卡共用的，分不出是誰的，不帶進來
+    const member = findPeekMember(chat, charId);
+    const planner = member ? null : await loadCharPlanner(cId).catch(() => null);
     const hasPlanner = !!planner && (planner.todos.some((t) => !t.done) || planner.plans.length > 0);
     // 真的聊天、交易、日記：跟使用者那串直接顯示真的，交易和日記不要重複
     const charName = character.data.name || character.nickname || "角色";
@@ -295,6 +298,7 @@ export const usePeekPhoneStore = defineStore("peekPhone", () => {
       realDataText: real ? describeRealDataForPrompt(real, userName) || undefined : undefined,
       realPhotosText: real ? describeRealPhotosForPrompt(real) || undefined : undefined,
       firstChatDate: real?.firstChatDate,
+      ...(member ? { group: peekGroupInfo(chat, charId) } : {}),
     };
   }
 
@@ -347,7 +351,13 @@ export const usePeekPhoneStore = defineStore("peekPhone", () => {
       const sources = await collectSources(chat, character, character.id, cId);
       const lines = await generateCaughtReaction(character, sources, found, when);
       const charName = character.data.name || character.nickname || "角色";
-      await sendCharMessages(cId, charName, lines, storyTime);
+      await sendCharMessages(
+        cId,
+        charName,
+        lines,
+        storyTime,
+        findPeekMember(chat, character.id) ? { id: character.id, avatar: character.avatar } : undefined,
+      );
     } catch (err) {
       console.warn("[peekPhone] 被抓到的反應生成失敗:", err);
     }
@@ -603,7 +613,8 @@ export const usePeekPhoneStore = defineStore("peekPhone", () => {
             groupStatus.value.B = "done";
             groupStatus.value.C = "done";
             groupStatus.value.D = "loading";
-            syncPlannerFromPeek(cId, charId, partial, sources.now);
+            // 多人卡成員的手機不寫回待辦行程
+            if (!sources.group) syncPlannerFromPeek(cId, charId, partial, sources.now);
           }
         },
         streamingWindow
@@ -767,7 +778,8 @@ export const usePeekPhoneStore = defineStore("peekPhone", () => {
       } else if (phase === "BC") {
         groupStatus.value.B = "done";
         groupStatus.value.C = "done";
-        syncPlannerFromPeek(cId, charId, partial, sources.now);
+        // 多人卡成員的手機不寫回待辦行程
+        if (!sources.group) syncPlannerFromPeek(cId, charId, partial, sources.now);
       } else if (phase === "D") {
         groupStatus.value.D = "done";
       }
