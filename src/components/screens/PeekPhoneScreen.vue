@@ -39,7 +39,7 @@ import { useCharactersStore } from "@/stores";
 import { usePeekPhoneStore } from "@/stores/peekPhone";
 import type { StoredCharacter } from "@/types/character";
 import type { Chat } from "@/types/chat";
-import type { PeekChatMessage, PeekDiaryEntry, PeekPhoneTab } from "@/types/peekPhone";
+import type { PeekChatMessage, PeekChatThread, PeekDiaryEntry, PeekPhoneTab } from "@/types/peekPhone";
 import { computeChatNow } from "@/utils/fakeTime";
 import {
   CHAR_PLANNER_CHANGED_EVENT,
@@ -50,7 +50,13 @@ import type { CharPlanner } from "@/types/charPlanner";
 import type { CalendarEvent } from "@/types/calendar";
 import { listCalendarEvents } from "@/services/calendarEvents";
 import { emptyPeekRealData, loadPeekRealData } from "@/services/PeekRealData";
-import { mergeRealUserThread, type PeekRealData } from "@/utils/peekRealData";
+import {
+  buildGroupThread,
+  mergeRealGroupThread,
+  mergeRealUserThread,
+  type PeekRealData,
+} from "@/utils/peekRealData";
+import { buildMemberCharacter, findPeekMember, listPeekMembers } from "@/utils/peekMember";
 import {
   leavePeekNote,
   loadPeekLinks,
@@ -106,21 +112,36 @@ const emit = defineEmits<{
   back: [];
   /** 偷看被他抓到：手機被拿走，回到你們的聊天 */
   caught: [];
+  /** 多人卡：換看另一位成員的手機 */
+  switchMember: [memberId: string];
 }>();
-const props = defineProps<{ characterId: string; chatId: string }>();
+const props = defineProps<{ characterId: string; chatId: string; memberId?: string | null }>();
 
 const charactersStore = useCharactersStore();
 const peekPhoneStore = usePeekPhoneStore();
 
-const character = computed<StoredCharacter | undefined>(() =>
+const chatRecord = ref<Chat | null>(null);
+
+/** 多人卡成員各有一支手機，用成員 id 存 */
+const phoneId = computed(() => props.memberId || props.characterId);
+
+const cardCharacter = computed<StoredCharacter | undefined>(() =>
   charactersStore.characters.find((c) => c.id === props.characterId),
 );
+/** 多人卡成員的手機：主人換成那位成員（回傳的 id 就是成員 id） */
+const character = computed<StoredCharacter | undefined>(() => {
+  if (!props.memberId) return cardCharacter.value;
+  const card = cardCharacter.value;
+  const member = findPeekMember(chatRecord.value, props.memberId);
+  if (!card || !member) return undefined;
+  return buildMemberCharacter(card, member, charactersStore.characters);
+});
 const charName = computed(
   () => character.value?.nickname || character.value?.data?.name || "角色",
 );
 const charAvatar = computed(() => character.value?.avatar || "");
 // 同一個角色的手機，不管用哪段聊天都是同一支
-const battery = computed(() => batteryLevel(props.characterId));
+const battery = computed(() => batteryLevel(phoneId.value));
 
 // 當前視圖：拿起手機先看到鎖定畫面
 const currentView = ref<"lock" | "home" | PeekPhoneTab>("lock");
@@ -180,8 +201,13 @@ const groupErrors = computed(() => peekPhoneStore.groupErrors);
 // 真的聊天、交易、日記、外送：打開手機時現讀，蓋在 AI 生成的上面
 const realData = ref<PeekRealData>(emptyPeekRealData());
 const userNameForPhone = ref("");
+/** 多人卡成員手機裡那串真的群聊（唯讀） */
+const groupThread = ref<PeekChatThread | null>(null);
 const chats = computed(() =>
-  mergeRealUserThread(storeData.value?.chats ?? [], realData.value.userThread, userNameForPhone.value),
+  mergeRealGroupThread(
+    mergeRealUserThread(storeData.value?.chats ?? [], realData.value.userThread, userNameForPhone.value),
+    groupThread.value,
+  ),
 );
 /** 跟使用者那串顯示的是真的聊天：不能從這裡傳訊息 */
 function isRealUserThread(thread: { isUser?: boolean } | undefined): boolean {
@@ -215,6 +241,8 @@ const memos = computed<PeekMemoView[]>(() => {
 const helpedEvents = ref<CalendarEvent[]>([]);
 
 async function loadPlanner() {
+  // 多人卡的待辦行程是整段共用的，成員手機不用
+  if (props.memberId) return;
   try {
     planner.value = await loadCharPlanner(props.chatId);
     const today = phoneToday.value;
@@ -234,6 +262,7 @@ function helpedWhen(e: CalendarEvent): string {
 }
 // 生成時寫回、聊天頁刪掉的，這裡跟著更新
 function onPlannerChanged(event: Event) {
+  if (props.memberId) return;
   const detail = (event as CustomEvent<CharPlannerChangedDetail>).detail;
   if (detail?.chatId === props.chatId) planner.value = detail.planner;
 }
@@ -374,6 +403,19 @@ function tryLeave(): boolean {
 
 function leavePhone() {
   if (!tryLeave()) emit("back");
+}
+
+// 多人卡：可以換看另一位成員的手機
+const switchMembers = computed(() =>
+  props.memberId
+    ? listPeekMembers(chatRecord.value).map((m) => ({ id: m.id, name: m.name, avatar: m.avatar }))
+    : [],
+);
+/** 換人等於放下這支手機，一樣背後擲骰，被發現就停在「糟糕！」 */
+function switchMember(id: string) {
+  showSheet.value = false;
+  if (id === props.memberId) return;
+  if (!tryLeave()) emit("switchMember", id);
 }
 
 // 沒經過「放下手機」就離開（例如直接回主畫面）：背後擲骰
@@ -746,22 +788,23 @@ function openThreadFromLock(threadId: string) {
 }
 
 // 載入聊天資料並觸發生成
-const chatRecord = ref<Chat | null>(null);
 watch(chatRecord, (chat) => {
   now.value = computeChatNow(chat);
 });
 
 /** 僅載入聊天資料和快取（從記憶體或 IDB），不呼叫 API；回傳有沒有既有內容 */
 async function loadChatData(): Promise<boolean> {
-  if (!character.value) return false;
+  if (!cardCharacter.value) return false;
   try {
     await db.init();
     const chat = await db.get<Chat>(DB_STORES.CHATS, props.chatId);
     if (!chat) return false;
     chatRecord.value = chat;
+    // 成員已經不在了（例如已經被移出多人卡）
+    if (props.memberId && !character.value) return false;
     void loadRealData(chat);
     // 從記憶體快取 → IDB → 重置為 null，確保不會顯示其他聊天的內容
-    return await peekPhoneStore.loadOrReset(props.characterId, props.chatId);
+    return await peekPhoneStore.loadOrReset(phoneId.value, props.chatId);
   } catch (err) {
     console.error("[PeekPhoneScreen] Failed to load chat data:", err);
     return false;
@@ -781,6 +824,21 @@ async function loadRealData(chat: Chat) {
   } catch (err) {
     console.warn("[PeekPhoneScreen] 讀取真的聊天資料失敗:", err);
   }
+  // 多人卡成員的手機：訊息 App 最上面那串是真的群組聊天（只能看）
+  if (props.memberId && character.value) {
+    try {
+      const messages = await loadMessages(chat.id);
+      groupThread.value = buildGroupThread(messages, {
+        memberId: props.memberId,
+        memberName: charName.value,
+        userName,
+        groupName: chat.groupMetadata?.groupName || chat.name || "群組",
+        groupAvatar: cardCharacter.value?.avatar,
+      });
+    } catch (err) {
+      console.warn("[PeekPhoneScreen] 讀取真的群聊失敗:", err);
+    }
+  }
 }
 
 /** 第一次拿起這支手機時生成全部內容 */
@@ -796,7 +854,7 @@ async function loadAndGenerate() {
     const chatMessages = await loadMessages(props.chatId);
     const chatWithMsgs = { ...chatRecord.value, messages: chatMessages };
     await peekPhoneStore.generateAll(
-      props.characterId,
+      phoneId.value,
       props.chatId,
       character.value,
       chatWithMsgs,
@@ -825,11 +883,11 @@ async function refreshAll() {
     await loadChatData();
   }
   if (!chatRecord.value) return;
-  peekPhoneStore.clearCache(props.characterId, props.chatId);
-  peekPhoneStore.deleteFromIDB(props.characterId, props.chatId);
+  peekPhoneStore.clearCache(phoneId.value, props.chatId);
+  peekPhoneStore.deleteFromIDB(phoneId.value, props.chatId);
   const chatForRefresh = { ...chatRecord.value, messages: await loadMessages(props.chatId) };
   await peekPhoneStore.generateAll(
-    props.characterId,
+    phoneId.value,
     props.chatId,
     character.value,
     chatForRefresh,
@@ -1166,6 +1224,10 @@ const todayLabel = computed(
               >
                 幫 TA 按送出
               </button>
+            </div>
+            <!-- 真的多人卡群聊：只能看 -->
+            <div v-else-if="selectedChat.isRealGroup" class="chat-input-bar">
+              <div class="chat-input chat-input--readonly" role="note">群聊紀錄，偷看時不能發言</div>
             </div>
             <!-- 以手機主人身份回覆聯絡人的輸入列 -->
             <div v-else class="chat-input-bar">
@@ -1672,12 +1734,15 @@ const todayLabel = computed(
       :secrets="secrets"
       :progress="progress"
       :links="links"
+      :members="switchMembers"
+      :current-member-id="props.memberId ?? null"
       @update-links="updateLinks"
       @close="showSheet = false"
       @go-secret="goToSecret"
       @regenerate="refreshPhase"
       @regenerate-all="refreshAll"
       @leave="leavePhone"
+      @switch-member="switchMember"
     />
   </div>
 </template>
