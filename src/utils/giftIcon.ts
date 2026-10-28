@@ -60,6 +60,7 @@ export function getGiftIcon(itemId?: string) {
     gift_ring_diamond: Diamond,
     gift_charm_diamond: Diamond,
     gift_crystal_alexandrite: Gem,
+    gift_empathy_doll: Heart,
   };
   if (!itemId) return Gift;
   return iconMap[itemId] || Gift;

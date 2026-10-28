@@ -116,3 +116,27 @@ describe("stripPromptStatusNotes", () => {
     expect(stripPromptStatusNotes("[time:12:00] 嗨")).toBe("[time:12:00] 嗨");
   });
 });
+
+describe("describeMessageForPrompt：送禮與共感娃娃", () => {
+  it("小卡跟著送禮標籤", () => {
+    const m = user({ content: '<送禮物 card="嗨">花</送禮物>', isGift: true, giftName: "花", giftCard: "嗨" });
+    expect(describeMessageForPrompt(m, names)).toBe('<送禮物 card="嗨">花</送禮物>');
+  });
+
+  it("送共感娃娃時附上說明", () => {
+    const m = user({ content: "<送禮物>共感娃娃</送禮物>", isGift: true, giftName: "共感娃娃" });
+    expect(describeMessageForPrompt(m, names)).toContain("小明 都感覺得到");
+  });
+
+  it("娃娃碰觸寫成一行並附上第幾次", () => {
+    const m = user({
+      content: "<共感娃娃>捏臉頰 ×2</共感娃娃>",
+      isDollTouch: true,
+      dollTouchText: "捏臉頰 ×2",
+      dollTouchRound: 2,
+    });
+    expect(describeMessageForPrompt(m, names)).toBe(
+      "<共感娃娃>捏臉頰 ×2</共感娃娃>（小美 對共感娃娃做了這些，小明 的身體同時感覺得到；這是 30 分鐘內第 2 次）",
+    );
+  });
+});

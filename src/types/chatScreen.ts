@@ -91,6 +91,9 @@ export interface ChatScreenMessage {
   giftCard?: string;
   giftDescription?: string;
   giftMemoryId?: string;
+  isDollTouch?: boolean;
+  dollTouchText?: string;
+  dollTouchRound?: number;
   isTransfer?: boolean;
   transferAmount?: number;
   transferReceived?: boolean;
