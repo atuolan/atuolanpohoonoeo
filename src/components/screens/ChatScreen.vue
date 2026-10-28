@@ -5685,11 +5685,8 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
       }
     }
 
-    // 準備表情包列表（只取自定義表情的名稱）
-    const stickerNames = stickerStore.customCategories
-      .flatMap((cat) => cat.stickers)
-      .map((s) => s.name)
-      .filter((name) => name && name.trim());
+    // 準備表情包列表（自定義表情＋已擁有的聊天裝扮表情包）
+    const stickerNames = stickerStore.aiStickerNames;
 
     const waimaiAuthorsNote = buildWaimaiAuthorsNote(messagesToUse);
     const htmlTemplatePrompt = buildHtmlTemplatePrompt(getActiveRegexScripts(), {
