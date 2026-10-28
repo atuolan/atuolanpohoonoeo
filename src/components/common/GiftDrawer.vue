@@ -175,6 +175,14 @@
 
               <!-- 送禮按鈕 -->
               <div v-if="ownedGifts.length > 0" class="send-gift-section">
+                <textarea
+                  v-if="selectedGiftId"
+                  v-model="giftCardText"
+                  class="gift-card-input"
+                  rows="2"
+                  maxlength="100"
+                  placeholder="寫張小卡（選填）"
+                />
                 <button
                   class="send-gift-btn"
                   :disabled="!selectedGiftId"
@@ -234,7 +242,7 @@ const emit = defineEmits<{
   close: [];
   openShop: [];
   transfer: [amount: number, note: string];
-  sendGift: [giftItemId: string, giftName: string];
+  sendGift: [giftItemId: string, giftName: string, cardText: string];
 }>();
 
 // Store
@@ -283,6 +291,8 @@ const canTransfer = computed(() => {
 
 // 禮物數據
 const selectedGiftId = ref<string | null>(null);
+/** 送禮小卡 */
+const giftCardText = ref("");
 
 const ownedGifts = computed<OwnedGift[]>(() => {
   const inventory = gameEconomyStore.getInventory(GLOBAL_WALLET_ID);
@@ -348,9 +358,10 @@ async function handleSendGift() {
     selectedGiftId.value,
   );
   if (result.success) {
-    emit("sendGift", gift.itemId, gift.name);
+    emit("sendGift", gift.itemId, gift.name, giftCardText.value.trim());
     await gameEconomyStore.saveState(GLOBAL_WALLET_ID);
     selectedGiftId.value = null;
+    giftCardText.value = "";
     handleClose();
   }
 }
@@ -858,6 +869,26 @@ watch(
   .send-gift-section {
     padding-top: 16px;
     border-top: 1px solid #e5e7eb;
+  }
+
+  .gift-card-input {
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+    margin-bottom: 10px;
+    padding: 10px 12px;
+    border: 1px dashed #d9c3a0;
+    border-radius: 8px;
+    background: #fffaf0;
+    color: #6b4a2b;
+    font-size: 14px;
+    font-family: inherit;
+    resize: none;
+
+    &:focus {
+      outline: none;
+      border-style: solid;
+    }
   }
 
   .send-gift-btn {

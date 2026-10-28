@@ -23,6 +23,8 @@ const emit = defineEmits<{
   (e: "open"): void;
   (e: "collect"): void;
   (e: "receive"): void;
+  /** 打開後再點：看回憶卡 */
+  (e: "view"): void;
 }>();
 
 // State
@@ -43,8 +45,12 @@ watch(
 
 // 打開寶箱（用戶點擊）
 function openChest() {
+  if (isOpen.value) {
+    if (!showReward.value) emit("view");
+    return;
+  }
   // 接收者模式下，用戶不能點擊打開
-  if (props.receiverMode || isOpen.value) return;
+  if (props.receiverMode) return;
 
   isShaking.value = true;
   spawnParticles();
@@ -225,7 +231,8 @@ onMounted(() => {
     <p v-else-if="!isOpen && receiverMode" class="tap-hint waiting">
       等待接收中...
     </p>
-    <p v-else-if="isOpen && receiverMode" class="tap-hint received">已收下！</p>
+    <p v-else-if="isOpen && receiverMode" class="tap-hint received">已收下！點寶箱看回憶</p>
+    <p v-else-if="isOpen && received" class="tap-hint received">點寶箱看回憶</p>
 
     <!-- 獎勵彈窗 -->
     <Transition name="reward-pop">

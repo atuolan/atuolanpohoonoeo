@@ -419,6 +419,12 @@ export interface ChatMessage {
   giftName?: string;
   /** 禮物是否已被接收 */
   giftReceived?: boolean;
+  /** 送禮小卡 */
+  giftCard?: string;
+  /** 角色回送時寫的一句描述 */
+  giftDescription?: string;
+  /** 對應的禮物回憶卡 id */
+  giftMemoryId?: string;
   /** 是否為轉帳 */
   isTransfer?: boolean;
   /** 轉帳金額 */

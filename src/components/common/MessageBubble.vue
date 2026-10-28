@@ -374,6 +374,10 @@ interface MessageBubbleProps {
   isGift?: boolean;
   giftName?: string;
   giftReceived?: boolean;
+  /** 送禮小卡 */
+  giftCard?: string;
+  /** 角色回送時寫的一句描述 */
+  giftDescription?: string;
   // 轉帳相關
   isTransfer?: boolean;
   transferAmount?: number;
@@ -555,6 +559,8 @@ const props = withDefaults(defineProps<MessageBubbleProps>(), {
   isGift: false,
   giftName: "",
   giftReceived: false,
+  giftCard: "",
+  giftDescription: "",
   isTransfer: false,
   transferAmount: 0,
   transferReceived: false,
@@ -661,6 +667,10 @@ const emit = defineEmits<{
   (e: "claimRedpacket", id: string): void;
   (e: "favorite-audio", id: string): void;
   (e: "openPlurk", target: { postId: string; commentId?: string }): void;
+  /** 角色送的禮物按了「收下」 */
+  (e: "collectGift", id: string): void;
+  /** 打開的寶箱再點一次：看回憶卡 */
+  (e: "openGiftMemory", id: string): void;
 }>();
 
 // 群聊記錄 Modal 狀態
@@ -4083,7 +4093,15 @@ const showTextVoiceTranscript = ref(true);
               :gift-name="giftName"
               :receiver-mode="role === 'user'"
               :received="giftReceived"
-            />
+              @collect="emit('collectGift', id)"
+              @view="emit('openGiftMemory', id)"
+            >
+              <p v-if="giftDescription" class="gift-description">{{ giftDescription }}</p>
+              <div v-if="giftCard" class="gift-card-note">
+                <span class="gift-card-label">小卡</span>
+                <p>{{ giftCard }}</p>
+              </div>
+            </PixelGiftChest>
           </div>
 
           <!-- 群聊記錄卡片 -->
@@ -6808,6 +6826,51 @@ const showTextVoiceTranscript = ref(true);
   display: flex;
   justify-content: center;
   padding: 10px;
+
+  .gift-description {
+    margin: 8px 0 0;
+    max-width: 200px;
+    font-size: 12px;
+    color: var(--color-text-secondary, #888);
+    text-align: center;
+  }
+
+  .gift-card-note {
+    margin-top: 10px;
+    max-width: 200px;
+    padding: 10px 12px 8px;
+    background: #fffaf0;
+    border: 1px dashed #d9c3a0;
+    border-radius: 4px;
+    transform: rotate(-1deg);
+    box-shadow: 0 2px 6px rgba(139, 90, 43, 0.12);
+    color: #6b4a2b;
+
+    .gift-card-label {
+      display: block;
+      font-size: 10px;
+      color: #b0906a;
+      margin-bottom: 2px;
+    }
+
+    p {
+      margin: 0;
+      font-size: 13px;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+  }
+}
+
+body.is-night-mode .pixel-gift-wrapper .gift-card-note {
+  background: #3a3530;
+  border-color: #6b5d4f;
+  color: #f0e6d8;
+
+  .gift-card-label {
+    color: #b8a68f;
+  }
 }
 
 // 轉帳訊息容器（同時包含文字和轉帳卡片）

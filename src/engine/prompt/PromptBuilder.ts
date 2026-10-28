@@ -294,6 +294,8 @@ export interface PromptBuilderOptions {
   plurkShareGuide?: string;
   /** 角色剛暫離回來那一輪的說明（[剛忙完回來]／[被催回來]），附加在 timeInfo 後面 */
   charAwayReturnNote?: string;
+  /** 回送禮物的說明（只在節日、提到禮物、很久沒送時那一輪帶），附加在 timeInfo 後面 */
+  giftNudgeNote?: string;
   /** {{user}} 主畫面的心情便籤（用於 {{userMoodNote}} 宏；空的時候「心情便籤」條目不輸出） */
   userMoodNote?: string;
   /** 角色自己的待辦和行程清單（用於 {{charPlanner}} 宏；沒給的時候「角色待辦與行程」條目不輸出） */
@@ -2162,6 +2164,7 @@ export class PromptBuilder {
             if (gapNote) content += `\n\n${gapNote}`;
             if (this.options.charAwayReturnNote)
               content += `\n\n${this.options.charAwayReturnNote}`;
+            if (this.options.giftNudgeNote) content += `\n\n${this.options.giftNudgeNote}`;
           }
           content = await this.macroEngine.substitute(content);
           return content ? { role: getRole(), content, identifier } : null;

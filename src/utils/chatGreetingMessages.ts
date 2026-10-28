@@ -68,6 +68,8 @@ export function createGreetingMessages(firstMessage: string): ChatScreenMessage[
         replyToContent: parsedMsg.replyToContent,
         isGift: parsedMsg.isGift,
         giftName: parsedMsg.giftName,
+        giftCard: parsedMsg.giftCard,
+        giftDescription: parsedMsg.giftDescription,
         isTransfer: parsedMsg.isTransfer,
         transferType: parsedMsg.transferType,
         transferAmount: parsedMsg.transferAmount,
