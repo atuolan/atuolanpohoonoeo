@@ -6,7 +6,7 @@ import {
   compressionPresets,
   formatFileSize,
 } from "@/utils/imageCompression";
-import { computed, ref } from "vue";
+import { computed, nextTick, ref } from "vue";
 
 const emit = defineEmits<{
   (e: "close"): void;
@@ -233,6 +233,11 @@ function removeTxtSticker(index: number) {
 async function handleBatchUpload() {
   if (!canSubmit.value) return;
 
+  // 名稱欄用 @input 逐字寫回（v-model 在中文輸入法組字中不更新，送出時會拿到原檔名）；
+  // 這裡再收起鍵盤，確保最後一次輸入已寫入。
+  (document.activeElement as HTMLElement | null)?.blur();
+  await nextTick();
+
   let addedCount = 0;
 
   if (uploadMode.value === "url") {
@@ -388,8 +393,9 @@ async function handleBatchUpload() {
               >
                 <img :src="url" @error="handleImageError" />
                 <input
-                  v-model="urlNames[index]"
+                  :value="urlNames[index]"
                   type="text"
+                  @input="urlNames[index] = ($event.target as HTMLInputElement).value"
                   class="sticker-name-input"
                   :placeholder="`表情 ${index + 1}`"
                   @click.stop
@@ -452,8 +458,9 @@ async function handleBatchUpload() {
               >
                 <img :src="sticker.url" @error="handleImageError" />
                 <input
-                  v-model="sticker.name"
+                  :value="sticker.name"
                   type="text"
+                  @input="sticker.name = ($event.target as HTMLInputElement).value"
                   class="sticker-name-input"
                   :placeholder="`表情 ${index + 1}`"
                   @click.stop
@@ -510,8 +517,9 @@ async function handleBatchUpload() {
               >
                 <img :src="file.preview" />
                 <input
-                  v-model="fileNames[index]"
+                  :value="fileNames[index]"
                   type="text"
+                  @input="fileNames[index] = ($event.target as HTMLInputElement).value"
                   class="sticker-name-input"
                   :placeholder="file.name"
                   @click.stop
