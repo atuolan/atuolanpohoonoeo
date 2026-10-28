@@ -32,6 +32,8 @@ export interface PeekPromptContext {
   realPhotosText?: string;
   /** 兩人第一次聊天的日期（YYYY-MM-DD），鎖屏密碼可以參考 */
   firstChatDate?: string;
+  /** 多人卡成員的手機：群組名和其他成員（不是多人卡就不給） */
+  group?: { groupName: string; otherMembers: string[] };
 }
 
 const WEEKDAYS = ["日", "一", "二", "三", "四", "五", "六"];
@@ -69,6 +71,16 @@ function buildCharacterBlock(ctx: PeekPromptContext): string {
   if (ctx.charDesc) lines.push(`描述：${ctx.charDesc}`);
   if (ctx.personality) lines.push(`性格：${ctx.personality}`);
   if (ctx.scenario) lines.push(`場景：${ctx.scenario}`);
+
+  if (ctx.group) {
+    const others = ctx.group.otherMembers;
+    lines.push(
+      "",
+      `【多人卡】${ctx.charName}是群組「${ctx.group.groupName}」的一員${others.length ? `，其他成員：${others.join("、")}` : ""}。`,
+      `上面的角色描述可能同時寫了好幾個人，這支手機的主人只有${ctx.charName}，只寫${ctx.charName}自己的手機。`,
+      "下面「最近的聊天紀錄」是大家一起的群聊。",
+    );
+  }
 
   lines.push("", `【用戶：${ctx.userName}】`);
   if (ctx.userDescription) lines.push(ctx.userDescription);
@@ -122,12 +134,24 @@ function buildSecretsRuleA(userName: string, realUserThread = false, firstChatDa
  * 聊天組：2~5 個對話串（其中一串是跟使用者的）＋ 鎖屏密碼、收回的訊息、草稿
  */
 export function buildGroupAPrompt(ctx: PeekPromptContext): string {
-  const { charName, userName, now, realUserThread } = ctx;
-  const userThreadRule = realUserThread
-    ? `- 2 到 5 個聊天對話串。其中一串是跟「${userName}」的對話：加上 is_user: true，contact 寫${charName}手機裡給${userName}的備註名（可以是暱稱，不一定是本名）。這一串會直接顯示你們真的聊天紀錄（就是上面最近的聊天），messages 寫 [] 就好，只要寫 draft 和 draft_history。
+  const { charName, userName, now } = ctx;
+  // 多人卡：這支手機只是群組裡某一位成員的，跟使用者那串不是真的聊天紀錄
+  const group = ctx.group;
+  const realUserThread = group ? false : ctx.realUserThread;
+  const otherMembers = group?.otherMembers ?? [];
+  const othersThreadRule = otherMembers.length
+    ? `\n- 至少一串是跟其他成員（${otherMembers.join("、")}）的私訊，contact 一定要寫成員的本名，內容是背著群組的私下對話。`
+    : "";
+  const userThreadRule = group
+    ? `- 2 到 6 個聊天對話串，不要寫群組「${group.groupName}」本身（那串會直接顯示真的群聊）。
+- 一定要有一串是跟「${userName}」的私聊：加上 is_user: true，contact 寫${charName}手機裡給${userName}的備註名（可以是暱稱，不一定是本名）。這是群組外的私下對話，內容不能跟群聊裡發生的事矛盾，可以是群聊裡不方便說的話。${othersThreadRule}
+- 其他聯絡人依角色的人際關係設定（家人、同事、朋友……）。
+- 每串都要有角色自己傳的（self: true）和對方傳的（self: false），一串 3 到 12 則，依時間先後排列。`
+    : realUserThread
+      ? `- 2 到 5 個聊天對話串。其中一串是跟「${userName}」的對話：加上 is_user: true，contact 寫${charName}手機裡給${userName}的備註名（可以是暱稱，不一定是本名）。這一串會直接顯示你們真的聊天紀錄（就是上面最近的聊天），messages 寫 [] 就好，只要寫 draft 和 draft_history。
 - 其他聯絡人依角色的人際關係設定（家人、同事、朋友、群組……）。群組的 contact 寫群組名，from 寫實際說話的人。
 - 其他每串都要有角色自己傳的（self: true）和對方傳的（self: false），一串 3 到 12 則，依時間先後排列。`
-    : `- 2 到 5 個聊天對話串。其中一串一定是跟「${userName}」的對話，這一串加上 is_user: true，contact 寫${charName}手機裡給${userName}的備註名（可以是暱稱，不一定是本名）。
+      : `- 2 到 5 個聊天對話串。其中一串一定是跟「${userName}」的對話，這一串加上 is_user: true，contact 寫${charName}手機裡給${userName}的備註名（可以是暱稱，不一定是本名）。
 - 其他聯絡人依角色的人際關係設定（家人、同事、朋友、群組……）。群組的 contact 寫群組名，from 寫實際說話的人。
 - 每串都要有角色自己傳的（self: true）和對方傳的（self: false），一串 3 到 12 則，依時間先後排列。`;
   const userThreadExample = realUserThread

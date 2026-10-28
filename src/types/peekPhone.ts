@@ -43,6 +43,8 @@ export interface PeekChatThread {
   draftHistory?: string[];
   /** 草稿已經幫他按送出了（真的出現在聊天裡） */
   draftSentAt?: number;
+  /** 真的多人卡群聊（唯讀，不能從這裡傳訊息） */
+  isRealGroup?: boolean;
 }
 
 /** 行程項目 */

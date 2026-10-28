@@ -176,3 +176,34 @@ describe("跟使用者那串是真的聊天時", () => {
     expect(buildGroupAPrompt(base)).not.toContain("第一次聊天是");
   });
 });
+
+describe("多人卡裡某一位成員的手機", () => {
+  const base = {
+    charName: "沈既白",
+    charDesc: "",
+    personality: "",
+    scenario: "",
+    chatContext: "",
+    userName: "小栩",
+    userDescription: "",
+    worldInfo: "",
+    summariesAndEvents: "",
+    now: new Date(2026, 9, 18, 1, 47),
+  };
+  const group = { groupName: "深夜值班室", otherMembers: ["阿哲", "林可"] };
+
+  it("聊天組：只寫這位成員自己的手機，群聊不重寫，私下對話不能跟群聊矛盾", async () => {
+    const { buildGroupAPrompt } = await import("./PeekPhonePromptBuilder");
+    const prompt = buildGroupAPrompt({ ...base, group, realUserThread: true });
+    expect(prompt).toContain("深夜值班室");
+    expect(prompt).toContain("阿哲、林可");
+    expect(prompt).toContain("不能跟群聊裡發生的事矛盾");
+    expect(prompt).not.toContain("這一串會直接顯示你們真的聊天紀錄");
+  });
+
+  it("沒有 group 時跟原本一樣", async () => {
+    const { buildGroupAPrompt } = await import("./PeekPhonePromptBuilder");
+    expect(buildGroupAPrompt(base)).not.toContain("【多人卡】");
+    expect(buildGroupAPrompt({ ...base, realUserThread: true })).toContain("這一串會直接顯示你們真的聊天紀錄");
+  });
+});
