@@ -98,3 +98,7 @@ vite.config.ts.timestamp-*.mjs
 
 # 設計樣稿（brainstorming visual companion）
 .superpowers/
+
+# 聊天裝扮貼圖工具的中間產物
+docs/chat-skins-tools/huninn.ttf
+docs/chat-skins-tools/sheet.png
