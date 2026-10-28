@@ -26,6 +26,17 @@ import ChatPresetPanel from "@/components/modals/chat-preset/ChatPresetPanel.vue
 import ChatScreenInputArea from "@/components/screens/ChatScreenInputArea.vue";
 import ChatGameModals from "@/components/screens/ChatGameModals.vue";
 import GiftDrawer from "@/components/common/GiftDrawer.vue";
+import GiftMemoryCard from "@/components/gift/GiftMemoryCard.vue";
+import { GIFT_ITEMS } from "@/data/shopItems";
+import {
+  addGiftMemory,
+  buildGiftNudgeNote,
+  findMemoryForMessage,
+  lastGiftToUserAt,
+  loadGiftMemories,
+  type GiftMemory,
+} from "@/services/giftMemories";
+import { formatGiftTag } from "@/utils/giftTag";
 import MediaSendDrawer from "@/components/common/MediaSendDrawer.vue";
 import AISummaryPanel from "@/components/modals/AISummaryPanel.vue";
 import AffinityPanel from "@/components/modals/AffinityPanel.vue";
@@ -4334,15 +4345,16 @@ async function syncRoundTransfers(removed: Message[], restored: Message[]): Prom
 }
 
 // 處理送禮
-function handleSendGift(_giftItemId: string, giftName: string) {
+function handleSendGift(_giftItemId: string, giftName: string, cardText = "") {
   // 添加用戶送禮訊息（直接設置 isGift 屬性，不需要解析）
   const message: Message = {
     id: `msg_${Date.now()}`,
     role: "user",
-    content: `<送禮物>${giftName}</送禮物>`,
+    content: formatGiftTag({ name: giftName, card: cardText }),
     timestamp: Date.now(),
     isGift: true,
     giftName: giftName,
+    ...(cardText ? { giftCard: cardText } : {}),
   };
   messages.value.push(message);
   scrollToBottom();
@@ -4388,6 +4400,30 @@ async function processGiftReceived() {
   // 標記禮物為已接收
   messages.value[pendingGiftIndex].giftReceived = true;
 
+  // 建立回憶卡（收下那一輪角色的第一句話當引言）
+  const characterId = props.characterId || currentCharacter.value?.id;
+  if (characterId && !isGroupChat.value) {
+    const firstReply = messages.value
+      .slice(pendingGiftIndex + 1)
+      .filter((m) => m.role === "ai")
+      .map((m) => giftReactionText(m.content))
+      .find((text) => text);
+    try {
+      const memory = await addGiftMemory(characterId, {
+        direction: "to-char",
+        itemId: GIFT_ITEMS.find((item) => item.name === giftMessage.giftName)?.id,
+        name: giftMessage.giftName || "禮物",
+        ...(giftMessage.giftCard ? { cardText: giftMessage.giftCard } : {}),
+        ...(firstReply ? { reaction: firstReply } : {}),
+        sentAt: giftMessage.timestamp,
+        messageId: giftMessage.id,
+      });
+      messages.value[pendingGiftIndex].giftMemoryId = memory.id;
+    } catch (e) {
+      console.warn("[ChatScreen] 建立禮物回憶卡失敗:", e);
+    }
+  }
+
   // 記錄到重要事件紀錄本
   await recordGiftToImportantEvents(giftMessage.giftName || "禮物");
 
@@ -4405,8 +4441,94 @@ async function processGiftReceived() {
   console.log(`[ChatScreen] 禮物「${giftMessage.giftName}」已被角色接收並記錄`);
 }
 
+/** 回憶卡上的引言：拿掉標籤與心聲，取前 40 字 */
+function giftReactionText(content: string | undefined): string {
+  const text = (content || "")
+    .replace(/ˇ[^ˇ]*ˇ/g, "")
+    .replace(/<[^>]+>/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  return text.length > 40 ? `${text.slice(0, 40)}…` : text;
+}
+
+// 角色送的禮物按「收下」：標成已收下、建立回憶卡、記進重要事件
+async function handleCollectGift(id: string) {
+  const index = messages.value.findIndex((m) => m.id === id);
+  if (index === -1) return;
+  const message = messages.value[index];
+  if (message.role !== "ai" || !message.isGift || message.giftReceived) return;
+  message.giftReceived = true;
+  const characterId = props.characterId || currentCharacter.value?.id;
+  if (characterId && !isGroupChat.value) {
+    try {
+      const memory = await addGiftMemory(characterId, {
+        direction: "to-user",
+        name: message.giftName || "禮物",
+        ...(message.giftDescription ? { description: message.giftDescription } : {}),
+        ...(message.giftCard ? { cardText: message.giftCard } : {}),
+        sentAt: message.timestamp,
+        messageId: message.id,
+      });
+      message.giftMemoryId = memory.id;
+      giftMemoriesForChar.value = [memory, ...giftMemoriesForChar.value];
+    } catch (e) {
+      console.warn("[ChatScreen] 建立禮物回憶卡失敗:", e);
+    }
+    await recordGiftToImportantEvents(message.giftName || "禮物", "to-user");
+  }
+  await saveChatImmediate();
+}
+
+// 打開的寶箱再點一次：看回憶卡；功能上線前的舊禮物找不到卡就補建一張
+const openedGiftMemory = ref<GiftMemory | null>(null);
+async function handleOpenGiftMemory(id: string) {
+  const message = messages.value.find((m) => m.id === id);
+  const characterId = props.characterId || currentCharacter.value?.id;
+  if (!message?.isGift || !message.giftReceived || !characterId || isGroupChat.value) return;
+  const direction = message.role === "user" ? "to-char" : "to-user";
+  try {
+    const memories = await loadGiftMemories(characterId);
+    let memory = findMemoryForMessage(memories, message, direction);
+    if (!memory) {
+      memory = await addGiftMemory(characterId, {
+        direction,
+        ...(direction === "to-char"
+          ? { itemId: GIFT_ITEMS.find((item) => item.name === message.giftName)?.id }
+          : {}),
+        name: message.giftName || "禮物",
+        ...(message.giftDescription ? { description: message.giftDescription } : {}),
+        ...(message.giftCard ? { cardText: message.giftCard } : {}),
+        sentAt: message.timestamp,
+        messageId: message.id,
+      });
+    }
+    if (message.giftMemoryId !== memory.id) {
+      message.giftMemoryId = memory.id;
+      saveChat();
+    }
+    openedGiftMemory.value = memory;
+  } catch (e) {
+    console.warn("[ChatScreen] 讀取禮物回憶卡失敗:", e);
+  }
+}
+
+// 這個角色的回憶卡（算回送提示用）
+const giftMemoriesForChar = ref<GiftMemory[]>([]);
+watch(
+  () => props.characterId || currentCharacter.value?.id,
+  async (characterId) => {
+    giftMemoriesForChar.value = characterId
+      ? await loadGiftMemories(characterId).catch(() => [])
+      : [];
+  },
+  { immediate: true },
+);
+
 // 記錄禮物到重要事件紀錄本
-async function recordGiftToImportantEvents(giftName: string) {
+async function recordGiftToImportantEvents(
+  giftName: string,
+  direction: "to-char" | "to-user" = "to-char",
+) {
   if (!currentChatId.value) return;
 
   const characterId = props.characterId || currentCharacter.value?.id;
@@ -4436,7 +4558,9 @@ async function recordGiftToImportantEvents(giftName: string) {
 
     // 創建禮物接收事件
     const event = createImportantEvent(
-      `${userName} 送了「${giftName}」給 ${charName}`,
+      direction === "to-char"
+        ? `${userName} 送了「${giftName}」給 ${charName}`
+        : `${charName} 送了「${giftName}」給 ${userName}`,
       {
         category: "relationship",
         priority: 2,
@@ -4996,6 +5120,8 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
       plurkShare: m.plurkShare,
       isGift: m.isGift,
       giftName: m.giftName,
+      giftCard: m.giftCard,
+      giftDescription: m.giftDescription,
       audioTranscript: m.audioTranscript,
       isFaceToFaceRequest: m.isFaceToFaceRequest,
       faceToFaceRequestReason: m.faceToFaceRequestReason,
@@ -5399,6 +5525,21 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
           })
         : "";
 
+    // 回送提示：只在單人線上聊天，節日／提到禮物／很久沒送時那一輪帶
+    const giftNudgeNote =
+      !isGroupChat.value && !chatFaceToFaceMode.value
+        ? buildGiftNudgeNote({
+            now: Date.now(),
+            lastGiftToUserAt: lastGiftToUserAt(giftMemoriesForChar.value),
+            todayHolidayName: detectTodayHoliday()?.name,
+            // 拿掉標籤，送禮訊息的「送禮物」不算提到禮物
+            latestUserText: [...messages.value]
+              .reverse()
+              .find((m) => m.role === "user")
+              ?.content?.replace(/<[^>]+>/g, ""),
+          })
+        : undefined;
+
     const builder = new PromptBuilder({
       character: char,
       lorebooks: applyWorldInfoRegex(linkedLorebooks),
@@ -5470,6 +5611,7 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
       charStatusUpdatedAt: charStatus.value?.updatedAt,
       // 角色暫時離開：標籤說明（能用時才有）與回來那一輪的說明
       ...charAwayCtl.promptOptions(),
+      giftNudgeNote,
       // 噗文分享：可以留言的噗、可以傳的噗（{{plurkShareGuide}}）
       plurkShareGuide,
       // 傳入這個角色上一張紙條（{{charStickyNote}}）與 user 的心情（{{userMoodNote}}）
@@ -6730,6 +6872,8 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
               ...resolveAiReplyQuote(parsedMsg),
               isGift: parsedMsg.isGift,
               giftName: parsedMsg.giftName,
+              giftCard: parsedMsg.giftCard,
+              giftDescription: parsedMsg.giftDescription,
               isTransfer: parsedMsg.isTransfer,
               transferType: parsedMsg.transferType,
               transferAmount: parsedMsg.transferAmount,
@@ -7118,6 +7262,8 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
                 ...resolveAiReplyQuote(parsedMsg),
                 isGift: parsedMsg.isGift,
                 giftName: parsedMsg.giftName,
+                giftCard: parsedMsg.giftCard,
+                giftDescription: parsedMsg.giftDescription,
                 isTransfer: parsedMsg.isTransfer,
                 transferType: parsedMsg.transferType,
                 transferAmount: parsedMsg.transferAmount,
@@ -7887,6 +8033,8 @@ async function handleStreamingClose() {
             ...resolveAiReplyQuote(parsedMsg),
             isGift: parsedMsg.isGift,
             giftName: parsedMsg.giftName,
+            giftCard: parsedMsg.giftCard,
+            giftDescription: parsedMsg.giftDescription,
             isTransfer: parsedMsg.isTransfer,
             transferType: parsedMsg.transferType,
             transferAmount: parsedMsg.transferAmount,
@@ -8041,6 +8189,8 @@ async function handleStreamingClose() {
               ...resolveAiReplyQuote(parsedMsg),
               isGift: parsedMsg.isGift,
               giftName: parsedMsg.giftName,
+              giftCard: parsedMsg.giftCard,
+              giftDescription: parsedMsg.giftDescription,
               // 轉帳相關
               isTransfer: parsedMsg.isTransfer,
               transferType: parsedMsg.transferType,
@@ -10021,6 +10171,8 @@ function buildRemoteParsedMessages(
         ...resolveAiReplyQuote(parsedMsg, [...replyHistory, ...parsedMessages]),
         isGift: parsedMsg.isGift,
         giftName: parsedMsg.giftName,
+        giftCard: parsedMsg.giftCard,
+        giftDescription: parsedMsg.giftDescription,
         isTransfer: parsedMsg.isTransfer,
         transferType: parsedMsg.transferType,
         transferAmount: parsedMsg.transferAmount,
@@ -11129,6 +11281,10 @@ useChatCleanup({
             :is-gift="message.isGift"
             :gift-name="message.giftName"
             :gift-received="message.giftReceived"
+            :gift-card="message.giftCard"
+            :gift-description="message.giftDescription"
+            @collect-gift="(...args: any[]) => handleCollectGift(args[0] as string)"
+            @open-gift-memory="(...args: any[]) => handleOpenGiftMemory(args[0] as string)"
             :is-transfer="message.isTransfer"
             :transfer-amount="message.transferAmount"
             :transfer-received="message.transferReceived"
@@ -11595,6 +11751,15 @@ useChatCleanup({
         @open-shop="handleOpenShop"
         @transfer="handleTransfer"
         @send-gift="handleSendGift"
+      />
+
+      <!-- 禮物回憶卡 -->
+      <GiftMemoryCard
+        v-if="openedGiftMemory"
+        :memory="openedGiftMemory"
+        :character-name="characterName"
+        :character-avatar="characterAvatar"
+        @close="openedGiftMemory = null"
       />
 
       <!-- 小遊戲模態框 -->
