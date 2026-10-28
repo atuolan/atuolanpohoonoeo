@@ -246,6 +246,16 @@ body.is-night-mode .chat-screen[data-skin-wallpaper="greenbubble"]::before {
         }
       }
 
+      // 狀態（含可點的待辦／串流按鈕）一律在名字正下方置中
+      .chat-status,
+      .chat-status-btn {
+        align-self: center !important;
+      }
+
+      .chat-status-btn {
+        margin: 0 !important;
+      }
+
       .chat-status {
         font-size: 11px !important;
         color: var(--skin-header-text-secondary, var(--chat-header-text-secondary, var(--color-text-secondary))) !important;
@@ -335,21 +345,15 @@ body.is-night-mode .chat-screen[data-skin-header="greenbubble"] {
       backdrop-filter: none !important;
       -webkit-backdrop-filter: none !important;
       gap: 8px;
-
-      // 有字時出現綠色「發送」，藏起「＋」；沒字時的紙飛機是「直接請角色回覆」，要留著
-      &:has(.send-btn.active) {
-        .plus-btn {
-          display: none !important;
-        }
-      }
     }
 
     // left-buttons 與 right-buttons 設為 display: contents，使按鈕直接在 flex 容器中用 order 排序
     .left-buttons {
       display: contents;
 
+      // ＋放最左邊
       .plus-btn {
-        order: 5;
+        order: 0;
       }
     }
 
