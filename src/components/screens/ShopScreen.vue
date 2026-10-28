@@ -33,15 +33,18 @@ import {
     Frame,
     Gift,
     Package,
+    Palette,
     ShoppingBag,
     Sparkles,
     X,
 } from "lucide-vue-next";
 import { computed, onMounted, ref } from "vue";
 import { getGiftIcon } from "@/utils/giftIcon";
+import ChatSkinShopPanel from "@/components/shop/ChatSkinShopPanel.vue";
 
 const emit = defineEmits<{
   back: [];
+  tryOnChatSkin: [pieceId: string];
 }>();
 
 // Store
@@ -52,13 +55,14 @@ const GLOBAL_WALLET_ID = "global";
 
 // 分類定義
 interface CategoryTab {
-  id: ShopCategory;
+  id: ShopCategory | "chatskin";
   label: string;
   icon: typeof Frame;
   items: ShopItem[];
 }
 
 const categories: CategoryTab[] = [
+  { id: "chatskin", label: "聊天裝扮", icon: Palette, items: [] },
   { id: "frame", label: "頭像框", icon: Frame, items: FRAME_ITEMS },
   { id: "rod", label: "魚竿", icon: Fish, items: ROD_ITEMS },
   { id: "gift", label: "禮物", icon: Gift, items: GIFT_ITEMS },
@@ -69,10 +73,11 @@ const categories: CategoryTab[] = [
 const view = ref<"shop" | "cabinet">("shop");
 
 // 當前選擇的分類
-const activeCategory = ref<ShopCategory>("frame");
+const activeCategory = ref<ShopCategory | "chatskin">("chatskin");
 
 // 當前分類的商品
 const currentItems = computed(() => {
+  if (activeCategory.value === "chatskin") return [];
   const category = categories.find((c) => c.id === activeCategory.value);
   return category?.items || [];
 });
@@ -381,149 +386,155 @@ onMounted(async () => {
 
     <!-- 商品列表 -->
     <div v-if="view === 'shop'" class="shop-content">
-      <div class="items-grid">
-        <div
-          v-for="item in currentItems"
-          :key="item.id"
-          class="shop-item"
-          :class="[
-            getRarityClass(item.rarity),
-            {
-              owned: isOwned(item) && !item.variants,
-              'all-owned':
-                item.variants && getVariantOwnedStatus(item) === 'all',
-            },
-          ]"
-          @click="openPurchaseModal(item)"
-        >
-          <!-- 稀有度標籤 -->
-          <div class="rarity-badge" :class="getRarityClass(item.rarity)">
-            {{ getRarityLabel(item.rarity) }}
-          </div>
-
-          <!-- 已擁有標記 -->
-          <div v-if="isOwned(item) && !item.variants" class="owned-badge">
-            <Check :size="14" />
-            已擁有
-          </div>
-          <!-- 變體商品擁有狀態 -->
+      <ChatSkinShopPanel
+        v-if="activeCategory === 'chatskin'"
+        @try-on="(id) => emit('tryOnChatSkin', id)"
+      />
+      <template v-else>
+        <div class="items-grid">
           <div
-            v-else-if="item.variants && getVariantOwnedStatus(item) !== 'none'"
-            class="owned-badge"
-            :class="{ partial: getVariantOwnedStatus(item) === 'partial' }"
-          >
-            <Check :size="14" />
-            {{
-              getVariantOwnedStatus(item) === "all" ? "已全部擁有" : "部分擁有"
-            }}
-          </div>
-
-          <!-- 商品圖標 -->
-          <div
-            class="item-icon"
+            v-for="item in currentItems"
+            :key="item.id"
+            class="shop-item"
             :class="[
               getRarityClass(item.rarity),
               {
-                'svg-frame':
-                  item.category === 'frame' && isAvatarFrameSvg(item.id),
-                'image-frame':
-                  item.category === 'frame' && isAvatarFrameImage(item.id),
+                owned: isOwned(item) && !item.variants,
+                'all-owned':
+                  item.variants && getVariantOwnedStatus(item) === 'all',
               },
             ]"
+            @click="openPurchaseModal(item)"
           >
-            <PixelRod
-              v-if="item.category === 'rod'"
-              :rod-id="item.id"
-              :size="48"
-            />
-            <component
-              v-else-if="item.category === 'gift'"
-              :is="getGiftIcon(item.id)"
-              :size="32"
-            />
-            <div
-              v-else-if="item.category === 'frame' && isAvatarFrameSvg(item.id)"
-              class="svg-frame-preview"
-              v-html="getAvatarFrameSvg(item.id, 'circle')"
-            ></div>
-            <div
-              v-else-if="
-                item.category === 'frame' && isAvatarFrameImage(item.id)
-              "
-              class="image-frame-preview"
-            >
-              <img
-                v-if="getAvatarFrameLayers(item.id)?.background"
-                class="frame-layer-bg"
-                :src="getLayerSrc(getAvatarFrameLayers(item.id)?.background)"
-                :style="{
-                  filter: getAvatarFrameLayers(item.id)?.background?.filter,
-                }"
-                alt=""
-              />
-              <img
-                v-if="getAvatarFrameLayers(item.id)?.overlay"
-                class="frame-layer-overlay"
-                :src="getLayerSrc(getAvatarFrameLayers(item.id)?.overlay)"
-                :style="{
-                  filter: getAvatarFrameLayers(item.id)?.overlay?.filter,
-                }"
-                alt=""
-              />
-              <img
-                v-if="getAvatarFrameLayers(item.id)?.decoration"
-                class="frame-layer-decoration"
-                :src="getLayerSrc(getAvatarFrameLayers(item.id)?.decoration)"
-                :style="{
-                  filter: getAvatarFrameLayers(item.id)?.decoration?.filter,
-                }"
-                alt=""
-              />
+            <!-- 稀有度標籤 -->
+            <div class="rarity-badge" :class="getRarityClass(item.rarity)">
+              {{ getRarityLabel(item.rarity) }}
             </div>
-            <Sparkles v-else :size="32" />
-          </div>
 
-          <!-- 商品資訊 -->
-          <div class="item-info">
-            <div class="item-name">{{ item.name }}</div>
-            <div class="item-desc">{{ item.description }}</div>
-          </div>
-
-          <!-- 價格 -->
-          <div
-            class="item-price"
-            :class="{ insufficient: balance < item.price }"
-          >
-            <Coins :size="14" />
-            <span>{{ item.price.toLocaleString() }}</span>
-          </div>
-
-          <!-- 魚竿屬性 -->
-          <div v-if="item.rodStats" class="rod-stats">
-            <span>耐久 {{ item.rodStats.maxDurability }}</span>
-            <span
-              >等級 {{ item.rodStats.minFishTier }}-{{
-                item.rodStats.maxFishTier
-              }}</span
+            <!-- 已擁有標記 -->
+            <div v-if="isOwned(item) && !item.variants" class="owned-badge">
+              <Check :size="14" />
+              已擁有
+            </div>
+            <!-- 變體商品擁有狀態 -->
+            <div
+              v-else-if="item.variants && getVariantOwnedStatus(item) !== 'none'"
+              class="owned-badge"
+              :class="{ partial: getVariantOwnedStatus(item) === 'partial' }"
             >
-          </div>
+              <Check :size="14" />
+              {{
+                getVariantOwnedStatus(item) === "all" ? "已全部擁有" : "部分擁有"
+              }}
+            </div>
 
-          <!-- 消耗品效果 -->
-          <div v-if="item.consumableEffect" class="consumable-effect">
-            <span
-              >效率 +{{
-                Math.round((item.consumableEffect.multiplier - 1) * 100)
-              }}%</span
+            <!-- 商品圖標 -->
+            <div
+              class="item-icon"
+              :class="[
+                getRarityClass(item.rarity),
+                {
+                  'svg-frame':
+                    item.category === 'frame' && isAvatarFrameSvg(item.id),
+                  'image-frame':
+                    item.category === 'frame' && isAvatarFrameImage(item.id),
+                },
+              ]"
             >
+              <PixelRod
+                v-if="item.category === 'rod'"
+                :rod-id="item.id"
+                :size="48"
+              />
+              <component
+                v-else-if="item.category === 'gift'"
+                :is="getGiftIcon(item.id)"
+                :size="32"
+              />
+              <div
+                v-else-if="item.category === 'frame' && isAvatarFrameSvg(item.id)"
+                class="svg-frame-preview"
+                v-html="getAvatarFrameSvg(item.id, 'circle')"
+              ></div>
+              <div
+                v-else-if="
+                  item.category === 'frame' && isAvatarFrameImage(item.id)
+                "
+                class="image-frame-preview"
+              >
+                <img
+                  v-if="getAvatarFrameLayers(item.id)?.background"
+                  class="frame-layer-bg"
+                  :src="getLayerSrc(getAvatarFrameLayers(item.id)?.background)"
+                  :style="{
+                    filter: getAvatarFrameLayers(item.id)?.background?.filter,
+                  }"
+                  alt=""
+                />
+                <img
+                  v-if="getAvatarFrameLayers(item.id)?.overlay"
+                  class="frame-layer-overlay"
+                  :src="getLayerSrc(getAvatarFrameLayers(item.id)?.overlay)"
+                  :style="{
+                    filter: getAvatarFrameLayers(item.id)?.overlay?.filter,
+                  }"
+                  alt=""
+                />
+                <img
+                  v-if="getAvatarFrameLayers(item.id)?.decoration"
+                  class="frame-layer-decoration"
+                  :src="getLayerSrc(getAvatarFrameLayers(item.id)?.decoration)"
+                  :style="{
+                    filter: getAvatarFrameLayers(item.id)?.decoration?.filter,
+                  }"
+                  alt=""
+                />
+              </div>
+              <Sparkles v-else :size="32" />
+            </div>
+
+            <!-- 商品資訊 -->
+            <div class="item-info">
+              <div class="item-name">{{ item.name }}</div>
+              <div class="item-desc">{{ item.description }}</div>
+            </div>
+
+            <!-- 價格 -->
+            <div
+              class="item-price"
+              :class="{ insufficient: balance < item.price }"
+            >
+              <Coins :size="14" />
+              <span>{{ item.price.toLocaleString() }}</span>
+            </div>
+
+            <!-- 魚竿屬性 -->
+            <div v-if="item.rodStats" class="rod-stats">
+              <span>耐久 {{ item.rodStats.maxDurability }}</span>
+              <span
+                >等級 {{ item.rodStats.minFishTier }}-{{
+                  item.rodStats.maxFishTier
+                }}</span
+              >
+            </div>
+
+            <!-- 消耗品效果 -->
+            <div v-if="item.consumableEffect" class="consumable-effect">
+              <span
+                >效率 +{{
+                  Math.round((item.consumableEffect.multiplier - 1) * 100)
+                }}%</span
+              >
+            </div>
           </div>
         </div>
-      </div>
 
-      <!-- 空狀態 -->
-      <div v-if="currentItems.length === 0" class="empty-state">
-        <ShoppingBag :size="48" />
-        <span>此分類暫無商品</span>
-      </div>
+        <!-- 空狀態 -->
+        <div v-if="currentItems.length === 0" class="empty-state">
+          <ShoppingBag :size="48" />
+          <span>此分類暫無商品</span>
+        </div>
+      </template>
     </div>
 
     <!-- 禮物櫃 -->
@@ -904,6 +915,7 @@ onMounted(async () => {
 
 .category-tab {
   display: flex;
+  flex-shrink: 0;
   align-items: center;
   gap: 6px;
   padding: 10px 16px;
