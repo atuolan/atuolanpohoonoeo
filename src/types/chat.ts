@@ -405,6 +405,10 @@ export interface ChatMessage {
       timestamp: number;
     }>;
     fullyClaimed: boolean;
+    /** 超過 24 小時沒領完，不能再領 */
+    expired?: boolean;
+    /** 過期時退回給使用者的金額（分） */
+    refundedCents?: number;
   };
   /** 是否為位置分享 */
   isLocation?: boolean;

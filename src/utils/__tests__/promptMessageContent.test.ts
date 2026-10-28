@@ -60,7 +60,7 @@ describe("describeMessageForPrompt：其他卡片", () => {
         { ...rp, redpacketState: { claims: [{ claimerName: "小美", cents: 6600 }], fullyClaimed: true } },
         names,
       ),
-    ).toContain("[紅包狀態：小美領了 66 元，已領完]");
+    ).toContain("[紅包狀態：小美領了 $66，已領完]");
   });
 
   it("位置：角色和使用者都寫成 location 標籤", () => {

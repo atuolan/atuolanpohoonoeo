@@ -5,8 +5,12 @@
 
 export type RedPacketType = "lucky" | "exclusive" | "voice" | "split";
 
+/** 紅包超過這麼久沒領完就過期，使用者發的會把剩下的錢退回錢包 */
+export const REDPACKET_EXPIRE_MS = 24 * 60 * 60 * 1000;
+
 export interface RedPacketMessageLike {
   content?: string;
+  timestamp?: number;
   role?: string;
   sender?: string;
   is_user?: boolean;
@@ -33,6 +37,10 @@ export interface RedPacketMessageLike {
       timestamp: number;
     }>;
     fullyClaimed: boolean;
+    /** 超過 24 小時沒領完，不能再領 */
+    expired?: boolean;
+    /** 過期時退回給使用者的金額（分），只有使用者發的紅包有 */
+    refundedCents?: number;
   };
 }
 
@@ -110,6 +118,7 @@ export function canClaim(
   msg: RedPacketMessageLike,
   claimerName: string,
   isUser: boolean,
+  now: number = Date.now(),
 ): { ok: boolean; reason?: string } {
   if (!msg.isRedpacket || !msg.redpacketData || !msg.redpacketState) {
     return { ok: false, reason: "not-redpacket" };
@@ -117,6 +126,9 @@ export function canClaim(
   const { redpacketData: data, redpacketState: state } = msg;
   if (state.fullyClaimed || state.remainingCount <= 0) {
     return { ok: false, reason: "exhausted" };
+  }
+  if (isRedPacketExpired(msg, now)) {
+    return { ok: false, reason: "expired" };
   }
   // 已領過則不可重領
   if (
@@ -133,6 +145,34 @@ export function canClaim(
     }
   }
   return { ok: true };
+}
+
+/** 已標成過期，或發出超過 24 小時還沒領完 */
+export function isRedPacketExpired(msg: RedPacketMessageLike, now: number = Date.now()): boolean {
+  const state = msg.redpacketState;
+  if (!state || state.fullyClaimed) return false;
+  if (state.expired) return true;
+  return !!msg.timestamp && now - msg.timestamp >= REDPACKET_EXPIRE_MS;
+}
+
+/**
+ * 把超過 24 小時沒領完的紅包標成過期；使用者發的紅包剩下的錢記在 refundedCents。
+ * 回傳這次新過期的紅包和要退回的金額（分），呼叫端負責入帳和存檔。
+ */
+export function expireRedPackets<T extends RedPacketMessageLike>(
+  messages: T[],
+  now: number = Date.now(),
+): Array<{ message: T; refundCents: number }> {
+  const expired: Array<{ message: T; refundCents: number }> = [];
+  for (const m of messages) {
+    if (!m.isRedpacket || !m.redpacketState || m.redpacketState.expired) continue;
+    if (!isRedPacketExpired(m, now)) continue;
+    const isUser = m.role === "user" || m.is_user === true;
+    const refundCents = isUser ? m.redpacketState.remainingCents : 0;
+    m.redpacketState = { ...m.redpacketState, expired: true, refundedCents: refundCents || undefined };
+    expired.push({ message: m, refundCents });
+  }
+  return expired;
 }
 
 /** 套用一次領取，回傳領到的金額（分） */
@@ -178,11 +218,12 @@ export function findClaimableRedPacket(
   messages: RedPacketMessageLike[],
   claimerName: string,
   isUser: boolean,
+  now: number = Date.now(),
 ): RedPacketMessageLike | undefined {
   for (let i = messages.length - 1; i >= 0; i--) {
     const m = messages[i];
     if (!m.isRedpacket || !m.redpacketData || !m.redpacketState) continue;
-    const check = canClaim(m, claimerName, isUser);
+    const check = canClaim(m, claimerName, isUser, now);
     if (check.ok) return m;
   }
   return undefined;

@@ -335,6 +335,8 @@ interface MessageBubbleProps {
       timestamp: number;
     }>;
     fullyClaimed: boolean;
+    expired?: boolean;
+    refundedCents?: number;
   };
   /** 當前用戶在群聊中的顯示名（用來判斷是否為專屬紅包目標 / 是否已領取） */
   currentUserName?: string;
@@ -709,8 +711,18 @@ const redpacketUserClaim = computed(() => {
   return props.redpacketState.claims.find((c) => c.isUser);
 });
 
+const redpacketIsExpired = computed(() => {
+  return !!props.redpacketState?.expired && !props.redpacketState.fullyClaimed;
+});
+
+// 過期的紅包跟領完一樣：變灰、點了只看明細
 const redpacketIsExhausted = computed(() => {
-  return !!props.redpacketState?.fullyClaimed;
+  return !!props.redpacketState?.fullyClaimed || redpacketIsExpired.value;
+});
+
+const redpacketExpiredText = computed(() => {
+  const cents = props.redpacketState?.refundedCents;
+  return cents ? `已過期，已退回 $${(cents / 100).toFixed(2)}` : "已過期";
 });
 
 const redpacketIsExclusiveBlocked = computed(() => {
@@ -4060,7 +4072,8 @@ const showTextVoiceTranscript = ref(true);
               </div>
 
               <div class="rp-info" :class="{'exhausted': redpacketIsExhausted, 'claimed': !!redpacketUserClaim}">
-                <span v-if="redpacketUserClaim">已領取 ¥{{ (redpacketUserClaim.cents / 100).toFixed(2) }}</span>
+                <span v-if="redpacketUserClaim">已領取 ${{ (redpacketUserClaim.cents / 100).toFixed(2) }}</span>
+                <span v-else-if="redpacketIsExpired">{{ redpacketExpiredText }}</span>
                 <span v-else-if="redpacketIsExhausted">已被領完</span>
                 <span v-else>點擊領取</span>
               </div>
@@ -4081,7 +4094,7 @@ const showTextVoiceTranscript = ref(true);
                   class="redpacket-claim-item"
                 >
                   <span class="rp-claimer">{{ c.isUser ? "我" : c.claimerName }}</span>
-                  <span class="rp-claim-amount">¥{{ (c.cents / 100).toFixed(2) }}</span>
+                  <span class="rp-claim-amount">${{ (c.cents / 100).toFixed(2) }}</span>
                 </div>
               </div>
             </Transition>

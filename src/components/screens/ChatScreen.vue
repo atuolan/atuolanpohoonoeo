@@ -2875,6 +2875,7 @@ const {
   voiceClaimModalState,
   createTransactionClaimNoticeMessage,
   executeUserRedpacketClaim,
+  expireOldRedpackets,
   onMessageClaimRedpacket,
   handleVoiceRedpacketSubmit,
   getUserDisplayName,
@@ -4411,6 +4412,7 @@ async function handleUpdateTranscript(messageId: string, transcript: string) {
 
 // 使用者轉給角色的錢：角色回話後沒退回就算收下；<refund> 退的是之前還沒收的那筆，錢退回錢包
 async function settleTransfersAfterReply() {
+  await expireOldRedpackets();
   const { refunds, changed } = settleUserTransfers(messages.value);
   if (!changed) return;
   for (const { amount } of refunds) {
@@ -9434,6 +9436,8 @@ async function loadOrCreateChat(overrideChatId?: string) {
         // 載入角色狀態
         charStatus.value = chat.charStatus ?? null;
         charAwayCtl.loadFromChat(chat);
+        // 超過 24 小時沒領完的紅包：標成過期，使用者發的退回錢包
+        void expireOldRedpackets();
         // 載入角色待辦與行程（另外存，不在聊天記錄上）
         void loadPlannerForChat(chat.id);
 
@@ -11301,6 +11305,7 @@ useChatCleanup({
             message.isStreaming,
             message.giftReceived,
             message.transferStatus,
+            message.redpacketState,
             message.faceToFaceRequestStatus,
             message.onlineModeRequestStatus,
             message.toolActivity?.length,

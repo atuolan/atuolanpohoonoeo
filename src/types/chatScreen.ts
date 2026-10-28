@@ -67,6 +67,8 @@ export interface ChatScreenMessage {
       timestamp: number;
     }>;
     fullyClaimed: boolean;
+    expired?: boolean;
+    refundedCents?: number;
   };
   isLocation?: boolean;
   locationContent?: string;
