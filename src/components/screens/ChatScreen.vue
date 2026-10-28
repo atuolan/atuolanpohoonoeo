@@ -70,6 +70,7 @@ import PersonaEditPanel from "@/components/modals/PersonaEditPanel.vue";
 import PhoneCallModal from "@/components/modals/PhoneCallModal.vue";
 import ProactiveMessageSettingsModal from "@/components/modals/ProactiveMessageSettingsModal.vue";
 import RedPacketVoiceClaimModal from "@/components/modals/RedPacketVoiceClaimModal.vue";
+import GroupPlayTutorialOverlay from "@/components/common/GroupPlayTutorialOverlay.vue";
 import ScreenshotPreviewModal from "@/components/modals/ScreenshotPreviewModal.vue";
 import StoryClockReturnDialog from "@/components/modals/StoryClockReturnDialog.vue";
 import ForwardTargetPickerModal from "@/components/modals/ForwardTargetPickerModal.vue";
@@ -12038,6 +12039,9 @@ useChatCleanup({
         @image-upload="handleImageUpload"
         @ai-generate="handleAIGenerateImage"
       />
+
+      <!-- 群聊玩法教學（骰子機器人、發紅包；第一次打開群聊時出現一次） -->
+      <GroupPlayTutorialOverlay v-if="isGroupChat" :chat-id="currentChatId" />
 
       <!-- 禮物面板 -->
       <GiftDrawer
