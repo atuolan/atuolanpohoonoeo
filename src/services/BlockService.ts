@@ -178,7 +178,8 @@ class BlockService {
         console.log(`[BlockService] 已修復角色 ${chat.characterId} 的衝突封鎖狀態`)
       }
     }
-    const blockedChats = allChats.filter(c => c.blockState?.status === 'user-blocked-char')
+    // 歸檔的聊天完全安靜，被封鎖的角色也不來加好友
+    const blockedChats = allChats.filter(c => c.blockState?.status === 'user-blocked-char' && !c.archivedAt)
 
     for (const chat of blockedChats) {
       const blockState = chat.blockState!

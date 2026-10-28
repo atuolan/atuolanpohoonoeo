@@ -94,6 +94,11 @@ export async function saveChatMetadata(chat: Chat): Promise<void> {
   ) {
     nextChat.charAwayPlan = existing.charAwayPlan;
   }
+  // 歸檔在聊天列表寫入，聊天頁較舊的快照沒有這個欄位時不能把它清掉；
+  // 取消歸檔一律寫 archivedAt = 0，不用 undefined
+  if (existing?.archivedAt && nextChat.archivedAt === undefined) {
+    nextChat.archivedAt = existing.archivedAt;
+  }
   await db.put(DB_STORES.CHATS, nextChat);
   scheduleSelfHostedAutoSync();
 }

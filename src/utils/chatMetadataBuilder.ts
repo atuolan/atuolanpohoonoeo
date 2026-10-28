@@ -85,6 +85,7 @@ export function buildChatMetadataFromState(options: BuildChatMetadataOptions): C
     messageCount: options.storableMessages.length,
     isBranch: options.currentChatData?.isBranch,
     pinnedToList: options.currentChatData?.pinnedToList,
+    archivedAt: options.currentChatData?.archivedAt,
     blockState: options.currentChatData?.blockState,
     locationOverride: options.locationOverride ?? undefined,
     charAvatarOverride: options.charAvatarOverride,

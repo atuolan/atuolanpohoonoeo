@@ -57,6 +57,10 @@ export function useHolidayTrigger(
     if (hasTriggeredToday.value) return;
     if (!chatId.value) return;
 
+    // 翻看歸檔的聊天時不主動祝福（歸檔＝角色完全安靜）
+    const { loadChatById } = await import("@/storage/chatStorage");
+    if ((await loadChatById(chatId.value))?.archivedAt) return;
+
     try {
       await triggerWithHolidayPrompt(todayHoliday);
 

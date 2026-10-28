@@ -41,7 +41,7 @@ export function useWidgetCharacter(
     void loadAllChats()
       .then((chats) => {
         recentCharacterIds.value = chats
-          .filter((chat) => !chat.isGroupChat && chat.characterId)
+          .filter((chat) => !chat.isGroupChat && chat.characterId && !chat.archivedAt)
           .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))
           .map((chat) => chat.characterId);
       })

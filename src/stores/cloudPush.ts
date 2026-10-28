@@ -10,6 +10,7 @@ import {
   createChatRecord,
   incrementLocalChatUnreadCount,
   loadChatById,
+  loadChatsByCharacter,
   refreshChatDerivedMetadata,
   resolvePreferredDirectChat,
 } from "@/storage/chatStorage";
@@ -135,16 +136,22 @@ export const useCloudPushStore = defineStore("cloudPush", () => {
       const allChats = await db.getAll<any>(DB_STORES.CHATS);
       const allSummaries = await db.getAll<any>(DB_STORES.SUMMARIES);
 
-      // 只傳有啟用主動發訊息的角色，並帶上各自的時間設定
+      // 只傳有啟用主動發訊息的角色，並帶上各自的時間設定；整個角色都歸檔了就不傳
+      const { getArchivedCharacterIds } = await import("@/utils/chatArchive");
+      const archivedCharacterIds = getArchivedCharacterIds(allChats);
       const characters: CloudPushCharacter[] = await Promise.all(
         charactersStore.characters
-          .filter((c) => c.proactiveMessageSettings?.enabled === true)
+          .filter(
+            (c) =>
+              c.proactiveMessageSettings?.enabled === true &&
+              !archivedCharacterIds.has(c.id),
+          )
           .map(async (c) => {
             const ps = c.proactiveMessageSettings!;
 
             // 找最近的聊天，取最後 15 輪（user + assistant 各算一條）
             const charChat = allChats
-              .filter((ch: any) => ch.characterId === c.id && !ch.isGroupChat)
+              .filter((ch: any) => ch.characterId === c.id && !ch.isGroupChat && !ch.archivedAt)
               .sort((a: any, b: any) => (b.updatedAt || 0) - (a.updatedAt || 0))[0];
 
             let recentMessages: Array<{ role: "user" | "assistant"; content: string }> = [];
@@ -263,7 +270,15 @@ export const useCloudPushStore = defineStore("cloudPush", () => {
       }
 
       for (const [characterId, charMsgs] of grouped) {
-        const preferredChat = await resolvePreferredDirectChat(characterId);
+        let preferredChat = await resolvePreferredDirectChat(characterId);
+        if (preferredChat?.archivedAt) {
+          // 歸檔的聊天完全安靜：改投到沒歸檔的單聊，整個角色都歸檔了就丟掉
+          const active = (
+            await loadChatsByCharacter(characterId, { isGroupChat: false })
+          ).find((c) => !c.archivedAt);
+          if (!active) continue;
+          preferredChat = active;
+        }
         const existingChatId = preferredChat?.id;
 
         // 構建新訊息

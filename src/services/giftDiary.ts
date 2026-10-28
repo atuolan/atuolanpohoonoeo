@@ -177,6 +177,10 @@ export async function runAutoGiftDiary(
     const meta = await loadGiftDiaryMeta(characterId);
     const today = todayString(now);
     if (!meta.autoDiary || meta.lastAutoRollDate === today) return null;
+    // 整個角色都歸檔了：完全安靜，翻看歸檔紀錄時也不在背景寫日記
+    const { loadAllChats } = await import("@/storage/chatStorage");
+    const { getArchivedCharacterIds } = await import("@/utils/chatArchive");
+    if (getArchivedCharacterIds(await loadAllChats()).has(characterId)) return null;
     const memories = await loadGiftMemories(characterId);
     const target = pickAutoDiaryTarget(memories, now);
     if (!target) return null;
