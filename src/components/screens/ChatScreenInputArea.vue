@@ -577,20 +577,7 @@ const isDarkBackground = computed(() =>
 
       <!-- 右側按鈕組 -->
       <div class="right-buttons" @click.stop>
-        <!-- 圖片按鈕（未聚焦且無輸入時顯示，原 continue-btn 位置） -->
-        <button
-          v-if="!isGenerating && !inputText.trim() && !isInputFocused"
-          ref="imageBtnRef"
-          class="input-btn image-btn"
-          title="圖片 / 媒體"
-          @click="emit('openMediaDrawer')"
-        >
-          <svg viewBox="0 0 24 24" fill="currentColor">
-            <path
-              d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"
-            />
-          </svg>
-        </button>
+        <!-- 圖片 / 媒體已移到「＋」選單，避免按重新生成時誤觸 -->
 
         <!-- 重新生成按鈕（有 AI 訊息且未生成中） -->
         <button
@@ -802,6 +789,22 @@ const isDarkBackground = computed(() =>
           </div>
         </div>
         <div class="features-grid">
+          <button
+            class="feature-item"
+            @click="
+              emit('openMediaDrawer');
+              emit('update:showMoreFeatures', false);
+            "
+          >
+            <div class="feature-icon">
+              <svg viewBox="0 0 24 24" fill="currentColor">
+                <path
+                  d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"
+                />
+              </svg>
+            </div>
+            <span class="feature-label">圖片</span>
+          </button>
           <button
             class="feature-item"
             @click="
@@ -1412,14 +1415,6 @@ const isDarkBackground = computed(() =>
 
   &:hover {
     color: #333;
-  }
-}
-
-.image-btn {
-  color: var(--color-primary, #7dd3a8);
-
-  &:hover {
-    color: #5cb88a;
   }
 }
 
