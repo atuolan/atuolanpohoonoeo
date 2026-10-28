@@ -1320,7 +1320,7 @@ const isDarkBackground = computed(() =>
         color-mix(in srgb, var(--chat-header-surface, var(--color-surface)) 94%, transparent) 0%,
         color-mix(in srgb, var(--chat-header-surface, var(--color-surface)) 78%, transparent) 100%
       ),
-      var(--color-background, #1a1a2e)
+      var(--color-background, #111111)
   );
   backdrop-filter: var(--chat-input-backdrop, blur(30px) saturate(180%));
   -webkit-backdrop-filter: var(--chat-input-backdrop, blur(30px) saturate(180%));

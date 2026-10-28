@@ -189,7 +189,7 @@ onUnmounted(() => {
   padding: 0;
   border: 2px solid var(--color-primary, #7dd3a8);
   border-radius: 50%;
-  background: var(--color-surface, #1a1a2e);
+  background: var(--color-surface, #191919);
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
   cursor: grab;
   touch-action: none;
@@ -236,7 +236,7 @@ onUnmounted(() => {
   width: 14px;
   height: 14px;
   background: #ef4444;
-  border: 2px solid var(--color-surface, #1a1a2e);
+  border: 2px solid var(--color-surface, #191919);
   border-radius: 50%;
   pointer-events: none;
 }
