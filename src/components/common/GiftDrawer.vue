@@ -148,6 +148,119 @@
               </div>
             </div>
 
+            <!-- 紅包分頁 -->
+            <div v-if="activeTab === 'redpacket'" class="redpacket-tab">
+              <div class="transfer-card">
+                <!-- 紅包類型 -->
+                <div class="redpacket-types">
+                  <button
+                    class="redpacket-type-btn"
+                    :class="{ active: redpacketType === 'lucky' }"
+                    @click="redpacketType = 'lucky'"
+                  >
+                    拼手氣
+                  </button>
+                  <button
+                    class="redpacket-type-btn"
+                    :class="{ active: redpacketType === 'split' }"
+                    @click="redpacketType = 'split'"
+                  >
+                    平分
+                  </button>
+                  <button
+                    class="redpacket-type-btn"
+                    :class="{ active: redpacketType === 'exclusive' }"
+                    @click="redpacketType = 'exclusive'"
+                  >
+                    專屬
+                  </button>
+                </div>
+
+                <!-- 金額 -->
+                <div class="amount-input-group">
+                  <label>{{ redpacketType === "exclusive" ? "金額" : "總金額" }}</label>
+                  <div class="amount-input-wrapper">
+                    <Coins :size="20" />
+                    <input
+                      v-model.number="redpacketAmount"
+                      type="number"
+                      min="1"
+                      :max="balance"
+                      placeholder="輸入金額"
+                      class="amount-input"
+                    />
+                  </div>
+                  <div class="balance-hint">
+                    可用餘額：{{ balance.toLocaleString() }}
+                  </div>
+                </div>
+
+                <!-- 份數 -->
+                <div v-if="redpacketType !== 'exclusive'" class="amount-input-group">
+                  <label>紅包個數</label>
+                  <div class="amount-input-wrapper">
+                    <input
+                      v-model.number="redpacketCount"
+                      type="number"
+                      min="1"
+                      max="100"
+                      class="amount-input"
+                    />
+                  </div>
+                </div>
+
+                <!-- 領取者 -->
+                <div v-if="redpacketType === 'exclusive'" class="redpacket-target-group">
+                  <label>給誰</label>
+                  <div v-if="groupMemberNames && groupMemberNames.length > 0" class="redpacket-targets">
+                    <button
+                      v-for="name in groupMemberNames"
+                      :key="name"
+                      class="redpacket-target-pill"
+                      :class="{ active: redpacketTarget === name }"
+                      @click="redpacketTarget = name"
+                    >
+                      {{ name }}
+                    </button>
+                  </div>
+                  <div v-else class="redpacket-empty-hint">群裡還沒有成員</div>
+                </div>
+
+                <!-- 祝福語 -->
+                <div class="note-input-group">
+                  <label>祝福語（選填）</label>
+                  <input
+                    v-model="redpacketBlessing"
+                    type="text"
+                    placeholder="恭喜發財，大吉大利"
+                    class="note-input"
+                    maxlength="30"
+                  />
+                </div>
+
+                <div class="redpacket-hint">
+                  <template v-if="redpacketType === 'lucky'"
+                    >隨機分成 {{ redpacketCount }} 份，先搶先得</template
+                  >
+                  <template v-else-if="redpacketType === 'split'"
+                    >每人 {{ splitPerPerson }} 元</template
+                  >
+                  <template v-else
+                    >只有 {{ redpacketTarget || "指定的人" }} 能領</template
+                  >
+                </div>
+
+                <button
+                  class="transfer-btn"
+                  :disabled="!canSendRedpacket"
+                  @click="handleSendRedpacket"
+                >
+                  <Mail :size="18" />
+                  <span>塞錢進紅包</span>
+                </button>
+              </div>
+            </div>
+
             <!-- 禮物分頁 -->
             <div v-if="activeTab === 'gift'" class="gift-tab">
               <div v-if="ownedGifts.length > 0" class="gift-grid">
@@ -210,6 +323,7 @@ import {
     Gift,
     Heart,
     History,
+    Mail,
     Receipt,
     Send,
     ShoppingBag,
@@ -221,7 +335,7 @@ import {
 } from "lucide-vue-next";
 import { computed, ref, watch } from "vue";
 
-type TabId = "wallet" | "transfer" | "gift";
+type TabId = "wallet" | "transfer" | "redpacket" | "gift";
 
 interface OwnedGift {
   id: string;
@@ -238,6 +352,10 @@ const props = defineProps<{
   hiddenItemIds?: string[];
   characterName: string;
   characterAvatar?: string;
+  /** 是群聊（含多人卡）才顯示紅包分頁 */
+  isGroup?: boolean;
+  /** 群成員名字，專屬紅包挑領取者用 */
+  groupMemberNames?: string[];
 }>();
 
 const emit = defineEmits<{
@@ -245,6 +363,15 @@ const emit = defineEmits<{
   openShop: [];
   transfer: [amount: number, note: string];
   sendGift: [giftItemId: string, giftName: string, cardText: string];
+  redpacket: [
+    data: {
+      type: "lucky" | "split" | "exclusive";
+      amount: number;
+      count: number;
+      blessing: string;
+      target?: string;
+    },
+  ];
 }>();
 
 // Store
@@ -257,15 +384,22 @@ const GLOBAL_WALLET_ID = "global";
 const activeTab = ref<TabId>("wallet");
 
 // 分頁定義
-const tabs = [
-  { id: "wallet" as TabId, label: "錢包", icon: Wallet },
-  { id: "transfer" as TabId, label: "轉帳", icon: Send },
-  { id: "gift" as TabId, label: "禮物", icon: Gift },
-];
+const tabs = computed(() => {
+  const base = [
+    { id: "wallet" as TabId, label: "錢包", icon: Wallet },
+    { id: "transfer" as TabId, label: "轉帳", icon: Send },
+  ];
+  if (props.isGroup) {
+    base.push({ id: "redpacket" as TabId, label: "紅包", icon: Mail });
+  }
+  base.push({ id: "gift" as TabId, label: "禮物", icon: Gift });
+  return base;
+});
 
 const tabTitles: Record<TabId, string> = {
   wallet: "我的錢包",
   transfer: "轉帳",
+  redpacket: "發紅包",
   gift: "送禮物",
 };
 
@@ -289,6 +423,33 @@ const canTransfer = computed(() => {
     transferAmount.value > 0 &&
     transferAmount.value <= balance.value
   );
+});
+
+// 紅包數據
+const redpacketType = ref<"lucky" | "split" | "exclusive">("lucky");
+const redpacketAmount = ref<number | undefined>(undefined);
+const redpacketCount = ref(3);
+const redpacketTarget = ref<string>("");
+const redpacketBlessing = ref("");
+
+const splitPerPerson = computed(() => {
+  const amount = redpacketAmount.value || 0;
+  const count = redpacketCount.value || 0;
+  if (count <= 0) return "0.00";
+  return (amount / count).toFixed(2);
+});
+
+const canSendRedpacket = computed(() => {
+  const amount = redpacketAmount.value;
+  if (!amount || amount <= 0 || amount > balance.value) return false;
+
+  if (redpacketType.value === "exclusive") {
+    return !!redpacketTarget.value;
+  }
+
+  const count = redpacketCount.value;
+  if (!Number.isInteger(count) || count < 1 || count > 100) return false;
+  return amount * 100 >= count;
 });
 
 // 禮物數據
@@ -345,6 +506,35 @@ async function handleTransfer() {
   }
 }
 
+async function handleSendRedpacket() {
+  if (!canSendRedpacket.value || !redpacketAmount.value) return;
+
+  const type = redpacketType.value;
+  const count = type === "exclusive" ? 1 : redpacketCount.value;
+  const target = type === "exclusive" ? redpacketTarget.value : undefined;
+
+  const result = gameEconomyStore.transfer(
+    GLOBAL_WALLET_ID,
+    redpacketAmount.value,
+  );
+  if (result.success) {
+    emit("redpacket", {
+      type,
+      amount: redpacketAmount.value,
+      count,
+      blessing: redpacketBlessing.value.trim(),
+      ...(target ? { target } : {}),
+    });
+    await gameEconomyStore.saveState(GLOBAL_WALLET_ID);
+    redpacketAmount.value = undefined;
+    redpacketBlessing.value = "";
+    redpacketTarget.value = "";
+    redpacketCount.value = 3;
+    redpacketType.value = "lucky";
+    handleClose();
+  }
+}
+
 function selectGift(giftId: string) {
   selectedGiftId.value = selectedGiftId.value === giftId ? null : giftId;
 }
@@ -374,6 +564,9 @@ watch(
   async (visible) => {
     if (visible) {
       await gameEconomyStore.loadState(GLOBAL_WALLET_ID);
+    }
+    if (!props.isGroup && activeTab.value === "redpacket") {
+      activeTab.value = "wallet";
     }
   },
   { immediate: true },
@@ -779,6 +972,203 @@ watch(
     font-size: 16px;
     font-weight: 600;
     color: white;
+    cursor: pointer;
+    transition: all 0.2s;
+
+    &:active:not(:disabled) {
+      opacity: 0.9;
+      transform: scale(0.98);
+    }
+
+    &:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+  }
+}
+
+// ===== 紅包分頁樣式 =====
+.redpacket-tab {
+  .transfer-card {
+    background: var(--color-surface-alt, #f9fafb);
+    border-radius: 16px;
+    padding: 20px;
+  }
+
+  .redpacket-types {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 20px;
+  }
+
+  .redpacket-type-btn {
+    padding: 8px 16px;
+    background: var(--color-surface, #fff);
+    border: 1px solid var(--color-border, #e5e7eb);
+    border-radius: 20px;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--color-text-secondary, #374151);
+    cursor: pointer;
+    transition: all 0.2s;
+
+    &.active {
+      background: var(--color-primary, #7dd3a8);
+      border-color: var(--color-primary, #7dd3a8);
+      color: var(--color-on-primary-contrast, #fff);
+    }
+
+    &:active {
+      transform: scale(0.98);
+    }
+  }
+
+  .amount-input-group {
+    margin-bottom: 16px;
+
+    label {
+      display: block;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--color-text-secondary, #6b7280);
+      margin-bottom: 8px;
+    }
+
+    .amount-input-wrapper {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: var(--color-surface, #fff);
+      border: 2px solid var(--color-border, #e5e7eb);
+      border-radius: 12px;
+      padding: 12px 14px;
+      transition: border-color 0.2s;
+
+      &:focus-within {
+        border-color: var(--color-primary, #7dd3a8);
+      }
+
+      .amount-input {
+        flex: 1;
+        border: none;
+        background: none;
+        font-size: 18px;
+        font-weight: 600;
+        color: var(--color-text-primary, #1f2937);
+        outline: none;
+
+        &::placeholder {
+          color: var(--color-text-placeholder, #d1d5db);
+          font-weight: 400;
+        }
+      }
+    }
+
+    .balance-hint {
+      font-size: 12px;
+      color: var(--color-text-tertiary, #9ca3af);
+      margin-top: 6px;
+    }
+  }
+
+  .redpacket-target-group {
+    margin-bottom: 16px;
+
+    label {
+      display: block;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--color-text-secondary, #6b7280);
+      margin-bottom: 8px;
+    }
+  }
+
+  .redpacket-targets {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .redpacket-target-pill {
+    padding: 6px 14px;
+    background: var(--color-surface, #fff);
+    border: 1px solid var(--color-border, #e5e7eb);
+    border-radius: 16px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--color-text-secondary, #374151);
+    cursor: pointer;
+    transition: all 0.2s;
+
+    &.active {
+      background: var(--color-primary, #7dd3a8);
+      border-color: var(--color-primary, #7dd3a8);
+      color: var(--color-on-primary-contrast, #fff);
+    }
+
+    &:active {
+      transform: scale(0.98);
+    }
+  }
+
+  .redpacket-empty-hint {
+    font-size: 12px;
+    color: var(--color-text-tertiary, #9ca3af);
+  }
+
+  .note-input-group {
+    margin-bottom: 16px;
+
+    label {
+      display: block;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--color-text-secondary, #6b7280);
+      margin-bottom: 8px;
+    }
+
+    .note-input {
+      width: 100%;
+      padding: 10px 14px;
+      background: var(--color-surface, #fff);
+      border: 2px solid var(--color-border, #e5e7eb);
+      border-radius: 10px;
+      font-size: 14px;
+      color: var(--color-text-primary, #1f2937);
+      outline: none;
+      transition: border-color 0.2s;
+      box-sizing: border-box;
+
+      &:focus {
+        border-color: var(--color-primary, #7dd3a8);
+      }
+
+      &::placeholder {
+        color: var(--color-text-placeholder, #d1d5db);
+      }
+    }
+  }
+
+  .redpacket-hint {
+    font-size: 12px;
+    color: var(--color-text-tertiary, #9ca3af);
+    margin-bottom: 16px;
+  }
+
+  .transfer-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+    padding: 14px;
+    background: var(--color-primary, #7dd3a8);
+    border: none;
+    border-radius: 12px;
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--color-on-primary-contrast, #fff);
     cursor: pointer;
     transition: all 0.2s;
 
