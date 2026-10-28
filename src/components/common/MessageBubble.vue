@@ -4044,6 +4044,12 @@ const showTextVoiceTranscript = ref(true);
             <title>對方看到了修改前的原文</title>
             <path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z" />
           </svg>
+          <!-- 有心聲的小紅點：預設隱藏，由不發光的聊天裝扮（如綠泡泡）打開 -->
+          <span
+            v-if="!isUser && effectiveThought && !showThought"
+            class="thought-dot"
+            aria-label="有心聲，點氣泡查看"
+          ></span>
           <!-- 時空跳轉訊息 -->
           <div v-if="isTimetravel" class="timetravel-message">
             <div class="timetravel-icon">⏰</div>
@@ -8304,6 +8310,10 @@ body.is-night-mode .pixel-gift-wrapper .gift-card-note {
   height: 12px;
   color: var(--color-text-muted, #8a8aa3);
   opacity: 0.8;
+}
+
+.thought-dot {
+  display: none;
 }
 
 // 操作選單
