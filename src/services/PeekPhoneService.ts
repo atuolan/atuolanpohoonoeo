@@ -412,6 +412,8 @@ export interface PeekSources {
   realPhotosText?: string;
   /** 兩人第一次聊天的日期（鎖屏密碼參考） */
   firstChatDate?: string;
+  /** 多人卡成員的手機：群組名和其他成員 */
+  group?: { groupName: string; otherMembers: string[] };
 }
 
 /**
@@ -441,6 +443,7 @@ export async function buildPromptContext(
     realDataText: sources.realDataText,
     realPhotosText: sources.realPhotosText,
     firstChatDate: sources.firstChatDate,
+    group: sources.group,
   };
 }
 

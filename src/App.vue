@@ -961,14 +961,17 @@ async function openBookFromShelf(meta: BookMeta) {
 // ===== 頭盔TA手機 =====
 const peekPhoneCharacterId = ref<string | null>(null);
 const peekPhoneChatId = ref<string | null>(null);
+// 多人卡：看的是哪位成員的手機
+const peekPhoneMemberId = ref<string | null>(null);
 const peekPhoneSelectRef = ref<InstanceType<typeof PeekPhoneSelectScreen> | null>(null);
 const peekPhoneScreenRef = ref<InstanceType<typeof PeekPhoneScreen> | null>(null);
 const qzoneScreenRef = ref<InstanceType<typeof QZoneScreen> | null>(null);
 
 // 選好角色進手機也推一筆歷史，瀏覽器的返回才會回到選角色，不會跳過它
-function openPeekPhone(characterId: string, chatId: string) {
+function openPeekPhone(characterId: string, chatId: string, memberId?: string) {
   peekPhoneCharacterId.value = characterId;
   peekPhoneChatId.value = chatId;
+  peekPhoneMemberId.value = memberId ?? null;
   navigateToPage("peek-phone");
 }
 
@@ -997,6 +1000,7 @@ watch(currentPage, (page) => {
   if (page !== "peek-phone") {
     peekPhoneCharacterId.value = null;
     peekPhoneChatId.value = null;
+    peekPhoneMemberId.value = null;
   } else if (!peekPhoneCharacterId.value || !peekPhoneChatId.value) {
     navigateToPage("peek-phone-select", { mode: "replace" });
   }
@@ -3224,7 +3228,10 @@ useSwipeBack(handleGlobalSwipeBack, swipeBackEnabled);
       :character-id="peekPhoneCharacterId"
       ref="peekPhoneScreenRef"
       :chat-id="peekPhoneChatId"
+      :member-id="peekPhoneMemberId"
+      :key="`${peekPhoneChatId}:${peekPhoneMemberId ?? ''}`"
       @back="leavePeekPhone"
+      @switch-member="(id: string) => (peekPhoneMemberId = id)"
       @caught="peekCaughtToChat"
     />
 

@@ -36,6 +36,10 @@ const props = defineProps<{
   progress: PeekProgress;
   /** 偷看的結果要不要回到聊天（這段聊天各自的開關） */
   links: PeekLinkSettings;
+  /** 多人卡：可以換看哪位成員的手機 */
+  members?: { id: string; name: string; avatar?: string }[];
+  /** 多人卡：現在看的是哪位成員 */
+  currentMemberId?: string | null;
 }>();
 
 const emit = defineEmits<{
@@ -46,6 +50,8 @@ const emit = defineEmits<{
   /** 去秘密所在的地方 */
   goSecret: [secret: PeekSecret];
   updateLinks: [links: PeekLinkSettings];
+  /** 多人卡：換看另一位成員的手機 */
+  switchMember: [memberId: string];
 }>();
 
 const linkOptions: { key: keyof PeekLinkSettings; label: string; note: string }[] = [
@@ -134,6 +140,28 @@ const subtitle = computed(() => {
           <button type="button" class="peek-sheet-close" aria-label="關閉" @click="emit('close')">
             <X :size="20" />
           </button>
+        </div>
+
+        <div v-if="(props.members?.length ?? 0) > 1" class="peek-sheet-section">
+          <div class="peek-sheet-section-label">換一支手機</div>
+          <div class="peek-sheet-members">
+            <button
+              v-for="m in props.members ?? []"
+              :key="m.id"
+              type="button"
+              class="peek-sheet-member"
+              :class="{ 'is-current': m.id === props.currentMemberId }"
+              :aria-current="m.id === props.currentMemberId ? 'true' : undefined"
+              :aria-label="`看${m.name}的手機`"
+              @click="emit('switchMember', m.id)"
+            >
+              <span class="peek-sheet-member-avatar">
+                <img v-if="m.avatar" :src="m.avatar" alt="" />
+                <template v-else>{{ initialOf(m.name) }}</template>
+              </span>
+              <span class="peek-sheet-member-name">{{ m.name }}</span>
+            </button>
+          </div>
         </div>
 
         <div v-if="props.secrets.length > 0" class="peek-sheet-section">
@@ -329,6 +357,75 @@ const subtitle = computed(() => {
     height: 100%;
     object-fit: cover;
   }
+}
+
+.peek-sheet-members {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  // 留空間給選中的外框，不然橫向捲動會把它裁掉
+  padding: 4px 4px 2px;
+  overflow-x: auto;
+  scrollbar-width: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+.peek-sheet-member {
+  flex-shrink: 0;
+  width: 64px;
+  min-height: 44px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 6px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--p-ink);
+  font-family: inherit;
+  cursor: pointer;
+
+  &.is-current .peek-sheet-member-name {
+    font-weight: 700;
+  }
+}
+
+.peek-sheet-member-avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 24px;
+  box-sizing: border-box;
+  flex-shrink: 0;
+  overflow: hidden;
+  background: var(--p-owner);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 17px;
+  font-weight: 700;
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .peek-sheet-member.is-current & {
+    box-shadow: 0 0 0 2px var(--p-sheet), 0 0 0 4px var(--p-owner);
+  }
+}
+
+.peek-sheet-member-name {
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
 }
 
 .peek-sheet-title {

@@ -11,6 +11,7 @@ import {
 } from "@/components/peek-phone/peekPhoneView";
 import { db, DB_STORES } from "@/db/database";
 import { shouldHideFromPeekPhone } from "@/services/BlockService";
+import { listPeekMembers } from "@/utils/peekMember";
 import { useCharactersStore } from "@/stores";
 import type { StoredCharacter } from "@/types/character";
 import type { Chat } from "@/types/chat";
@@ -20,7 +21,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 
 const emit = defineEmits<{
   back: [];
-  select: [characterId: string, chatId: string];
+  select: [characterId: string, chatId: string, memberId?: string];
 }>();
 
 const charactersStore = useCharactersStore();
@@ -56,18 +57,29 @@ const previews = ref<Map<string, PhonePreview>>(new Map());
 async function loadPreviews() {
   try {
     await db.init();
-    const records = await db.getAll<{ characterId: string; data: PeekPhoneData; updatedAt: number }>(
-      DB_STORES.PEEK_PHONE_DATA,
-    );
+    const records = await db.getAll<{
+      characterId: string;
+      chatId: string;
+      data: PeekPhoneData;
+      updatedAt: number;
+    }>(DB_STORES.PEEK_PHONE_DATA);
+    // chatId → 角色 ID，用來把多人卡成員的手機歸給正確的人
+    const chats = await db.getAll<Chat>(DB_STORES.CHATS);
+    const chatOwner = new Map<string, string>();
+    for (const chat of chats) chatOwner.set(chat.id, chat.characterId);
     const map = new Map<string, PhonePreview>();
     for (const r of [...records].sort((a, b) => a.updatedAt - b.updatedAt)) {
       // 同一個角色有多段聊天時，後面（較新）的蓋掉前面的
       const notifications = latestNotifications(r.data?.chats ?? [], 99);
-      map.set(r.characterId, {
+      const preview = {
         notification: notifications[0] ?? null,
         notificationCount: notifications.length,
         updatedAt: r.updatedAt,
-      });
+      };
+      const owner = chatOwner.get(r.chatId) ?? r.characterId;
+      map.set(owner, preview);
+      // 成員自己的預覽，給成員選單用
+      if (owner !== r.characterId) map.set(r.characterId, preview);
     }
     previews.value = map;
   } catch (err) {
@@ -142,6 +154,9 @@ function onPhoneClick(i: number) {
 // 聊天選擇狀態
 const selectedCharacterId = ref<string | null>(null);
 const characterChats = ref<Chat[]>([]);
+// 選到多人卡聊天：先選要看哪位成員的手機
+const memberChat = ref<Chat | null>(null);
+const memberOptions = computed(() => listPeekMembers(memberChat.value));
 const isLoadingChats = ref(false);
 // 這個角色還沒有任何聊天紀錄
 const noChats = ref(false);
@@ -150,11 +165,17 @@ const selectedCharacter = computed(() =>
   characters.value.find((c) => c.id === selectedCharacterId.value),
 );
 const showChatSheet = computed(
-  () => !!selectedCharacterId.value && (noChats.value || characterChats.value.length > 1),
+  () =>
+    !memberChat.value &&
+    !!selectedCharacterId.value &&
+    (noChats.value || characterChats.value.length > 1),
 );
+const showMemberSheet = computed(() => !!memberChat.value);
 
 // iOS 底部露出的那一截跟著畫面最底下的顏色
-useRootBackground(computed(() => (showChatSheet.value ? "#f6f5f2" : "#e6e5e2")));
+useRootBackground(
+  computed(() => (showChatSheet.value || showMemberSheet.value ? "#f6f5f2" : "#e6e5e2")),
+);
 
 function pickActive() {
   if (activeCharacter.value && !isLoadingChats.value) onCharacterSelect(activeCharacter.value.id);
@@ -182,7 +203,8 @@ async function onCharacterSelect(charId: string) {
 
     if (chats.length === 1) {
       // 只有一個聊天，自動選擇
-      emit("select", charId, chats[0].id);
+      pickChat(charId, chats[0]);
+      if (chats[0].groupMetadata?.isMultiCharCard === true) return;
       selectedCharacterId.value = null;
       characterChats.value = [];
       return;
@@ -199,11 +221,42 @@ async function onCharacterSelect(charId: string) {
   }
 }
 
+/** 選了聊天：多人卡要多選一層成員，一般聊天直接進手機 */
+function pickChat(charId: string, chat: Chat) {
+  if (chat.groupMetadata?.isMultiCharCard === true) {
+    memberChat.value = chat;
+    return;
+  }
+  emit("select", charId, chat.id);
+}
+
 /** 選擇聊天紀錄 */
 function onChatSelect(chatId: string) {
   if (!selectedCharacterId.value) return;
-  emit("select", selectedCharacterId.value, chatId);
+  const chat = characterChats.value.find((c) => c.id === chatId);
+  if (!chat) return;
+  pickChat(selectedCharacterId.value, chat);
+  if (chat.groupMetadata?.isMultiCharCard === true) return;
   closeChatSheet();
+}
+
+/** 選了成員：把成員一起交給手機畫面 */
+function onMemberSelect(memberId: string) {
+  const chat = memberChat.value;
+  if (!chat) return;
+  emit("select", chat.characterId, chat.id, memberId);
+  closeMemberSheet();
+  closeChatSheet();
+}
+
+function closeMemberSheet() {
+  memberChat.value = null;
+}
+
+/** 關掉成員選單並把選中的角色也收起來 */
+function dismissMemberSheet() {
+  closeMemberSheet();
+  selectedCharacterId.value = null;
 }
 
 function closeChatSheet() {
@@ -212,8 +265,13 @@ function closeChatSheet() {
   noChats.value = false;
 }
 
-/** 右滑返回：聊天選單開著就先收起來，沒開才回 false 讓外面離開 */
+/** 右滑返回：成員選單、聊天選單開著就先收起來，沒開才回 false 讓外面離開 */
 function handleBack(): boolean {
+  if (showMemberSheet.value) {
+    closeMemberSheet();
+    selectedCharacterId.value = null;
+    return true;
+  }
   if (!showChatSheet.value) return false;
   closeChatSheet();
   return true;
@@ -354,6 +412,51 @@ watch(
             </li>
           </ul>
           <button v-else type="button" class="select-cta" @click="closeChatSheet">知道了</button>
+        </div>
+      </div>
+    </Transition>
+
+    <!-- 多人卡：選要看誰的手機 -->
+    <Transition name="select-sheet">
+      <div v-if="showMemberSheet && memberChat" class="sheet-layer">
+        <div class="sheet-scrim" @click="dismissMemberSheet" />
+        <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="peek-member-sheet-title">
+          <span class="sheet-handle" aria-hidden="true" />
+          <div class="sheet-head">
+            <div class="sheet-title-wrap">
+              <span id="peek-member-sheet-title" class="sheet-title">要看誰的手機？</span>
+              <span class="sheet-sub">{{ memberChat.name }}・每個人的手機各自生成</span>
+            </div>
+            <button type="button" class="round-btn round-btn--soft" aria-label="關閉" @click="closeMemberSheet">
+              <X :size="20" />
+            </button>
+          </div>
+
+          <ul v-if="memberOptions.length > 0" class="sheet-list">
+            <li v-for="m in memberOptions" :key="m.id">
+              <button type="button" class="sheet-row" @click="onMemberSelect(m.id)">
+                <span class="sheet-row-avatar" aria-hidden="true">
+                  <img v-if="m.avatar" :src="m.avatar" alt="" />
+                  <template v-else>{{ m.name.slice(0, 1) }}</template>
+                </span>
+                <span class="sheet-row-main">
+                  <span class="sheet-row-name">{{ m.name }}</span>
+                  <span class="sheet-row-preview">
+                    <template v-if="previews.get(m.id)">
+                      {{ previews.get(m.id)!.notificationCount }} 則通知 · 上次偷看
+                      {{ formatRelative(previews.get(m.id)!.updatedAt, now) }}
+                    </template>
+                    <template v-else>還沒看過</template>
+                  </span>
+                </span>
+                <ChevronRight :size="16" class="sheet-row-chev" aria-hidden="true" />
+              </button>
+            </li>
+          </ul>
+          <template v-else>
+            <p class="sheet-sub">這段多人卡沒有可以偷看的成員</p>
+            <button type="button" class="select-cta" @click="closeMemberSheet">知道了</button>
+          </template>
         </div>
       </div>
     </Transition>
@@ -807,6 +910,27 @@ watch(
   text-align: left;
   cursor: pointer;
   padding: 10px 0;
+}
+
+.sheet-row-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 16px;
+  flex-shrink: 0;
+  overflow: hidden;
+  background: var(--p-chip);
+  color: var(--p-ink);
+  font-size: 13px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
 }
 
 .sheet-row-main {

@@ -99,6 +99,8 @@ export async function sendCharMessages(
   charName: string,
   texts: string[],
   storyTime: number,
+  /** 多人卡成員：訊息要掛他的成員 id，群聊才認得是誰說的 */
+  sender?: { id: string; avatar?: string },
 ): Promise<void> {
   const now = Date.now();
   const messages: ChatMessage[] = texts.map((content, i) => ({
@@ -111,6 +113,13 @@ export async function sendCharMessages(
     createdAt: now + i,
     updatedAt: now + i,
     storyTime: storyTime + i,
+    ...(sender
+      ? {
+          senderCharacterId: sender.id,
+          senderCharacterName: charName,
+          senderCharacterAvatar: sender.avatar,
+        }
+      : {}),
   }));
   if (messages.length) await appendToChat(chatId, messages);
 }
@@ -121,6 +130,8 @@ export async function sendDraftAsChar(
   charName: string,
   text: string,
   storyTime: number,
+  /** 多人卡成員：訊息要掛他的成員 id，群聊才認得是誰說的 */
+  sender?: { id: string; avatar?: string },
 ): Promise<void> {
-  await sendCharMessages(chatId, charName, [text], storyTime);
+  await sendCharMessages(chatId, charName, [text], storyTime, sender);
 }

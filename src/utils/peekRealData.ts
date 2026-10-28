@@ -127,6 +127,67 @@ function buildUserThread(messages: ChatMessage[], options: PeekRealDataOptions):
   return thread.slice(-THREAD_LIMIT);
 }
 
+export interface GroupThreadOptions {
+  memberId: string;
+  memberName: string;
+  userName: string;
+  groupName: string;
+  groupAvatar?: string;
+}
+
+/** 真的多人卡群聊：成員手機裡看到的那串（唯讀）；一則都沒有回 null */
+export function buildGroupThread(
+  messages: ChatMessage[],
+  options: GroupThreadOptions,
+): PeekChatThread | null {
+  const thread: PeekChatMessage[] = [];
+  for (const m of messages) {
+    if (!isChatMessage(m) || m.isUserRecalled || m.isCharRecall || m.isRecall || m.isSystemNotification) continue;
+    const content = summarizeForwardContent(m as unknown as ChatScreenMessage);
+    if (!content || content === "[訊息]") continue;
+    if (m.sender === "user") {
+      thread.push({
+        id: `real-group-${m.id}`,
+        senderName: options.userName,
+        content,
+        isSelf: false,
+        timestamp: timeOf(m),
+      });
+      continue;
+    }
+    const isSelf = m.senderCharacterId
+      ? m.senderCharacterId === options.memberId
+      : (m.senderCharacterName || m.name) === options.memberName;
+    thread.push({
+      id: `real-group-${m.id}`,
+      senderName: isSelf ? options.memberName : (m.senderCharacterName || m.name || "成員"),
+      content,
+      isSelf,
+      timestamp: timeOf(m),
+    });
+  }
+  const kept = thread.slice(-THREAD_LIMIT);
+  if (kept.length === 0) return null;
+  return {
+    id: "real-group",
+    contactName: options.groupName,
+    contactAvatar: options.groupAvatar,
+    isRealGroup: true,
+    messages: kept,
+    updatedAt: kept[kept.length - 1].timestamp,
+  };
+}
+
+/** 真的群聊放最前面；AI 自己編的同名群組串（不是使用者那串）拿掉 */
+export function mergeRealGroupThread(
+  threads: PeekChatThread[],
+  group: PeekChatThread | null,
+): PeekChatThread[] {
+  if (!group) return threads;
+  const rest = threads.filter((t) => !(t.contactName === group.contactName && !t.isUser));
+  return [group, ...rest];
+}
+
 interface Dated<T> {
   at: number;
   item: T;
