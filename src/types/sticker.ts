@@ -8,6 +8,8 @@ export interface StickerItem {
   emotion?: string
   isCustom?: boolean
   pinnedAt?: number
+  /** 聊天裝扮表情包：不能改名、刪除、置頂 */
+  readOnly?: boolean
 }
 
 export interface StickerCategory {
@@ -18,6 +20,8 @@ export interface StickerCategory {
   updatedAt?: number
   isCustom?: boolean
   isDefaultPack?: boolean
+  /** 聊天裝扮表情包：從擁有紀錄算出來，不寫進資料庫 */
+  isSkinPack?: boolean
   stickers: StickerItem[]
   /**
    * 使用者主動刪除的「預設表情」名稱清單（僅預設表情包分類使用）。

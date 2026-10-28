@@ -4,10 +4,10 @@
  * gameEconomy store 包一層並負責存檔。組合包先檢查完才一次扣款加入，不會只買到一部分。
  */
 import {
-  CHAT_SKIN_SLOT_LABELS,
   computeBundlePrice,
   getChatSkinPiece,
   getChatSkinSeries,
+  getChatSkinShopItem,
   type ChatSkinSlot,
 } from "@/data/chatSkins";
 import type { ChatGameState } from "@/schemas/gameEconomy";
@@ -52,17 +52,18 @@ function pushTransaction(
   });
 }
 
+/** 單買一件部件或表情包 */
 export function buyChatSkinPiece(state: ChatGameState, pieceId: string, now = Date.now()): ChatSkinPurchaseResult {
   ensureChatSkinFields(state);
-  const piece = getChatSkinPiece(pieceId);
-  if (!piece) return { success: false, error: "item_not_found" };
-  if (state.decorations.ownedChatSkins.includes(piece.id)) return { success: false, error: "already_owned" };
-  if (state.wallet < piece.price) return { success: false, error: "insufficient_funds" };
+  const item = getChatSkinShopItem(pieceId);
+  if (!item) return { success: false, error: "item_not_found" };
+  if (state.decorations.ownedChatSkins.includes(item.id)) return { success: false, error: "already_owned" };
+  if (state.wallet < item.price) return { success: false, error: "insufficient_funds" };
 
-  state.wallet -= piece.price;
-  state.decorations.ownedChatSkins.push(piece.id);
-  pushTransaction(state, "expense", piece.price, `購買 ${piece.name}`, piece.id, now);
-  return { success: true, price: piece.price, pieceIds: [piece.id], newBalance: state.wallet };
+  state.wallet -= item.price;
+  state.decorations.ownedChatSkins.push(item.id);
+  pushTransaction(state, "expense", item.price, `購買 ${item.name}`, item.id, now);
+  return { success: true, price: item.price, pieceIds: [item.id], newBalance: state.wallet };
 }
 
 export function buyChatSkinBundle(state: ChatGameState, seriesId: string, now = Date.now()): ChatSkinPurchaseResult {
@@ -75,12 +76,7 @@ export function buyChatSkinBundle(state: ChatGameState, seriesId: string, now = 
 
   state.wallet -= quote.price;
   state.decorations.ownedChatSkins.push(...quote.pieceIds);
-  const slotNames = quote.pieceIds
-    .map((id) => {
-      const piece = getChatSkinPiece(id);
-      return piece ? CHAT_SKIN_SLOT_LABELS[piece.slot] : id;
-    })
-    .join("、");
+  const slotNames = quote.pieceIds.map((id) => getChatSkinShopItem(id)?.label ?? id).join("、");
   pushTransaction(state, "expense", quote.price, `購買 ${series.name} 組合包（${slotNames}）`, `bundle:${series.id}`, now);
   return { success: true, price: quote.price, pieceIds: quote.pieceIds, newBalance: state.wallet };
 }
