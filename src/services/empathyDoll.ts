@@ -19,15 +19,21 @@ export interface DollZone {
 export const DOLL_ZONES: DollZone[] = [
   { id: "head", label: "頭", shapes: [{ x: 62, y: 28, w: 116, h: 46 }] },
   { id: "ear", label: "耳朵", shapes: [{ x: 10, y: 106, w: 38, h: 40 }, { x: 192, y: 106, w: 38, h: 40 }] },
+  { id: "earlobe", label: "耳垂", intimate: true, shapes: [{ x: 12, y: 132, w: 24, h: 20 }, { x: 204, y: 132, w: 24, h: 20 }] },
   { id: "cheek", label: "臉頰", shapes: [{ x: 44, y: 142, w: 46, h: 34 }, { x: 150, y: 142, w: 46, h: 34 }] },
   { id: "lips", label: "嘴唇", intimate: true, shapes: [{ x: 102, y: 148, w: 36, h: 26 }] },
-  { id: "neck", label: "脖子", intimate: true, shapes: [{ x: 94, y: 184, w: 52, h: 16 }] },
+  { id: "neck", label: "脖子", intimate: true, shapes: [{ x: 94, y: 180, w: 52, h: 14 }] },
   { id: "hand", label: "手", shapes: [{ x: 40, y: 202, w: 38, h: 58 }, { x: 162, y: 202, w: 38, h: 58 }] },
-  { id: "chest", label: "胸口", intimate: true, shapes: [{ x: 84, y: 200, w: 72, h: 32 }] },
-  { id: "belly", label: "肚子", shapes: [{ x: 86, y: 232, w: 68, h: 30 }] },
+  { id: "collarbone", label: "鎖骨", intimate: true, shapes: [{ x: 90, y: 194, w: 60, h: 12 }] },
+  { id: "chest", label: "胸口", intimate: true, shapes: [{ x: 84, y: 206, w: 72, h: 28 }] },
+  { id: "nipple", label: "乳頭", intimate: true, shapes: [{ x: 92, y: 210, w: 20, h: 20 }, { x: 128, y: 210, w: 20, h: 20 }] },
+  { id: "belly", label: "肚子", shapes: [{ x: 86, y: 234, w: 68, h: 28 }] },
+  { id: "navel", label: "肚臍", intimate: true, shapes: [{ x: 110, y: 244, w: 20, h: 20 }] },
   { id: "waist", label: "腰", intimate: true, shapes: [{ x: 72, y: 236, w: 16, h: 34 }, { x: 152, y: 236, w: 16, h: 34 }] },
-  { id: "thigh", label: "大腿", intimate: true, shapes: [{ x: 90, y: 280, w: 28, h: 36 }, { x: 122, y: 280, w: 28, h: 36 }] },
+  { id: "thigh", label: "大腿", intimate: true, shapes: [{ x: 90, y: 280, w: 28, h: 30 }, { x: 122, y: 280, w: 28, h: 30 }] },
+  { id: "innerThigh", label: "大腿內側", intimate: true, shapes: [{ x: 108, y: 284, w: 24, h: 26 }] },
   { id: "groin", label: "下身", intimate: true, shapes: [{ x: 104, y: 262, w: 32, h: 22 }] },
+  { id: "foot", label: "腳", shapes: [{ x: 86, y: 304, w: 36, h: 24 }, { x: 118, y: 304, w: 36, h: 24 }] },
 ];
 
 /** 整隻抱住用的部位 id */
@@ -36,6 +42,8 @@ export const DOLL_WHOLE_ZONE = "whole";
 export interface DollAction {
   id: string;
   label: string;
+  /** 開了親密互動才出現 */
+  intimate?: boolean;
 }
 
 export const DOLL_ACTIONS: DollAction[] = [
@@ -46,7 +54,15 @@ export const DOLL_ACTIONS: DollAction[] = [
   { id: "lick", label: "舔" },
   { id: "bite", label: "咬" },
   { id: "blow", label: "吹氣" },
+  { id: "tickle", label: "搔癢" },
+  { id: "pat", label: "拍" },
+  { id: "knead", label: "揉", intimate: true },
+  { id: "suck", label: "吸", intimate: true },
 ];
+
+export function actionsFor(intimate: boolean): DollAction[] {
+  return DOLL_ACTIONS.filter((a) => intimate || !a.intimate);
+}
 
 export const DOLL_HUG_ACTION = "hug";
 

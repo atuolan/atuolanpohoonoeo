@@ -13,6 +13,7 @@ import {
   DOLL_HOLD_MIN_MS,
   DOLL_HUG_ACTION,
   DOLL_WHOLE_ZONE,
+  actionsFor,
   addDollTouch,
   describeDollTouches,
   zonesFor,
@@ -41,6 +42,9 @@ const actionId = ref("stroke");
 const menuOpen = ref(false);
 
 const zones = computed(() => zonesFor(props.intimate));
+const actions = computed(() => actionsFor(props.intimate));
+/** 部位多了不好找：打開後每個部位畫虛線框＋名字 */
+const showZones = ref(false);
 const summary = computed(() => describeDollTouches(props.touches));
 
 /** 碰越多、按越久，臉越紅 */
@@ -126,6 +130,22 @@ function spawnParticle(event: PointerEvent, action: string) {
 
 const holdingLong = computed(() => holdMs.value >= DOLL_HOLD_MIN_MS);
 
+/** 按著的時候顯示「摸・乳頭」，小部位也知道點到哪裡 */
+const pressedLabel = computed(() => {
+  if (hugging.value) return holdingLong.value ? "抱住・按住中…" : "抱住";
+  const zone = zones.value.find((z) => z.id === activeZone.value);
+  if (!zone) return "";
+  const action = actions.value.find((a) => a.id === actionId.value)?.label ?? "";
+  return `${action}・${zone.label}${holdingLong.value ? "・按住中…" : ""}`;
+});
+
+function onIntimateChange(event: Event) {
+  const on = (event.target as HTMLInputElement).checked;
+  // 關掉親密時，選中的親密動作換回「摸」
+  if (!on && actionsFor(false).every((a) => a.id !== actionId.value)) actionId.value = "stroke";
+  emit("update:intimate", on);
+}
+
 const stageStyle = computed(() => {
   if (hugging.value) return { transform: "scale(1.04, 0.95)" };
   const { x, y } = tilt.value;
@@ -161,8 +181,12 @@ onBeforeUnmount(() => {
               <input
                 type="checkbox"
                 :checked="intimate"
-                @change="emit('update:intimate', ($event.target as HTMLInputElement).checked)"
+                @change="onIntimateChange"
               />
+            </label>
+            <label class="menu-row">
+              <span>顯示可以碰的地方</span>
+              <input v-model="showZones" type="checkbox" />
             </label>
           </div>
         </div>
@@ -176,7 +200,7 @@ onBeforeUnmount(() => {
       <main class="doll-main" :class="`tab-${tab}`">
         <div v-if="tab === 'play'" class="action-row">
           <button
-            v-for="a in DOLL_ACTIONS"
+            v-for="a in actions"
             :key="a.id"
             type="button"
             class="action-chip"
@@ -196,13 +220,15 @@ onBeforeUnmount(() => {
                   v-for="(shape, i) in zone.shapes"
                   :key="`${zone.id}-${i}`"
                   class="doll-zone"
-                  :class="{ active: activeZone === zone.id }"
+                  :class="{ active: activeZone === zone.id, shown: showZones, intimate: zone.intimate }"
                   :style="zoneStyle(shape)"
                   :aria-label="zone.label"
                   @pointerdown="startHold(zone.id, $event)"
                   @pointerup="endHold($event)"
                   @pointercancel="endHold($event)"
-                />
+                >
+                  <span v-if="showZones && i === 0 && shape.w * shape.h >= 800" class="zone-label">{{ zone.label }}</span>
+                </div>
               </template>
             </template>
             <span
@@ -212,7 +238,7 @@ onBeforeUnmount(() => {
               :style="{ left: `${p.x}px`, top: `${p.y}px` }"
             >{{ p.text }}</span>
           </div>
-          <span v-if="tab === 'play' && holdingLong" class="hold-hint">按住中…</span>
+          <span v-if="tab === 'play'" class="hold-hint" :class="{ visible: !!pressedLabel }">{{ pressedLabel || "　" }}</span>
         </div>
 
         <button
@@ -358,6 +384,11 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   align-items: center;
+
+  // 內容比畫面高時改成捲動，不要把分類列、娃娃壓扁
+  > * {
+    flex-shrink: 0;
+  }
 }
 
 .action-row {
@@ -422,9 +453,33 @@ onBeforeUnmount(() => {
   cursor: pointer;
   touch-action: none;
 
+  &.shown {
+    border: 1.5px dashed rgba(201, 139, 107, 0.7);
+    background: rgba(255, 255, 255, 0.18);
+
+    &.intimate {
+      border-color: rgba(232, 112, 138, 0.75);
+    }
+  }
+
   &.active {
     background: radial-gradient(circle, rgba(255, 140, 160, 0.38), transparent 70%);
   }
+}
+
+.zone-label {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  padding: 0 4px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.85);
+  color: #8a5a44;
+  font-size: 9px;
+  line-height: 1.5;
+  white-space: nowrap;
+  pointer-events: none;
 }
 
 .doll-particle {
@@ -442,6 +497,12 @@ onBeforeUnmount(() => {
   margin-top: 2px;
   font-size: 12px;
   color: var(--color-text-secondary, #8a7a70);
+  opacity: 0;
+  transition: opacity 0.15s;
+
+  &.visible {
+    opacity: 1;
+  }
 }
 
 .hug-btn {
