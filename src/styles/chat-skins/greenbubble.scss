@@ -1,0 +1,478 @@
+// 綠泡泡（國民聊天軟體風格）樣式
+// 根元素帶有 data-skin-<欄位>="greenbubble" 時生效
+
+// ==========================================
+// 1. 訊息樣式 [data-skin-message="greenbubble"]
+// ==========================================
+.chat-screen[data-skin-message="greenbubble"] {
+  // 氣泡圓角固定 4px（形狀不跟「用我自己的顏色」走），蓋過成組排版 seq-* 規則
+  .message-wrapper {
+    .bubble {
+      border-radius: 4px !important;
+      box-shadow: none !important;
+      position: relative;
+    }
+
+    &.seq-middle,
+    &.seq-last {
+      .bubble.ai {
+        border-top-left-radius: 4px !important;
+      }
+      .bubble.user {
+        border-top-right-radius: 4px !important;
+      }
+    }
+
+    // 頭像：每則訊息都顯示，蓋過成組排版隱藏規則
+    &.seq-first,
+    &.seq-middle {
+      > .avatar-container {
+        visibility: visible !important;
+        height: var(--avatar-size, 40px) !important;
+      }
+    }
+
+    // 頭像小圓角方形，頭像框不能被裁切
+    .avatar-container {
+      border-radius: 6px;
+      overflow: visible;
+
+      .soft-avatar,
+      .avatar-placeholder {
+        border: none !important;
+        box-shadow: none !important;
+      }
+
+      .soft-avatar {
+        border-radius: 6px !important;
+
+        &.has-frame {
+          border-radius: 6px !important;
+        }
+      }
+
+      .avatar-placeholder {
+        border-radius: 6px !important;
+      }
+
+      .avatar-with-svg-frame .svg-frame-avatar,
+      .avatar-with-image-frame .image-frame-avatar {
+        border-radius: 6px !important;
+      }
+    }
+
+    // 小尖角：朝頭像那一側，離氣泡頂端 12px
+    // 只畫在一般文字氣泡上（.bubble），排除圖片、卡片、表情
+    .bubble:not(.transparent-bubble):not(:has(.polaroid-photo-container)):not(:has(.uploaded-image-container)):not(:has(.standalone-image-bubble)):not(:has(.friend-request-card)):not(:has(.weather-share-card)):not(:has(.location-bubble-card)):not(:has(.game-invite-card)):not(:has(.transfer-message-wrapper)):not(:has(.redpacket-message-wrapper)):not(:has(.dice-message-wrapper)):not(:has(.music-share-card)):not(:has(.contact-card)) {
+      &::before {
+        content: "";
+        position: absolute;
+        top: 12px;
+        width: 0;
+        height: 0;
+        pointer-events: none;
+      }
+
+      &.user::before {
+        right: -6px;
+        border-top: 5px solid transparent;
+        border-bottom: 5px solid transparent;
+        border-left: 6px solid var(--bubble-user-bg);
+      }
+
+      &.ai::before {
+        left: -6px;
+        border-top: 5px solid transparent;
+        border-bottom: 5px solid transparent;
+        border-right: 6px solid var(--bubble-ai-bg);
+      }
+    }
+
+    // 語音條與引用回覆樣式
+    .audio-bubble {
+      border-radius: 4px;
+    }
+
+    .reply-quote-floating {
+      border-radius: 4px !important;
+      background: var(--bubble-ai-bg, rgba(255, 255, 255, 0.18));
+      border: 1px solid var(--color-border);
+
+      .reply-bar {
+        border-radius: 4px 0 0 4px;
+      }
+    }
+
+    // 訊息旁的小時間
+    .message-side-time {
+      color: var(--skin-meta-text, var(--color-text-muted)) !important;
+    }
+
+    // 群聊發送者名稱
+    .sender-name {
+      color: var(--skin-meta-text, var(--color-text-muted)) !important;
+      font-size: 12px !important;
+      background-image: none !important;
+      -webkit-text-fill-color: initial !important;
+    }
+
+    // 系統訊息
+    .system-message {
+      background: transparent !important;
+      border-radius: 0 !important;
+      color: var(--skin-meta-text, var(--color-text-muted)) !important;
+      font-size: 12px !important;
+      padding: 4px 8px !important;
+    }
+
+    // 思考氣泡
+    .thought-bubble .thought-bubble-content {
+      background: var(--thought-bg);
+      color: var(--thought-text);
+      border-radius: 4px;
+      box-shadow: none;
+    }
+  }
+
+  // 時間分隔：灰色小字、無底色、無外框膠囊
+  .date-separator {
+    padding: 6px 0;
+
+    &.classic {
+      padding: 6px 0;
+      margin: 4px 0;
+    }
+
+    .separator-line {
+      display: none;
+    }
+
+    .separator-text {
+      background: transparent !important;
+      border-radius: 0 !important;
+      color: var(--skin-meta-text, var(--color-text-muted)) !important;
+      font-size: 12px !important;
+      padding: 2px 6px !important;
+    }
+  }
+
+  // 系統通知列（非選取狀態時透明無膠囊）
+  .system-notification:not(.is-selected) {
+    .system-notification-text {
+      background: transparent !important;
+      border-radius: 0 !important;
+      color: var(--skin-meta-text, var(--color-text-muted)) !important;
+      font-size: 12px !important;
+    }
+  }
+}
+
+// ==========================================
+// 2. 背景樣式 [data-skin-wallpaper="greenbubble"]
+// ==========================================
+body.is-night-mode .chat-screen[data-skin-wallpaper="greenbubble"]::before {
+  background: var(--chat-wallpaper);
+}
+
+// ==========================================
+// 3. 頂欄樣式 [data-skin-header="greenbubble"]
+// ==========================================
+.chat-screen[data-skin-header="greenbubble"] {
+  .chat-header {
+    margin: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    border: none !important;
+    border-bottom: 1px solid var(--skin-header-divider, var(--color-border)) !important;
+    background: var(--skin-header-bg, var(--chat-header-bg, var(--color-surface))) !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    padding-top: calc(8px + var(--safe-area-inset-top, env(safe-area-inset-top))) !important;
+    padding-left: calc(8px + var(--safe-left, 0px)) !important;
+    padding-right: calc(8px + var(--safe-right, 0px)) !important;
+    padding-bottom: 8px !important;
+    position: relative;
+    display: flex;
+    align-items: center;
+
+    // 隱藏頂欄頭像
+    .char-avatar-wrap {
+      display: none !important;
+    }
+
+    // 返回按鈕：線條箭頭
+    .header-back,
+    .rail-toggle-btn:not(.active) {
+      background: transparent !important;
+      border: none !important;
+      box-shadow: none !important;
+    }
+
+    .header-back {
+      color: var(--skin-header-text, var(--chat-header-text, var(--color-text)));
+      border-radius: 0;
+
+      svg path:first-child {
+        display: none; // 隱藏直線
+      }
+
+      svg path:last-child {
+        d: path("M15 18l-6-6 6-6"); // 單純左箭頭
+      }
+    }
+
+    // 角色名稱與資訊：絕對置中
+    .chat-info {
+      position: absolute;
+      left: 64px;
+      right: 64px;
+      top: calc(8px + var(--safe-area-inset-top, env(safe-area-inset-top)));
+      bottom: 8px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      pointer-events: auto;
+
+      .chat-name-row {
+        justify-content: center;
+        max-width: 100%;
+
+        .chat-name {
+          font-size: 17px !important;
+          font-weight: 500 !important;
+          color: var(--skin-header-text, var(--chat-header-text, var(--color-text))) !important;
+        }
+      }
+
+      .chat-status {
+        font-size: 11px !important;
+        color: var(--skin-header-text-secondary, var(--chat-header-text-secondary, var(--color-text-secondary))) !important;
+        margin: 0;
+        text-align: center;
+      }
+
+      // 記憶愛心顯示在名字右側
+      &.name-opens-memory.has-memory {
+        .chat-name::after {
+          content: " ♥";
+          font-size: 12px;
+          color: var(--color-primary);
+          margin-left: 4px;
+        }
+      }
+    }
+
+    // 側欄按鈕：未展開時改為「⋯」
+    .rail-toggle-btn {
+      margin-left: auto;
+      color: var(--skin-header-text, var(--chat-header-text, var(--color-text)));
+
+      &:not(.active) {
+        font-size: 18px;
+        font-weight: bold;
+        line-height: 1;
+
+        svg {
+          display: none;
+        }
+
+        &::before {
+          content: "⋯";
+        }
+      }
+    }
+
+    // 保留頂欄其他按鈕顏色
+    .header-btn {
+      color: var(--skin-header-text, var(--chat-header-text, var(--color-text)));
+    }
+  }
+}
+
+// 夜晚模式頂欄覆蓋
+body.is-night-mode .chat-screen[data-skin-header="greenbubble"] {
+  .chat-header {
+    background: var(--skin-header-bg, var(--chat-header-bg, var(--color-surface))) !important;
+    border-bottom-color: var(--skin-header-divider, var(--color-border)) !important;
+
+    .chat-name {
+      color: var(--skin-header-text, var(--chat-header-text, var(--color-text))) !important;
+    }
+
+    .chat-status {
+      color: var(--skin-header-text-secondary, var(--chat-header-text-secondary, var(--color-text-secondary))) !important;
+    }
+
+    .header-back,
+    .header-btn,
+    .rail-toggle-btn {
+      color: var(--skin-header-text, var(--chat-header-text, var(--color-text))) !important;
+    }
+  }
+}
+
+// ==========================================
+// 4. 輸入區樣式 [data-skin-input="greenbubble"]
+// ==========================================
+.chat-screen[data-skin-input="greenbubble"] {
+  .input-area {
+    padding: 8px 12px !important;
+    padding-bottom: calc(8px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom))) !important;
+    padding-left: calc(12px + var(--safe-left, 0px)) !important;
+    padding-right: calc(12px + var(--safe-right, 0px)) !important;
+    background: var(--skin-input-bg, var(--chat-input-bg, var(--color-surface))) !important;
+    border-top: 1px solid var(--skin-input-divider, var(--color-border)) !important;
+
+    .input-container {
+      margin: 0 !important;
+      padding: 0 !important;
+      background: transparent !important;
+      border: none !important;
+      box-shadow: none !important;
+      border-radius: 0 !important;
+      backdrop-filter: none !important;
+      -webkit-backdrop-filter: none !important;
+      gap: 8px;
+
+      // 有字時出現綠色「發送」，藏起「＋」；沒字時的紙飛機是「直接請角色回覆」，要留著
+      &:has(.send-btn.active) {
+        .plus-btn {
+          display: none !important;
+        }
+      }
+    }
+
+    // left-buttons 與 right-buttons 設為 display: contents，使按鈕直接在 flex 容器中用 order 排序
+    .left-buttons {
+      display: contents;
+
+      .plus-btn {
+        order: 5;
+      }
+    }
+
+    .right-buttons {
+      display: contents;
+
+      .mic-inline-btn {
+        order: 1;
+      }
+
+      .regenerate-btn {
+        order: 3;
+      }
+
+      .stop-btn {
+        order: 3;
+      }
+
+      .send-btn {
+        order: 6;
+      }
+    }
+
+    // 輸入框包裝層：透明無邊框，排序為 2
+    .input-wrapper {
+      order: 2;
+      background: transparent !important;
+      border: none !important;
+      box-shadow: none !important;
+
+      .message-input {
+        background: var(--skin-input-field-bg, var(--color-surface)) !important;
+        border-radius: 4px !important;
+        color: var(--skin-input-text, var(--color-text)) !important;
+        padding: 8px 36px 8px 10px !important;
+        min-height: 36px;
+      }
+
+      .emoji-btn-inner {
+        right: 8px;
+        color: var(--skin-input-icon, var(--color-text)) !important;
+      }
+    }
+
+    // 圖示按鈕：28px 線條圖示
+    .input-btn {
+      width: 28px !important;
+      height: 28px !important;
+      color: var(--skin-input-icon, var(--color-text)) !important;
+
+      svg {
+        width: 24px !important;
+        height: 24px !important;
+      }
+    }
+
+    // 沒字時的紙飛機：跟其他線條圖示一樣
+    .send-btn:not(.active) {
+      background: transparent !important;
+      border: none !important;
+      box-shadow: none !important;
+      color: var(--skin-input-icon, var(--color-text)) !important;
+    }
+
+    // 有字時的發送按鈕：綠底白字、4px 圓角、文字形狀
+    .send-btn.active {
+      width: auto !important;
+      min-width: 54px !important;
+      height: 32px !important;
+      padding: 0 10px !important;
+      background: var(--skin-send-bg, var(--color-primary)) !important;
+      color: var(--skin-send-text, var(--color-on-primary-contrast, #fff)) !important;
+      border-radius: 4px !important;
+      border: none !important;
+      font-size: 14px !important;
+      font-weight: 500 !important;
+
+      svg {
+        display: none !important; // 隱藏原本的箭頭圖示
+      }
+
+      &::after {
+        content: "發送";
+      }
+    }
+
+    // 引用回覆預覽條、快捷輸入列、以某人身分發言等換為灰階配色
+    .reply-preview-bar {
+      background: var(--skin-input-bg, var(--chat-input-bg, var(--color-surface))) !important;
+      border-color: var(--skin-input-divider, var(--color-border)) !important;
+    }
+
+    .quick-input-bar {
+      background: transparent;
+    }
+
+    .speaker-chip {
+      background: var(--skin-input-field-bg, var(--color-surface)) !important;
+      color: var(--skin-input-text, var(--color-text)) !important;
+      border: 1px solid var(--skin-input-divider, var(--color-border)) !important;
+    }
+  }
+}
+
+// 夜晚模式輸入區覆蓋
+body.is-night-mode .chat-screen[data-skin-input="greenbubble"] {
+  .input-area {
+    background: var(--skin-input-bg, var(--chat-input-bg, var(--color-surface))) !important;
+    border-top-color: var(--skin-input-divider, var(--color-border)) !important;
+
+    .input-wrapper .message-input {
+      background: var(--skin-input-field-bg, var(--color-surface)) !important;
+      color: var(--skin-input-text, var(--color-text)) !important;
+    }
+
+    .input-btn,
+    .emoji-btn-inner {
+      color: var(--skin-input-icon, var(--color-text)) !important;
+    }
+
+    .send-btn.active {
+      background: var(--skin-send-bg, var(--color-primary)) !important;
+      color: var(--skin-send-text, var(--color-on-primary-contrast, #fff)) !important;
+    }
+  }
+}
