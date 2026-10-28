@@ -137,6 +137,8 @@ export const CHAT_SKIN_PIECES: ChatSkinPiece[] = [
         "--thought-bg": "#f0f0f0",
         "--thought-text": "#555555",
         "--skin-meta-text": "#a8a8a8",
+        "--skin-quote-bg": "rgba(255, 255, 255, 0.8)",
+        "--skin-quote-text": "#808080",
       },
       night: {
         "--bubble-user-bg": "#3fa866",
@@ -155,6 +157,8 @@ export const CHAT_SKIN_PIECES: ChatSkinPiece[] = [
         "--thought-bg": "#262626",
         "--thought-text": "#b0b0b0",
         "--skin-meta-text": "#6f6f6f",
+        "--skin-quote-bg": "rgba(44, 44, 44, 0.85)",
+        "--skin-quote-text": "#9a9a9a",
       },
     },
   },
