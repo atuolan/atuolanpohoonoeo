@@ -2101,8 +2101,11 @@ const menuContentRef = ref<HTMLElement | null>(null);
 const menuBelow = ref(false);
 
 // 菜單開啟時，捲動到菜單能完整顯示的位置
-function scrollIntoViewForMenu() {
-  menuBelow.value = false;
+// instant：直接跳過去。手機上手指還按著時平滑捲動可能被瀏覽器的觸控手勢打斷（Edge 手機版），
+// 放開手指後用 instant 再補一次，確保菜單露出來
+function scrollIntoViewForMenu(instant = false) {
+  const behavior: ScrollBehavior = instant ? "auto" : "smooth";
+  if (!instant) menuBelow.value = false;
   nextTick(() => {
     const el = wrapperRef.value;
     const menuEl = menuContentRef.value;
@@ -2118,17 +2121,21 @@ function scrollIntoViewForMenu() {
     const margin = 8; // 菜單和容器邊緣之間留一點空
     const rect = el.getBoundingClientRect();
     const box = scrollContainer.getBoundingClientRect();
+    const overflowBottom = rect.bottom + gap + menuHeight + margin - box.bottom;
+    if (menuBelow.value) {
+      if (overflowBottom > 0) scrollContainer.scrollBy({ top: overflowBottom, behavior });
+      return;
+    }
     const overflowTop = box.top + margin - (rect.top - gap - menuHeight);
     if (overflowTop <= 0) return;
     if (scrollContainer.scrollTop >= overflowTop) {
-      scrollContainer.scrollBy({ top: -overflowTop, behavior: "smooth" });
+      scrollContainer.scrollBy({ top: -overflowTop, behavior });
       return;
     }
     // 上面沒有足夠的捲動空間 → 改放下方，必要時往下捲
     menuBelow.value = true;
-    const overflowBottom = rect.bottom + gap + menuHeight + margin - box.bottom;
     if (overflowBottom > 0) {
-      scrollContainer.scrollBy({ top: overflowBottom, behavior: "smooth" });
+      scrollContainer.scrollBy({ top: overflowBottom, behavior });
     }
   });
 }
@@ -2491,6 +2498,8 @@ function onTouchEnd() {
   // 記錄手指放開時間，用於在 click handler 中判斷
   if (menuFromLongPress) {
     touchEndedAt = Date.now();
+    // 按著時的平滑捲動可能被打斷，放開後再確認一次菜單有完整露出
+    if (showMenu.value) requestAnimationFrame(() => scrollIntoViewForMenu(true));
   }
 }
 
