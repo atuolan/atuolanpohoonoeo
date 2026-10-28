@@ -1,3 +1,5 @@
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   CHAT_SKIN_PIECES,
@@ -137,5 +139,18 @@ describe("chatSkins 資料", () => {
       label: "表情包",
     });
     expect(getChatSkinShopItem("no-such")).toBeUndefined();
+  });
+  it("所有預覽圖和貼圖檔案都在 public 裡", () => {
+    const files = [
+      ...CHAT_SKIN_SERIES.flatMap((s) => [s.previewImage.day, s.previewImage.night]),
+      ...CHAT_SKIN_PIECES.flatMap((p) => [p.previewImage.day, p.previewImage.night]),
+      ...CHAT_SKIN_STICKER_PACKS.flatMap((p) => [
+        p.previewImage.day,
+        p.previewImage.night,
+        p.icon,
+        ...p.stickers.map((s) => s.file),
+      ]),
+    ];
+    for (const file of files) expect(existsSync(join("public", file)), file).toBe(true);
   });
 });
