@@ -774,7 +774,7 @@ body.is-night-mode .upcoming-row {
 }
 
 .piece-thumb.slot-stickers img {
-  object-fit: cover;
+  object-fit: contain;
 }
 
 .sticker-preview-overlay {

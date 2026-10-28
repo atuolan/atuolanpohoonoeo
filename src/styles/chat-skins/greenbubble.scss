@@ -5,6 +5,16 @@
 // 1. 訊息樣式 [data-skin-message="greenbubble"]
 // ==========================================
 .chat-screen[data-skin-message="greenbubble"] {
+  // 只有一張貼圖的訊息：不畫氣泡和小尖角，像真的貼圖
+  .message-wrapper .bubble:has(.message-mixed > .message-sticker-wrapper:only-child) {
+    background: transparent !important;
+    padding: 0 !important;
+
+    &::before {
+      display: none !important;
+    }
+  }
+
   // 氣泡圓角固定 4px（形狀不跟「用我自己的顏色」走），蓋過成組排版 seq-* 規則
   .message-wrapper {
     .bubble {
