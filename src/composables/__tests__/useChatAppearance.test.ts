@@ -61,7 +61,7 @@ describe("useChatAppearance", () => {
     settingsStore.nightMode = true;
     await nextTick();
     await nextTick();
-    expect(props.get("--bubble-ai-content-fill")).toBe("#d8d8e8");
+    expect(props.get("--bubble-ai-content-fill")).toBe("#e2e2e2");
     expect(props.get("--bubble-user-text-gradient")).toBe("none");
 
     settingsStore.nightMode = false;

@@ -98,9 +98,9 @@ describe("buildChatAppearanceVars", () => {
 
   it("夜間模式會覆寫所有氣泡文字的 fill，避免白天的深色字留在深色氣泡上", () => {
     const vars = buildChatAppearanceVars(fullAppearance, night);
-    expect(vars["--bubble-ai-content-fill"]).toBe("#d8d8e8");
-    expect(vars["--bubble-ai-text-fill"]).toBe("#d8d8e8");
-    expect(vars["--bubble-user-text-fill"]).toBe("#e0f0e8");
+    expect(vars["--bubble-ai-content-fill"]).toBe("#e2e2e2");
+    expect(vars["--bubble-ai-text-fill"]).toBe("#e2e2e2");
+    expect(vars["--bubble-user-text-fill"]).toBe("#e8f3ec");
     expect(vars["--bubble-user-text-gradient"]).toBe("none");
   });
 
@@ -181,7 +181,7 @@ describe("頂欄、輸入欄與氣泡質感", () => {
     expect(buildBarBackground("header", 100)).toBe(
       "linear-gradient(135deg, color-mix(in srgb, var(--chat-header-surface, var(--color-surface)) 94%, transparent) 0%, " +
         "color-mix(in srgb, var(--chat-header-surface, var(--color-surface)) 78%, transparent) 100%), " +
-        "color-mix(in srgb, var(--color-background, #1a1a2e) 100%, transparent)",
+        "color-mix(in srgb, var(--color-background, #111111) 100%, transparent)",
     );
     // 不透明度 0：每個顏色層都是 0%
     expect(buildBarBackground("input", 0)).not.toMatch(/ [1-9][\d.]*%, transparent/);
@@ -202,7 +202,7 @@ describe("頂欄、輸入欄與氣泡質感", () => {
 
   it("夜間模式也套用質感設定，透明度作用在夜間氣泡色上", () => {
     const vars = buildChatAppearanceVars(withEffects, night);
-    expect(vars["--bubble-ai-bg"]).toBe("color-mix(in srgb, #1e2a40 50%, transparent)");
+    expect(vars["--bubble-ai-bg"]).toBe("color-mix(in srgb, #2c2c2c 50%, transparent)");
     expect(vars["--chat-header-bg"]).toBeDefined();
     expect(vars["--chat-message-gap"]).toBe("6px");
   });

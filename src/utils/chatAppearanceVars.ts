@@ -137,7 +137,7 @@ export function buildBarBackground(
   if (options.dark) return glassGradient(layers.dark, opacity);
   const surface = options.surface ?? BAR_SURFACE;
   const stops = layers.light.map(([, alpha]) => [surface, alpha] as const);
-  const base = options.background ?? "var(--color-background, #1a1a2e)";
+  const base = options.background ?? "var(--color-background, #111111)";
   const k = Math.min(Math.max(opacity, 0), 100);
   return `${glassGradient(stops, opacity)}, color-mix(in srgb, ${base} ${round1(k)}%, transparent)`;
 }
@@ -157,17 +157,17 @@ export function resolveBarStyle(
 }
 
 const NIGHT_BUBBLE_VARS: Record<string, string> = {
-  "--bubble-user-bg": "#2a4a3a",
-  "--bubble-user-text": "#e0f0e8",
+  "--bubble-user-bg": "#2f5d45",
+  "--bubble-user-text": "#e8f3ec",
   "--bubble-user-text-gradient": "none",
-  "--bubble-user-text-fill": "#e0f0e8",
-  "--bubble-ai-bg": "#1e2a40",
-  "--bubble-ai-text": "#d8d8e8",
+  "--bubble-user-text-fill": "#e8f3ec",
+  "--bubble-ai-bg": "#2c2c2c",
+  "--bubble-ai-text": "#e2e2e2",
   "--bubble-ai-text-gradient": "none",
-  "--bubble-ai-text-fill": "#d8d8e8",
-  "--bubble-ai-content": "#d8d8e8",
+  "--bubble-ai-text-fill": "#e2e2e2",
+  "--bubble-ai-content": "#e2e2e2",
   "--bubble-ai-content-gradient": "none",
-  "--bubble-ai-content-fill": "#d8d8e8",
+  "--bubble-ai-content-fill": "#e2e2e2",
   // 淺色背景用的引用色（如 #8b5a2b）在深色氣泡上對比過低
   "--chat-md-quote": "#e8b88a",
 };

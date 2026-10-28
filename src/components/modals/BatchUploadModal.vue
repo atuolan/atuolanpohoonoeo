@@ -934,7 +934,7 @@ async function handleBatchUpload() {
 // 貼圖名稱輸入框寫死白底，夜晚模式改成深色半透明。
 body.is-night-mode {
   .sticker-name-input {
-    background: rgba(22, 33, 62, 0.92);
+    background: rgba(25, 25, 25, 0.92);
     color: var(--color-text);
 
     &:focus {

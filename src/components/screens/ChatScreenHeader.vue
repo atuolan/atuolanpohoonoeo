@@ -973,7 +973,7 @@ const isDarkBackground = computed(() =>
       color-mix(in srgb, var(--chat-header-surface, var(--color-surface)) 94%, transparent) 0%,
       color-mix(in srgb, var(--chat-header-surface, var(--color-surface)) 78%, transparent) 100%
     ),
-    var(--color-background, #1a1a2e);
+    var(--color-background, #111111);
   display: flex;
   align-items: center;
   min-width: 0;
@@ -1586,7 +1586,7 @@ const isDarkBackground = computed(() =>
       color-mix(in srgb, var(--chat-header-surface, var(--color-surface)) 94%, transparent) 0%,
       color-mix(in srgb, var(--chat-header-surface, var(--color-surface)) 82%, transparent) 100%
     ),
-    var(--color-background, #1a1a2e);
+    var(--color-background, #111111);
   backdrop-filter: blur(30px) saturate(180%);
   -webkit-backdrop-filter: blur(30px) saturate(180%);
   border: 1px solid color-mix(in srgb, var(--color-border) 68%, transparent);
