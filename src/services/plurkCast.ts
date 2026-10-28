@@ -8,6 +8,7 @@ import { useCharactersStore } from "@/stores/characters";
 import { useQzoneStore } from "@/stores/qzone";
 import type { Chat } from "@/types/chat";
 import type { QZonePost } from "@/types/qzone";
+import { getArchivedCharacterIds } from "@/utils/chatArchive";
 import { getMutedIds } from "@/utils/plurkDirectorConfig";
 import { getAudience, getPrivateTo } from "@/utils/plurkPost";
 
@@ -91,6 +92,8 @@ export async function loadCastRelations(): Promise<{ friendIds: Set<string>; hid
         friendIds.add(chat.characterId);
       }
     }
+    // 整個角色都歸檔了：完全安靜，不發噗、不留言、不逛廣場
+    for (const id of getArchivedCharacterIds(chats)) hiddenIds.add(id);
     for (const id of hiddenIds) friendIds.delete(id);
   } catch (err) {
     console.warn("[PlurkCast] 讀取聊天關係失敗:", err);

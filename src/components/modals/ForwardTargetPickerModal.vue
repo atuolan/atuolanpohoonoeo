@@ -39,6 +39,7 @@ onMounted(async () => {
     const seen = new Set<string>();
     const list = sorted.filter((c) => {
       if (c.id === props.currentChatId) return false;
+      if (c.archivedAt) return false;
       if (c.pinnedToList) return true;
       const key = c.isGroupChat ? `group_${c.id}` : c.characterId;
       if (seen.has(key)) return false;

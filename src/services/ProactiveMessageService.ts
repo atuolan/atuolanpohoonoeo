@@ -227,6 +227,9 @@ export class ProactiveMessageService {
             const { db: blockDb, DB_STORES: blockStores } = await import("@/db/database");
             const charChats = (await blockDb.getAll<any>(blockStores.CHATS))
               .filter((c: any) => c.characterId === character.id && !c.isGroupChat);
+            if (charChats.length > 0 && charChats.every((c: any) => c.archivedAt)) {
+              continue;
+            }
             const blocked = charChats.some((c: any) => shouldBlockProactiveMessage(c));
             if (blocked) {
               console.log(`[ProactiveMessage] 角色 ${character.id} 處於封鎖狀態，跳過主動發訊`);
@@ -461,7 +464,7 @@ export class ProactiveMessageService {
       // - 單聊必須有 characterId
       const candidate = allChats
         .filter((c: any) => {
-          if (!c) return false;
+          if (!c || c.archivedAt) return false;
           if (c.isGroupChat) {
             const gm = c.groupMetadata;
             if (!gm) return false;
@@ -1005,9 +1008,20 @@ export class ProactiveMessageService {
 
       // 找到該角色最近的聊天
       const allChats = await db.getAll<any>(DB_STORES.CHATS);
-      const characterChats = allChats
-        .filter((c) => c.characterId === characterId && !c.isGroupChat)
+      const directChats = allChats.filter(
+        (c) => c.characterId === characterId && !c.isGroupChat,
+      );
+      // 歸檔的聊天完全安靜；整個角色都歸檔了就不發，也不另開新聊天
+      const characterChats = directChats
+        .filter((c) => !c.archivedAt)
         .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+      const targetArchived =
+        !!options?.targetChatId &&
+        directChats.some((c) => c.id === options.targetChatId && c.archivedAt);
+      if (targetArchived || (directChats.length > 0 && characterChats.length === 0)) {
+        console.log(`[ProactiveMessage] 角色 ${characterId} 的聊天已歸檔，跳過主動發訊`);
+        return;
+      }
 
       let chat = options?.targetChatId
         ? characterChats.find((c) => c.id === options.targetChatId) ||

@@ -1213,6 +1213,9 @@ export interface Chat {
   /** 是否鎖定（鎖定後無法刪除，需先解鎖；通常用於置頂的重要對話） */
   lockedFromDelete?: boolean;
 
+  /** 歸檔時間：有值（非 0）代表已歸檔（不在聊天列表顯示、角色不再主動找使用者）；取消歸檔寫 0 */
+  archivedAt?: number;
+
   // --- 外觀設定 ---
   /** 聊天專屬外觀設定 */
   appearance?: ChatAppearance;

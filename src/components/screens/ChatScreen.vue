@@ -50,6 +50,7 @@ import {
   type GiftMemory,
 } from "@/services/giftMemories";
 import { runAutoGiftDiary } from "@/services/giftDiary";
+import { unarchiveChatRowOf } from "@/services/chatArchiveService";
 import { formatGiftTag } from "@/utils/giftTag";
 import MediaSendDrawer from "@/components/common/MediaSendDrawer.vue";
 import AISummaryPanel from "@/components/modals/AISummaryPanel.vue";
@@ -1185,6 +1186,39 @@ function getCharacterNameById(characterId: string): string {
 
 // 訊息列表（從 store 或新建）
 const messages = ref<Message[]>([]);
+
+// ===== 歸檔：在歸檔的聊天裡送出訊息，整列就回到聊天列表 =====
+const archiveRestoredShown = ref(false);
+const archiveNotice = computed(() => {
+  if (currentChatData.value?.archivedAt) return "已歸檔 · 送出訊息就會移回聊天列表";
+  return archiveRestoredShown.value ? "已移回聊天列表" : "";
+});
+// 只認打開這個聊天之後才送出的訊息，載入舊紀錄或切換聊天檔不算
+let archiveWatchSince = Date.now();
+watch(
+  () => currentChatId.value,
+  () => {
+    archiveWatchSince = Date.now();
+    archiveRestoredShown.value = false;
+  },
+);
+watch(
+  () => messages.value.length,
+  () => {
+    const chat = currentChatData.value;
+    const chatId = currentChatId.value;
+    if (!chat?.archivedAt || !chatId) return;
+    const last = messages.value[messages.value.length - 1];
+    if (!last || last.role !== "user" || last.isSystemNotification) return;
+    if ((last.timestamp || 0) < archiveWatchSince) return;
+    chat.archivedAt = 0;
+    archiveRestoredShown.value = true;
+    setTimeout(() => (archiveRestoredShown.value = false), 4000);
+    void unarchiveChatRowOf(chatId).catch((e) =>
+      console.error("[ChatArchive] 取消歸檔失敗:", e),
+    );
+  },
+);
 
 // ===== 訊息分頁顯示（性能優化） =====
 const MESSAGE_PAGE_SIZE = 50; // 每次載入的訊息數量
@@ -11747,6 +11781,9 @@ useChatCleanup({
           :character-name="characterName"
           is-streaming
         />
+
+        <!-- 歸檔狀態：像時間戳記的小字 -->
+        <div v-if="archiveNotice" class="archive-notice">{{ archiveNotice }}</div>
       </div>
     </main>
 
@@ -15249,6 +15286,14 @@ useChatCleanup({
   padding: 4px 16px;
   background: rgba(128, 128, 128, 0.1);
   border-radius: 12px;
+}
+
+.archive-notice {
+  padding: 10px 16px 4px;
+  text-align: center;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted, #999);
 }
 
 .dice-roll-notice {

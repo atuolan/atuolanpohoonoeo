@@ -154,6 +154,14 @@ export class IncomingCallScheduler {
       return null;
     }
 
+    // 歸檔的聊天完全安靜，不排來電
+    try {
+      const { loadChatById } = await import("@/storage/chatStorage");
+      if ((await loadChatById(chatId))?.archivedAt) return null;
+    } catch {
+      // 讀不到聊天不阻擋排程
+    }
+
     // 限制同一角色的待處理來電數量
     try {
       const allPending = await db.getAll<PendingCall>(DB_STORES.PENDING_CALLS);
@@ -271,6 +279,11 @@ export class IncomingCallScheduler {
             "@/services/charAway"
           );
           const chat = await loadChatById(call.chatId);
+          // 歸檔的聊天完全安靜：這通電話直接作廢
+          if (chat?.archivedAt) {
+            await db.delete(DB_STORES.PENDING_CALLS, call.id);
+            continue;
+          }
           const charAway = chat?.charAway;
           if (isCharAwayActive(charAway)) {
             const kind = awayKind(charAway);

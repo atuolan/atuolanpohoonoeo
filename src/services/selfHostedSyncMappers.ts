@@ -78,6 +78,7 @@ export function toSyncChatRecordPayload(chat: SyncableChatRecordSource): SyncCha
     minimaxTTSOverride: chat.minimaxTTSOverride,
     isBranch: chat.isBranch,
     pinnedToList: chat.pinnedToList,
+    archivedAt: chat.archivedAt,
     lockedFromDelete: chat.lockedFromDelete,
     summarySettings: chat.summarySettings,
     locationOverride: chat.locationOverride,

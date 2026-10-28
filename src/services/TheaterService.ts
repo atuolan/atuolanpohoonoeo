@@ -36,11 +36,12 @@ const THEATER_TASK_ID = "theater-generator";
 async function getChatsWithMessages(): Promise<Chat[]> {
   const db = await getDatabase();
   const allChats = await db.getAll("chats");
-  // 支援分塊儲存：優先用 messageCount，向下相容 messages 陣列
+  // 支援分塊儲存：優先用 messageCount，向下相容 messages 陣列；歸檔的聊天不上小劇場
   return allChats.filter(
     (c) =>
-      (c.messageCount && c.messageCount > 0) ||
-      (c.messages && c.messages.length > 0),
+      !c.archivedAt &&
+      ((c.messageCount && c.messageCount > 0) ||
+        (c.messages && c.messages.length > 0)),
   );
 }
 

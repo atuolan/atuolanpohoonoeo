@@ -618,7 +618,8 @@ async function scanAll(): Promise<void> {
     const now = Date.now();
     const chats = await loadAllChats();
     for (const listed of chats) {
-      if (listed.isGroupChat) continue;
+      // 歸檔的聊天完全安靜（例如別台裝置同步過來的歸檔）
+      if (listed.isGroupChat || listed.archivedAt) continue;
       let chat = listed;
       if (needsF2FSync(listed)) {
         await syncCharAwayF2F(listed.id, listed.faceToFaceMode === true, now);

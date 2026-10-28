@@ -5,13 +5,19 @@ import { useCharactersStore } from "@/stores";
 import type { Chat } from "@/types/chat";
 import { pickChatListEntries } from "@/utils/chatListEntries";
 import { createDefaultGroupChat } from "@/types/chat";
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { setLocalChatUnreadCount } from "@/storage/chatStorage";
+import { setChatRowsArchived } from "@/services/chatArchiveService";
 import {
+  Archive,
+  ArchiveRestore,
+  Check,
   ChevronLeft,
   Globe,
   Image as ImageIcon,
+  ListChecks,
   Lock,
+  MoreHorizontal,
   Pin,
   Search,
   Smile,
@@ -31,8 +37,28 @@ const charactersStore = useCharactersStore();
 // 狀態
 const currentTab = ref<"chats" | "contacts">("chats");
 const chatList = ref<Chat[]>([]);
+const archivedList = ref<Chat[]>([]);
 const isLoading = ref(true);
 const searchQuery = ref("");
+
+// 已歸檔頁：從聊天點回來時停留在原本那一頁
+const ARCHIVED_VIEW_KEY = "chatList.showArchived";
+function readArchivedView(): boolean {
+  try {
+    return sessionStorage.getItem(ARCHIVED_VIEW_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+const showArchived = ref(readArchivedView());
+watch(showArchived, (v) => {
+  try {
+    if (v) sessionStorage.setItem(ARCHIVED_VIEW_KEY, "1");
+    else sessionStorage.removeItem(ARCHIVED_VIEW_KEY);
+  } catch {
+    // 無痕或封鎖儲存時就不記
+  }
+});
 
 // 載入對話列表
 async function loadChats() {
@@ -41,8 +67,9 @@ async function loadChats() {
     await db.init();
     const chats = await db.getAll<Chat>(DB_STORES.CHATS);
 
-    // 每個角色（或群聊）只保留最新的一個入口；釘選到列表的不參與去重
-    chatList.value = pickChatListEntries(chats);
+    // 每個角色（或群聊）只保留最新的一個入口；釘選到列表的不參與去重。歸檔的另外收一份
+    chatList.value = pickChatListEntries(chats.filter((c) => !c.archivedAt));
+    archivedList.value = pickChatListEntries(chats.filter((c) => c.archivedAt));
   } catch (e) {
     console.error("載入對話失敗:", e);
   } finally {
@@ -62,10 +89,14 @@ onMounted(async () => {
 });
 
 // 過濾後的對話列表
+const visibleChats = computed(() =>
+  showArchived.value ? archivedList.value : chatList.value,
+);
+
 const filteredChats = computed(() => {
-  if (!searchQuery.value.trim()) return chatList.value;
+  if (!searchQuery.value.trim()) return visibleChats.value;
   const query = searchQuery.value.toLowerCase();
-  return chatList.value.filter((chat) => {
+  return visibleChats.value.filter((chat) => {
     const name = getCharacterName(chat);
     const lastMessage =
       chat.lastMessagePreview ||
@@ -84,6 +115,12 @@ const recentChats = computed(() => filteredChats.value.filter(c => !c.pinnedToLi
 
 // 列表分段：有置頂時才顯示分段標題
 const chatSections = computed(() => {
+  // 已歸檔頁不分置頂，照時間排一整串
+  if (showArchived.value) {
+    return filteredChats.value.length
+      ? [{ key: "archived", label: "", chats: filteredChats.value }]
+      : [];
+  }
   const hasPinned = pinnedChats.value.length > 0;
   return [
     { key: "pinned", label: "置頂", chats: pinnedChats.value },
@@ -281,6 +318,7 @@ const longPressPosition = ref({ x: 0, y: 0 });
 let longPressTimer: ReturnType<typeof setTimeout> | null = null;
 
 function handleChatTouchStart(event: TouchEvent | MouseEvent, chat: Chat) {
+  if (selectMode.value) return;
   const touch = "touches" in event ? event.touches[0] : event;
   longPressPosition.value = { x: touch.clientX, y: touch.clientY };
 
@@ -345,6 +383,81 @@ async function togglePinChat() {
   }
 }
 
+// ===== 歸檔 =====
+const showHeaderMenu = ref(false);
+const selectMode = ref(false);
+const selectedChatIds = ref<string[]>([]);
+
+function openArchived() {
+  showHeaderMenu.value = false;
+  exitSelectMode();
+  searchQuery.value = "";
+  currentTab.value = "chats";
+  showArchived.value = true;
+}
+
+function closeArchived() {
+  exitSelectMode();
+  searchQuery.value = "";
+  showArchived.value = false;
+}
+
+function handleBack() {
+  if (selectMode.value) exitSelectMode();
+  else if (showArchived.value) closeArchived();
+  else emit("back");
+}
+
+function enterSelectMode() {
+  showHeaderMenu.value = false;
+  currentTab.value = "chats";
+  selectedChatIds.value = [];
+  selectMode.value = true;
+}
+
+function exitSelectMode() {
+  selectMode.value = false;
+  selectedChatIds.value = [];
+}
+
+function toggleSelected(chat: Chat) {
+  const idx = selectedChatIds.value.indexOf(chat.id);
+  if (idx >= 0) selectedChatIds.value.splice(idx, 1);
+  else selectedChatIds.value.push(chat.id);
+}
+
+function handleChatClick(chat: Chat) {
+  if (selectMode.value) toggleSelected(chat);
+  else openChat(chat);
+}
+
+/** 多選：主列表＝歸檔，已歸檔頁＝取消歸檔 */
+async function applyArchiveToSelected() {
+  const rows = visibleChats.value.filter((c) =>
+    selectedChatIds.value.includes(c.id),
+  );
+  if (rows.length === 0) return;
+  try {
+    await setChatRowsArchived(rows, !showArchived.value);
+  } catch (e) {
+    console.error("批量歸檔失敗:", e);
+  }
+  exitSelectMode();
+  await loadChats();
+}
+
+async function toggleArchiveChat() {
+  if (!longPressChat.value) return;
+  const row = longPressChat.value;
+  closeLongPressMenu();
+  try {
+    await setChatRowsArchived([row], !row.archivedAt);
+    await loadChats();
+  } catch (e) {
+    console.error("切換歸檔失敗:", e);
+  }
+}
+
 async function toggleLockChat() {
   if (!longPressChat.value) return;
   const chatId = longPressChat.value.id;
@@ -369,18 +482,71 @@ async function toggleLockChat() {
     <!-- 頂部：標題列 → 搜尋 → 小切換 -->
     <div class="chat-list-topbar">
       <header class="topbar-header">
-        <button class="header-back" aria-label="返回主畫面" @click="emit('back')">
+        <button
+          class="header-back"
+          :aria-label="selectMode ? '取消選擇' : showArchived ? '返回訊息' : '返回主畫面'"
+          @click="handleBack"
+        >
           <ChevronLeft :size="24" :stroke-width="1.8" />
         </button>
-        <h1 class="header-title">訊息</h1>
+        <h1 class="header-title">
+          {{ selectMode ? `已選 ${selectedChatIds.length} 個` : showArchived ? "已歸檔" : "訊息" }}
+        </h1>
         <button
-          class="header-action"
-          aria-label="建立群聊"
-          title="建立群聊"
-          @click="openGroupChatCreation"
+          v-if="selectMode"
+          class="header-text-btn"
+          @click="exitSelectMode"
         >
-          <UsersRound :size="20" :stroke-width="1.8" />
+          完成
         </button>
+        <template v-else>
+          <button
+            v-if="!showArchived"
+            class="header-action"
+            aria-label="建立群聊"
+            title="建立群聊"
+            @click="openGroupChatCreation"
+          >
+            <UsersRound :size="20" :stroke-width="1.8" />
+          </button>
+          <div class="header-menu-wrap">
+            <button
+              class="header-action"
+              aria-label="更多"
+              title="更多"
+              :aria-expanded="showHeaderMenu"
+              @click="showHeaderMenu = !showHeaderMenu"
+            >
+              <MoreHorizontal :size="20" :stroke-width="1.8" />
+            </button>
+            <div
+              v-if="showHeaderMenu"
+              class="header-menu-backdrop"
+              @click="showHeaderMenu = false"
+            ></div>
+            <div v-if="showHeaderMenu" class="header-menu" role="menu">
+              <button
+                v-if="!showArchived"
+                class="header-menu-item"
+                role="menuitem"
+                @click="openArchived"
+              >
+                <Archive :size="16" :stroke-width="1.8" />
+                已歸檔
+                <span class="header-menu-count">{{ archivedList.length }}</span>
+              </button>
+              <button
+                class="header-menu-item"
+                role="menuitem"
+                :disabled="visibleChats.length === 0"
+                @click="enterSelectMode"
+              >
+                <ListChecks :size="16" :stroke-width="1.8" />
+                {{ showArchived ? "選擇多個取消歸檔" : "選擇多個歸檔" }}
+              </button>
+            </div>
+          </div>
+        </template>
       </header>
 
       <label class="search-bar">
@@ -388,12 +554,12 @@ async function toggleLockChat() {
         <input
           v-model="searchQuery"
           type="search"
-          :placeholder="currentTab === 'chats' ? '搜尋對話' : '搜尋聯繫人'"
-          :aria-label="currentTab === 'chats' ? '搜尋對話' : '搜尋聯繫人'"
+          :placeholder="showArchived ? '搜尋已歸檔' : currentTab === 'chats' ? '搜尋對話' : '搜尋聯繫人'"
+          :aria-label="showArchived ? '搜尋已歸檔' : currentTab === 'chats' ? '搜尋對話' : '搜尋聯繫人'"
         />
       </label>
 
-      <nav class="seg-tabs" aria-label="切換對話與聯繫人">
+      <nav v-if="!showArchived && !selectMode" class="seg-tabs" aria-label="切換對話與聯繫人">
         <button
           class="seg-tab"
           :class="{ active: currentTab === 'chats' }"
@@ -425,7 +591,13 @@ async function toggleLockChat() {
 
       <!-- 對話列表 -->
       <template v-else-if="currentTab === 'chats'">
-        <div v-if="filteredChats.length === 0" class="empty-state">
+        <div v-if="showArchived && filteredChats.length === 0" class="empty-state">
+          <Archive :size="48" :stroke-width="1.4" />
+          <p>{{ searchQuery.trim() ? "找不到符合的歸檔對話" : "沒有歸檔的對話" }}</p>
+          <p v-if="!searchQuery.trim()" class="hint">在訊息列表長按對話，就能把它收進這裡</p>
+        </div>
+
+        <div v-else-if="filteredChats.length === 0" class="empty-state">
           <svg viewBox="0 0 24 24" fill="currentColor">
             <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H6l-2 2V4h16v12z" />
           </svg>
@@ -443,8 +615,12 @@ async function toggleLockChat() {
               v-for="chat in section.chats"
               :key="chat.id"
               class="chat-item"
-              :class="{ unread: !!chat.unreadCount }"
-              @click="openChat(chat)"
+              :class="{
+                unread: !!chat.unreadCount,
+                selecting: selectMode,
+                selected: selectedChatIds.includes(chat.id),
+              }"
+              @click="handleChatClick(chat)"
               @touchstart="handleChatTouchStart($event, chat)"
               @touchend="handleChatTouchEnd"
               @touchmove="handleChatTouchMove"
@@ -452,6 +628,14 @@ async function toggleLockChat() {
               @mouseup="handleChatTouchEnd"
               @mouseleave="handleChatTouchEnd"
             >
+              <span
+                v-if="selectMode"
+                class="select-box"
+                role="checkbox"
+                :aria-checked="selectedChatIds.includes(chat.id)"
+              >
+                <Check v-if="selectedChatIds.includes(chat.id)" :size="14" :stroke-width="3" />
+              </span>
               <div class="chat-avatar">
                 <img v-if="!chat.isGroupChat && getCharacterAvatar(chat.characterId, chat)" :src="getCharacterAvatar(chat.characterId, chat)" :alt="getCharacterName(chat)" />
                 <img v-else-if="chat.isGroupChat && chat.groupMetadata?.isMultiCharCard && getCharacterAvatar(chat.characterId, chat)" :src="getCharacterAvatar(chat.characterId, chat)" :alt="getCharacterName(chat)" />
@@ -538,6 +722,19 @@ async function toggleLockChat() {
         </div>
       </template>
     </main>
+
+    <!-- 多選：底部動作列 -->
+    <div v-if="selectMode" class="select-bar">
+      <button
+        class="select-bar-btn"
+        :disabled="selectedChatIds.length === 0"
+        @click="applyArchiveToSelected"
+      >
+        <ArchiveRestore v-if="showArchived" :size="18" :stroke-width="1.8" />
+        <Archive v-else :size="18" :stroke-width="1.8" />
+        {{ showArchived ? "取消歸檔" : "歸檔" }}（{{ selectedChatIds.length }}）
+      </button>
+    </div>
 
     <!-- 群聊建立彈窗 -->
     <Transition name="fade">
@@ -650,7 +847,11 @@ async function toggleLockChat() {
           <div class="longpress-chat-info">
             <span class="chat-name">{{ getCharacterName(longPressChat) }}</span>
           </div>
-          <button class="longpress-btn pin" @click="togglePinChat">
+          <button
+            v-if="!longPressChat.archivedAt"
+            class="longpress-btn pin"
+            @click="togglePinChat"
+          >
             <svg viewBox="0 0 24 24" fill="currentColor">
               <path
                 v-if="longPressChat.pinnedToList"
@@ -679,6 +880,11 @@ async function toggleLockChat() {
               />
             </svg>
             {{ longPressChat.lockedFromDelete ? "解除鎖定" : "鎖定（防止刪除）" }}
+          </button>
+          <button class="longpress-btn archive" @click="toggleArchiveChat">
+            <ArchiveRestore v-if="longPressChat.archivedAt" :size="18" :stroke-width="1.8" />
+            <Archive v-else :size="18" :stroke-width="1.8" />
+            {{ longPressChat.archivedAt ? "取消歸檔" : "歸檔" }}
           </button>
           <button
             class="longpress-btn delete"
@@ -1474,6 +1680,133 @@ async function toggleLockChat() {
     &:hover {
       background: var(--color-background, #f5f5f5);
     }
+  }
+
+  &.archive {
+    color: var(--color-text, #333);
+
+    &:hover {
+      background: var(--color-surface-hover, rgba(0, 0, 0, 0.05));
+    }
+  }
+}
+
+// ===== 歸檔：右上角選單 =====
+.header-menu-wrap {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.header-menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+}
+
+.header-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 51;
+  min-width: 190px;
+  padding: 6px;
+  border-radius: 14px;
+  background: var(--color-surface, #fff);
+  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.14);
+}
+
+.header-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 11px 12px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  font-size: 14px;
+  color: var(--color-text, #333);
+  text-align: left;
+  cursor: pointer;
+
+  &:hover:not(:disabled) {
+    background: var(--color-surface-hover, rgba(0, 0, 0, 0.05));
+  }
+
+  &:disabled {
+    opacity: 0.4;
+    cursor: default;
+  }
+}
+
+.header-menu-count {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--color-text-muted, #999);
+}
+
+.header-text-btn {
+  flex-shrink: 0;
+  height: 44px;
+  padding: 0 14px;
+  border: none;
+  background: transparent;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--color-primary, #7dd3a8);
+  cursor: pointer;
+}
+
+// ===== 歸檔：多選 =====
+.select-box {
+  flex-shrink: 0;
+  align-self: center;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: 1.5px solid var(--color-border-strong, rgba(0, 0, 0, 0.25));
+  color: #fff;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.chat-item.selected {
+  background: var(--color-surface-hover, rgba(0, 0, 0, 0.04));
+
+  .select-box {
+    background: var(--color-primary, #7dd3a8);
+    border-color: var(--color-primary, #7dd3a8);
+  }
+}
+
+.select-bar {
+  flex-shrink: 0;
+  padding: 10px 20px max(12px, var(--safe-area-inset-bottom, env(safe-area-inset-bottom)));
+  border-top: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
+  background: var(--color-background);
+}
+
+.select-bar-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 13px 16px;
+  border: none;
+  border-radius: 14px;
+  background: var(--color-primary, #7dd3a8);
+  color: #fff;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+
+  &:disabled {
+    opacity: 0.45;
+    cursor: default;
   }
 }
 
