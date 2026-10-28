@@ -425,6 +425,12 @@ export interface ChatMessage {
   giftDescription?: string;
   /** 對應的禮物回憶卡 id */
   giftMemoryId?: string;
+  /** 共感娃娃的碰觸（content 是 <共感娃娃>…</共感娃娃>） */
+  isDollTouch?: boolean;
+  /** 碰觸內容，例如「捏臉頰 ×2、摸腰 6 秒（重）」 */
+  dollTouchText?: string;
+  /** 30 分鐘內第幾次 */
+  dollTouchRound?: number;
   /** 是否為轉帳 */
   isTransfer?: boolean;
   /** 轉帳金額 */

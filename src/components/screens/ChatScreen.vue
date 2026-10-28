@@ -27,9 +27,21 @@ import ChatScreenInputArea from "@/components/screens/ChatScreenInputArea.vue";
 import ChatGameModals from "@/components/screens/ChatGameModals.vue";
 import GiftDrawer from "@/components/common/GiftDrawer.vue";
 import GiftMemoryCard from "@/components/gift/GiftMemoryCard.vue";
+import EmpathyDollPanel from "@/components/gift/EmpathyDollPanel.vue";
+import {
+  describeDollTouches,
+  dollRoundOf,
+  EMPATHY_DOLL_ITEM_ID,
+  EMPATHY_DOLL_NAME,
+  formatDollTag,
+  loadPendingDollTouches,
+  savePendingDollTouches,
+  type DollTouch,
+} from "@/services/empathyDoll";
 import { GIFT_ITEMS } from "@/data/shopItems";
 import {
   addGiftMemory,
+  updateGiftMemory,
   buildGiftNudgeNote,
   findMemoryForMessage,
   lastGiftToUserAt,
@@ -3879,6 +3891,9 @@ function addUserMessage() {
     mode === "char" ? "ai" : mode === "system" ? "system" : "user";
   const content = mode === "user" ? applyUserInputRegex(text) : text;
 
+  // 共感娃娃累積的碰觸排在這則訊息前面
+  if (mode === "user") flushPendingDollTouches();
+
   const newMessage: Message = {
     id: `msg_${Date.now()}`,
     role,
@@ -3943,6 +3958,9 @@ async function sendAndTriggerAI() {
 
     // 生成新的輪次 ID
     currentTurnId.value = crypto.randomUUID();
+
+    // 共感娃娃累積的碰觸排在這則訊息前面
+    flushPendingDollTouches();
 
     // 添加用戶訊息（套用角色 regex_scripts USER_INPUT）
     const userMessage: Message = {
@@ -4418,8 +4436,10 @@ async function processGiftReceived() {
         ...(firstReply ? { reaction: firstReply } : {}),
         sentAt: giftMessage.timestamp,
         messageId: giftMessage.id,
+        ...(giftMessage.giftName === EMPATHY_DOLL_NAME ? { doll: { boundAt: Date.now() } } : {}),
       });
       messages.value[pendingGiftIndex].giftMemoryId = memory.id;
+      giftMemoriesForChar.value = [memory, ...giftMemoriesForChar.value];
     } catch (e) {
       console.warn("[ChatScreen] 建立禮物回憶卡失敗:", e);
     }
@@ -4513,8 +4533,76 @@ async function handleOpenGiftMemory(id: string) {
   }
 }
 
-// 這個角色的回憶卡（算回送提示用）
+// 這個角色的回憶卡（算回送提示用、找共感娃娃）
 const giftMemoriesForChar = ref<GiftMemory[]>([]);
+
+// ===== 共感娃娃 =====
+const empathyDollMemory = computed(() => giftMemoriesForChar.value.find((m) => m.doll) ?? null);
+const hasEmpathyDoll = computed(
+  () => !!empathyDollMemory.value && !isGroupChat.value && !chatFaceToFaceMode.value,
+);
+const giftDrawerHiddenItems = computed(() => (empathyDollMemory.value ? [EMPATHY_DOLL_ITEM_ID] : []));
+const showEmpathyDoll = ref(false);
+const dollSending = ref(false);
+const pendingDollTouches = ref<DollTouch[]>([]);
+watch(
+  () => currentChatId.value,
+  (chatId) => {
+    pendingDollTouches.value = chatId ? loadPendingDollTouches(chatId) : [];
+  },
+  { immediate: true },
+);
+function setPendingDollTouches(touches: DollTouch[]) {
+  pendingDollTouches.value = touches;
+  if (currentChatId.value) savePendingDollTouches(currentChatId.value, touches);
+}
+async function setDollIntimate(intimate: boolean) {
+  const memory = empathyDollMemory.value;
+  if (!memory?.doll) return;
+  const updated = await updateGiftMemory(memory.characterId, memory.id, {
+    doll: { ...memory.doll, intimate },
+  }).catch(() => null);
+  if (updated) {
+    giftMemoriesForChar.value = giftMemoriesForChar.value.map((m) => (m.id === updated.id ? updated : m));
+  }
+}
+/** 累積的碰觸變成一則訊息（排在使用者下一則訊息前面）；沒有就什麼都不做 */
+function flushPendingDollTouches(): boolean {
+  if (!pendingDollTouches.value.length || !hasEmpathyDoll.value) return false;
+  const text = describeDollTouches(pendingDollTouches.value);
+  const now = Date.now();
+  messages.value.push({
+    id: `msg_${now}_doll`,
+    role: "user",
+    content: formatDollTag(text),
+    timestamp: now,
+    isDollTouch: true,
+    dollTouchText: text,
+    dollTouchRound: dollRoundOf(messages.value, now),
+    ...(isBlockedByChar.value ? { sentWhileBlocked: true } : {}),
+    ...(charAwayCtl.activeAwayId.value ? { sentWhileAway: charAwayCtl.activeAwayId.value } : {}),
+  });
+  setPendingDollTouches([]);
+  return true;
+}
+/** 「戳完了」：送出碰觸並觸發回覆 */
+async function handleDollSend() {
+  if (dollSending.value || isGenerating.value) return;
+  dollSending.value = true;
+  try {
+    if (!flushPendingDollTouches()) return;
+    showEmpathyDoll.value = false;
+    clearSwipesOnLastAIMessage();
+    clearRoundSwipes();
+    currentTurnId.value = crypto.randomUUID();
+    scrollToBottom();
+    await saveChatImmediate();
+    if (isBlockedByChar.value || charAwayCtl.isAwayActive.value) return;
+    await triggerAIResponse();
+  } finally {
+    dollSending.value = false;
+  }
+}
 watch(
   () => props.characterId || currentCharacter.value?.id,
   async (characterId) => {
@@ -5125,6 +5213,9 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
       giftName: m.giftName,
       giftCard: m.giftCard,
       giftDescription: m.giftDescription,
+      isDollTouch: m.isDollTouch,
+      dollTouchText: m.dollTouchText,
+      dollTouchRound: m.dollTouchRound,
       audioTranscript: m.audioTranscript,
       isFaceToFaceRequest: m.isFaceToFaceRequest,
       faceToFaceRequestReason: m.faceToFaceRequestReason,
@@ -11167,6 +11258,22 @@ useChatCleanup({
             <span class="diary-notice-action">偷偷看看</span>
           </div>
 
+          <!-- 共感娃娃的碰觸：一行小字 -->
+          <div
+            v-else-if="message.isDollTouch"
+            class="system-notification doll-touch-row"
+            :class="{
+              'is-selected':
+                isSelectingMessages && selectedMessageIds.includes(message.id),
+            }"
+            @click="
+              isSelectingMessages ? toggleMessageSelection(message.id) : undefined
+            "
+            @contextmenu.prevent="handleMessageDelete(message.id)"
+          >
+            <span class="system-notification-text">♡ 你對娃娃：{{ message.dollTouchText }}</span>
+          </div>
+
           <!-- 偷看手機被發現／他起疑：一行小字，點了原地展開看到了什麼 -->
           <div
             v-else-if="message.isSystemNotification && parsePeekNote(message.content)"
@@ -11523,6 +11630,8 @@ useChatCleanup({
       :character-name="characterName"
       :chat-face-to-face-mode="chatFaceToFaceMode"
       :is-group-chat="isGroupChat"
+      :has-empathy-doll="hasEmpathyDoll"
+      @open-empathy-doll="showEmpathyDoll = true"
       :mention-candidates="mentionCandidates"
       :is-input-focused="isInputFocused"
       :quick-actions="quickActions"
@@ -11748,12 +11857,27 @@ useChatCleanup({
       <GiftDrawer
         :visible="showGiftDrawer"
         :chat-id="currentChatId || ''"
+        :hidden-item-ids="giftDrawerHiddenItems"
         :character-name="characterName"
         :character-avatar="characterAvatar"
         @close="showGiftDrawer = false"
         @open-shop="handleOpenShop"
         @transfer="handleTransfer"
         @send-gift="handleSendGift"
+      />
+
+      <!-- 共感娃娃 -->
+      <EmpathyDollPanel
+        v-if="showEmpathyDoll && hasEmpathyDoll"
+        :character-name="characterName"
+        :character-avatar="characterAvatar"
+        :touches="pendingDollTouches"
+        :intimate="!!empathyDollMemory?.doll?.intimate"
+        :sending="dollSending"
+        @update:touches="setPendingDollTouches"
+        @update:intimate="setDollIntimate"
+        @send="handleDollSend"
+        @close="showEmpathyDoll = false"
       />
 
       <!-- 禮物回憶卡 -->

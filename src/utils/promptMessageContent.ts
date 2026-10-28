@@ -5,6 +5,13 @@
  */
 
 import type { PlurkShareSnapshot } from "@/types/chat";
+import {
+  dollPromptNote,
+  DOLL_TAG_RE,
+  EMPATHY_DOLL_NAME,
+  empathyDollGiftNote,
+  formatDollTag,
+} from "@/services/empathyDoll";
 import { formatGiftTag, GIFT_TAGS_RE } from "@/utils/giftTag";
 import { describePlurkShareForPrompt } from "@/utils/plurkShare";
 
@@ -32,6 +39,9 @@ export interface PromptMessageLike {
   giftName?: string;
   giftCard?: string;
   giftDescription?: string;
+  isDollTouch?: boolean;
+  dollTouchText?: string;
+  dollTouchRound?: number;
   messageType?: string;
   audioTranscript?: string;
   isFaceToFaceRequest?: boolean;
@@ -151,7 +161,13 @@ export function describeMessageForPrompt(
   }
   if (m.isGift && m.giftName) {
     text = text.replace(GIFT_TAGS_RE, "");
-    cards.push(formatGiftTag({ name: m.giftName, description: m.giftDescription, card: m.giftCard }));
+    let giftTag = formatGiftTag({ name: m.giftName, description: m.giftDescription, card: m.giftCard });
+    if (m.giftName === EMPATHY_DOLL_NAME) giftTag += empathyDollGiftNote(names);
+    cards.push(giftTag);
+  }
+  if (m.isDollTouch && m.dollTouchText) {
+    text = text.replace(DOLL_TAG_RE, "");
+    cards.push(formatDollTag(m.dollTouchText) + dollPromptNote(names, m.dollTouchRound));
   }
   if (m.isFaceToFaceRequest || m.isOnlineModeRequest) {
     text = text.replace(MODE_REQUEST_TAGS, "");

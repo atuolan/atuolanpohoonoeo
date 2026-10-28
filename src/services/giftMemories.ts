@@ -37,8 +37,8 @@ export interface GiftMemory {
   /** 聊天訊息 id，點寶箱時用來找卡 */
   messageId?: string;
   entries: GiftDiaryEntry[];
-  /** 共感娃娃 */
-  doll?: { boundAt: number };
+  /** 共感娃娃（intimate：親密部位與動作，預設關） */
+  doll?: { boundAt: number; intimate?: boolean };
 }
 
 const KEY_PREFIX = "gift-memories-";

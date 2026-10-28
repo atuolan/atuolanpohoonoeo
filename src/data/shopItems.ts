@@ -871,6 +871,16 @@ export const GIFT_ITEMS: ShopItem[] = [
     icon: "gift-alexandrite",
     giftUse: { hint: "白天一起看它是綠的，晚上開燈又變成紅色" },
   },
+  {
+    id: "gift_empathy_doll",
+    name: "共感娃娃",
+    description: "送出後娃娃會和對方的身體感覺相連，再回到你手上。你對它做的事，對方都感覺得到",
+    price: 520000,
+    category: "gift",
+    rarity: "legendary",
+    icon: "gift-doll",
+    giftUse: { special: "empathy-doll", hint: "抱著娃娃睡著，醒來發現對方也一夜沒睡好" },
+  },
 ];
 
 // ===== 消耗品 =====

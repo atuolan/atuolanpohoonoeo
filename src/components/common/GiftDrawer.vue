@@ -234,6 +234,8 @@ interface OwnedGift {
 const props = defineProps<{
   visible: boolean;
   chatId: string;
+  /** 不能送的禮物（例如已經綁了共感娃娃） */
+  hiddenItemIds?: string[];
   characterName: string;
   characterAvatar?: string;
 }>();
@@ -297,7 +299,7 @@ const giftCardText = ref("");
 const ownedGifts = computed<OwnedGift[]>(() => {
   const inventory = gameEconomyStore.getInventory(GLOBAL_WALLET_ID);
   return inventory
-    .filter((item) => item.type === "gift")
+    .filter((item) => item.type === "gift" && !props.hiddenItemIds?.includes(item.itemId))
     .map((item) => {
       const shopItem = getShopItemById(item.itemId);
       return {
