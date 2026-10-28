@@ -28,10 +28,11 @@ export interface PromptMessageLike {
   transferNote?: string;
   transferStatus?: TransferStatus;
   isRedpacket?: boolean;
-  redpacketData?: { amount: string | number; blessing?: string };
+  redpacketData?: { amount: string | number; blessing?: string; type?: string; count?: number; target?: string };
   redpacketState?: {
     claims: Array<{ claimerName: string; cents: number }>;
     fullyClaimed?: boolean;
+    remainingCount?: number;
   };
   isLocation?: boolean;
   locationContent?: string;
@@ -103,11 +104,16 @@ function describeTransfer(m: PromptMessageLike, names: PromptMessageNames): stri
 function describeRedpacket(m: PromptMessageLike): string {
   const data = m.redpacketData!;
   const blessing = data.blessing ? ` blessing="${escapeAttr(data.blessing)}"` : "";
-  const tag = `<redpacket amount="${formatAmount(data.amount)}"${blessing}/>`;
+  const type = data.type ? ` type="${data.type}"` : "";
+  const count = data.count && data.count > 1 ? ` count="${data.count}"` : "";
+  const target = data.target ? ` target="${escapeAttr(data.target)}"` : "";
+  const tag = `<redpacket${type} amount="${formatAmount(data.amount)}"${count}${target}${blessing}/>`;
   const claims = m.redpacketState?.claims ?? [];
   if (claims.length === 0) return `${tag}[紅包狀態：還沒有人領]`;
   const who = claims.map((c) => `${c.claimerName}領了 ${formatAmount(c.cents / 100)} 元`).join("、");
-  return `${tag}[紅包狀態：${who}${m.redpacketState?.fullyClaimed ? "，已領完" : ""}]`;
+  const remaining = m.redpacketState?.remainingCount;
+  const tail = m.redpacketState?.fullyClaimed ? "，已領完" : remaining && remaining > 0 ? `，還剩 ${remaining} 份` : "";
+  return `${tag}[紅包狀態：${who}${tail}]`;
 }
 
 function describeModeRequest(m: PromptMessageLike, names: PromptMessageNames): string {

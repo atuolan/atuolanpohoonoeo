@@ -416,7 +416,8 @@ export function useChatGroupCall(deps: {
         parsedMsg.isRecall ||
         parsedMsg.isPrivateMessage ||
         parsedMsg.isGroupAction ||
-        parsedMsg.isRedpacketClaim
+        parsedMsg.isRedpacketClaim ||
+        parsedMsg.isDiceRoll
       ) {
         continue;
       }
