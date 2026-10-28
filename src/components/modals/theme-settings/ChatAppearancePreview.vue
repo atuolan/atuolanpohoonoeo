@@ -11,6 +11,7 @@ import {
   withOpacity,
 } from "@/utils/chatAppearanceVars";
 import { hexToRgba } from "@/utils/chatScreenHelpers";
+import { buildChatSkinAttrs, buildChatSkinVars, type ResolvedChatSkins } from "@/utils/chatSkinResolve";
 import { toPickerHex } from "@/utils/simpleGradient";
 import { computed } from "vue";
 import type { PreviewElement, PreviewScene, PreviewState, PreviewTarget } from "./types";
@@ -24,8 +25,12 @@ const props = withDefaults(
     /** 精簡版（設定視窗固定預覽用）：只畫 scene 需要的部分 */
     compact?: boolean;
     scene?: PreviewScene;
+    /** 這次裝了哪些聊天裝扮（顏色、形狀照部件畫） */
+    skins?: ResolvedChatSkins;
+    /** 夜間模式：部件用夜間那套配色 */
+    night?: boolean;
   }>(),
-  { layout: "grouped", compact: false, scene: "pair" },
+  { layout: "grouped", compact: false, scene: "pair", skins: () => ({}), night: false },
 );
 
 type PreviewPart = "header" | "body" | "separator" | "firstAi" | "thought" | "user" | "samples" | "input";
@@ -85,6 +90,20 @@ function textStyle(color: string | undefined, gradient: string | undefined): Sty
 const colors = computed(() => props.state.colors);
 const bubble = computed(() => props.state.bubble);
 
+// ===== 聊天裝扮：部件配色（「用我自己的顏色」的欄位不輸出）與形狀 =====
+const skinVars = computed(() => buildChatSkinVars(props.skins, props.night));
+const skinAttrs = computed(() => buildChatSkinAttrs(props.skins));
+const skinMessage = computed(() => !!props.skins.message);
+const hidesHeaderAvatar = computed(() => !!props.skins.header?.piece.hidesHeaderAvatar);
+const headerTextColor = computed(() => skinVars.value["--skin-header-text"] ?? colors.value.text);
+const metaTextColor = computed(() => skinVars.value["--skin-meta-text"] ?? colors.value.textMuted);
+
+/** 訊息文字色：部件有給就用部件的，否則照玩家設定 */
+function bubbleTextStyle(skinVar: string, color: string | undefined, gradient: string | undefined): StyleMap {
+  const skinColor = skinVars.value[skinVar];
+  return skinColor ? { color: skinColor } : textStyle(color, gradient);
+}
+
 const fontStyle = computed<StyleMap>(() => ({
   fontFamily: CHAT_FONT_STACKS[props.state.font.family] ?? CHAT_FONT_STACKS.system,
   fontSize: `${props.state.fontSizePx}px`,
@@ -95,13 +114,15 @@ const fontStyle = computed<StyleMap>(() => ({
 const avatarStyle = computed<StyleMap>(() => {
   const a = props.state.avatar;
   return {
-    borderRadius: a.shape === "circle" ? "50%" : a.shape === "rounded" ? "10px" : "6px",
+    borderRadius: skinMessage.value ? "6px" : a.shape === "circle" ? "50%" : a.shape === "rounded" ? "10px" : "6px",
     border: `${a.borderWidth}px solid ${a.borderColor || "#ffffff"}`,
     boxShadow: a.shadowEnabled ? `0 4px 12px ${colors.value.shadow}` : "none",
   };
 });
 
 const wallpaperStyle = computed((): StyleMap => {
+  const skinWallpaper = skinVars.value["--chat-wallpaper"];
+  if (skinWallpaper) return { background: skinWallpaper };
   const w = props.state.wallpaper;
   const fallback = colors.value.background;
   const fit = w.fit || "cover";
@@ -134,6 +155,11 @@ const thoughtStyle = computed<StyleMap>(() => {
 
 /** 頂欄／輸入欄：與聊天頁相同的背景層與毛玻璃 */
 function barStyle(kind: "header" | "input"): StyleMap {
+  const skinBg = skinVars.value[kind === "header" ? "--skin-header-bg" : "--skin-input-bg"];
+  if (skinBg) {
+    const divider = skinVars.value[kind === "header" ? "--skin-header-divider" : "--skin-input-divider"];
+    return { background: skinBg, ...(divider ? { "--pv-skin-divider": divider } : {}) };
+  }
   const bar = props.state.bars[kind];
   const backdrop = buildBarBackdrop(bar.blur);
   return {
@@ -161,8 +187,24 @@ function bubbleSurface(side: "ai" | "user"): StyleMap {
     style.outline = `${fx.borderWidth}px solid ${fx.borderColor || colors.value.border}`;
     style.outlineOffset = `-${fx.borderWidth}px`;
   }
+  if (skinMessage.value) {
+    const skinBg = skinVars.value[side === "ai" ? "--bubble-ai-bg" : "--bubble-user-bg"];
+    if (skinBg) style.background = skinBg;
+    style["--pv-bubble-shadow"] = "none";
+    // 小尖角跟氣泡同色（漸層時取不到單色，就不畫）
+    if (!style.background.includes("gradient")) style["--pv-tail"] = style.background;
+  }
   return style;
 }
+
+/** 裝了訊息部件：圓角固定 4px（形狀不跟「用我自己的顏色」走） */
+const SKIN_BUBBLE_RADIUS: StyleMap = {
+  borderRadius: "4px",
+  borderTopLeftRadius: "4px",
+  borderTopRightRadius: "4px",
+  borderBottomLeftRadius: "4px",
+  borderBottomRightRadius: "4px",
+};
 
 const bodyStyle = computed<StyleMap>(() => ({
   gap: `${MESSAGE_GAP_PX[props.state.messageSpacing] ?? MESSAGE_GAP_PX.normal}px`,
@@ -186,8 +228,18 @@ function aiBubbleStyle(position: "first" | "last"): StyleMap {
   };
   // 只有前面真的有同組第一則時，才算「最後一則」收小上角
   if (!isClassic.value && position === "last" && showPart("firstAi")) style.borderTopLeftRadius = "6px";
+  if (skinMessage.value) Object.assign(style, SKIN_BUBBLE_RADIUS);
   return style;
 }
+
+const userBubbleStyle = computed<StyleMap>(() => ({
+  borderRadius: `${bubble.value.borderRadius}px`,
+  borderBottomRightRadius: "6px",
+  maxWidth: `${bubble.value.maxWidth}%`,
+  ...bubbleSurface("user"),
+  ...fontStyle.value,
+  ...(skinMessage.value ? SKIN_BUBBLE_RADIUS : {}),
+}));
 
 function onKey(target: PreviewTarget) {
   emit("select", target);
@@ -195,7 +247,7 @@ function onKey(target: PreviewTarget) {
 </script>
 
 <template>
-  <div class="chat-preview" :class="{ compact }">
+  <div class="chat-preview" :class="{ compact }" v-bind="skinAttrs">
     <div v-if="!compact" class="preview-label">預覽 <span class="preview-hint">點擊畫面中的元素即可調整</span></div>
     <div class="preview-card" :style="wallpaperStyle">
       <div
@@ -209,15 +261,15 @@ function onKey(target: PreviewTarget) {
         @click="emit('select', 'header')"
         @keydown.enter="onKey('header')"
       >
-        <span class="preview-header-btn" :style="{ color: colors.text }" aria-hidden="true">‹</span>
-        <div class="preview-header-avatar" :style="avatarStyle" aria-hidden="true">
+        <span class="preview-header-btn" :style="{ color: headerTextColor }" aria-hidden="true">‹</span>
+        <div v-if="!hidesHeaderAvatar" class="preview-header-avatar" :style="avatarStyle" aria-hidden="true">
           <span>🐾</span>
         </div>
         <div class="preview-header-title">
-          <span :style="{ color: colors.text }">AI 角色</span>
-          <small :style="{ color: colors.textSecondary }">✎</small>
+          <span :style="{ color: headerTextColor }">AI 角色</span>
+          <small :style="{ color: skinVars['--skin-header-text-secondary'] ?? colors.textSecondary }">✎</small>
         </div>
-        <span class="preview-header-btn" :style="{ color: colors.text }" aria-hidden="true">⌄</span>
+        <span class="preview-header-btn" :style="{ color: headerTextColor }" aria-hidden="true">{{ skins.header ? "⋯" : "⌄" }}</span>
         <span v-if="focus === 'header'" class="focus-badge">{{ FOCUS_LABELS.header }}</span>
       </div>
 
@@ -234,7 +286,7 @@ function onKey(target: PreviewTarget) {
         <!-- 時間分隔：經典 = 換日時的「── 今天 ──」；成組 = 置中時間 -->
         <div v-if="showPart('separator')" class="preview-separator" :class="{ classic: isClassic }" aria-hidden="true">
           <i v-if="isClassic"></i>
-          <span :style="{ background: colors.surface, color: colors.textMuted }">{{ isClassic ? "今天" : "12:00" }}</span>
+          <span :style="skinMessage ? { background: 'transparent', color: metaTextColor } : { background: colors.surface, color: colors.textMuted }">{{ isClassic ? "今天" : "12:00" }}</span>
           <i v-if="isClassic"></i>
         </div>
 
@@ -267,7 +319,7 @@ function onKey(target: PreviewTarget) {
                 @click.stop="emit('select', 'ai')"
                 @keydown.enter.stop="onKey('ai')"
               >
-                <span :style="textStyle(bubble.aiContentColor, bubble.aiContentGradient)">這是 AI 的訊息氣泡</span>
+                <span :style="bubbleTextStyle('--bubble-ai-content', bubble.aiContentColor, bubble.aiContentGradient)">這是 AI 的訊息氣泡</span>
                 <span v-if="isClassic" class="preview-time" :style="textStyle(bubble.aiTextColor, bubble.aiTextGradient)">12:00</span>
                 <span v-if="focus === 'ai'" class="focus-badge">{{ FOCUS_LABELS.ai }}</span>
               </div>
@@ -301,7 +353,7 @@ function onKey(target: PreviewTarget) {
                 @click.stop="emit('select', 'ai')"
                 @keydown.enter.stop="onKey('ai')"
               >
-                <span :style="textStyle(bubble.aiContentColor, bubble.aiContentGradient)">{{
+                <span :style="bubbleTextStyle('--bubble-ai-content', bubble.aiContentColor, bubble.aiContentGradient)">{{
                   showPart("firstAi") ? "連續傳的第二則" : "這是 AI 的訊息氣泡"
                 }}</span>
                 <span v-if="isClassic" class="preview-time" :style="textStyle(bubble.aiTextColor, bubble.aiTextGradient)">12:00</span>
@@ -321,30 +373,24 @@ function onKey(target: PreviewTarget) {
               <span v-if="focus === 'thought'" class="focus-badge">{{ FOCUS_LABELS.thought }}</span>
               </div>
             </div>
-            <span v-if="!isClassic" class="preview-side-time" :style="{ color: colors.textMuted }">12:00</span>
+            <span v-if="!isClassic" class="preview-side-time" :style="{ color: metaTextColor }">12:00</span>
           </div>
         </div>
 
         <div v-if="showPart('user')" class="preview-message-row user" :class="{ grouped: !isClassic }">
-          <span v-if="!isClassic" class="preview-side-time" :style="{ color: colors.textMuted }">12:01</span>
+          <span v-if="!isClassic" class="preview-side-time" :style="{ color: metaTextColor }">12:01</span>
           <div class="preview-message-content">
             <div
               class="preview-bubble user"
               :class="{ 'preview-focused': focus === 'user' }"
-              :style="{
-                borderRadius: `${bubble.borderRadius}px`,
-                borderBottomRightRadius: '6px',
-                maxWidth: `${bubble.maxWidth}%`,
-                ...bubbleSurface('user'),
-                ...fontStyle,
-              }"
+              :style="userBubbleStyle"
               tabindex="0"
               role="button"
               aria-label="調整我的氣泡"
               @click.stop="emit('select', 'user')"
               @keydown.enter.stop="onKey('user')"
             >
-              <span :style="textStyle(bubble.userTextColor, bubble.userTextGradient)">這是我的訊息氣泡</span>
+              <span :style="bubbleTextStyle('--bubble-user-text', bubble.userTextColor, bubble.userTextGradient)">這是我的訊息氣泡</span>
               <span v-if="isClassic" class="preview-time" :style="textStyle(bubble.userTextColor, bubble.userTextGradient)">12:01</span>
               <span v-if="focus === 'user'" class="focus-badge">{{ FOCUS_LABELS.user }}</span>
             </div>
@@ -413,7 +459,7 @@ function onKey(target: PreviewTarget) {
         v-if="showPart('input')"
         class="preview-input preview-clickable"
         :class="{ 'preview-focused': focus === 'input', docked: state.bars.input.docked }"
-        :style="{ ...barStyle('input'), color: colors.textMuted }"
+        :style="{ ...barStyle('input'), color: skinVars['--skin-input-icon'] ?? colors.textMuted }"
         tabindex="0"
         role="button"
         aria-label="調整輸入欄"
@@ -421,8 +467,18 @@ function onKey(target: PreviewTarget) {
         @keydown.enter="onKey('input')"
       >
         <span class="preview-input-btn" aria-hidden="true">＋</span>
-        <span class="preview-input-field" aria-hidden="true">輸入訊息…</span>
-        <span class="preview-input-send" :style="{ background: colors.primary }" aria-hidden="true">➤</span>
+        <span
+          class="preview-input-field"
+          :style="skinVars['--skin-input-field-bg'] ? { background: skinVars['--skin-input-field-bg'], color: skinVars['--skin-input-text'] } : {}"
+          aria-hidden="true"
+          >輸入訊息…</span
+        >
+        <span
+          class="preview-input-send"
+          :style="{ background: skinVars['--skin-send-bg'] ?? colors.primary, color: skinVars['--skin-send-text'] ?? '#fff' }"
+          aria-hidden="true"
+          >➤</span
+        >
         <span v-if="focus === 'input'" class="focus-badge">{{ FOCUS_LABELS.input }}</span>
       </div>
     </div>
@@ -430,6 +486,67 @@ function onKey(target: PreviewTarget) {
 </template>
 
 <style lang="scss" scoped>
+// ===== 聊天裝扮：綠泡泡的形狀（顏色由 script 依部件變數給） =====
+.chat-preview[data-skin-message="greenbubble"] {
+  .preview-bubble {
+    box-shadow: none;
+  }
+
+  // 小尖角對準頭像中間
+  .preview-bubble::before {
+    content: "";
+    position: absolute;
+    top: 12px;
+    border: 5px solid transparent;
+  }
+
+  .preview-bubble.ai::before {
+    left: -9px;
+    border-right-color: var(--pv-tail, transparent);
+  }
+
+  .preview-bubble.user::before {
+    right: -9px;
+    border-left-color: var(--pv-tail, transparent);
+  }
+}
+
+.chat-preview[data-skin-header="greenbubble"] .preview-header {
+  margin: 0;
+  border-radius: 0;
+  box-shadow: none;
+  border: none;
+  border-bottom: 1px solid var(--pv-skin-divider, transparent);
+
+  .preview-header-btn {
+    background: none;
+    box-shadow: none;
+  }
+
+  .preview-header-title {
+    justify-content: center;
+  }
+}
+
+.chat-preview[data-skin-input="greenbubble"] .preview-input {
+  margin: 0;
+  border-radius: 0;
+  box-shadow: none;
+  border-top: 1px solid var(--pv-skin-divider, transparent);
+
+  .preview-input-field {
+    padding: 6px 10px;
+    border-radius: 4px;
+  }
+
+  .preview-input-send {
+    width: auto;
+    height: 28px;
+    padding: 0 12px;
+    border-radius: 4px;
+  }
+}
+
 .preview-label {
   font-size: 12px;
   color: var(--color-text-muted);
