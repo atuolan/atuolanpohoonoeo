@@ -44,11 +44,9 @@ const emit = defineEmits<{
   max-width: calc(100% - 32px);
   padding: 4px 4px 4px 12px;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--color-surface) 92%, transparent);
+  background: var(--color-surface);
   border: 1px solid var(--color-border);
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
   white-space: nowrap;
 }
 
