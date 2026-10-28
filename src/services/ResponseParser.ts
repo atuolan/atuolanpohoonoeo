@@ -3065,6 +3065,11 @@ export interface ParsedGroupMessage extends ParsedMessage {
   /** 是否為紅包領取動作 */
   isRedpacketClaim?: boolean;
   redpacketClaimName?: string;
+  /** 是否為骰子機器人擲骰（<dice name expr reason target/>） */
+  isDiceRoll?: boolean;
+  diceExpr?: string;
+  diceReason?: string;
+  diceTarget?: string;
 }
 
 export interface ParsedGroupResponse {
@@ -3106,9 +3111,9 @@ export function parseGroupChatResponse(
   result.rawOutput = outputContent;
 
   // 4. 解析各種標籤
-  // 使用正則逐一匹配 <msg>, <recall>, <dm>, <group-action>, <group-call-request>, <call-response>, <redpacket-claim>
+  // 使用正則逐一匹配 <msg>, <recall>, <dm>, <group-action>, <group-call-request>, <call-response>, <redpacket-claim>, <dice>
   const tagRegex =
-    /<msg\s+([^>]*?)\/>|<msg\s+([^>]*?)>([\s\S]*?)<\/msg>|<recall\s+([^>]*?)>([\s\S]*?)<\/recall>|<dm\s+([^>]*?)>([\s\S]*?)<\/dm>|<group-action\s+([^>]*?)\s*\/?>|<group-call-request\s+([^>]*?)\s*\/?>|<call-response\s+([^>]*?)\s*\/?>|<redpacket-claim\s+([^>]*?)\s*\/?>/gi;
+    /<msg\s+([^>]*?)\/>|<msg\s+([^>]*?)>([\s\S]*?)<\/msg>|<recall\s+([^>]*?)>([\s\S]*?)<\/recall>|<dm\s+([^>]*?)>([\s\S]*?)<\/dm>|<group-action\s+([^>]*?)\s*\/?>|<group-call-request\s+([^>]*?)\s*\/?>|<call-response\s+([^>]*?)\s*\/?>|<redpacket-claim\s+([^>]*?)\s*\/?>|<dice\s+([^>]*?)\s*\/?>/gi;
 
   let match;
   while ((match = tagRegex.exec(outputContent)) !== null) {
@@ -3270,6 +3275,17 @@ export function parseGroupChatResponse(
         senderName: name,
         isRedpacketClaim: true,
         redpacketClaimName: name,
+      });
+    } else if (match[12] !== undefined) {
+      // <dice> tag：骰子機器人擲骰，結果由 ChatScreen 擲出
+      const attrs = match[12];
+      result.messages.push({
+        content: "",
+        senderName: extractAttr(attrs, "name") || "",
+        isDiceRoll: true,
+        diceExpr: extractAttr(attrs, "expr"),
+        diceReason: extractAttr(attrs, "reason"),
+        diceTarget: extractAttr(attrs, "target"),
       });
     }
   }

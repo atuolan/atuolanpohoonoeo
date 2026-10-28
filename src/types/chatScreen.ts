@@ -10,6 +10,7 @@ import type {
   WaimaiOrderSnapshot,
 } from "@/types/chat";
 import type { ToolActivityRecord } from "@/types/toolActivity";
+import type { DiceRollData } from "@/utils/diceRoller";
 
 export type ChatScreenMediaType =
   | "descriptive-image"
@@ -228,6 +229,8 @@ export interface ChatScreenMessage {
   sentWhileAway?: string;
   isSystemNotification?: boolean;
   isTransactionClaimNotice?: boolean;
+  isDiceRoll?: boolean;
+  diceRoll?: DiceRollData;
   isFoodRecord?: boolean;
   foodRecordData?: FoodRecordRef;
   diaryNoticeId?: string;

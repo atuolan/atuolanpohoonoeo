@@ -12,6 +12,7 @@ import type {
   WaimaiEtaSnapshot,
 } from "./waimaiDelivery";
 import type { WITimedEffect } from "./worldinfo";
+import type { DiceRollData } from "@/utils/diceRoller";
 
 // ===== 情頭系統 =====
 export interface CoupleAvatarEntry {
@@ -696,6 +697,9 @@ export interface ChatMessage {
   isSystemNotification?: boolean;
   /** 是否為交易領取通知：資料上算 user role，畫面上渲染為系統通知樣式 */
   isTransactionClaimNotice?: boolean;
+  /** 群聊骰子機器人的擲骰結果（content 是 formatDiceRoll 寫好的一句話） */
+  isDiceRoll?: boolean;
+  diceRoll?: DiceRollData;
   /** 角色記下飲食的通知（「已記錄:…」） */
   isFoodRecord?: boolean;
   /** 這則通知記下的那一筆，換掉那一輪回覆時拿來收回 */

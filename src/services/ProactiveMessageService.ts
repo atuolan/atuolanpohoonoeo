@@ -825,7 +825,8 @@ export class ProactiveMessageService {
           pm.isGroupCallRequest ||
           pm.isGroupCallResponse ||
           pm.isRecall ||
-          pm.isRedpacketClaim
+          pm.isRedpacketClaim ||
+          pm.isDiceRoll
         ) {
           skipCount++;
           continue;

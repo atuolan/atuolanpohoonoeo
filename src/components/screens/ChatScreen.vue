@@ -81,6 +81,7 @@ import { _delay, _escapeRegex, _messageRenderDelay, countTurns, formatClaimAmoun
 import { findQuotedMessage } from "@/utils/replyQuote";
 import { setDebugInfoLine } from "@/utils/debugOverlay";
 import { pickGenerationToggles } from "@/utils/generationToggles";
+import { diceCommandFromTag, formatDiceRoll, parseDiceCommand, runDiceCommand } from "@/utils/diceRoller";
 import { useChatAffinity } from "@/composables/useChatAffinity";
 import { useCharAway } from "@/composables/useCharAway";
 import { useChatBlock } from "@/composables/useChatBlock";
@@ -3875,6 +3876,26 @@ function onSearchEnter() {
   onSearchResultClick(idx);
 }
 
+// 群聊骰子機器人：使用者打 .r／.ra 等指令時，接在使用者訊息後面公布擲骰結果
+function appendUserDiceRoll(text: string): void {
+  if (!isGroupChat.value) return;
+  const cmd = parseDiceCommand(text);
+  if (!cmd) return;
+  const roll = runDiceCommand(cmd, getUserDisplayName());
+  if (!roll) {
+    showToast("骰子算式看不懂，或一次擲太多顆了");
+    return;
+  }
+  messages.value.push({
+    id: `msg_${Date.now()}_dice`,
+    role: "user",
+    content: formatDiceRoll(roll),
+    timestamp: Date.now() + 1,
+    isDiceRoll: true,
+    diceRoll: roll,
+  });
+}
+
 // 發送訊息（只添加用戶訊息，不觸發 AI）
 function addUserMessage() {
   const text = inputText.value.trim();
@@ -3910,6 +3931,7 @@ function addUserMessage() {
       : {}),
   };
   messages.value.push(newMessage);
+  if (mode === "user") appendUserDiceRoll(text);
   inputText.value = "";
   if (currentChatId.value) chatStore.clearDraft(currentChatId.value);
   replyingTo.value = null; // 清除回覆目標
@@ -3977,6 +3999,7 @@ async function sendAndTriggerAI() {
         : {}),
     };
     messages.value.push(userMessage);
+    appendUserDiceRoll(text);
     inputText.value = "";
     if (currentChatId.value) chatStore.clearDraft(currentChatId.value);
     replyingTo.value = null;
@@ -4120,6 +4143,7 @@ function isGroupableMessage(
   return !(
     m.isSystemNotification ||
     m.isTransactionClaimNotice ||
+    m.isDiceRoll ||
     m.isUserRecalled ||
     m.isRecall ||
     m.isGroupAction
@@ -4277,6 +4301,55 @@ function handleTransfer(amount: number, note: string = "") {
   scrollToBottom();
   saveChat();
   // 不自動觸發 AI 回覆，讓用戶可以繼續發送其他訊息
+}
+
+// 禮物面板發專屬紅包時可以挑的群成員名字
+const giftDrawerMemberNames = computed<string[]>(() => {
+  const gm = groupMetadata.value;
+  if (!isGroupChat.value || !gm) return [];
+  if (gm.isMultiCharCard) {
+    return (gm.multiCharMembers ?? []).map((m) => (m.name || "").trim()).filter(Boolean);
+  }
+  return (gm.members ?? [])
+    .map((member) => {
+      if (member.isVirtual) return (member.name || "").trim();
+      const ch = charactersStore.characters.find((c) => c.id === member.characterId);
+      return (member.nickname || ch?.nickname || ch?.data?.name || "").trim();
+    })
+    .filter(Boolean);
+});
+
+// 群聊發紅包（錢已經在禮物面板扣掉）
+function handleSendRedpacket(data: {
+  type: "lucky" | "split" | "exclusive";
+  amount: number;
+  count: number;
+  blessing: string;
+  target?: string;
+}) {
+  const blessing = data.blessing || "恭喜發財，大吉大利";
+  const count = data.type === "exclusive" ? 1 : data.count;
+  const redpacketData = {
+    amount: data.amount.toFixed(2),
+    blessing,
+    type: data.type,
+    count,
+    target: data.type === "exclusive" ? data.target : undefined,
+  };
+  const targetAttr = redpacketData.target ? ` target="${redpacketData.target}"` : "";
+  const message: Message = {
+    id: `msg_${Date.now()}`,
+    role: "user",
+    content: `<redpacket type="${data.type}" amount="${redpacketData.amount}" count="${count}"${targetAttr} blessing="${blessing}"/>`,
+    timestamp: Date.now(),
+    isRedpacket: true,
+    redpacketData,
+    redpacketState: initRedPacketState(redpacketData),
+  };
+  messages.value.push(message);
+  scrollToBottom();
+  saveChat();
+  // 跟轉帳一樣不自動觸發 AI 回覆
 }
 
 // 處理確認收款（用戶收取 AI 的轉帳）
@@ -5769,6 +5842,8 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
       groupChatMode:
         isGroupChat.value &&
         !(groupMetadata.value?.isMultiCharCard && chatFaceToFaceMode.value),
+      // 群聊用過骰子機器人才注入擲骰規則
+      diceBotActive: isGroupChat.value && messages.value.some((m) => m.isDiceRoll),
       // 多人卡模式參數
       isMultiCharCard: groupMetadata.value?.isMultiCharCard || false,
       multiCharMembers: resolvedMultiCharMembers,
@@ -6874,6 +6949,34 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
                   `[表情：${parsedMsg.stickerMeaning}]`,
                 );
                 continue;
+              }
+              continue;
+            }
+
+            // 骰子機器人：角色用 <dice> 擲骰，系統擲出結果（重新生成這一輪時跟著回覆一起刪掉）
+            if (parsedMsg.isDiceRoll) {
+              const roll = runDiceCommand(
+                diceCommandFromTag({
+                  expr: parsedMsg.diceExpr,
+                  reason: parsedMsg.diceReason,
+                  target: parsedMsg.diceTarget,
+                }),
+                senderName,
+              );
+              if (roll) {
+                await _gcDelayIfNeeded(parsedMsg);
+                messages.value.push({
+                  id: `msg_${Date.now()}_${i}_dice`,
+                  role: "ai",
+                  content: formatDiceRoll(roll),
+                  timestamp: Date.now() + i,
+                  turnId: generationTurnId || undefined,
+                  senderCharacterId: senderCharId,
+                  senderCharacterName: senderName,
+                  senderCharacterAvatar: senderAvatar,
+                  isDiceRoll: true,
+                  diceRoll: roll,
+                });
               }
               continue;
             }
@@ -11307,6 +11410,23 @@ useChatCleanup({
             <PeekNoteNotice :note="parsePeekNote(message.content)!" />
           </div>
 
+          <!-- 骰子機器人擲骰結果 -->
+          <div
+            v-else-if="message.isDiceRoll"
+            class="dice-roll-notice"
+            :class="[
+              message.diceRoll?.outcome ? `dice-${message.diceRoll.outcome}` : '',
+              { 'is-selected': isSelectingMessages && selectedMessageIds.includes(message.id) },
+            ]"
+            @click="isSelectingMessages ? toggleMessageSelection(message.id) : undefined"
+            @contextmenu.prevent="handleMessageDelete(message.id)"
+          >
+            <div class="dice-roll-card">
+              <span class="dice-roll-icon">🎲</span>
+              <span class="dice-roll-text">{{ message.content.replace(/^🎲\s*/, "") }}</span>
+            </div>
+          </div>
+
           <!-- 系統通知（封鎖/解封等）；交易領取通知資料上仍算 user role，但畫面使用系統通知樣式 -->
           <div
             v-else-if="message.isSystemNotification || message.isTransactionClaimNotice"
@@ -11879,10 +11999,13 @@ useChatCleanup({
         :hidden-item-ids="giftDrawerHiddenItems"
         :character-name="characterName"
         :character-avatar="characterAvatar"
+        :is-group="isGroupChat"
+        :group-member-names="giftDrawerMemberNames"
         @close="showGiftDrawer = false"
         @open-shop="handleOpenShop"
         @transfer="handleTransfer"
         @send-gift="handleSendGift"
+        @redpacket="handleSendRedpacket"
       />
 
       <!-- 共感娃娃 -->
@@ -15075,6 +15198,68 @@ useChatCleanup({
   padding: 4px 16px;
   background: rgba(128, 128, 128, 0.1);
   border-radius: 12px;
+}
+
+.dice-roll-notice {
+  display: flex;
+  justify-content: center;
+  padding: 6px 16px;
+  margin: 4px 0;
+  cursor: default;
+
+  &.is-selected {
+    background: rgba(var(--color-primary-rgb, 76, 175, 80), 0.15);
+    border-radius: 8px;
+  }
+}
+
+.dice-roll-card {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 6px;
+  max-width: 85%;
+  padding: 8px 14px;
+  border-radius: 14px;
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-line;
+  background: var(--color-surface, #fff);
+  border: 1px solid rgba(128, 128, 128, 0.2);
+  color: var(--color-text, #333);
+}
+
+.dice-roll-icon {
+  font-size: 16px;
+  line-height: 1.2;
+  flex-shrink: 0;
+}
+
+.dice-critical,
+.dice-extreme,
+.dice-hard,
+.dice-success {
+  .dice-roll-card {
+    border-color: rgba(var(--color-primary-rgb, 76, 175, 80), 0.6);
+  }
+}
+
+.dice-critical {
+  .dice-roll-card {
+    background: rgba(var(--color-primary-rgb, 76, 175, 80), 0.12);
+  }
+}
+
+.dice-failure,
+.dice-fumble {
+  .dice-roll-card {
+    border-color: rgba(229, 57, 53, 0.5);
+  }
+}
+
+.dice-fumble {
+  .dice-roll-card {
+    background: rgba(229, 57, 53, 0.1);
+  }
 }
 
 .user-recalled-notification {

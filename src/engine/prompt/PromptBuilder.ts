@@ -345,6 +345,8 @@ export interface PromptBuilderOptions {
   companionReadingLogs?: string;
   /** 群聊模式 */
   groupChatMode?: boolean;
+  /** 群聊裡用過骰子機器人（有擲骰紀錄）：成員列表後面接上擲骰規則 */
+  diceBotActive?: boolean;
   /** 群聊成員列表（群聊模式時必填） */
   groupMembers?: Array<{
     characterId: string;
@@ -2727,7 +2729,7 @@ ${negativeExample}
 
       // ===== 群聊模式：群成員列表 marker =====
       case "gcGroupMembers":
-        return this.buildGroupMembersList();
+        return this.withDiceBotRules(this.buildGroupMembersList());
 
       // ===== 群聊模式：群聊角色名單 marker =====
       case "gcGroupCharacterNames":
@@ -2892,6 +2894,22 @@ ${PHONE_CALL_BILINGUAL_REMINDER}`
    * 組裝群聊成員列表
    * 為每個成員生成包含名稱、暱稱、性格描述的文字
    */
+  /** 跑團骰子：角色用 <dice> 請系統擲骰，結果下一輪才看得到 */
+  private withDiceBotRules(members: BuiltMessage | null): BuiltMessage | null {
+    if (!members || !this.options.diceBotActive) return members;
+    const user = this.options.userName || "user";
+    const rules = `<dice_bot>
+🎲 骰子機器人（跑團用）
+- 這個群有骰子機器人，點數都由系統真的擲出；聊天記錄裡 🎲 開頭的訊息就是機器人公布的結果，成敗以它為準（大成功、極難成功、困難成功、成功、失敗、大失敗）。
+- ${user} 自己用 .r（例如 .r 2d6+3 攻擊）或 .ra 技能名 數值（例如 .ra 偵查 60）擲骰。需要 ${user} 檢定時，請 ${user} 自己擲，不要替 ${user} 擲，也不要替 ${user} 編結果。
+- 角色要擲骰時輸出 <dice name="角色名" expr="骰子算式" reason="原因"/>；技能檢定改寫 target="技能值"，例如 <dice name="角色名" reason="聆聽" target="50"/>。跟 <redpacket-claim> 一樣獨立一行、放在 <content> 裡。
+- 輸出 <dice> 的這一輪還不知道結果：不能自己編點數或成敗，等下一輪看到 🎲 結果再反應。
+</dice_bot>`;
+    return { ...members, content: `${members.content}
+
+${rules}` };
+  }
+
   private buildGroupMembersList(): BuiltMessage | null {
     const { groupMembers, groupName, isMultiCharCard, multiCharMembers } =
       this.options;
