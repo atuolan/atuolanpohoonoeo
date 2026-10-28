@@ -28,6 +28,7 @@ import {
   type ParsedCharSleep,
 } from "@/services/charAway";
 import { PLURK_BLOCK_PATTERN, PLURK_BLOCK_STRIP_PATTERN } from "@/utils/plurkFormat";
+import { formatGiftTag, parseGiftTag } from "@/utils/giftTag";
 import { repairXmlTags } from "./XmlFuzzyRepair";
 
 export type { CalendarEventData, ScheduleCallData };
@@ -66,6 +67,8 @@ export interface ParsedMessage {
   replyToName?: string;
   isGift?: boolean;
   giftName?: string;
+  giftCard?: string;
+  giftDescription?: string;
   // 轉帳相關
   isTransfer?: boolean;
   transferType?: "pay" | "refund";
@@ -431,10 +434,12 @@ function parseTextOnlyContent(content: string): ParsedMessage {
   extractReplyQuote(result);
 
   // 檢查送禮物
-  const giftMatch = result.content.match(/<送禮物>([\s\S]*?)<\/送禮物>/i);
-  if (giftMatch) {
+  const gift = parseGiftTag(result.content);
+  if (gift) {
     result.isGift = true;
-    result.giftName = giftMatch[1].trim();
+    result.giftName = gift.name;
+    if (gift.card) result.giftCard = gift.card;
+    if (gift.description) result.giftDescription = gift.description;
     result.content = "";
   }
 
@@ -668,10 +673,12 @@ function parseMessageContentWithoutTimetravel(content: string): ParsedMessage {
   extractReplyQuote(result);
 
   // 檢查送禮物
-  const giftMatch = result.content.match(/<送禮物>([\s\S]*?)<\/送禮物>/i);
-  if (giftMatch) {
+  const gift = parseGiftTag(result.content);
+  if (gift) {
     result.isGift = true;
-    result.giftName = giftMatch[1].trim();
+    result.giftName = gift.name;
+    if (gift.card) result.giftCard = gift.card;
+    if (gift.description) result.giftDescription = gift.description;
     result.content = "";
   }
 
@@ -1617,10 +1624,12 @@ function parseMessageContent(content: string): ParsedMessage {
   }
 
   // 檢查送禮物
-  const giftMatch = result.content.match(/<送禮物>([\s\S]*?)<\/送禮物>/i);
-  if (giftMatch) {
+  const gift = parseGiftTag(result.content);
+  if (gift) {
     result.isGift = true;
-    result.giftName = giftMatch[1].trim();
+    result.giftName = gift.name;
+    if (gift.card) result.giftCard = gift.card;
+    if (gift.description) result.giftDescription = gift.description;
     result.content = "";
   }
 
@@ -2646,7 +2655,7 @@ export function parseAffinityUpdateTags(
  */
 export function needsParsing(content: string): boolean {
   // 檢查是否包含任何需要解析的標籤
-  return /<think>|<[^<>]*state[^<>]*>|<content>|<msg>|<update>|<UpdateVariable>|<timetravel>|<redpacket|<location>|<schedule-call|<calendar-event|<food-record|<time-jump|<time-advance|<送禮物>|<pay>|<transfer\s|<refund>|<avatar-change|<couple-avatar-|<voice>|<waimai-pay|<waimai-delivery|<face-to-face-request|<online-mode-request|<affinity-update|<char-status|<char-away|<char-sleep|<char-busy|<char-wake|<sticky-note|<mood-reply|<plurk[\s>]|<plurk-comment|<share-plurk|<!DOCTYPE\s|<html[\s>]/i.test(
+  return /<think>|<[^<>]*state[^<>]*>|<content>|<msg>|<update>|<UpdateVariable>|<timetravel>|<redpacket|<location>|<schedule-call|<calendar-event|<food-record|<time-jump|<time-advance|<送禮物[\s>]|<pay>|<transfer\s|<refund>|<avatar-change|<couple-avatar-|<voice>|<waimai-pay|<waimai-delivery|<face-to-face-request|<online-mode-request|<affinity-update|<char-status|<char-away|<char-sleep|<char-busy|<char-wake|<sticky-note|<mood-reply|<plurk[\s>]|<plurk-comment|<share-plurk|<!DOCTYPE\s|<html[\s>]/i.test(
     content,
   );
 }
@@ -3356,7 +3365,7 @@ function rebuildMessageContent(msg: ParsedGroupMessage): string {
     return segments.join("");
   }
   if (msg.isGift && msg.giftName) {
-    segments.push(`<送禮物>${msg.giftName}</送禮物>`);
+    segments.push(formatGiftTag({ name: msg.giftName, description: msg.giftDescription, card: msg.giftCard }));
     return segments.join("");
   }
   if (msg.isTransfer) {

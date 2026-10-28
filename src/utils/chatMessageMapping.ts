@@ -2,6 +2,7 @@ import { needsParsing, parseAIResponse, stripStateThinking } from "@/services/Re
 import type { Chat, ChatMessage } from "@/types/chat";
 import type { ChatScreenMessage } from "@/types/chatScreen";
 import type { ToolActivityRecord } from "@/types/toolActivity";
+import { parseGiftTag } from "@/utils/giftTag";
 
 interface CharacterLookupItem {
   id: string;
@@ -94,10 +95,10 @@ export function convertStoredMessageToUiMessage(
   let isGift = m.isGift;
   let giftName = m.giftName;
   if (!isGift && normalizedContent) {
-    const giftMatch = normalizedContent.match(/<送禮物>([\s\S]*?)<\/送禮物>/i);
-    if (giftMatch) {
+    const gift = parseGiftTag(normalizedContent);
+    if (gift) {
       isGift = true;
-      giftName = giftMatch[1].trim();
+      giftName = gift.name;
     }
   }
 
@@ -322,6 +323,9 @@ export function convertToStorableMessage(m: any, charName: string): ChatMessage 
     isGift: m.isGift,
     giftName: m.giftName,
     giftReceived: m.giftReceived,
+    giftCard: m.giftCard,
+    giftDescription: m.giftDescription,
+    giftMemoryId: m.giftMemoryId,
     isTransfer: m.isTransfer,
     transferAmount: m.transferAmount,
     transferReceived: m.transferReceived,

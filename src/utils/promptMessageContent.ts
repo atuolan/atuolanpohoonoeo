@@ -5,6 +5,7 @@
  */
 
 import type { PlurkShareSnapshot } from "@/types/chat";
+import { formatGiftTag, GIFT_TAGS_RE } from "@/utils/giftTag";
 import { describePlurkShareForPrompt } from "@/utils/plurkShare";
 
 type TransferStatus = "sent" | "pending" | "received" | "refunded";
@@ -29,6 +30,8 @@ export interface PromptMessageLike {
   locationContent?: string;
   isGift?: boolean;
   giftName?: string;
+  giftCard?: string;
+  giftDescription?: string;
   messageType?: string;
   audioTranscript?: string;
   isFaceToFaceRequest?: boolean;
@@ -109,7 +112,6 @@ function describeModeRequest(m: PromptMessageLike, names: PromptMessageNames): s
 const TRANSFER_TAGS = /<pay>[\s\S]*?<\/pay>|<transfer\s[^>]*>[\s\S]*?<\/transfer>|<refund>[\s\S]*?<\/refund>|<轉帳>[\s\S]*?<\/轉帳>/gi;
 const REDPACKET_TAGS = /<redpacket\s[^>]*?\/?>/gi;
 const LOCATION_TAGS = /<location>[\s\S]*?<\/location>/gi;
-const GIFT_TAGS = /<送禮物>[\s\S]*?<\/送禮物>/gi;
 const MODE_REQUEST_TAGS = /<(?:face-to-face|online-mode)-request\s[^>]*?\/?>/gi;
 
 /** 這則訊息送給 AI 時的內容；不是卡片類訊息就原樣回傳 */
@@ -148,8 +150,8 @@ export function describeMessageForPrompt(
     cards.push(`<location>${m.locationContent}</location>`);
   }
   if (m.isGift && m.giftName) {
-    text = text.replace(GIFT_TAGS, "");
-    cards.push(`<送禮物>${m.giftName}</送禮物>`);
+    text = text.replace(GIFT_TAGS_RE, "");
+    cards.push(formatGiftTag({ name: m.giftName, description: m.giftDescription, card: m.giftCard }));
   }
   if (m.isFaceToFaceRequest || m.isOnlineModeRequest) {
     text = text.replace(MODE_REQUEST_TAGS, "");

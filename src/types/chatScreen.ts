@@ -88,6 +88,9 @@ export interface ChatScreenMessage {
   isGift?: boolean;
   giftName?: string;
   giftReceived?: boolean;
+  giftCard?: string;
+  giftDescription?: string;
+  giftMemoryId?: string;
   isTransfer?: boolean;
   transferAmount?: number;
   transferReceived?: boolean;

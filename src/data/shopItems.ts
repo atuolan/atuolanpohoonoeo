@@ -67,6 +67,17 @@ export interface ShopItem {
   consumableEffect?: ConsumableEffect;
   /** 商品變體（擇一購買，如 Discord 顏色選擇） */
   variants?: ShopItemVariant[];
+  /** 禮物專用：回憶卡與日記 */
+  giftUse?: GiftUse;
+}
+
+/** 禮物送出後的用法 */
+export interface GiftUse {
+  /** 用完就沒了：「一起用」「自己用」各最多一篇日記 */
+  consumable?: boolean;
+  /** 寫日記時給的靈感（一句話） */
+  hint?: string;
+  special?: "empathy-doll";
 }
 
 // ===== 頭像框 =====
