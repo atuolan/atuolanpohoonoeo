@@ -65,7 +65,7 @@ describe("buildGiftNudgeNote", () => {
       "今天是聖誕節",
     );
     expect(buildGiftNudgeNote({ now, lastGiftToUserAt: now, latestUserText: "你會送我禮物嗎" })).toContain(
-      "<送禮物 card=",
+      "剛剛提到了禮物",
     );
   });
 

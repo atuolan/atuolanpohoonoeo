@@ -163,7 +163,7 @@ export const GIFT_NUDGE_GAP_CHANCE = 0.05;
 const GIFT_KEYWORD_RE = /禮物|送我|送你|生日|紀念日/;
 
 /**
- * 回送提示：線上模式的提示詞沒有送禮標籤，只在這幾種時候那一輪帶上說明
+ * 回送提示：送禮標籤寫在線上模式的標籤說明裡，這裡只在這幾種時候那一輪提醒一句
  * - 今天是節日
  * - user 最新的訊息提到禮物／生日等
  * - 角色 14 天以上沒送過（或從沒送過），每輪 5% 機率
@@ -188,9 +188,5 @@ export function buildGiftNudgeNote(input: {
     }
   }
   if (!reason) return undefined;
-  return [
-    `[送禮]${reason}。`,
-    "{{char}} 如果想送 {{user}} 一份禮物，可以在 <msg> 裡寫：<送禮物 card=\"小卡上的話\">禮物名稱｜一句描述</送禮物>",
-    "禮物照 {{char}} 的個性自己想，不必是商店裡的東西；card 和描述可以省略。不想送就不用送，不要每次都送。",
-  ].join("\n");
+  return `[送禮]${reason}。{{char}} 想的話可以送 {{user}} 一份禮物（<送禮物>），不想就不用送。`;
 }

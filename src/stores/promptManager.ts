@@ -69,8 +69,9 @@ export const FACE_TO_FACE_PROMPT_RESET_VERSION = 7;
  * 2：與群聊、面對面一起重置；刪除「角色設定」，加入便利貼與心情便籤
  * 3：線上預設重寫，加入 char 語言
  * 4：【推進】拿掉「分享自己正在做的事」，改成問起 {{user}} 那邊的事，近況有變化才提
+ * 5：線上模式標籤加上送禮物（可附小卡與描述）
  */
-export const ONLINE_PROMPT_RESET_VERSION = 4;
+export const ONLINE_PROMPT_RESET_VERSION = 5;
 
 /**
  * 群聊模式提示詞強制重置版本（規則同面對面）。
