@@ -23,6 +23,11 @@
       }
     }
 
+    // 頭像對齊泡泡頂端（成組排版原本貼底，長訊息時頭像會離尖角很遠）
+    > .avatar-container {
+      align-self: flex-start !important;
+    }
+
     // 頭像：每則訊息都顯示，蓋過成組排版隱藏規則
     &.seq-first,
     &.seq-middle {
@@ -67,7 +72,8 @@
       &::before {
         content: "";
         position: absolute;
-        top: 12px;
+        // 尖角中心對準頭像中心（尖角高 10px）
+        top: calc(var(--avatar-size, 40px) / 2 - 5px);
         width: 0;
         height: 0;
         pointer-events: none;
