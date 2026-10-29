@@ -1,45 +1,60 @@
 <template>
   <div class="game-sudoku">
-    <div class="header">
-      <button class="back-btn" @click="$emit('close')">
-        <ChevronLeft class="icon" />
+    <!-- 1. 頂欄 -->
+    <header class="topbar">
+      <button
+        type="button"
+        class="round-btn"
+        aria-label="返回"
+        @click="$emit('close')"
+      >
+        <ChevronLeft />
       </button>
-      <h1 class="title">數獨</h1>
-      <div class="header-actions">
-        <button
-          class="icon-btn"
-          title="存檔管理"
-          @click="showSaveMenu = !showSaveMenu"
-        >
-          <Save class="icon" />
-        </button>
-        <button
-          class="icon-btn"
-          title="新遊戲"
-          @click="showDifficultyMenu = true"
-        >
-          <PlusCircle class="icon" />
-        </button>
-        <button class="icon-btn" title="暫停" @click="togglePause">
-          <Play v-if="isPaused" class="icon" />
-          <Pause v-else class="icon" />
-        </button>
-        <button class="icon-btn" title="重新開始" @click="restartGame">
-          <RotateCcw class="icon" />
-        </button>
+      <h1 class="topbar-title">數獨</h1>
+      <button
+        type="button"
+        class="round-btn"
+        :aria-label="isPaused ? '繼續' : '暫停'"
+        @click="togglePause"
+      >
+        <Play v-if="isPaused" />
+        <Pause v-else />
+      </button>
+    </header>
+
+    <!-- 2. 資訊列 -->
+    <div class="info-bar">
+      <button
+        type="button"
+        class="difficulty-pill"
+        @click="showDifficultyMenu = true"
+      >
+        <span>{{ difficultyText }}</span>
+        <ChevronDown class="pill-arrow" />
+      </button>
+
+      <div class="error-info">
+        錯誤 <b :class="{ 'has-error': errorCount > 0 }">{{ errorCount }}</b> / {{ maxErrors }}
+      </div>
+
+      <div class="time-info">
+        <span v-if="currentBestTime > 0" class="best-time-label">
+          最佳 {{ formatTime(currentBestTime) }}
+        </span>
+        <span class="current-time">{{ formattedTime }}</span>
       </div>
     </div>
 
-    <!-- 存档管理菜单 -->
+    <!-- 8. 存檔管理彈窗 -->
     <Teleport to="body">
       <transition name="fade">
         <div
           v-if="showSaveMenu"
-          class="save-menu-overlay"
+          class="dialog-overlay save-menu-overlay"
           @click="showSaveMenu = false"
         >
-          <div class="save-menu" @click.stop>
-            <h3>存檔管理</h3>
+          <div class="dialog-card save-menu" @click.stop>
+            <h3 class="dialog-title">存檔管理</h3>
             <div class="save-slots">
               <div v-if="hasSavedGame" class="save-slot filled">
                 <div class="slot-header">
@@ -53,10 +68,10 @@
                   <span>進度: {{ savedGameProgress }}%</span>
                 </div>
                 <div class="slot-actions">
-                  <button class="btn-load" @click="loadSavedGame">
+                  <button type="button" class="btn-load" @click="loadSavedGame">
                     <Download :size="16" /> 讀取
                   </button>
-                  <button class="btn-delete" @click="deleteSavedGame">
+                  <button type="button" class="btn-delete" @click="deleteSavedGame">
                     <Trash2 :size="16" /> 刪除
                   </button>
                 </div>
@@ -65,13 +80,18 @@
             </div>
             <div class="save-actions">
               <button
+                type="button"
                 class="btn-save-current"
                 :disabled="isGameWon || isGameOver || !gameStarted"
                 @click="saveCurrentGame"
               >
-                <Save :size="20" /> 保存當前遊戲
+                <Save :size="18" /> 保存當前遊戲
               </button>
-              <button class="btn-close" @click="showSaveMenu = false">
+              <button
+                type="button"
+                class="dialog-btn-outline"
+                @click="showSaveMenu = false"
+              >
                 關閉
               </button>
             </div>
@@ -80,105 +100,56 @@
       </transition>
     </Teleport>
 
-    <!-- 难度选择菜单 -->
+    <!-- 7. 選擇難度選單 -->
     <Teleport to="body">
       <transition name="fade">
         <div
           v-if="showDifficultyMenu"
-          class="difficulty-overlay"
+          class="dialog-overlay difficulty-overlay"
           @click="showDifficultyMenu = false"
         >
-          <div class="difficulty-menu" @click.stop>
-            <h3>選擇難度</h3>
-            <div class="difficulty-options">
-              <button class="difficulty-btn easy" @click="startNewGame('easy')">
-                <svg
-                  viewBox="0 0 24 24"
-                  width="40"
-                  height="40"
-                  fill="currentColor"
-                >
-                  <circle
-                    cx="12"
-                    cy="12"
-                    r="10"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2"
-                  />
-                  <path
-                    d="M8 14s1.5 2 4 2 4-2 4-2"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2"
-                    stroke-linecap="round"
-                  />
-                  <circle cx="9" cy="9" r="1.5" />
-                  <circle cx="15" cy="9" r="1.5" />
-                </svg>
-                <span>簡單</span><small>30-35個空格</small>
+          <div class="dialog-card difficulty-menu" @click.stop>
+            <h3 class="dialog-title">選擇難度</h3>
+            <div class="difficulty-list">
+              <button
+                type="button"
+                class="diff-card-btn"
+                @click="startNewGame('easy')"
+              >
+                <div class="diff-card-info">
+                  <span class="diff-card-name">簡單</span>
+                  <span class="diff-card-sub">30-35個空格</span>
+                </div>
+                <ChevronRight class="diff-card-arrow" />
               </button>
               <button
-                class="difficulty-btn medium"
+                type="button"
+                class="diff-card-btn"
                 @click="startNewGame('medium')"
               >
-                <svg
-                  viewBox="0 0 24 24"
-                  width="40"
-                  height="40"
-                  fill="currentColor"
-                >
-                  <circle
-                    cx="12"
-                    cy="12"
-                    r="10"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2"
-                  />
-                  <line
-                    x1="8"
-                    y1="14"
-                    x2="16"
-                    y2="14"
-                    stroke="currentColor"
-                    stroke-width="2"
-                    stroke-linecap="round"
-                  />
-                  <circle cx="9" cy="9" r="1.5" />
-                  <circle cx="15" cy="9" r="1.5" />
-                </svg>
-                <span>中等</span><small>40-45個空格</small>
+                <div class="diff-card-info">
+                  <span class="diff-card-name">中等</span>
+                  <span class="diff-card-sub">40-45個空格</span>
+                </div>
+                <ChevronRight class="diff-card-arrow" />
               </button>
-              <button class="difficulty-btn hard" @click="startNewGame('hard')">
-                <svg
-                  viewBox="0 0 24 24"
-                  width="40"
-                  height="40"
-                  fill="currentColor"
-                >
-                  <circle
-                    cx="12"
-                    cy="12"
-                    r="10"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2"
-                  />
-                  <path
-                    d="M8 16s1.5-2 4-2 4 2 4 2"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2"
-                    stroke-linecap="round"
-                  />
-                  <circle cx="9" cy="9" r="1.5" />
-                  <circle cx="15" cy="9" r="1.5" />
-                </svg>
-                <span>困難</span><small>50-55個空格</small>
+              <button
+                type="button"
+                class="diff-card-btn"
+                @click="startNewGame('hard')"
+              >
+                <div class="diff-card-info">
+                  <span class="diff-card-name">困難</span>
+                  <span class="diff-card-sub">50-55個空格</span>
+                </div>
+                <ChevronRight class="diff-card-arrow" />
               </button>
             </div>
-            <button class="btn-close" @click="showDifficultyMenu = false">
+            <button
+              type="button"
+              class="dialog-btn-outline"
+              @click="showDifficultyMenu = false"
+            >
               取消
             </button>
           </div>
@@ -186,186 +157,223 @@
       </transition>
     </Teleport>
 
-    <!-- 游戏主体 -->
-    <div class="game-container">
-      <div class="game-info">
-        <div class="info-item">
-          <Clock :size="16" /><span class="info-value">{{
-            formattedTime
-          }}</span>
-        </div>
-        <div class="info-item">
-          <AlertCircle :size="16" /><span class="info-value"
-            >錯誤: {{ errorCount }}/{{ maxErrors }}</span
+    <!-- 3. 棋盤容器 -->
+    <div class="board-container">
+      <div class="sudoku-board" role="grid" aria-label="數獨棋盤">
+        <div
+          v-for="(row, rowIndex) in board"
+          :key="`row-${rowIndex}`"
+          class="sudoku-row"
+          role="row"
+        >
+          <button
+            v-for="(cell, colIndex) in row"
+            :key="`cell-${rowIndex}-${colIndex}`"
+            type="button"
+            class="sudoku-cell"
+            :class="{
+              initial: cell.isInitial,
+              selected:
+                selectedCell?.row === rowIndex &&
+                selectedCell?.col === colIndex,
+              highlighted: isHighlighted(rowIndex, colIndex),
+              'same-number':
+                selectedNumber && cell.value === selectedNumber,
+              error: cell.hasError,
+              completed: cell.value && !cell.hasError,
+              'just-filled': cell.justFilled,
+              'correct-feedback': cell.correctFeedback,
+            }"
+            :aria-label="
+              cell.value
+                ? `第 ${rowIndex + 1} 列第 ${colIndex + 1} 行，${cell.value}`
+                : `第 ${rowIndex + 1} 列第 ${colIndex + 1} 行，空白`
+            "
+            @click="selectCell(rowIndex, colIndex)"
           >
-        </div>
-        <div class="info-item">
-          <Lightbulb :size="16" /><span class="info-value"
-            >提示: {{ hintsLeft }}/5</span
-          >
-        </div>
-        <div class="info-item best-time" v-if="currentBestTime > 0">
-          <Trophy :size="16" /><span class="info-value"
-            >最佳: {{ formatTime(currentBestTime) }}</span
-          >
-        </div>
-        <div class="info-item difficulty-badge" :class="currentDifficulty">
-          <span>{{ difficultyText }}</span>
+            <span v-if="cell.value" class="cell-value">{{ cell.value }}</span>
+            <span v-else-if="cell.notes.length > 0" class="cell-notes">
+              <span
+                v-for="note in 9"
+                :key="note"
+                class="note"
+                :class="{ active: cell.notes.includes(note) }"
+              >
+                {{ cell.notes.includes(note) ? note : "" }}
+              </span>
+            </span>
+          </button>
         </div>
       </div>
 
-      <div class="game-wrapper">
-        <div class="sudoku-board">
-          <div
-            v-for="(row, rowIndex) in board"
-            :key="`row-${rowIndex}`"
-            class="sudoku-row"
-          >
-            <div
-              v-for="(cell, colIndex) in row"
-              :key="`cell-${rowIndex}-${colIndex}`"
-              class="sudoku-cell"
-              :class="{
-                initial: cell.isInitial,
-                selected:
-                  selectedCell?.row === rowIndex &&
-                  selectedCell?.col === colIndex,
-                highlighted: isHighlighted(rowIndex, colIndex),
-                error: cell.hasError,
-                'same-number': selectedNumber && cell.value === selectedNumber,
-                completed: cell.value && !cell.hasError,
-                'just-filled': cell.justFilled,
-                'correct-feedback': cell.correctFeedback,
-              }"
-              @click="selectCell(rowIndex, colIndex)"
-            >
-              <div v-if="cell.value" class="cell-value">{{ cell.value }}</div>
-              <div v-else-if="cell.notes.length > 0" class="cell-notes">
-                <span
-                  v-for="note in 9"
-                  :key="note"
-                  class="note"
-                  :class="{ active: cell.notes.includes(note) }"
-                  >{{ cell.notes.includes(note) ? note : "" }}</span
-                >
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div class="control-panel">
-          <div class="controls">
+      <!-- 6. 暫停遮罩（蓋在棋盤上） -->
+      <transition name="fade">
+        <div v-if="isPaused" class="pause-scrim">
+          <h2 class="pause-title">暫停中</h2>
+          <div class="pause-time">{{ formattedTime }}</div>
+          <div class="pause-actions">
             <button
-              class="control-btn"
-              :class="{ active: isNoteMode }"
-              @click="toggleNoteMode"
+              type="button"
+              class="pill-resume"
+              @click="togglePause"
             >
-              <Pencil :size="20" /><span>筆記</span>
+              繼續
             </button>
             <button
-              class="control-btn"
-              @click="useHint"
-              :disabled="
-                hintsLeft <= 0 || !selectedCell || isPaused || isGameOver
-              "
+              type="button"
+              class="pill-restart"
+              @click="restartGame"
             >
-              <Lightbulb :size="20" /><span>提示</span>
+              重新開始
             </button>
             <button
-              class="control-btn"
-              @click="checkBoard"
-              :disabled="isPaused || isGameOver"
+              type="button"
+              class="pill-save"
+              @click="showSaveMenu = true"
             >
-              <CheckCircle :size="20" /><span>檢查</span>
-            </button>
-            <button
-              class="control-btn"
-              @click="undo"
-              :disabled="undoStack.length === 0 || isPaused || isGameOver"
-            >
-              <Undo2 :size="20" /><span>撤銷</span>
-            </button>
-          </div>
-          <div class="number-pad">
-            <button
-              v-for="num in 9"
-              :key="num"
-              class="number-btn"
-              :class="{ selected: selectedNumber === num }"
-              @click="inputNumber(num)"
-              :disabled="!selectedCell || isPaused || isGameOver"
-            >
-              <span class="number">{{ num }}</span>
-            </button>
-            <button
-              class="number-btn erase"
-              @click="eraseCell"
-              :disabled="!selectedCell || isPaused || isGameOver"
-            >
-              <Eraser :size="20" /><span>清除</span>
+              <Save :size="14" /> 存檔管理
             </button>
           </div>
         </div>
-      </div>
+      </transition>
     </div>
 
-    <!-- 游戏胜利 -->
+    <!-- 4. 工具列 -->
+    <div class="toolbar">
+      <button
+        type="button"
+        class="tool-btn"
+        :disabled="undoStack.length === 0 || isPaused || isGameOver"
+        @click="undo"
+      >
+        <Undo2 class="tool-icon" />
+        <span class="tool-label">復原</span>
+      </button>
+
+      <button
+        type="button"
+        class="tool-btn"
+        :disabled="!selectedCell || isPaused || isGameOver"
+        @click="eraseCell"
+      >
+        <Eraser class="tool-icon" />
+        <span class="tool-label">擦除</span>
+      </button>
+
+      <button
+        type="button"
+        class="tool-btn"
+        :disabled="hintsLeft <= 0 || !selectedCell || isPaused || isGameOver"
+        @click="useHint"
+      >
+        <div class="hint-icon-wrap">
+          <Lightbulb class="tool-icon" />
+          <span v-if="hintsLeft > 0" class="hint-badge">{{ hintsLeft }}</span>
+        </div>
+        <span class="tool-label">提示</span>
+      </button>
+
+      <button
+        type="button"
+        class="tool-btn"
+        :disabled="isPaused || isGameOver"
+        @click="checkBoard"
+      >
+        <CheckCircle class="tool-icon" />
+        <span class="tool-label">檢查</span>
+      </button>
+    </div>
+
+    <!-- 5. 數字盤 -->
+    <div class="numpad">
+      <button
+        v-for="num in 9"
+        :key="num"
+        type="button"
+        class="numpad-btn"
+        :class="{
+          selected: selectedNumber === num,
+          completed: remainingCounts[num] === 0,
+        }"
+        :aria-label="`填入 ${num}`"
+        :disabled="isPaused || isGameOver"
+        @click="inputNumber(num)"
+      >
+        <span class="num-digit">{{ num }}</span>
+        <span class="num-remain">
+          {{ remainingCounts[num] === 0 ? "完成" : remainingCounts[num] }}
+        </span>
+      </button>
+
+      <button
+        type="button"
+        class="note-btn"
+        :class="{ active: isNoteMode }"
+        :aria-pressed="isNoteMode"
+        @click="toggleNoteMode"
+      >
+        <Pencil class="note-icon" />
+        <span class="note-label">筆記</span>
+      </button>
+    </div>
+
+    <!-- 9. 遊戲勝利 -->
     <Teleport to="body">
       <transition name="fade">
         <div
           v-if="isGameWon"
-          class="game-over-overlay"
+          class="dialog-overlay game-over-overlay"
           @click.self="isGameWon = false"
         >
-          <div class="game-over-content win">
+          <div class="dialog-card game-over-content win">
             <button
+              type="button"
               class="close-x"
-              @click="isGameWon = false"
               aria-label="關閉"
+              @click="isGameWon = false"
             >
               <X :size="20" />
             </button>
-            <div class="game-over-icon"><Trophy :size="64" /></div>
-            <h2>恭喜完成！</h2>
+            <div class="game-over-icon"><Trophy :size="56" /></div>
+            <h2 class="dialog-title">恭喜完成！</h2>
             <div v-if="isNewRecord" class="new-record-badge">
-              <Trophy :size="24" /><span>新紀錄！</span>
+              <Trophy :size="18" /><span>新紀錄！</span>
             </div>
             <div class="game-stats">
               <div class="stat">
-                <span class="stat-label">用時</span
-                ><span
+                <span class="stat-label">用時</span>
+                <span
                   class="stat-value"
                   :class="{ 'new-record': isNewRecord }"
-                  >{{ formattedTime }}</span
-                >
+                >{{ formattedTime }}</span>
               </div>
-              <div class="stat" v-if="previousBestTime > 0">
-                <span class="stat-label">最佳記錄</span
-                ><span class="stat-value">{{
-                  formatTime(previousBestTime)
-                }}</span>
+              <div v-if="previousBestTime > 0" class="stat">
+                <span class="stat-label">最佳記錄</span>
+                <span class="stat-value">{{ formatTime(previousBestTime) }}</span>
               </div>
               <div class="stat">
-                <span class="stat-label">難度</span
-                ><span class="stat-value">{{ difficultyText }}</span>
+                <span class="stat-label">難度</span>
+                <span class="stat-value">{{ difficultyText }}</span>
               </div>
               <div class="stat">
-                <span class="stat-label">錯誤</span
-                ><span class="stat-value">{{ errorCount }}</span>
+                <span class="stat-label">錯誤</span>
+                <span class="stat-value">{{ errorCount }}</span>
               </div>
             </div>
             <div class="game-over-actions">
-              <button class="btn-share" @click="shareScore">
-                <Share2 :size="18" /> 分享成績
+              <button type="button" class="dialog-btn-outline" @click="shareScore">
+                <Share2 :size="16" /> 分享成績
               </button>
               <button
-                class="btn-primary"
+                type="button"
+                class="dialog-btn-dark"
                 @click="startNewGame(currentDifficulty)"
               >
                 再來一局
               </button>
               <button
-                class="btn-secondary"
+                type="button"
+                class="dialog-btn-outline"
                 @click="
                   isGameWon = false;
                   showDifficultyMenu = true;
@@ -373,7 +381,11 @@
               >
                 改變難度
               </button>
-              <button class="btn-secondary" @click="$emit('close')">
+              <button
+                type="button"
+                class="dialog-btn-outline"
+                @click="$emit('close')"
+              >
                 退出遊戲
               </button>
             </div>
@@ -382,68 +394,39 @@
       </transition>
     </Teleport>
 
-    <!-- 游戏失败 -->
+    <!-- 10. 遊戲失敗 -->
     <Teleport to="body">
       <transition name="fade">
-        <div v-if="isGameOver" class="game-over-overlay">
-          <div class="game-over-content lose">
-            <div class="game-over-icon lose">
-              <svg viewBox="0 0 24 24" width="64" height="64" fill="#ef4444">
-                <circle
-                  cx="12"
-                  cy="12"
-                  r="10"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"
-                />
-                <path
-                  d="M8 16s1.5-2 4-2 4 2 4 2"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"
-                  stroke-linecap="round"
-                />
-                <circle cx="9" cy="9" r="1.5" />
-                <circle cx="15" cy="9" r="1.5" />
-              </svg>
-            </div>
-            <h2>遊戲結束</h2>
+        <div v-if="isGameOver" class="dialog-overlay game-over-overlay">
+          <div class="dialog-card game-over-content lose">
+            <h2 class="dialog-title">遊戲結束</h2>
             <p class="game-over-message">錯誤次數過多（{{ maxErrors }}次）</p>
             <div class="game-stats">
               <div class="stat">
-                <span class="stat-label">用時</span
-                ><span class="stat-value">{{ formattedTime }}</span>
+                <span class="stat-label">用時</span>
+                <span class="stat-value">{{ formattedTime }}</span>
               </div>
               <div class="stat">
-                <span class="stat-label">難度</span
-                ><span class="stat-value">{{ difficultyText }}</span>
+                <span class="stat-label">難度</span>
+                <span class="stat-value">{{ difficultyText }}</span>
               </div>
             </div>
             <div class="game-over-actions">
               <button
-                class="btn-primary"
+                type="button"
+                class="dialog-btn-dark"
                 @click="startNewGame(currentDifficulty)"
               >
                 重新挑戰
               </button>
-              <button class="btn-secondary" @click="showDifficultyMenu = true">
+              <button
+                type="button"
+                class="dialog-btn-outline"
+                @click="showDifficultyMenu = true"
+              >
                 改變難度
               </button>
             </div>
-          </div>
-        </div>
-      </transition>
-    </Teleport>
-
-    <!-- 暂停遮罩 -->
-    <Teleport to="body">
-      <transition name="fade">
-        <div v-if="isPaused" class="pause-overlay" @click="togglePause">
-          <div class="pause-content">
-            <PauseCircle :size="80" />
-            <p>遊戲已暫停</p>
-            <small>點擊任意處繼續</small>
           </div>
         </div>
       </transition>
@@ -454,19 +437,16 @@
 <script setup lang="ts">
 import type { GameScoreData, SudokuMetadata } from "@/types";
 import {
-    AlertCircle,
     CheckCircle,
+    ChevronDown,
     ChevronLeft,
-    Clock,
+    ChevronRight,
     Download,
     Eraser,
     Lightbulb,
     Pause,
-    PauseCircle,
     Pencil,
     Play,
-    PlusCircle,
-    RotateCcw,
     Save,
     Share2,
     Trash2,
@@ -563,6 +543,43 @@ const currentBestTime = computed(
   () => bestTimes.value[currentDifficulty.value],
 );
 
+const remainingCounts = computed(() => {
+  const counts: Record<number, number> = {
+    1: 9, 2: 9, 3: 9, 4: 9, 5: 9, 6: 9, 7: 9, 8: 9, 9: 9,
+  };
+  for (let r = 0; r < 9; r++) {
+    for (let c = 0; c < 9; c++) {
+      const v = board.value[r]?.[c]?.value;
+      if (v && v >= 1 && v <= 9) {
+        counts[v] = Math.max(0, counts[v] - 1);
+      }
+    }
+  }
+  return counts;
+});
+
+const clearNotesForNumber = (targetRow: number, targetCol: number, num: number) => {
+  const boxStartRow = Math.floor(targetRow / 3) * 3;
+  const boxStartCol = Math.floor(targetCol / 3) * 3;
+  for (let r = 0; r < 9; r++) {
+    for (let c = 0; c < 9; c++) {
+      if (r === targetRow && c === targetCol) continue;
+      const inSameRow = r === targetRow;
+      const inSameCol = c === targetCol;
+      const inSameBox =
+        r >= boxStartRow && r < boxStartRow + 3 &&
+        c >= boxStartCol && c < boxStartCol + 3;
+      if (inSameRow || inSameCol || inSameBox) {
+        const cell = board.value[r][c];
+        const idx = cell.notes.indexOf(num);
+        if (idx > -1) {
+          cell.notes.splice(idx, 1);
+        }
+      }
+    }
+  }
+};
+
 const startNewGame = (difficulty: "easy" | "medium" | "hard") => {
   currentDifficulty.value = difficulty;
   errorCount.value = 0;
@@ -596,9 +613,8 @@ const restartGame = () => {
 };
 
 const selectCell = (row: number, col: number) => {
-  if (isPaused.value || isGameOver.value) return;
+  if (!gameStarted.value || isPaused.value || isGameOver.value) return;
   const cell = board.value[row][col];
-  if (cell.isInitial) return;
   selectedCell.value = { row, col };
   selectedNumber.value = cell.value || null;
 };
@@ -614,7 +630,7 @@ const isHighlighted = (row: number, col: number): boolean => {
 };
 
 const inputNumber = (num: number) => {
-  if (!selectedCell.value || isPaused.value || isGameOver.value) return;
+  if (!gameStarted.value || !selectedCell.value || isPaused.value || isGameOver.value) return;
   const { row, col } = selectedCell.value;
   const cell = board.value[row][col];
   if (cell.isInitial) return;
@@ -626,6 +642,7 @@ const inputNumber = (num: number) => {
       cell.notes.push(num);
       cell.notes.sort((a, b) => a - b);
     }
+    autoSaveGame();
   } else {
     cell.value = num;
     cell.notes = [];
@@ -641,6 +658,7 @@ const inputNumber = (num: number) => {
       if (errorCount.value >= maxErrors.value) {
         isGameOver.value = true;
         stopTimer();
+        autoSaveGame();
         return;
       }
     } else {
@@ -649,13 +667,15 @@ const inputNumber = (num: number) => {
       setTimeout(() => {
         cell.correctFeedback = false;
       }, 300);
+      clearNotesForNumber(row, col, num);
     }
+    autoSaveGame();
     checkIfGameWon();
   }
 };
 
 const eraseCell = () => {
-  if (!selectedCell.value || isPaused.value || isGameOver.value) return;
+  if (!gameStarted.value || !selectedCell.value || isPaused.value || isGameOver.value) return;
   const { row, col } = selectedCell.value;
   const cell = board.value[row][col];
   if (cell.isInitial) return;
@@ -664,6 +684,7 @@ const eraseCell = () => {
   cell.notes = [];
   cell.hasError = false;
   selectedNumber.value = null;
+  autoSaveGame();
 };
 
 const toggleNoteMode = () => {
@@ -672,6 +693,7 @@ const toggleNoteMode = () => {
 
 const useHint = () => {
   if (
+    !gameStarted.value ||
     !selectedCell.value ||
     hintsLeft.value <= 0 ||
     isPaused.value ||
@@ -693,6 +715,8 @@ const useHint = () => {
     cell.correctFeedback = false;
   }, 300);
   hintsLeft.value--;
+  clearNotesForNumber(row, col, cell.value);
+  autoSaveGame();
   checkIfGameWon();
 };
 
@@ -711,7 +735,7 @@ const checkBoard = () => {
       errorFound = true;
     }
   }
-  if (errorFound) alert("❌ 發現錯誤！已用紅色標記衝突的格子");
+  if (errorFound) alert("發現錯誤！已用紅色標記衝突的格子");
   else {
     let empty = false;
     for (let i = 0; i < 9 && !empty; i++)
@@ -722,8 +746,8 @@ const checkBoard = () => {
         }
     alert(
       empty
-        ? "✅ 目前沒有發現錯誤，繼續加油！"
-        : "🎉 恭喜完成！所有數字都正確！",
+        ? "目前沒有發現錯誤，繼續加油！"
+        : "恭喜完成！所有數字都正確！",
     );
   }
 };
@@ -867,16 +891,12 @@ const loadAutoSave = (): boolean => {
   if (!s) return false;
   try {
     const gs = JSON.parse(s);
-    if (Date.now() - (gs.timestamp || 0) > 86400000) {
-      clearAutoSave();
-      return false;
-    }
     board.value = gs.board;
     solution.value = gs.solution;
     currentDifficulty.value = gs.difficulty;
-    errorCount.value = gs.errorCount || 0;
-    hintsLeft.value = gs.hintsLeft || 5;
-    elapsedTime.value = gs.elapsedTime || 0;
+    errorCount.value = gs.errorCount ?? 0;
+    hintsLeft.value = gs.hintsLeft ?? 5;
+    elapsedTime.value = gs.elapsedTime ?? 0;
     gameStarted.value = true;
     showDifficultyMenu.value = false;
     startTimer();
@@ -953,9 +973,9 @@ const loadSavedGame = () => {
     board.value = d.board;
     solution.value = d.solution;
     currentDifficulty.value = d.difficulty;
-    errorCount.value = d.errorCount || 0;
-    hintsLeft.value = d.hintsLeft || 5;
-    elapsedTime.value = d.elapsedTime || 0;
+    errorCount.value = d.errorCount ?? 0;
+    hintsLeft.value = d.hintsLeft ?? 5;
+    elapsedTime.value = d.elapsedTime ?? 0;
     isGameWon.value = false;
     isGameOver.value = false;
     isPaused.value = false;
@@ -992,15 +1012,26 @@ const formatSaveTime = (ts: number): string => {
   });
 };
 
+const handleVisibilityChange = () => {
+  if (document.hidden) {
+    if (gameStarted.value && !isPaused.value && !isGameWon.value && !isGameOver.value) {
+      togglePause();
+    }
+    autoSaveGame();
+  }
+};
+
 onMounted(() => {
   loadBestTimes();
   checkSavedGame();
   if (!loadAutoSave()) showDifficultyMenu.value = true;
   const autoSaveInterval = setInterval(autoSaveGame, 30000);
   window.addEventListener("beforeunload", autoSaveGame);
+  document.addEventListener("visibilitychange", handleVisibilityChange);
   onUnmounted(() => {
     clearInterval(autoSaveInterval);
     window.removeEventListener("beforeunload", autoSaveGame);
+    document.removeEventListener("visibilitychange", handleVisibilityChange);
   });
 });
 onUnmounted(() => {
@@ -1010,718 +1041,671 @@ onUnmounted(() => {
 </script>
 
 <style scoped lang="scss">
+@use "@/components/games/gameShell" as gs;
+
 .game-sudoku {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: #fafafa;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
+  @include gs.screen;
+  --sd-accent: #5b52b5;
+  --sd-line: #3b3570;
+  --sd-error: #b4233f;
+
+  gap: 14px;
+  background: color-mix(in srgb, var(--sd-accent) 6%, var(--g-bg));
 }
 
-.header {
+/* 1. 頂欄 */
+.topbar {
+  @include gs.topbar;
+
+  .round-btn {
+    @include gs.round-btn;
+  }
+
+  .topbar-title {
+    @include gs.title;
+    font-family: inherit;
+    font-size: 17px;
+  }
+}
+
+/* 2. 資訊列 */
+.info-bar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px;
-  padding-top: max(16px, var(--safe-area-inset-top, env(safe-area-inset-top)));
-  background: white;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
-  z-index: 10;
+  height: 28px;
+  font-size: 13px;
+  color: var(--g-text);
+  flex-shrink: 0;
 
-  .back-btn,
-  .icon-btn {
-    width: 40px;
-    height: 40px;
-    min-height: 44px;
-    background: #f3f4f6;
+  .difficulty-pill {
+    height: 28px;
+    padding: 0 10px;
+    border-radius: 14px;
+    background: var(--g-surface);
     border: none;
-    border-radius: 50%;
+    font-weight: 700;
+    color: var(--g-text);
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
     cursor: pointer;
-    transition: all 0.2s;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    .icon {
-      width: 20px;
-      height: 20px;
-      color: #6b7280;
-    }
-    &:active {
-      background: #e5e7eb;
-      transform: scale(0.95);
+
+    .pill-arrow {
+      width: 10px;
+      height: 10px;
     }
   }
-  .title {
-    flex: 1;
-    text-align: center;
-    font-size: 20px;
-    font-weight: 600;
-    color: #1f2937;
-    margin: 0;
-  }
-  .header-actions {
-    display: flex;
-    gap: 8px;
-  }
-}
 
-.game-container {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  padding: 16px;
-  overflow-y: auto;
-  gap: 12px;
-  max-width: 600px;
-  width: 100%;
-  margin: 0 auto;
-}
-
-.game-wrapper {
-  display: contents;
-}
-.control-panel {
-  display: contents;
-}
-
-.game-info {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 8px;
-  padding: 12px;
-  background: white;
-  border-radius: 12px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
-
-  .info-item {
-    display: flex;
-    align-items: center;
-    gap: 6px;
+  .error-info {
     font-size: 13px;
-    color: #6b7280;
-    .info-value {
-      font-weight: 600;
-      color: #1f2937;
-    }
-    &.best-time svg {
-      color: #fbbf24;
-    }
-    &.difficulty-badge {
-      grid-column: 1 / -1;
-      justify-content: center;
-      padding: 6px;
-      border-radius: 8px;
-      font-weight: 600;
-      font-size: 12px;
-      &.easy {
-        background: #d1fae5;
-        color: #065f46;
-      }
-      &.medium {
-        background: #fed7aa;
-        color: #92400e;
-      }
-      &.hard {
-        background: #fecaca;
-        color: #991b1b;
+    b {
+      font-family: var(--g-num);
+      font-weight: 700;
+      &.has-error {
+        color: var(--sd-error);
       }
     }
   }
+
+  .time-info {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 4px;
+
+    .best-time-label {
+      font-size: 11px;
+      color: var(--g-text-2);
+    }
+    .current-time {
+      font-family: var(--g-num);
+      font-size: 15px;
+      font-weight: 600;
+    }
+  }
+}
+/* 3. 棋盤容器與棋盤 */
+.board-container {
+  position: relative;
+  width: min(calc(100vw - 40px), calc(100dvh - 430px), 345px);
+  aspect-ratio: 1;
+  align-self: center;
+  border: 2px solid var(--sd-line);
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--g-surface);
 }
 
 .sudoku-board {
-  background: white;
-  border-radius: 12px;
-  padding: 8px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  display: flex;
-  flex-direction: column;
-  aspect-ratio: 1;
+  display: grid;
+  grid-template-rows: repeat(9, 1fr);
   width: 100%;
-  max-width: min(calc(100vw - 32px), 500px);
-  margin: 0 auto;
+  height: 100%;
 }
 
 .sudoku-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(9, 1fr);
+  width: 100%;
+  height: 100%;
 }
 
 .sudoku-cell {
-  aspect-ratio: 1;
-  flex: 1;
-  border: 1px solid #e2e8f0;
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 0;
+  margin: 0;
+  border: none;
+  border-right: 1px solid color-mix(in srgb, var(--sd-accent) 25%, var(--g-surface));
+  border-bottom: 1px solid color-mix(in srgb, var(--sd-accent) 25%, var(--g-surface));
   cursor: pointer;
-  transition: all 0.2s;
-  position: relative;
-  background: white;
-  user-select: none;
+  outline: none;
+  font-family: inherit;
+  transition: transform 0.1s, background-color 0.15s;
 
-  &:nth-child(3n) {
-    border-right: 2px solid #4a5568;
+  /* 底色優先序（後面蓋前面） */
+  background: var(--g-surface);
+
+  &.highlighted {
+    background: color-mix(in srgb, var(--sd-accent) 10%, var(--g-surface));
   }
-  &:nth-child(1),
-  &:nth-child(4),
-  &:nth-child(7) {
-    border-left: 2px solid #4a5568;
+
+  &.same-number {
+    background: color-mix(in srgb, var(--sd-accent) 22%, var(--g-surface));
+  }
+
+  &.error {
+    background: color-mix(in srgb, var(--sd-error) 14%, var(--g-surface));
+    .cell-value {
+      color: var(--sd-error) !important;
+    }
+  }
+
+  &.selected {
+    background: var(--sd-accent) !important;
+    .cell-value {
+      color: #fff !important;
+    }
+  }
+
+  /* 3x3 宮粗線：第 3、6 欄右邊，第 3、6 列下面 */
+  &:nth-child(3),
+  &:nth-child(6) {
+    border-right: 3px solid var(--sd-line);
+  }
+  &:nth-child(9) {
+    border-right: none;
   }
 
   .cell-value {
-    font-size: clamp(14px, 3.5vw, 20px);
-    font-weight: 700;
-    color: #1f2937;
+    font-family: var(--g-num);
+    font-size: clamp(16px, 5vw, 20px);
+    line-height: 1;
+    color: var(--sd-accent);
+    font-weight: 500;
   }
+
   &.initial .cell-value {
-    color: #1a202c;
-    font-weight: 900;
+    color: var(--g-text);
+    font-weight: 600;
   }
-  &.selected {
-    background: var(--color-primary, #7dd3a8) !important;
-    .cell-value {
-      color: white;
-    }
-    .cell-notes .note {
-      color: rgba(255, 255, 255, 0.5);
-      &.active {
-        color: white;
-      }
-    }
+
+  &.just-filled {
+    animation: cellPop 0.15s ease-out;
   }
-  &.highlighted {
-    background: #edf2f7;
-  }
-  &.error {
-    background: #feb2b2;
-    animation: shakeError 0.2s ease;
-    .cell-value {
-      color: #c53030;
-    }
-  }
-  &.same-number {
-    background: #bee3f8;
-  }
-  &.just-filled .cell-value {
-    animation: popIn 0.15s ease;
-  }
-  &.correct-feedback::after {
-    content: "";
-    position: absolute;
-    inset: 0;
-    background: #10b981;
-    opacity: 0;
-    animation: correctFlash 0.3s ease;
-    pointer-events: none;
-    border-radius: 2px;
-  }
-  &:active {
-    transform: scale(0.95);
+  &.correct-feedback {
+    animation: cellCorrect 0.25s ease-out;
   }
 
   .cell-notes {
-    position: absolute;
-    inset: 0;
     display: grid;
     grid-template-columns: repeat(3, 1fr);
     grid-template-rows: repeat(3, 1fr);
-    gap: 1px;
-    padding: 2px;
+    width: 100%;
+    height: 100%;
+    padding: 1px;
+    box-sizing: border-box;
+
     .note {
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: clamp(8px, 1.5vw, 10px);
-      color: #718096;
-      font-weight: 600;
+      font-size: 9px;
+      line-height: 1;
+      color: transparent;
       &.active {
-        color: var(--color-primary, #7dd3a8);
+        color: var(--g-text-2);
       }
     }
   }
 }
 
-.sudoku-row {
-  &:nth-child(3n) .sudoku-cell {
-    border-bottom: 2px solid #4a5568;
+.sudoku-row:nth-child(3) .sudoku-cell,
+.sudoku-row:nth-child(6) .sudoku-cell {
+  border-bottom: 3px solid var(--sd-line);
+}
+.sudoku-row:nth-child(9) .sudoku-cell {
+  border-bottom: none;
+}
+
+@keyframes cellPop {
+  0% { transform: scale(0.9); }
+  50% { transform: scale(1.08); }
+  100% { transform: scale(1); }
+}
+
+@keyframes cellCorrect {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.06); }
+  100% { transform: scale(1); }
+}
+
+/* 6. 暫停遮罩（棋盤內） */
+.pause-scrim {
+  @include gs.board-scrim($radius: 10px);
+  background: var(--g-surface);
+
+  .pause-title {
+    margin: 0;
+    font-size: 24px;
+    font-weight: 700;
+    color: var(--g-text);
   }
-  &:nth-child(1) .sudoku-cell,
-  &:nth-child(4) .sudoku-cell,
-  &:nth-child(7) .sudoku-cell {
-    border-top: 2px solid #4a5568;
+
+  .pause-time {
+    font-family: var(--g-num);
+    font-size: 13px;
+    color: var(--g-text-2);
+    margin-bottom: 8px;
+  }
+
+  .pause-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    width: 200px;
+
+    .pill-resume {
+      @include gs.pill-dark(44px);
+      width: 100%;
+    }
+
+    .pill-restart,
+    .pill-save {
+      @include gs.pill-outline(44px);
+      width: 100%;
+    }
   }
 }
 
-@keyframes popIn {
-  0% {
-    transform: scale(0.8);
-    opacity: 0.5;
-  }
-  50% {
-    transform: scale(1.05);
-  }
-  100% {
-    transform: scale(1);
-    opacity: 1;
-  }
-}
-@keyframes shakeError {
-  0%,
-  100% {
-    transform: translateX(0);
-  }
-  25% {
-    transform: translateX(-4px);
-  }
-  75% {
-    transform: translateX(4px);
-  }
-}
-@keyframes correctFlash {
-  0% {
-    opacity: 0.3;
-  }
-  100% {
-    opacity: 0;
-  }
-}
-
-.controls {
+/* 4. 工具列 */
+.toolbar {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 6px;
+  gap: 8px;
+  flex-shrink: 0;
 
-  .control-btn {
+  .tool-btn {
+    height: 56px;
+    background: transparent;
+    border: none;
+    padding: 0;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 2px;
-    padding: 8px 6px;
-    min-height: 44px;
-    background: white;
-    border: 1.5px solid #e5e7eb;
-    border-radius: 10px;
-    font-size: 11px;
-    font-weight: 600;
-    color: #6b7280;
+    gap: 4px;
+    color: var(--g-text);
     cursor: pointer;
-    transition: all 0.2s;
-    &:active:not(:disabled) {
-      transform: scale(0.95);
-      background: #f9fafb;
-    }
-    &.active {
-      background: var(--color-primary, #7dd3a8);
-      border-color: var(--color-primary, #7dd3a8);
-      color: white;
-      svg {
-        color: white;
-      }
-    }
-    &:disabled {
-      opacity: 0.4;
-      cursor: not-allowed;
-    }
-  }
-}
+    transition: transform 0.15s, opacity 0.15s;
 
-.number-pad {
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 6px;
-  padding-bottom: var(--safe-bottom, 0px);
+    .tool-icon {
+      width: 22px;
+      height: 22px;
+    }
 
-  .number-btn {
-    aspect-ratio: 1;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 2px;
-    min-height: 44px;
-    background: white;
-    border: 1.5px solid #e5e7eb;
-    border-radius: 10px;
-    cursor: pointer;
-    transition: all 0.2s;
-    .number {
-      font-size: clamp(18px, 4.5vw, 24px);
-      font-weight: 700;
-      color: #1f2937;
+    .tool-label {
+      font-size: 12px;
+      line-height: 1;
     }
-    &:active:not(:disabled) {
-      transform: scale(0.95);
-      background: #f9fafb;
-    }
-    &.selected {
-      background: var(--color-primary, #7dd3a8);
-      border-color: var(--color-primary, #7dd3a8);
-      .number {
-        color: white;
-      }
-    }
-    &:disabled {
-      opacity: 0.4;
-      cursor: not-allowed;
-    }
-    &.erase {
-      grid-column: span 1;
-      background: #ef4444;
-      border-color: #ef4444;
-      color: white;
-      span:last-child {
-        font-size: 11px;
-        font-weight: 600;
-      }
-      &:active:not(:disabled) {
-        background: #dc2626;
-        transform: scale(0.95);
-      }
-    }
-  }
-}
 
-.save-menu-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.7);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-  padding: 20px;
-}
-
-.save-menu {
-  background: white;
-  border-radius: 20px;
-  padding: 24px;
-  max-width: 400px;
-  width: 100%;
-  max-height: calc(100vh - 40px);
-  max-height: calc(100dvh - 40px);
-  overflow-y: auto;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-  h3 {
-    margin: 0 0 20px;
-    font-size: 24px;
-    text-align: center;
-    color: #2d3748;
-  }
-
-  .save-slot {
-    padding: 16px;
-    border-radius: 12px;
-    border: 2px solid #e2e8f0;
-    &.filled {
-      background: #f7fafc;
-      .slot-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 8px;
-        .slot-title {
-          font-weight: 600;
-          color: #2d3748;
-        }
-        .slot-difficulty {
-          padding: 4px 10px;
-          border-radius: 8px;
-          font-size: 12px;
-          font-weight: 600;
-          &.easy {
-            background: #d1fae5;
-            color: #065f46;
-          }
-          &.medium {
-            background: #fed7aa;
-            color: #92400e;
-          }
-          &.hard {
-            background: #fecaca;
-            color: #991b1b;
-          }
-        }
-      }
-      .slot-info {
-        display: flex;
-        gap: 16px;
-        margin-bottom: 12px;
-        font-size: 13px;
-        color: #6b7280;
-      }
-      .slot-actions {
-        display: flex;
-        gap: 8px;
-        button {
-          flex: 1;
-          padding: 8px;
-          border: none;
-          border-radius: 8px;
-          font-size: 14px;
-          font-weight: 600;
-          cursor: pointer;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          gap: 4px;
-          transition: all 0.2s;
-          &.btn-load {
-            background: var(--color-primary, #7dd3a8);
-            color: white;
-            &:active {
-              opacity: 0.9;
-            }
-          }
-          &.btn-delete {
-            background: #fee2e2;
-            color: #991b1b;
-            &:active {
-              background: #fecaca;
-            }
-          }
-        }
-      }
-    }
-    &.empty {
-      background: #f9fafb;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      padding: 32px 16px;
-      p {
-        margin: 0;
-        color: #9ca3af;
-        font-size: 14px;
-      }
-    }
-  }
-
-  .save-actions {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-    margin-top: 20px;
-    .btn-save-current {
-      width: 100%;
-      padding: 14px;
-      background: var(--color-primary, #7dd3a8);
-      color: white;
-      border: none;
-      border-radius: 12px;
-      font-size: 16px;
-      font-weight: 600;
-      cursor: pointer;
-      display: flex;
+    .hint-icon-wrap {
+      position: relative;
+      display: inline-flex;
       align-items: center;
       justify-content: center;
-      gap: 8px;
-      &:disabled {
-        opacity: 0.5;
-        cursor: not-allowed;
+
+      .hint-badge {
+        position: absolute;
+        top: -6px;
+        right: -8px;
+        width: 18px;
+        height: 18px;
+        border-radius: 9px;
+        background: var(--sd-accent);
+        color: #fff;
+        font-family: var(--g-num);
+        font-size: 11px;
+        font-weight: 700;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        line-height: 1;
       }
     }
-    .btn-close {
-      width: 100%;
-      padding: 14px;
-      background: #e2e8f0;
-      border: none;
-      border-radius: 12px;
-      font-size: 16px;
-      font-weight: 600;
-      color: #4a5568;
-      cursor: pointer;
-      &:active {
-        background: #cbd5e0;
-      }
+
+    &:active:not(:disabled) {
+      transform: scale(0.95);
+    }
+
+    &:disabled {
+      opacity: 0.4;
+      cursor: default;
     }
   }
 }
 
-.difficulty-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.7);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-  padding: 20px;
-}
+/* 5. 數字盤 */
+.numpad {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 8px;
+  flex-shrink: 0;
 
-.difficulty-menu {
-  background: white;
-  border-radius: 20px;
-  padding: 24px;
-  max-width: 400px;
-  width: 100%;
-  max-height: calc(100vh - 40px);
-  max-height: calc(100dvh - 40px);
-  overflow-y: auto;
-  h3 {
-    margin: 0 0 20px;
-    font-size: 24px;
-    text-align: center;
-    color: #2d3748;
-  }
-  .difficulty-options {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-    margin-bottom: 20px;
-  }
-  .difficulty-btn {
+  .numpad-btn {
+    height: 56px;
+    border-radius: 14px;
+    background: var(--g-surface);
+    border: none;
+    padding: 0;
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 8px;
-    padding: 20px;
-    border: 3px solid #e2e8f0;
-    border-radius: 16px;
-    background: white;
+    justify-content: center;
+    gap: 2px;
     cursor: pointer;
-    transition: all 0.3s;
-    span:nth-child(2) {
-      font-size: 18px;
-      font-weight: 700;
+    transition: transform 0.15s, opacity 0.15s;
+
+    .num-digit {
+      font-family: var(--g-num);
+      font-size: 24px;
+      font-weight: 600;
+      color: var(--sd-accent);
+      line-height: 1.1;
     }
-    small {
-      font-size: 12px;
-      color: #718096;
+
+    .num-remain {
+      font-size: 10px;
+      color: var(--g-text-2);
+      line-height: 1;
     }
-    &:active {
-      transform: scale(0.97);
+
+    &.selected {
+      outline: 2px solid var(--sd-accent);
+      outline-offset: -2px;
     }
-    &.easy:active {
-      border-color: #10b981;
-      background: #d1fae5;
+
+    &.completed {
+      opacity: 0.5;
+      .num-digit {
+        color: var(--g-text-2);
+      }
     }
-    &.medium:active {
-      border-color: #f59e0b;
-      background: #fed7aa;
+
+    &:active:not(:disabled) {
+      transform: scale(0.95);
     }
-    &.hard:active {
-      border-color: #ef4444;
-      background: #fecaca;
+
+    &:disabled {
+      cursor: default;
     }
   }
-  .btn-close {
-    width: 100%;
-    padding: 14px;
-    background: #e2e8f0;
-    border: none;
-    border-radius: 12px;
-    font-size: 16px;
-    font-weight: 600;
-    color: #4a5568;
+
+  .note-btn {
+    height: 56px;
+    border-radius: 14px;
+    background: var(--g-surface);
+    border: 1px dashed var(--g-border);
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    color: var(--g-text);
     cursor: pointer;
+    transition: transform 0.15s, background-color 0.15s;
+
+    .note-icon {
+      width: 18px;
+      height: 18px;
+    }
+
+    .note-label {
+      font-size: 12px;
+      font-weight: 700;
+      line-height: 1;
+    }
+
+    &.active {
+      background: var(--sd-accent);
+      color: #fff;
+      border: none;
+    }
+
     &:active {
-      background: #cbd5e0;
+      transform: scale(0.95);
     }
   }
 }
+/* 7. 彈窗樣式 (Teleport to body) */
+.dialog-overlay {
+  @include gs.vars;
+  --sd-accent: #5b52b5;
+  --sd-line: #3b3570;
+  --sd-error: #b4233f;
 
-.game-over-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.8);
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(4px);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 1000;
   padding: 20px;
-  animation: fadeIn 0.2s ease;
+  box-sizing: border-box;
 }
 
-.game-over-content {
-  background: white;
-  border-radius: 24px;
-  padding: 32px;
-  max-width: 400px;
+.dialog-card {
+  background: var(--g-surface);
+  border: 1px solid var(--g-border);
+  border-radius: 22px;
+  padding: 24px;
+  max-width: 360px;
   width: 100%;
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.16);
+  color: var(--g-text);
+  box-sizing: border-box;
   text-align: center;
-  max-height: calc(100vh - 40px);
-  max-height: calc(100dvh - 40px);
-  overflow-y: auto;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
   position: relative;
 
+  .dialog-title {
+    margin: 0 0 16px;
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--g-text);
+  }
+
+  .dialog-btn-dark {
+    @include gs.pill-dark(44px);
+    width: 100%;
+  }
+
+  .dialog-btn-outline {
+    @include gs.pill-outline(44px);
+    width: 100%;
+  }
+}
+
+/* 難度選擇列表 */
+.difficulty-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 16px;
+
+  .diff-card-btn {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 16px;
+    border: 1px solid var(--g-border);
+    border-radius: 14px;
+    background: var(--g-surface);
+    color: var(--g-text);
+    cursor: pointer;
+    text-align: left;
+    transition: transform 0.15s, border-color 0.15s;
+
+    .diff-card-info {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+
+      .diff-card-name {
+        font-size: 16px;
+        font-weight: 700;
+      }
+      .diff-card-sub {
+        font-size: 12px;
+        color: var(--g-text-2);
+      }
+    }
+
+    .diff-card-arrow {
+      width: 18px;
+      height: 18px;
+      color: var(--g-text-2);
+    }
+
+    &:active {
+      transform: scale(0.98);
+      border-color: var(--sd-accent);
+    }
+  }
+}
+
+/* 存檔彈窗 */
+.save-slots {
+  margin-bottom: 16px;
+
+  .save-slot {
+    padding: 14px;
+    border: 1px solid var(--g-border);
+    border-radius: 14px;
+    background: var(--g-muted);
+    text-align: left;
+
+    &.empty {
+      text-align: center;
+      padding: 24px 14px;
+      color: var(--g-text-2);
+      p { margin: 0; font-size: 14px; }
+    }
+
+    .slot-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 6px;
+
+      .slot-title {
+        font-weight: 700;
+        font-size: 14px;
+      }
+      .slot-difficulty {
+        font-size: 11px;
+        font-weight: 600;
+        padding: 2px 8px;
+        border-radius: 10px;
+        background: var(--g-surface);
+        border: 1px solid var(--g-border);
+      }
+    }
+
+    .slot-info {
+      display: flex;
+      justify-content: space-between;
+      font-size: 12px;
+      color: var(--g-text-2);
+      margin-bottom: 10px;
+    }
+
+    .slot-actions {
+      display: flex;
+      gap: 8px;
+
+      button {
+        @include gs.pill(34px);
+        flex: 1;
+        font-size: 12px;
+      }
+      .btn-load {
+        background: var(--sd-accent);
+        color: #fff;
+        border: none;
+      }
+      .btn-delete {
+        background: var(--g-surface);
+        border: 1px solid var(--sd-error);
+        color: var(--sd-error);
+      }
+    }
+  }
+}
+
+.save-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+
+  .btn-save-current {
+    @include gs.pill-dark(44px);
+    width: 100%;
+  }
+}
+
+/* 結束彈窗 (勝利 / 失敗) */
+.game-over-content {
   .close-x {
     position: absolute;
-    top: 12px;
-    right: 12px;
-    width: 36px;
-    height: 36px;
+    top: 14px;
+    right: 14px;
+    width: 32px;
+    height: 32px;
+    border-radius: 16px;
+    background: var(--g-muted);
     border: none;
-    border-radius: 18px;
-    background: #f3f4f6;
     display: flex;
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    color: #6b7280;
-    &:active {
-      background: #e5e7eb;
-    }
+    color: var(--g-text-2);
   }
 
   .game-over-icon {
-    color: #fbbf24;
-    &.lose {
-      color: #ef4444;
-    }
+    color: var(--sd-accent);
+    margin-bottom: 10px;
   }
+
   .new-record-badge {
-    display: flex;
+    display: inline-flex;
     align-items: center;
-    justify-content: center;
-    gap: 8px;
-    padding: 12px 24px;
-    background: #fbbf24;
-    color: white;
-    border-radius: 12px;
-    font-size: 18px;
+    gap: 6px;
+    padding: 6px 14px;
+    border-radius: 14px;
+    background: var(--sd-accent);
+    color: #fff;
+    font-size: 14px;
     font-weight: 700;
-    margin: 0 0 16px;
+    margin-bottom: 14px;
   }
+
   .game-over-message {
-    font-size: 16px;
-    color: #6b7280;
-    margin: 0 0 16px;
-  }
-  h2 {
-    margin: 16px 0;
-    font-size: 28px;
-    color: #2d3748;
+    margin: -8px 0 16px;
+    font-size: 13px;
+    color: var(--g-text-2);
   }
 
   .game-stats {
-    display: flex;
-    justify-content: space-around;
-    margin: 24px 0;
-    padding: 20px;
-    background: #f7fafc;
-    border-radius: 16px;
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+    margin-bottom: 18px;
+    text-align: left;
+
     .stat {
+      background: var(--g-muted);
+      border-radius: 12px;
+      padding: 10px 12px;
       display: flex;
       flex-direction: column;
-      gap: 8px;
+      gap: 2px;
+
       .stat-label {
-        font-size: 12px;
-        color: #718096;
+        font-size: 11px;
+        color: var(--g-text-2);
       }
       .stat-value {
-        font-size: 18px;
+        font-family: var(--g-num);
+        font-size: 16px;
         font-weight: 700;
-        color: #2d3748;
+        color: var(--g-text);
         &.new-record {
-          color: #f59e0b;
-          font-size: 20px;
+          color: var(--sd-accent);
         }
       }
     }
@@ -1730,155 +1714,16 @@ onUnmounted(() => {
   .game-over-actions {
     display: flex;
     flex-direction: column;
-    gap: 12px;
-    button {
-      padding: 14px;
-      border: none;
-      border-radius: 12px;
-      font-size: 16px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: all 0.2s;
-      &.btn-primary {
-        background: var(--color-primary, #7dd3a8);
-        color: white;
-        &:active {
-          opacity: 0.9;
-        }
-      }
-      &.btn-secondary {
-        background: #e2e8f0;
-        color: #4a5568;
-        &:active {
-          background: #cbd5e0;
-        }
-      }
-      &.btn-share {
-        background: #3b82f6;
-        color: white;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 8px;
-        &:active {
-          background: #2563eb;
-        }
-      }
-    }
-  }
-}
-
-.pause-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.9);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-  cursor: pointer;
-}
-
-.pause-content {
-  text-align: center;
-  color: white;
-  p {
-    font-size: 24px;
-    font-weight: 700;
-    margin: 16px 0 8px;
-  }
-  small {
-    font-size: 14px;
-    opacity: 0.7;
+    gap: 8px;
   }
 }
 
 .fade-enter-active,
 .fade-leave-active {
-  transition: opacity 0.3s;
+  transition: opacity 0.2s ease;
 }
 .fade-enter-from,
 .fade-leave-to {
   opacity: 0;
-}
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-@media (min-width: 769px) {
-  .game-container {
-    max-width: 900px;
-    padding: 20px;
-  }
-  .game-wrapper {
-    display: flex;
-    gap: 20px;
-    align-items: flex-start;
-    justify-content: center;
-  }
-  .sudoku-board {
-    flex: 0 0 auto;
-    width: 440px;
-    height: 440px;
-    max-width: none;
-    padding: 10px;
-  }
-  .control-panel {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-    flex: 0 0 auto;
-    width: 300px;
-  }
-  .controls {
-    grid-template-columns: repeat(2, 1fr);
-    gap: 8px;
-    .control-btn {
-      padding: 12px 10px;
-      font-size: 13px;
-    }
-  }
-  .number-pad {
-    grid-template-columns: repeat(3, 1fr);
-    gap: 8px;
-    .number-btn {
-      .number {
-        font-size: 26px;
-      }
-    }
-    .erase {
-      grid-column: span 3;
-      aspect-ratio: auto;
-    }
-  }
-}
-
-@media (max-width: 768px) {
-  .game-info {
-    gap: 6px;
-    padding: 10px;
-    .info-item {
-      font-size: 12px;
-      gap: 4px;
-    }
-  }
-  .sudoku-board {
-    padding: 6px;
-  }
-  .controls {
-    gap: 5px;
-    .control-btn {
-      padding: 6px 4px;
-      font-size: 10px;
-    }
-  }
-  .number-pad {
-    gap: 5px;
-  }
 }
 </style>
