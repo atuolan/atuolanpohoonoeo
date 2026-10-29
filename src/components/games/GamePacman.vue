@@ -1,144 +1,172 @@
 <template>
   <div class="game-pacman">
-    <div class="header">
-      <button class="back-btn" @click="$emit('close')">
-        <ChevronLeft class="icon" />
+    <!-- 1. 頂欄 -->
+    <div class="topbar">
+      <button
+        class="round-btn"
+        aria-label="返回"
+        @click="$emit('close')"
+      >
+        <ChevronLeft />
       </button>
       <h1 class="title">吃豆人</h1>
-      <div class="header-actions">
-        <button
-          class="icon-btn"
-          :class="{ active: isPaused }"
-          @click="togglePause"
-        >
-          <Play v-if="isPaused" class="icon" />
-          <Pause v-else class="icon" />
-        </button>
-        <button class="icon-btn" @click="restartGame">
-          <RotateCcw class="icon" />
-        </button>
+      <button
+        class="round-btn"
+        :aria-label="isPaused ? '繼續' : '暫停'"
+        :disabled="isReady || isGameOver || isWin"
+        @click="togglePause"
+      >
+        <Play v-if="isPaused" />
+        <Pause v-else />
+      </button>
+    </div>
+
+    <!-- 2. 數據列 -->
+    <div class="stats-row">
+      <div class="stat-col">
+        <span class="label">分數</span>
+        <span class="value">{{ score.toLocaleString() }}</span>
+      </div>
+      <div class="stat-col">
+        <span class="label">最高</span>
+        <span class="value">{{ bestScore.toLocaleString() }}</span>
+      </div>
+      <div class="stat-col level-col">
+        <span class="level-text">第 {{ level }} 關</span>
+      </div>
+      <div class="stat-col lives-col" :aria-label="'剩餘 ' + Math.max(lives, 0) + ' 條命'">
+        <div class="lives-icons">
+          <svg
+            v-for="i in Math.max(lives, 0)"
+            :key="i"
+            class="life-icon"
+            viewBox="0 0 26 26"
+          >
+            <path d="M13 9V4" stroke="#3F7A47" stroke-width="1.8" stroke-linecap="round" />
+            <path d="M13 5Q8 2 7 6Q11 7 13 5Z" fill="#6FBF73" />
+            <path d="M13 5Q18 2 19 6Q15 7 13 5Z" fill="#6FBF73" />
+            <circle cx="13" cy="16" r="8.5" fill="#F3E3B5" stroke="#121214" stroke-width="1.4" />
+          </svg>
+        </div>
       </div>
     </div>
 
-    <div class="game-container">
-      <div class="score-container">
-        <div class="score-box">
-          <div class="score-label">分數</div>
-          <div class="score-value">{{ score }}</div>
-        </div>
-        <div class="score-box best">
-          <div class="score-label">最高</div>
-          <div class="score-value">{{ bestScore }}</div>
-        </div>
-        <div class="score-box">
-          <div class="score-label">關卡</div>
-          <div class="score-value">{{ level }}</div>
-        </div>
-        <div class="score-box">
-          <div class="score-label">命</div>
-          <div class="score-value">{{ '●'.repeat(Math.max(lives, 0)) || '0' }}</div>
+    <!-- 3. 棋盤外框與遮罩 -->
+    <div class="board-wrapper">
+      <canvas ref="canvasRef" class="board-canvas"></canvas>
+
+      <!-- READY 遮罩 -->
+      <div v-if="isReady" class="scrim-overlay">
+        <h2 class="scrim-title-ready">吃豆人</h2>
+        <p class="scrim-desc">吃光豆子，別被灰塵怪碰到</p>
+        <button class="pill-dark-btn" @click="startGame">
+          <Play /> 開始遊戲
+        </button>
+      </div>
+
+      <!-- 暫停遮罩 -->
+      <div v-if="isPaused" class="scrim-overlay">
+        <h2 class="scrim-title-ready">暫停中</h2>
+        <div class="scrim-actions">
+          <button class="pill-outline-btn" @click="restartGame">
+            重新開始
+          </button>
+          <button class="pill-dark-btn" @click="togglePause">
+            繼續
+          </button>
         </div>
       </div>
 
-      <div class="board-wrapper">
-        <canvas
-          ref="canvasRef"
-          class="game-canvas"
-          :width="canvasW"
-          :height="canvasH"
-          @touchstart.passive="handleTouchStart"
-          @touchend.passive="handleTouchEnd"
-        ></canvas>
+      <!-- GAME_OVER / WIN 遮罩 -->
+      <div v-if="isGameOver || isWin" class="scrim-overlay">
+        <h2 class="scrim-title-end">{{ isWin ? '全部通關！' : '被抓到了' }}</h2>
+        <div class="scrim-score-box">
+          <span class="label">最終分數</span>
+          <span class="num">{{ score.toLocaleString() }}</span>
+        </div>
+        <div v-if="score > startBest" class="new-record-tag">
+          <Trophy /> 新紀錄！
+        </div>
+        <div class="scrim-actions">
+          <button class="pill-outline-btn" @click="$emit('close')">
+            返回
+          </button>
+          <button class="pill-dark-btn" @click="restartGame">
+            再來一局
+          </button>
+        </div>
       </div>
+    </div>
 
-      <div class="dpad">
+    <!-- 4. 操作區 -->
+    <div class="controls-area">
+      <div class="dpad-grid">
+        <span class="dpad-empty"></span>
         <button
-          class="dpad-btn up"
+          class="dpad-btn"
+          :class="{ active: curDir === 3 }"
+          aria-label="上"
           @pointerdown.prevent="setDir(3)"
-        >▲</button>
+        >
+          <ChevronUp />
+        </button>
+        <span class="dpad-empty"></span>
+
         <button
-          class="dpad-btn left"
+          class="dpad-btn"
+          :class="{ active: curDir === 2 }"
+          aria-label="左"
           @pointerdown.prevent="setDir(2)"
-        >◀</button>
+        >
+          <ChevronLeft />
+        </button>
+        <span class="dpad-empty"></span>
         <button
-          class="dpad-btn right"
+          class="dpad-btn"
+          :class="{ active: curDir === 0 }"
+          aria-label="右"
           @pointerdown.prevent="setDir(0)"
-        >▶</button>
+        >
+          <ChevronRight />
+        </button>
+
+        <span class="dpad-empty"></span>
         <button
-          class="dpad-btn down"
+          class="dpad-btn"
+          :class="{ active: curDir === 1 }"
+          aria-label="下"
           @pointerdown.prevent="setDir(1)"
-        >▼</button>
+        >
+          <ChevronDown />
+        </button>
+        <span class="dpad-empty"></span>
       </div>
 
-      <div class="controls-hint">
-        <p>方向鍵 / WASD 控制；空白鍵暫停；滑動轉向</p>
-      </div>
-
-      <div v-if="isReady" class="start-overlay">
-        <div class="start-card">
-          <div class="pac-icon">●</div>
-          <h2>吃豆人</h2>
-          <p>吃光所有豆子，小心幽靈！</p>
-          <button class="start-btn" @click="startGame">
-            <Play :size="20" /> 開始遊戲
-          </button>
-          <button class="back-to-center-btn" @click="emit('close')">
-            <ArrowLeft :size="16" /> 返回遊戲中心
-          </button>
-        </div>
+      <div class="game-instruction">
+        <p><b>豆芽</b> 要吃光迷宮裡的豆子</p>
+        <p>吃到大豆子後，<b>灰塵怪</b> 會變弱一陣子，可以反過來吃掉牠們</p>
       </div>
     </div>
-
-    <Teleport to="body">
-      <transition name="fade">
-        <div v-if="isGameOver || isWin" class="game-over-overlay">
-          <div class="game-over-card">
-            <div class="game-over-icon">
-              <Trophy v-if="isWin" :size="80" style="color: #ffd166" />
-              <Skull v-else :size="80" />
-            </div>
-            <h2>{{ isWin ? '通關！' : '遊戲結束' }}</h2>
-            <div class="final-score">
-              <span class="label">最終分數</span>
-              <span class="value">{{ score }}</span>
-            </div>
-            <div v-if="score === bestScore && score > 0" class="new-record">
-              <Trophy :size="24" /> 新紀錄！
-            </div>
-            <div class="game-over-buttons">
-              <div class="game-over-buttons-row">
-                <button class="game-over-btn secondary" @click="emit('close')">
-                  <ArrowLeft :size="18" /> 返回
-                </button>
-                <button class="game-over-btn primary" @click="restartGame">
-                  <RotateCcw :size="18" /> 重新開始
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </transition>
-    </Teleport>
   </div>
 </template>
 
 <script setup lang="ts">
 import {
-    ArrowLeft,
-    ChevronLeft,
-    Pause,
-    Play,
-    RotateCcw,
-    Skull,
-    Trophy,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  ChevronUp,
+  Pause,
+  Play,
+  Trophy,
 } from 'lucide-vue-next';
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import {
-    MAP_HEIGHT,
-    MAP_WIDTH,
-    PacmanGame,
-    PacmanState,
-    type Dir,
+  MAP_HEIGHT,
+  MAP_WIDTH,
+  PacmanGame,
+  PacmanState,
+  type Dir,
 } from './pacman/PacmanGame';
 
 const emit = defineEmits<{ close: [] }>();
@@ -150,13 +178,17 @@ const canvasH = MAP_HEIGHT * CELL;
 let game: PacmanGame | null = null;
 let rafId: number | null = null;
 let lastTickAt = 0;
-const TICK_MS = 16; // 60 FPS 節流（對應原版 index.js 的 16ms 限頻）
+const TICK_MS = 16;
+let resizeObserver: ResizeObserver | null = null;
+
 const canvasRef = ref<HTMLCanvasElement | null>(null);
 const score = ref(0);
 const bestScore = ref(0);
+const startBest = ref(0);
 const lives = ref(3);
 const level = ref(1);
 const stateRef = ref<PacmanState>(PacmanState.READY);
+const curDir = ref<Dir>(0);
 
 const isReady = computed(() => stateRef.value === PacmanState.READY);
 const isPaused = computed(() => stateRef.value === PacmanState.PAUSED);
@@ -166,16 +198,33 @@ const isWin = computed(() => stateRef.value === PacmanState.WIN);
 let touchStartX = 0;
 let touchStartY = 0;
 
+// 灰塵怪 SVG 路徑 Path2D
+const dustStarPath = new Path2D(
+  'M13 2l2.4 4.2 4.6-1.4-1 4.7 4.2 2.5-4.2 2.5 1 4.7-4.6-1.4L13 24l-2.4-4.2-4.6 1.4 1-4.7L2.8 14 7 11.5 6 6.8l4.6 1.4z'
+);
+
 function syncState() {
   if (!game) return;
   score.value = game.score;
   lives.value = game.lives;
   level.value = game.level;
   stateRef.value = game.state;
+  curDir.value = game.pacman.dir;
+
   if (game.score > bestScore.value) {
     bestScore.value = game.score;
     saveBestScore();
   }
+}
+
+function resizeCanvas() {
+  const canvas = canvasRef.value;
+  if (!canvas) return;
+  const dpr = window.devicePixelRatio || 1;
+  const clientWidth = canvas.clientWidth;
+  if (!clientWidth) return;
+  canvas.width = Math.round(clientWidth * dpr);
+  canvas.height = Math.round((clientWidth * 21) / 19 * dpr);
 }
 
 function loop() {
@@ -192,20 +241,25 @@ function loop() {
 
 function startGame() {
   if (!game) return;
+  startBest.value = bestScore.value;
   game.start();
   syncState();
 }
+
 function togglePause() {
   if (!game) return;
   game.togglePause();
   syncState();
 }
+
 function restartGame() {
   if (!game) return;
+  startBest.value = bestScore.value;
   game.reset(true);
   game.start();
   syncState();
 }
+
 function setDir(d: Dir) {
   if (!game) return;
   game.setDir(d);
@@ -239,23 +293,43 @@ function handleKeyDown(e: KeyboardEvent) {
       e.preventDefault();
       break;
     case ' ':
-      togglePause();
-      e.preventDefault();
+      if (!isReady.value && !isGameOver.value && !isWin.value) {
+        togglePause();
+        e.preventDefault();
+      }
       break;
   }
 }
 
-function handleTouchStart(e: TouchEvent) {
-  touchStartX = e.touches[0].clientX;
-  touchStartY = e.touches[0].clientY;
+function handleVisibilityChange() {
+  if (document.hidden && game && game.state === PacmanState.PLAYING) {
+    togglePause();
+  }
 }
-function handleTouchEnd(e: TouchEvent) {
-  if (!game) return;
-  const dx = e.changedTouches[0].clientX - touchStartX;
-  const dy = e.changedTouches[0].clientY - touchStartY;
-  if (Math.abs(dx) < 18 && Math.abs(dy) < 18) return;
-  if (Math.abs(dx) > Math.abs(dy)) setDir(dx > 0 ? 0 : 2);
-  else setDir(dy > 0 ? 1 : 3);
+
+function handleTouchStart(e: TouchEvent) {
+  if (e.touches.length > 0) {
+    touchStartX = e.touches[0].clientX;
+    touchStartY = e.touches[0].clientY;
+  }
+}
+
+function handleTouchMove(e: TouchEvent) {
+  if (!game || e.touches.length === 0) return;
+  e.preventDefault();
+  const curX = e.touches[0].clientX;
+  const curY = e.touches[0].clientY;
+  const dx = curX - touchStartX;
+  const dy = curY - touchStartY;
+  if (Math.abs(dx) >= 18 || Math.abs(dy) >= 18) {
+    if (Math.abs(dx) > Math.abs(dy)) {
+      setDir(dx > 0 ? 0 : 2);
+    } else {
+      setDir(dy > 0 ? 1 : 3);
+    }
+    touchStartX = curX;
+    touchStartY = curY;
+  }
 }
 
 // ====== Rendering ======
@@ -264,110 +338,230 @@ function draw() {
   if (!canvas || !game) return;
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
-  ctx.fillStyle = '#000';
+
+  const isNight = document.body.classList.contains('is-night-mode');
+  const colors = isNight
+    ? {
+        bg: '#0C1020',
+        wall: '#2E3D73',
+        dot: '#E8C25A',
+        glow: 'rgba(232, 194, 90, 0.25)',
+      }
+    : {
+        bg: '#FFFFFF',
+        wall: '#C3CBE6',
+        dot: '#C9761A',
+        glow: 'rgba(201, 118, 26, 0.18)',
+      };
+
+  ctx.setTransform(canvas.width / canvasW, 0, 0, canvas.height / canvasH, 0, 0);
+
+  // 底色
+  ctx.fillStyle = colors.bg;
   ctx.fillRect(0, 0, canvasW, canvasH);
 
-  // 牆
+  // 迷宮與豆子
   for (let y = 0; y < MAP_HEIGHT; y++) {
     for (let x = 0; x < MAP_WIDTH; x++) {
       const v = game.map[y][x];
+      const cx = x * CELL + CELL / 2;
+      const cy = y * CELL + CELL / 2;
+
       if (v === 1) {
-        ctx.fillStyle = '#1a1aff';
-        ctx.fillRect(x * CELL, y * CELL, CELL, CELL);
-        ctx.fillStyle = '#3636ff';
-        ctx.fillRect(x * CELL + 2, y * CELL + 2, CELL - 4, CELL - 4);
-      } else if (v === 0) {
-        ctx.fillStyle = '#ffd9a8';
-        const cx = x * CELL + CELL / 2;
-        const cy = y * CELL + CELL / 2;
+        // 牆：每格內縮 2px 的圓角方塊
+        ctx.fillStyle = colors.wall;
         ctx.beginPath();
-        ctx.arc(cx, cy, 2, 0, Math.PI * 2);
+        ctx.roundRect(x * CELL + 2, y * CELL + 2, CELL - 4, CELL - 4, CELL * 0.27);
+        ctx.fill();
+      } else if (v === 0) {
+        // 小豆：半徑 CELL*0.12 的圓
+        ctx.fillStyle = colors.dot;
+        ctx.beginPath();
+        ctx.arc(cx, cy, CELL * 0.12, 0, Math.PI * 2);
         ctx.fill();
       } else if (v === 3) {
-        // 能量豆閃爍
-        const blink = Math.floor(game.tick / 10) % 2 === 0;
-        ctx.fillStyle = blink ? '#ffec5e' : '#ffaa00';
-        const cx = x * CELL + CELL / 2;
-        const cy = y * CELL + CELL / 2;
+        // 大豆：半徑 CELL*0.27 的圓，外圍再畫一圈 3px 光暈；光暈透明度隨 game.tick 變化
+        const r = CELL * 0.27;
+        const alphaPhase = 0.5 + 0.5 * Math.sin((game.tick / 10) * Math.PI);
+        ctx.save();
+        ctx.globalAlpha = 0.4 + 0.6 * alphaPhase;
+        ctx.fillStyle = colors.glow;
         ctx.beginPath();
-        ctx.arc(cx, cy, 6, 0, Math.PI * 2);
+        ctx.arc(cx, cy, r + 3, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+
+        ctx.fillStyle = colors.dot;
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, 0, Math.PI * 2);
         ctx.fill();
       }
     }
   }
 
-  // Pacman
+  // 豆芽（主角）
   const p = game.pacman;
   const pcx = p.cx * CELL + CELL / 2;
   const pcy = p.cy * CELL + CELL / 2;
-  const radius = CELL / 2 - 2;
-  const mouth = Math.abs(Math.sin((p.mouthFrame / 16) * Math.PI)) * 0.4 + 0.05;
-  const rotByDir: Record<Dir, number> = { 0: 0, 1: Math.PI / 2, 2: Math.PI, 3: -Math.PI / 2 };
+  const scale = CELL / 26;
+
+  // 眼睛與嘴巴位移（右 +x、左 −x、上 −y、下 +y 各 1.5 單位）
+  let shiftX = 0;
+  let shiftY = 0;
+  if (p.dir === 0) shiftX = 1.5;
+  else if (p.dir === 2) shiftX = -1.5;
+  else if (p.dir === 3) shiftY = -1.5;
+  else if (p.dir === 1) shiftY = 1.5;
+
   ctx.save();
   ctx.translate(pcx, pcy);
-  ctx.rotate(rotByDir[p.dir]);
-  ctx.fillStyle = '#ffe600';
-  ctx.beginPath();
-  ctx.moveTo(0, 0);
-  ctx.arc(0, 0, radius, mouth * Math.PI, (2 - mouth) * Math.PI);
-  ctx.closePath();
-  ctx.fill();
-  ctx.restore();
+  ctx.scale(scale, scale);
 
-  // Ghosts
-  for (const g of game.ghosts) {
-    const gx = g.cx * CELL + CELL / 2;
-    const gy = g.cy * CELL + CELL / 2;
-    const gr = CELL / 2 - 2;
-    let color = g.color;
-    if (g.eaten) color = '#444';
-    else if (g.frightened) {
-      const ending = game.frightenedTicks < 90 && Math.floor(game.tick / 8) % 2 === 0;
-      color = ending ? '#ffffff' : '#2222ff';
-    }
-    ctx.fillStyle = color;
-    ctx.beginPath();
-    ctx.arc(gx, gy - 2, gr, Math.PI, 0);
-    ctx.lineTo(gx + gr, gy + gr - 2);
-    // 鬚邊
-    const waves = 3;
-    for (let i = 0; i < waves; i++) {
-      const x1 = gx + gr - ((i * 2 + 1) * gr) / waves;
-      const x2 = gx + gr - ((i * 2 + 2) * gr) / waves;
-      ctx.lineTo(x1, gy + gr - 6);
-      ctx.lineTo(x2, gy + gr - 2);
-    }
-    ctx.closePath();
-    ctx.fill();
-    // 眼
-    if (!g.eaten || true) {
-      ctx.fillStyle = '#fff';
-      ctx.beginPath();
-      ctx.arc(gx - gr / 3, gy - gr / 3, 3, 0, Math.PI * 2);
-      ctx.arc(gx + gr / 3, gy - gr / 3, 3, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = '#000';
-      ctx.beginPath();
-      ctx.arc(gx - gr / 3, gy - gr / 3, 1.4, 0, Math.PI * 2);
-      ctx.arc(gx + gr / 3, gy - gr / 3, 1.4, 0, Math.PI * 2);
-      ctx.fill();
-    }
+  const isDying = game.state === ('dying' as any) || game.state === PacmanState.DYING;
+  if (isDying) {
+    const dyingAlpha = Math.max(0, 1 - (game.tick % 60) / 60);
+    ctx.globalAlpha = dyingAlpha;
+    ctx.scale(dyingAlpha, dyingAlpha);
   }
 
-  if (stateRef.value === PacmanState.PAUSED) {
-    ctx.fillStyle = 'rgba(0,0,0,0.5)';
-    ctx.fillRect(0, 0, canvasW, canvasH);
-    ctx.fillStyle = '#fff';
-    ctx.font = 'bold 28px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText('暫停', canvasW / 2, canvasH / 2);
+  // 以 (13, 13) 為中心對齊格心
+  ctx.translate(-13, -13);
+
+  // 1. 莖
+  ctx.strokeStyle = '#3F7A47';
+  ctx.lineWidth = 1.8;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(13, 9);
+  ctx.lineTo(13, 4);
+  ctx.stroke();
+
+  // 2. 兩片葉子
+  ctx.fillStyle = '#6FBF73';
+  ctx.beginPath();
+  ctx.moveTo(13, 5);
+  ctx.quadraticCurveTo(8, 2, 7, 6);
+  ctx.quadraticCurveTo(11, 7, 13, 5);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.beginPath();
+  ctx.moveTo(13, 5);
+  ctx.quadraticCurveTo(18, 2, 19, 6);
+  ctx.quadraticCurveTo(15, 7, 13, 5);
+  ctx.closePath();
+  ctx.fill();
+
+  // 3. 身體圓
+  ctx.fillStyle = '#F3E3B5';
+  ctx.strokeStyle = '#121214';
+  ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  ctx.arc(13, 16, 8.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+
+  // 4. 兩隻眼睛
+  ctx.fillStyle = '#121214';
+  ctx.beginPath();
+  ctx.arc(11 + shiftX, 15.5 + shiftY, 1.3, 0, Math.PI * 2);
+  ctx.arc(16 + shiftX, 15.5 + shiftY, 1.3, 0, Math.PI * 2);
+  ctx.fill();
+
+  // 5. 嘴巴（依 p.mouthFrame 切換微笑弧線與張開小圓 r1.6）
+  const isMouthOpen = p.mouthFrame >= 8;
+  if (isMouthOpen) {
+    ctx.beginPath();
+    ctx.arc(13.5 + shiftX, 19 + shiftY, 1.6, 0, Math.PI * 2);
+    ctx.fill();
+  } else {
+    ctx.strokeStyle = '#121214';
+    ctx.lineWidth = 1.2;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(11.5 + shiftX, 19 + shiftY);
+    ctx.quadraticCurveTo(13.5 + shiftX, 20.5 + shiftY, 15.5 + shiftX, 19 + shiftY);
+    ctx.stroke();
+  }
+
+  ctx.restore();
+
+  // 灰塵怪（敵人）
+  const ghostColors = ['#E86F6F', '#8EA6F0', '#E8A65A', '#B79BC9'];
+  for (let idx = 0; idx < game.ghosts.length; idx++) {
+    const g = game.ghosts[idx];
+    const gx = g.cx * CELL + CELL / 2;
+    const gy = g.cy * CELL + CELL / 2;
+
+    ctx.save();
+    ctx.translate(gx, gy);
+
+    // 每 20 tick 輕微旋轉 ±6 度
+    const rotPhase = Math.floor(game.tick / 20) % 2 === 0 ? 1 : -1;
+    ctx.rotate((rotPhase * 6 * Math.PI) / 180);
+
+    ctx.scale(scale, scale);
+    ctx.translate(-13, -13);
+
+    // 身體繪製（若未被吃）
+    if (!g.eaten) {
+      let bodyFill = ghostColors[idx % 4];
+      if (g.frightened) {
+        if (game.frightenedTicks < 90 && Math.floor(game.tick / 8) % 2 === 0) {
+          bodyFill = '#FFFFFF';
+        } else {
+          bodyFill = '#9FB4E8';
+        }
+      }
+      ctx.fillStyle = bodyFill;
+      ctx.fill(dustStarPath);
+    }
+
+    // 眼睛位移偏 0.8
+    let eyeOffsetX = 0;
+    let eyeOffsetY = 0;
+    if (g.dir === 0) eyeOffsetX = 0.8;
+    else if (g.dir === 2) eyeOffsetX = -0.8;
+    else if (g.dir === 3) eyeOffsetY = -0.8;
+    else if (g.dir === 1) eyeOffsetY = 0.8;
+
+    if (g.frightened && !g.eaten) {
+      // 變弱時眼睛為兩條短橫線
+      ctx.strokeStyle = '#121214';
+      ctx.lineWidth = 1.4;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(9, 13);
+      ctx.lineTo(12, 13);
+      ctx.moveTo(14, 13);
+      ctx.lineTo(17, 13);
+      ctx.stroke();
+    } else {
+      // 正常眼白與瞳孔（被吃掉時也只畫眼睛）
+      ctx.fillStyle = '#FFFFFF';
+      ctx.beginPath();
+      ctx.arc(10.5, 12.5, 2.6, 0, Math.PI * 2);
+      ctx.arc(15.5, 12.5, 2.6, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = '#121214';
+      ctx.beginPath();
+      ctx.arc(11 + eyeOffsetX, 13 + eyeOffsetY, 1.2, 0, Math.PI * 2);
+      ctx.arc(16 + eyeOffsetX, 13 + eyeOffsetY, 1.2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    ctx.restore();
   }
 }
 
 function loadBestScore() {
   const s = localStorage.getItem('pacman_best_score');
-  if (s) bestScore.value = parseInt(s, 10) || 0;
+  if (s) {
+    bestScore.value = parseInt(s, 10) || 0;
+  }
 }
+
 function saveBestScore() {
   localStorage.setItem('pacman_best_score', bestScore.value.toString());
 }
@@ -376,256 +570,306 @@ onMounted(() => {
   game = new PacmanGame();
   loadBestScore();
   syncState();
+
+  const canvas = canvasRef.value;
+  if (canvas) {
+    resizeCanvas();
+    resizeObserver = new ResizeObserver(() => {
+      resizeCanvas();
+    });
+    resizeObserver.observe(canvas);
+
+    canvas.addEventListener('touchstart', handleTouchStart, { passive: true });
+    canvas.addEventListener('touchmove', handleTouchMove, { passive: false });
+  }
+
   window.addEventListener('keydown', handleKeyDown);
+  document.addEventListener('visibilitychange', handleVisibilityChange);
+
   rafId = requestAnimationFrame(loop);
 });
+
 onUnmounted(() => {
-  if (rafId !== null) cancelAnimationFrame(rafId);
-  rafId = null;
-  if (game) game.destroy();
-  game = null;
+  if (rafId !== null) {
+    cancelAnimationFrame(rafId);
+    rafId = null;
+  }
+  if (game) {
+    game.destroy();
+    game = null;
+  }
+  if (resizeObserver) {
+    resizeObserver.disconnect();
+    resizeObserver = null;
+  }
+  const canvas = canvasRef.value;
+  if (canvas) {
+    canvas.removeEventListener('touchstart', handleTouchStart);
+    canvas.removeEventListener('touchmove', handleTouchMove);
+  }
   window.removeEventListener('keydown', handleKeyDown);
+  document.removeEventListener('visibilitychange', handleVisibilityChange);
 });
 </script>
 
 <style scoped lang="scss">
+@use "@/components/games/gameShell" as gs;
+
 .game-pacman {
-  position: fixed;
-  inset: 0;
-  background: #000;
-  color: #fff;
-  display: flex;
-  flex-direction: column;
-  z-index: 1000;
-  user-select: none;
+  @include gs.screen;
+  gap: 12px;
+  background: color-mix(in srgb, #4f68c8 7%, var(--g-bg));
+  --pm-accent: #4f68c8;
 }
 
-.header {
-  display: flex;
-  align-items: center;
-  padding: 12px 16px;
-  background: #0a0a1a;
-  border-bottom: 1px solid #1a1a3a;
-  gap: 8px;
+body.is-night-mode .game-pacman {
+  background: #12172b;
+  --g-surface: rgba(255, 255, 255, 0.1);
+  --g-text: #e8ecf7;
+  --g-text-2: #a9b3d1;
+}
 
-  .back-btn,
-  .icon-btn {
-    background: transparent;
-    border: none;
-    color: #ffe600;
-    cursor: pointer;
-    padding: 6px;
-    border-radius: 6px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    &:hover { background: rgba(255, 230, 0, 0.1); }
-    &.active { background: rgba(255, 230, 0, 0.2); }
-    .icon { width: 22px; height: 22px; }
+// 1. 頂欄
+.topbar {
+  @include gs.topbar;
+
+  .round-btn {
+    @include gs.round-btn;
   }
+
   .title {
-    flex: 1;
-    text-align: center;
-    font-size: 18px;
-    font-weight: bold;
+    @include gs.title;
+    font-family: inherit;
+    font-size: 17px;
+  }
+}
+
+// 2. 數據列
+.stats-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  height: 40px;
+  flex-shrink: 0;
+  box-sizing: border-box;
+
+  .stat-col {
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+
+    .label {
+      font-size: 11px;
+      color: var(--g-text-2);
+      line-height: 1.2;
+    }
+
+    .value {
+      font-family: var(--g-num);
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--g-text);
+      line-height: 1.1;
+      font-variant-numeric: tabular-nums;
+    }
+  }
+
+  .level-col {
+    .level-text {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--g-text);
+      line-height: 1.2;
+    }
+  }
+
+  .lives-col {
+    .lives-icons {
+      display: flex;
+      align-items: center;
+      gap: 2px;
+      height: 24px;
+
+      .life-icon {
+        width: 22px;
+        height: 22px;
+      }
+    }
+  }
+}
+
+// 3. 棋盤
+.board-wrapper {
+  padding: 6px;
+  border-radius: 20px;
+  background: #ffffff;
+  align-self: center;
+  position: relative;
+  box-sizing: border-box;
+  width: min(calc(100vw - 40px), calc((100dvh - 400px) * 19 / 21 + 12px), 390px);
+  flex-shrink: 0;
+
+  .board-canvas {
+    width: 100%;
+    display: block;
+    aspect-ratio: 19 / 21;
+    touch-action: none;
+  }
+}
+
+body.is-night-mode .board-wrapper {
+  background: #0c1020;
+}
+
+// 棋盤遮罩
+.scrim-overlay {
+  @include gs.board-scrim(20px);
+
+  .scrim-title-ready {
+    font-size: 24px;
+    font-weight: 700;
+    color: var(--g-text);
     margin: 0;
   }
-  .header-actions { display: flex; gap: 4px; }
-}
 
-.game-container {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 8px 12px calc(var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)) + 12px);
-  gap: 8px;
-  overflow: hidden;
-}
-
-.score-container {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-  justify-content: center;
-  width: 100%;
-
-  .score-box {
-    background: #111133;
-    border: 1px solid #2a2a5a;
-    border-radius: 8px;
-    padding: 4px 10px;
-    min-width: 50px;
-    text-align: center;
-
-    .score-label { font-size: 10px; color: #8a8aff; line-height: 1.2; }
-    .score-value { font-size: 14px; font-weight: bold; color: #ffe600; line-height: 1.2; }
-    &.best .score-value { color: #ffaa00; }
+  .scrim-desc {
+    font-size: 14px;
+    color: var(--g-text-2);
+    margin: 4px 0 16px;
   }
-}
 
-.board-wrapper {
-  flex: 1;
-  min-height: 0;
-  width: 100%;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-}
-.game-canvas {
-  background: #000;
-  max-width: 100%;
-  max-height: 100%;
-  width: auto;
-  height: auto;
-  image-rendering: pixelated;
-  border: 2px solid #1a1aff;
-  border-radius: 4px;
-  touch-action: none;
-  // 用 aspect-ratio 讓瀏覽器在 width/height 都受限時保比例
-  aspect-ratio: 19 / 21;
-}
+  .scrim-title-end {
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--g-text);
+    margin: 0 0 4px;
+  }
 
-.dpad {
-  display: grid;
-  grid-template-areas:
-    '.    up    .'
-    'left .  right'
-    '.   down   .';
-  gap: 8px;
-  flex-shrink: 0;
+  .scrim-score-box {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    margin-bottom: 4px;
 
-  .dpad-btn {
-    width: 60px;
-    height: 60px;
-    border-radius: 50%;
-    background: #1a1a3a;
-    border: 2px solid #3a3a7a;
-    color: #ffe600;
-    font-size: 22px;
-    cursor: pointer;
+    .label {
+      font-size: 14px;
+      color: var(--g-text-2);
+    }
+
+    .num {
+      font-family: var(--g-num);
+      font-size: 32px;
+      font-weight: 700;
+      color: var(--g-text);
+      font-variant-numeric: tabular-nums;
+    }
+  }
+
+  .new-record-tag {
     display: flex;
     align-items: center;
-    justify-content: center;
-    touch-action: manipulation;
-    -webkit-tap-highlight-color: transparent;
-    &:active { background: #2a2a5a; transform: scale(0.95); }
-    &.up { grid-area: up; }
-    &.down { grid-area: down; }
-    &.left { grid-area: left; }
-    &.right { grid-area: right; }
+    gap: 4px;
+    font-size: 13px;
+    color: #8a5a00;
+    font-weight: 700;
+    margin-bottom: 8px;
+
+    svg {
+      width: 16px;
+      height: 16px;
+    }
+  }
+
+  .scrim-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-top: 8px;
   }
 }
 
-.controls-hint {
-  color: #8a8aff;
-  font-size: 11px;
-  text-align: center;
-  flex-shrink: 0;
-  p { margin: 0; }
+body.is-night-mode .scrim-overlay {
+  background: rgba(18, 23, 43, 0.88);
 }
 
-// 小螢幕：D-pad 更大，隱藏文字提示
-@media (max-width: 480px) {
-  .header { padding: 8px 12px; .title { font-size: 16px; } }
-  .controls-hint { display: none; }
-  .dpad {
-    gap: 10px;
-    .dpad-btn { width: 64px; height: 64px; font-size: 24px; }
-  }
+.pill-dark-btn {
+  @include gs.pill-dark(44px);
 }
 
-// 矮螢幕（橫向手機/小直立）：縮小 D-pad 避免擠壓
-@media (max-height: 640px) {
-  .dpad .dpad-btn { width: 48px; height: 48px; font-size: 18px; }
-  .score-container .score-box { padding: 3px 8px; .score-value { font-size: 12px; } }
+.pill-outline-btn {
+  @include gs.pill-outline(44px);
 }
 
-@media (hover: hover) and (pointer: fine) {
-  .dpad {
-    gap: 6px;
-    .dpad-btn { width: 42px; height: 42px; font-size: 16px; }
-  }
-}
-
-.start-overlay,
-.game-over-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.85);
+// 4. 操作區
+.controls-area {
   display: flex;
   align-items: center;
-  justify-content: center;
-  z-index: 1100;
-}
-.start-card,
-.game-over-card {
-  background: #111133;
-  border: 2px solid #ffe600;
-  border-radius: 16px;
-  padding: 28px 32px;
-  text-align: center;
-  max-width: 320px;
-
-  h2 { margin: 12px 0; color: #ffe600; }
-  p { color: #8a8aff; margin: 4px 0 20px; }
-  .pac-icon { font-size: 60px; color: #ffe600; }
-  .game-over-icon { margin-bottom: 8px; color: #ff5050; }
-  .final-score {
-    display: flex;
-    justify-content: space-between;
-    background: #0a0a1a;
-    padding: 10px 14px;
-    border-radius: 8px;
-    margin-bottom: 12px;
-    .label { color: #8a8aff; }
-    .value { color: #ffe600; font-weight: bold; }
-  }
-  .new-record {
-    color: #ffaa00;
-    margin-bottom: 12px;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    gap: 6px;
-  }
-}
-.start-btn,
-.back-to-center-btn,
-.game-over-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 10px 18px;
-  border-radius: 10px;
-  border: none;
-  cursor: pointer;
-  font-weight: bold;
-  margin: 4px;
-}
-.start-btn {
-  background: #ffe600;
-  color: #000;
-  width: 100%;
-}
-.back-to-center-btn {
-  background: transparent;
-  color: #8a8aff;
-  border: 1px solid #3a3a7a;
-  width: 100%;
-}
-.game-over-buttons { display: flex; flex-direction: column; gap: 8px; }
-.game-over-buttons-row { display: flex; gap: 8px; }
-.game-over-btn {
+  gap: 14px;
   flex: 1;
-  &.primary { background: #ffe600; color: #000; }
-  &.secondary { background: #2a2a5a; color: #fff; }
-}
+  min-height: 0;
+  width: 100%;
+  max-width: 390px;
+  align-self: center;
 
-.fade-enter-active,
-.fade-leave-active { transition: opacity 0.2s; }
-.fade-enter-from,
-.fade-leave-to { opacity: 0; }
+  .dpad-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 52px);
+    grid-template-rows: repeat(3, 52px);
+    gap: 4px;
+    flex-shrink: 0;
+
+    .dpad-empty {
+      width: 52px;
+      height: 52px;
+    }
+
+    .dpad-btn {
+      width: 52px;
+      height: 52px;
+      border-radius: 16px;
+      border: none;
+      background: var(--g-surface);
+      color: var(--g-text);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+      cursor: pointer;
+      touch-action: manipulation;
+      transition: background-color 0.12s, color 0.12s, transform 0.1s;
+
+      svg {
+        width: 20px;
+        height: 20px;
+      }
+
+      &.active {
+        background: var(--pm-accent);
+        color: #ffffff;
+      }
+
+      &:active {
+        transform: scale(0.94);
+      }
+    }
+  }
+
+  .game-instruction {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--g-text-2);
+
+    p {
+      margin: 0;
+    }
+
+    b {
+      color: var(--g-text);
+    }
+  }
+}
 </style>
