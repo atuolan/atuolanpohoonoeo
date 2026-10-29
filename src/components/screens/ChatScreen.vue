@@ -5159,6 +5159,8 @@ function computeTheaterPhoneScriptRoleMap(
 
 interface RoundTableTurn {
   speaker: RoundTableSpeaker;
+  /** 這一輪前面成員剛發的訊息 */
+  sameRoundIds: ReadonlySet<string>;
   /** 群裡其他能發言的成員（提示詞裡叫模型別替他們講） */
   otherNames: string[];
   taskConfig: ReturnType<typeof settingsStore.getAPIForTask>;
@@ -5220,6 +5222,7 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
   );
   roundTableRunning = true;
   roundTableStopRequested = false;
+  const idsAtRoundStart = new Set(messages.value.map((m) => m.id));
   try {
     for (let i = 0; i < speakers.length; i++) {
       if (roundTableStopRequested || currentChatId.value !== chatIdAtStart) break;
@@ -5228,6 +5231,9 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
         settingsStore.getAPIForProfile(speaker.apiProfileId) ?? settingsStore.getAPIForTask("chat");
       const turn: RoundTableTurn = {
         speaker,
+        sameRoundIds: new Set(
+          messages.value.filter((m) => !idsAtRoundStart.has(m.id)).map((m) => m.id),
+        ),
         otherNames: allSpeakers.filter((s) => s !== speaker).map((s) => s.name),
         taskConfig,
         modelLabel: taskConfig.api.model,
@@ -5246,6 +5252,8 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
       if (tagged) saveChat();
     }
   } finally {
+    attachPendingRoundSwipes(currentTurnId.value || undefined);
+    saveChat();
     roundTableRunning = false;
     roundTableStopRequested = false;
   }
@@ -5598,6 +5606,7 @@ async function runAIResponseOnce(
       isWaimaiPaymentResult: m.isWaimaiPaymentResult,
       isWaimaiDelivery: m.isWaimaiDelivery,
       waimaiOrder: m.waimaiOrder,
+      roundTableSameRound: roundTableTurn?.sameRoundIds.has(m.id) || undefined,
     }));
 
     // 使用 PromptBuilder 構建提示詞
@@ -8119,7 +8128,8 @@ async function runAIResponseOnce(
     }
 
     // 附加暫存的 roundSwipes 到最後一條 AI 訊息
-    attachPendingRoundSwipes(generationTurnId || undefined);
+    // 圓桌：整輪講完才收成一個重新生成版本（在 triggerAIResponse 收尾）
+    if (!roundTableTurn) attachPendingRoundSwipes(generationTurnId || undefined);
 
     scrollToBottom();
     chatPerfMark("generation:beforeSave", {
