@@ -8811,7 +8811,7 @@ async function handleStreamingClose() {
     lastMsg &&
     lastMsg.role === "ai" &&
     lastMsg.isStreaming &&
-    windowContent
+    (windowContent || closeDiceRequests.length > 0)
   ) {
     const lastMsgIndex = messages.value.findIndex((m) => m.id === lastMsg.id);
 
@@ -9480,6 +9480,9 @@ async function handleStreamingClose() {
           }
         }
       } // end else (non-group-chat)
+    } else if (!windowContent.trim()) {
+      // 只寫了 <dice>（拿掉後沒有正文）：不留空白氣泡，骰子在下面照樣擲
+      if (lastMsgIndex !== -1) messages.value.splice(lastMsgIndex, 1);
     } else {
       // 不需要解析，直接使用原始內容
       // 但仍需抽取心聲標記（ˇ想法ˇ 或 ~(想法)~），否則心聲氣泡無法點擊 / 編輯
