@@ -1,0 +1,164 @@
+// 遊戲天堂內各遊戲共用的外框樣式（頂欄、分數卡、膠囊按鈕、棋盤上的結束遮罩）。
+// 在元件的 <style scoped lang="scss"> 裡 `@use "@/components/games/gameShell" as gs;`，
+// 再於根元素 `@include gs.vars;`，其餘用 mixin 套到自己的 class 上。
+
+@mixin vars {
+  --g-bg: var(--color-background, #f6f5f2);
+  --g-surface: var(--color-surface, #ffffff);
+  --g-text: var(--color-text, #121214);
+  --g-text-2: var(--color-text-secondary, #5e5e64);
+  --g-border: var(--color-border, #e4e2dd);
+  --g-muted: color-mix(in srgb, var(--g-text) 6%, var(--g-surface));
+  --g-scrim: color-mix(in srgb, var(--g-surface) 86%, transparent);
+  --g-num: "Outfit", "Noto Sans TC", system-ui, sans-serif;
+}
+
+// 全螢幕根元素：背景、左右 20px、上下安全區域
+@mixin screen {
+  @include vars;
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  box-sizing: border-box;
+  padding: max(16px, var(--safe-area-inset-top, env(safe-area-inset-top))) 20px
+    max(28px, var(--safe-area-inset-bottom, env(safe-area-inset-bottom)));
+  background: var(--g-bg);
+  color: var(--g-text);
+  overflow: hidden;
+}
+
+// 頂欄：左右各一顆圓鈕，中間標題
+@mixin topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 44px;
+  flex-shrink: 0;
+}
+
+@mixin title {
+  margin: 0;
+  font-family: var(--g-num);
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--g-text);
+}
+
+@mixin round-btn {
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: none;
+  border-radius: 22px;
+  background: var(--g-surface);
+  color: var(--g-text);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: transform 0.15s;
+
+  svg {
+    width: 20px;
+    height: 20px;
+  }
+
+  &:active {
+    transform: scale(0.94);
+  }
+}
+
+// 白底分數卡
+@mixin stat-card {
+  background: var(--g-surface);
+  border-radius: 18px;
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+@mixin stat-label {
+  font-size: 12px;
+  color: var(--g-text-2);
+}
+
+@mixin stat-value {
+  font-family: var(--g-num);
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+  color: var(--g-text);
+}
+
+// 膠囊按鈕：$size 36（工具列）或 44（主要動作）
+@mixin pill($size: 36px) {
+  height: $size;
+  padding: 0 14px;
+  border-radius: calc(#{$size} / 2);
+  font-family: inherit;
+  font-size: 13px;
+  @if $size > 40px {
+    padding: 0 18px;
+    font-size: 14px;
+  }
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: transform 0.15s, opacity 0.15s;
+
+  svg {
+    width: 14px;
+    height: 14px;
+  }
+
+  &:active:not(:disabled) {
+    transform: scale(0.96);
+  }
+
+  &:disabled {
+    opacity: 0.4;
+    cursor: default;
+  }
+}
+
+@mixin pill-outline($size: 36px) {
+  @include pill($size);
+  border: 1px solid var(--g-border);
+  background: var(--g-surface);
+  color: var(--g-text);
+}
+
+@mixin pill-dark($size: 36px) {
+  @include pill($size);
+  border: none;
+  background: var(--g-text);
+  color: var(--g-surface);
+  font-weight: 700;
+}
+
+// 蓋在棋盤上的勝利／結束遮罩
+@mixin board-scrim($radius: 22px) {
+  position: absolute;
+  inset: 0;
+  border-radius: $radius;
+  background: var(--g-scrim);
+  backdrop-filter: blur(2px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  text-align: center;
+  padding: 16px;
+  box-sizing: border-box;
+  z-index: 5;
+}
