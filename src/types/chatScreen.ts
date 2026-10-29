@@ -9,6 +9,7 @@ import type {
   StoryClockState,
   WaimaiOrderSnapshot,
 } from "@/types/chat";
+import type { LiuyaoShareSnapshot } from "@/types/liuyao";
 import type { ToolActivityRecord } from "@/types/toolActivity";
 import type { DiceRollData } from "@/utils/diceRoller";
 
@@ -141,6 +142,8 @@ export interface ChatScreenMessage {
   forwardedFrom?: ForwardedFrom;
   /** 噗文分享卡片 */
   plurkShare?: PlurkShareSnapshot;
+  /** 六爻卦象卡片 */
+  liuyaoShare?: LiuyaoShareSnapshot;
   /** 這輪回覆裡角色去噗浪留言了 */
   plurkActivity?: PlurkActivity;
   groupChatHistoryData?: ChatHistoryRecordData;
@@ -275,6 +278,8 @@ export interface PendingInjectedMessage {
   };
   /** 噗文分享卡片 */
   plurkShare?: PlurkShareSnapshot;
+  /** 六爻卦象卡片 */
+  liuyaoShare?: LiuyaoShareSnapshot;
   /** 卡片後面接著送的一句話 */
   followUpText?: string;
 }

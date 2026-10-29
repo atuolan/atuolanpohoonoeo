@@ -5,6 +5,7 @@ import type {
   ForwardedFrom,
 } from "@/types/chat";
 import type { ChatScreenMessage } from "@/types/chatScreen";
+import { liuyaoShareSummary } from "@/utils/liuyao/share";
 import { plurkShareSummary } from "@/utils/plurkShare";
 
 /** 合併轉發時每條訊息的文字上限，避免長篇回覆把 prompt 撐爆 */
@@ -78,6 +79,7 @@ export function summarizeForwardContent(m: ChatScreenMessage): string {
   if (m.isGift) return `[禮物：${m.giftName || ""}]`;
   if (m.isLocation) return `[位置] ${m.locationContent || ""}`;
   if (m.plurkShare) return m.content || plurkShareSummary(m.plurkShare);
+  if (m.liuyaoShare) return m.content || liuyaoShareSummary(m.liuyaoShare);
   if (m.isMusicShare && m.musicShareData) {
     return `[分享歌曲] ${m.musicShareData.name}${m.musicShareData.artist ? ` - ${m.musicShareData.artist}` : ""}`;
   }

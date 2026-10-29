@@ -371,6 +371,7 @@ const emit = defineEmits<{
   (e: "openChat", chatId: string, characterId: string): void;
   (e: "chatSwitched", chatId: string): void;
   (e: "openPlurkThread", target: { postId: string; commentId?: string }): void;
+  (e: "openLiuyaoReading", readingId: string): void;
 }>();
 
 
@@ -5435,6 +5436,7 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
       isLocation: m.isLocation,
       locationContent: m.locationContent,
       plurkShare: m.plurkShare,
+      liuyaoShare: m.liuyaoShare,
       isGift: m.isGift,
       giftName: m.giftName,
       giftCard: m.giftCard,
@@ -10693,6 +10695,7 @@ function toStoredRemoteMessage(message: Message, fallbackName: string): ChatMess
     isLocation: message.isLocation,
     locationContent: message.locationContent,
     plurkShare: message.plurkShare,
+    liuyaoShare: message.liuyaoShare,
     plurkActivity: message.plurkActivity,
     replyToContent: message.replyToContent,
     replyTo: message.replyTo,
@@ -11710,8 +11713,10 @@ useChatCleanup({
             :is-music-share="message.isMusicShare"
             :music-share-data="message.musicShareData"
             :plurk-share="message.plurkShare"
+            :liuyao-share="message.liuyaoShare"
             :plurk-activity="message.plurkActivity"
             @open-plurk="(...args: any[]) => emit('openPlurkThread', args[0])"
+            @open-liuyao="(...args: any[]) => emit('openLiuyaoReading', args[0])"
             :is-avatar-change="message.isAvatarChange"
             :avatar-change-action="message.avatarChangeAction"
             :avatar-change-mood="message.avatarChangeMood"

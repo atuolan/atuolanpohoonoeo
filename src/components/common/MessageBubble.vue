@@ -70,6 +70,7 @@ import type {
   PlurkShareSnapshot,
   WaimaiOrderSnapshot,
 } from "@/types/chat";
+import type { LiuyaoShareSnapshot } from "@/types/liuyao";
 import { stripPromptStatusNotes } from "@/utils/promptMessageContent";
 import { cleanTTSTags } from "@/utils/ttsTagCleaner";
 import { injectTTSInlineButtons } from "@/utils/ttsInlineButtons";
@@ -84,6 +85,7 @@ import GroupCallHistoryCard from "./GroupCallHistoryCard.vue";
 import PhoneCallHistoryCard from "./PhoneCallHistoryCard.vue";
 import GroupChatHistoryCard from "./GroupChatHistoryCard.vue";
 import MusicShareCard from "./MusicShareCard.vue";
+import LiuyaoShareCard from "./LiuyaoShareCard.vue";
 import PlurkShareCard from "./PlurkShareCard.vue";
 import PixelGiftChest from "./PixelGiftChest.vue";
 import PixelTransferCard from "./PixelTransferCard.vue";
@@ -406,6 +408,8 @@ interface MessageBubbleProps {
   };
   // 噗文分享相關
   plurkShare?: PlurkShareSnapshot;
+  // 六爻卦象卡片
+  liuyaoShare?: LiuyaoShareSnapshot;
   plurkActivity?: PlurkActivity;
   // 換頭像相關
   isAvatarChange?: boolean;
@@ -579,6 +583,7 @@ const props = withDefaults(defineProps<MessageBubbleProps>(), {
   isMusicShare: false,
   musicShareData: undefined,
   plurkShare: undefined,
+  liuyaoShare: undefined,
   plurkActivity: undefined,
   isAvatarChange: false,
   avatarChangeAction: undefined,
@@ -669,6 +674,7 @@ const emit = defineEmits<{
   (e: "claimRedpacket", id: string): void;
   (e: "favorite-audio", id: string): void;
   (e: "openPlurk", target: { postId: string; commentId?: string }): void;
+  (e: "openLiuyao", readingId: string): void;
   /** 角色送的禮物按了「收下」 */
   (e: "collectGift", id: string): void;
   /** 打開的寶箱再點一次：看回憶卡 */
@@ -1885,6 +1891,7 @@ const hasSpecialBubbleBody = computed(() => {
     props.isWaimaiDelivery ||
     props.isMusicShare ||
     !!props.plurkShare ||
+    !!props.liuyaoShare ||
     props.isHtmlBlock ||
     props.isPrivateMessage ||
     props.messageType === "image" ||
@@ -4306,6 +4313,11 @@ const showTextVoiceTranscript = ref(true);
               :is-receiver="role !== 'user'"
               @open="emit('openPlurk', { postId: plurkShare.postId, commentId: plurkShare.comment?.id })"
             />
+          </div>
+
+          <!-- 六爻卦象卡片 -->
+          <div v-else-if="liuyaoShare" class="plurk-share-wrapper">
+            <LiuyaoShareCard :share="liuyaoShare" @open="emit('openLiuyao', liuyaoShare.readingId)" />
           </div>
 
           <!-- 音樂分享卡片 -->

@@ -7,6 +7,7 @@ import type { BlockState } from "@/types/block";
 import type { ChatSkinOverrides } from "@/utils/chatSkinResolve";
 import type { AuthorsNoteMetadata } from "./prompt";
 import type { PromptRoleType } from "./promptManager";
+import type { LiuyaoShareSnapshot } from "./liuyao";
 import type { ToolActivityRecord } from "./toolActivity";
 import type {
   WaimaiDestinationSnapshot,
@@ -574,6 +575,8 @@ export interface ChatMessage {
   forwardedFrom?: ForwardedFrom;
   /** 噗文分享卡片 */
   plurkShare?: PlurkShareSnapshot;
+  /** 六爻卦象卡片 */
+  liuyaoShare?: LiuyaoShareSnapshot;
   /** 這輪回覆裡角色去噗浪留言了 */
   plurkActivity?: PlurkActivity;
   /** 群聊記錄數據 */
