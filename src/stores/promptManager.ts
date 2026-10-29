@@ -70,8 +70,9 @@ export const FACE_TO_FACE_PROMPT_RESET_VERSION = 7;
  * 3：線上預設重寫，加入 char 語言
  * 4：【推進】拿掉「分享自己正在做的事」，改成問起 {{user}} 那邊的事，近況有變化才提
  * 5：線上模式標籤加上送禮物（可附小卡與描述）
+ * 6：飲食記錄補「已記過的、補充更正份量都不要再輸出」，避免重複記
  */
-export const ONLINE_PROMPT_RESET_VERSION = 5;
+export const ONLINE_PROMPT_RESET_VERSION = 6;
 
 /**
  * 群聊模式提示詞強制重置版本（規則同面對面）。
@@ -79,8 +80,9 @@ export const ONLINE_PROMPT_RESET_VERSION = 5;
  * 2：與線上、面對面一起重置；刪除「角色設定」，補上封鎖記憶與 MiniMax 語音條目
  * 3：群聊預設重寫，加入 char 語言
  * 4：【推進】拿掉「分享自己正在做的事」，改成問起 {{user}} 那邊的事，近況有變化才提
+ * 5：飲食記錄補「已記過的、補充更正份量都不要再輸出」，避免重複記
  */
-export const GROUP_CHAT_PROMPT_RESET_VERSION = 4;
+export const GROUP_CHAT_PROMPT_RESET_VERSION = 5;
 
 /** 新建的配置已是最新提示詞，不需要再引導重置 */
 function createFreshPromptManagerConfig(): PromptManagerConfig {
