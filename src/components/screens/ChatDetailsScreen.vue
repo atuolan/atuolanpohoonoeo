@@ -24,6 +24,8 @@ interface GroupMemberInfo {
   relationLabel?: string;
   /** 是否引入好感度 */
   affinityEnabled?: boolean;
+  /** 圓桌模式：這位成員綁的 API 設定 */
+  apiProfileId?: string;
 }
 
 /** 被移出群聊的成員 */
@@ -143,6 +145,10 @@ const props = defineProps<{
   presetCount?: number;
   /** 記憶互通設定（普通群聊） */
   memorySharing?: { enabled: boolean; maxRawTurns: number };
+  /** 圓桌模式（普通群聊）：每個成員用自己的 API 輪流發言 */
+  roundTable?: { enabled: boolean; maxSpeakersPerRound: number };
+  /** 圓桌模式：可以綁的主 API 設定 */
+  apiProfileOptions?: Array<{ id: string; name: string; model: string }>;
   /** 記憶互通：每位成員的連結選項 */
   memberLinkOptions?: MemberLinkOptionInfo[];
   /** 記憶互通：連到這個私聊的群名（私聊） */
@@ -183,6 +189,10 @@ const emit = defineEmits<{
   "add-group-member-rich": [payload: AddSubCharEmitPayload];
   /** 記憶互通：修改開關或輪數 */
   "update-memory-sharing": [patch: { enabled?: boolean; maxRawTurns?: number }];
+  /** 圓桌模式：修改開關或每輪人數 */
+  "update-round-table": [patch: { enabled?: boolean; maxSpeakersPerRound?: number }];
+  /** 圓桌模式：成員改用哪個 API 設定（空字串 = 跟主 API） */
+  "update-member-api": [characterId: string, profileId: string];
   /** 記憶互通：修改成員連結 */
   "update-member-memory-link": [characterId: string, link: MemoryLinkInfo];
   /** 把被移出的成員拉回群裡 */
@@ -696,6 +706,27 @@ const showLorebooks = ref(false);
 const boundLorebookCount = computed(
   () => lorebooks.value.filter((lb) => isLorebookBound(lb.id)).length,
 );
+
+// ===== 圓桌模式 =====
+function onRoundTableToggle(event: Event) {
+  emit("update-round-table", { enabled: (event.target as HTMLInputElement).checked });
+}
+
+function onRoundTableMaxChange(event: Event) {
+  const raw = (event.target as HTMLInputElement).value;
+  if (raw === "") return;
+  emit("update-round-table", { maxSpeakersPerRound: Number(raw) });
+}
+
+function onMemberApiChange(characterId: string, event: Event) {
+  emit("update-member-api", characterId, (event.target as HTMLSelectElement).value);
+}
+
+/** 綁的設定被刪掉了：選單顯示「跟主 API」 */
+function memberApiValue(member: GroupMemberInfo): string {
+  const id = member.apiProfileId || "";
+  return props.apiProfileOptions?.some((p) => p.id === id) ? id : "";
+}
 
 // ===== 記憶互通 =====
 /** 下拉選單的值：auto / none / chat:<chatId> */
@@ -1314,6 +1345,62 @@ function handleAction(action: string) {
           </template>
         </section>
 
+        <!-- 圓桌模式（多人卡不支援） -->
+        <section v-if="!isMultiCharCard && roundTable" class="panel">
+          <h3 class="panel-title">圓桌模式</h3>
+          <div class="memory-sharing">
+            <label class="member-switch">
+              <span class="member-switch-text">
+                <span class="member-switch-title">開啟圓桌模式</span>
+                <span class="subchar-hint-mini">每個成員用自己的 API 輪流發言，後面的人看得到前面說了什麼</span>
+              </span>
+              <input
+                type="checkbox"
+                role="switch"
+                class="switch-input"
+                :checked="roundTable.enabled"
+                @change="onRoundTableToggle"
+              />
+            </label>
+            <template v-if="roundTable.enabled">
+              <label class="memory-sharing-turns">
+                <span>每輪最多</span>
+                <input
+                  type="number"
+                  class="subchar-input memory-sharing-turns-input"
+                  min="0"
+                  max="20"
+                  :value="roundTable.maxSpeakersPerRound"
+                  @change="onRoundTableMaxChange"
+                />
+                <span>位發言</span>
+              </label>
+              <p class="subchar-hint-mini">
+                0 = 全部。被 @ 的成員先講，禁言的不講。每位成員各呼叫一次 API。
+              </p>
+              <div class="memory-link-list">
+                <div
+                  v-for="member in allMembers"
+                  :key="member.characterId"
+                  class="memory-link-row"
+                >
+                  <span class="memory-link-name">{{ member.nickname || member.name }}</span>
+                  <select
+                    class="subchar-select memory-link-select"
+                    :value="memberApiValue(member)"
+                    @change="onMemberApiChange(member.characterId, $event)"
+                  >
+                    <option value="">跟主 API</option>
+                    <option v-for="p in apiProfileOptions || []" :key="p.id" :value="p.id">
+                      {{ p.model ? `${p.name}（${p.model}）` : p.name }}
+                    </option>
+                  </select>
+                </div>
+              </div>
+            </template>
+          </div>
+        </section>
+
         <!-- 記憶互通（多人卡不支援） -->
         <section v-if="!isMultiCharCard && memorySharing" class="panel">
           <h3 class="panel-title">記憶互通</h3>
@@ -1847,6 +1934,23 @@ function handleAction(action: string) {
                   :checked="sheetMember.isMuted"
                   @change="emit('toggle-member-mute', sheetMember.characterId)"
                 />
+              </label>
+            </div>
+
+            <!-- 圓桌模式：這位成員用哪個 API -->
+            <div v-if="!isMultiCharCard && roundTable?.enabled" class="member-sheet-section">
+              <label class="memory-link-row">
+                <span class="memory-link-name">使用的 API</span>
+                <select
+                  class="subchar-select memory-link-select"
+                  :value="memberApiValue(sheetMember)"
+                  @change="onMemberApiChange(sheetMember.characterId, $event)"
+                >
+                  <option value="">跟主 API</option>
+                  <option v-for="p in apiProfileOptions || []" :key="p.id" :value="p.id">
+                    {{ p.model ? `${p.name}（${p.model}）` : p.name }}
+                  </option>
+                </select>
               </label>
             </div>
 

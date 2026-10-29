@@ -419,6 +419,8 @@ interface MessageBubbleProps {
   isGroupChat?: boolean;
   senderCharacterAvatar?: string;
   senderCharacterName?: string;
+  /** 圓桌模式：這則是哪個模型寫的，名字後面用小字顯示 */
+  roundTableModel?: string;
   // 群聊訊息類型
   isRecall?: boolean;
   recallContent?: string;
@@ -3734,7 +3736,8 @@ const showTextVoiceTranscript = ref(true);
           "
           class="sender-name"
         >
-          {{ isGroupChat ? senderCharacterName : senderName }}
+          {{ isGroupChat ? senderCharacterName : senderName
+          }}<span v-if="isGroupChat && roundTableModel" class="sender-model"> · {{ roundTableModel }}</span>
         </div>
 
         <!-- 回覆引用 (移至氣泡外) -->
@@ -5689,6 +5692,11 @@ const showTextVoiceTranscript = ref(true);
   .user & {
     align-items: flex-end;
   }
+}
+
+.sender-model {
+  font-size: 10px;
+  opacity: 0.6;
 }
 
 .sender-name {

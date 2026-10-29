@@ -704,6 +704,7 @@ const groupMembersForInfo = computed(() => {
     isAdmin: member.isAdmin,
     isMuted: member.isMuted,
     isVirtual: !!member.isVirtual,
+    apiProfileId: member.apiProfileId,
     subCharSource: member.source,
     isPersonaMember: member.isPersonaMember,
     boundPersonaName:
@@ -3137,6 +3138,41 @@ async function handleDetailsToggleLorebook(lorebookId: string) {
   } else {
     groupMetadata.value.lorebookIds = ids.filter((id) => id !== lorebookId);
   }
+  await saveChatImmediate();
+}
+
+// 圓桌模式（群組詳情的面板；多人卡不支援）
+const detailsRoundTable = computed(() => {
+  const meta = groupMetadata.value;
+  if (!meta || meta.isMultiCharCard) return undefined;
+  return {
+    enabled: meta.roundTable?.enabled === true,
+    maxSpeakersPerRound: meta.roundTable?.maxSpeakersPerRound ?? 0,
+  };
+});
+
+const detailsApiProfileOptions = computed(() =>
+  settingsStore.profiles.map((p) => ({ id: p.id, name: p.name, model: p.api?.model || "" })),
+);
+
+async function handleDetailsUpdateRoundTable(patch: { enabled?: boolean; maxSpeakersPerRound?: number }) {
+  const meta = groupMetadata.value;
+  if (!meta) return;
+  const prev = meta.roundTable ?? { enabled: false, order: "relay" as const };
+  meta.roundTable = {
+    ...prev,
+    ...(patch.enabled !== undefined ? { enabled: patch.enabled } : {}),
+    ...(patch.maxSpeakersPerRound !== undefined
+      ? { maxSpeakersPerRound: Math.max(0, Math.floor(patch.maxSpeakersPerRound)) || undefined }
+      : {}),
+  };
+  await saveChatImmediate();
+}
+
+async function handleDetailsUpdateMemberApi(characterId: string, profileId: string) {
+  const member = groupMetadata.value?.members.find((m) => m.characterId === characterId);
+  if (!member) return;
+  member.apiProfileId = profileId || undefined;
   await saveChatImmediate();
 }
 
@@ -11361,6 +11397,10 @@ useChatCleanup({
           :linked-group-names="detailsLinkedGroupNames"
           @update-memory-sharing="handleDetailsUpdateMemorySharing"
           @update-member-memory-link="handleDetailsUpdateMemberMemoryLink"
+          :round-table="detailsRoundTable"
+          :api-profile-options="detailsApiProfileOptions"
+          @update-round-table="handleDetailsUpdateRoundTable"
+          @update-member-api="handleDetailsUpdateMemberApi"
           :removed-members="detailsRemovedMembers"
           @restore-member="restoreRemovedMemberByUser"
           @forget-removed-member="handleForgetRemovedMember"
@@ -11861,6 +11901,7 @@ useChatCleanup({
                 : message.senderCharacterAvatar || ''
             "
             :sender-character-name="message.senderCharacterName || ''"
+            :round-table-model="message.roundTableModel"
             :is-recall="message.isRecall"
             :recall-content="message.recallContent"
             :edit-noticed="message.editNoticed && !chatFaceToFaceMode"
