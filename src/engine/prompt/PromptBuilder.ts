@@ -1024,8 +1024,6 @@ export class PromptBuilder {
     // 從後往前掃描，收集所有用戶主動觸發的訊息，遇到 AI 回覆就停止
     for (let i = messages.length - 1; i >= 0; i--) {
       const msg = messages[i];
-      // 圓桌接力：同一輪前面成員的發言不算「AI 已經回過了」
-      if (msg.roundTableSameRound) continue;
       if (PromptBuilder.isUserInitiated(msg)) {
         result.unshift(msg);
       } else if (

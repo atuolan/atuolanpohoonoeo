@@ -5621,8 +5621,8 @@ async function runAIResponseOnce(
         !(m.isWaimaiProgress && m.timestamp > now) &&
         !isGenerationErrorMessage(m) &&
         !m.diaryNoticeId &&
-        // 圓桌各自作答：這一輪別人的回答不給看
-        !(roundTableTurn?.hideSameRound && roundTableTurn.sameRoundIds.has(m.id)),
+        // 圓桌：這一輪前面成員的發言不進聊天紀錄（接力時接在圓桌指令裡，排在使用者提問後面）
+        !roundTableTurn?.sameRoundIds.has(m.id),
     );
 
     let messagesToUse: Message[];
@@ -5737,7 +5737,6 @@ async function runAIResponseOnce(
       isWaimaiPaymentResult: m.isWaimaiPaymentResult,
       isWaimaiDelivery: m.isWaimaiDelivery,
       waimaiOrder: m.waimaiOrder,
-      roundTableSameRound: roundTableTurn?.sameRoundIds.has(m.id) || undefined,
     }));
 
     // 使用 PromptBuilder 構建提示詞
@@ -6527,7 +6526,15 @@ async function runAIResponseOnce(
           roundTableTurn.speaker.name,
           roundTableTurn.otherNames,
           activeUserName,
-          { style: roundTableTurn.style, independent: roundTableTurn.hideSameRound },
+          {
+            style: roundTableTurn.style,
+            independent: roundTableTurn.hideSameRound,
+            earlierReplies: roundTableTurn.hideSameRound
+              ? []
+              : messages.value
+                  .filter((m) => roundTableTurn.sameRoundIds.has(m.id) && m.role === "ai")
+                  .map((m) => ({ speaker: m.senderCharacterName || "成員", content: m.content || "" })),
+          },
         ),
       );
     }
@@ -11797,6 +11804,7 @@ useChatCleanup({
             message.isCharRecall,
             message.isTransactionClaimNotice,
             message.imageNote,
+            message.roundTableModel,
             readingImageNoteId === message.id,
             groupMemberAvatarVersion,
             removedMembersVersion,

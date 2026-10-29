@@ -122,3 +122,18 @@ describe("主持人", () => {
     expect(user.content).toContain("這一輪已經發言：甲");
   });
 });
+
+describe("接力：前面的人說了什麼", () => {
+  it("照順序列在指令前面，空的不列", () => {
+    const text = buildRoundTableInstruction("丙", ["甲", "乙"], "我", {
+      earlierReplies: [
+        { speaker: "甲", content: "贊成" },
+        { speaker: "乙", content: " " },
+      ],
+    });
+    expect(text.startsWith("[圓桌] 這一輪前面的人已經說了：\n[甲] 贊成")).toBe(true);
+    expect(text).not.toContain("[乙]");
+    expect(text).toContain("只由「丙」發言");
+  });
+});
+

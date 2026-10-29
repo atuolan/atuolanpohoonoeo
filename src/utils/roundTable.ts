@@ -57,16 +57,30 @@ export function buildRoundTableInstruction(
   speakerName: string,
   otherNames: readonly string[],
   userName: string,
-  options: { style?: "chat" | "long"; independent?: boolean } = {},
+  options: {
+    style?: "chat" | "long";
+    independent?: boolean;
+    /** 接力：這一輪前面成員說的話（照順序） */
+    earlierReplies?: readonly { speaker: string; content: string }[];
+  } = {},
 ): string {
   const others = [...otherNames, userName].map((n) => `「${n}」`).join("、");
-  const lines = [
+  const earlier = (options.earlierReplies || []).filter((r) => r.content.trim());
+  const lines: string[] = [];
+  if (earlier.length) {
+    lines.push(
+      "[圓桌] 這一輪前面的人已經說了：",
+      ...earlier.map((r) => `[${r.speaker}] ${r.content.trim().slice(0, 1500)}`),
+      "",
+    );
+  }
+  lines.push(
     `[圓桌] 這一輪只由「${speakerName}」發言。你只扮演 ${speakerName}，照群聊格式只輸出 ${speakerName} 的訊息（可以多則）。`,
     `不要替${others}發言，他們會自己回覆。`,
     options.independent
       ? `這一輪大家各自作答，你看不到其他成員這一輪的回答，請直接講你自己的看法。`
       : `可以回應、補充或反駁前面其他人說的話。`,
-  ];
+  );
   if (options.style === "long") {
     lines.push(`這是一場討論：可以寫長一點、條列重點、把理由講清楚，不必拘泥聊天短句。`);
   }

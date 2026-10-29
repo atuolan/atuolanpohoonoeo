@@ -38,17 +38,3 @@ describe("圓桌模式的歷史訊息角色", () => {
     });
   });
 });
-
-describe("圓桌接力找「使用者這一輪說了什麼」", () => {
-  const lastTurn = (msgs: unknown[]) =>
-    (PromptBuilder as any).getLastUserTurnMessages(msgs).map((m: { id: string }) => m.id);
-
-  it("平常遇到 AI 回覆就停", () => {
-    expect(lastTurn(history)).toEqual([]);
-  });
-
-  it("同一輪前面成員的發言跳過，找得到使用者的訊息", () => {
-    const marked = history.map((m) => (m.is_user ? m : { ...m, roundTableSameRound: true }));
-    expect(lastTurn(marked)).toEqual(["m1"]);
-  });
-});

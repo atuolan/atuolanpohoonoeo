@@ -555,8 +555,6 @@ export interface ChatMessage {
   senderCharacterAvatar?: string;
   /** 圓桌模式：這則是哪個模型寫的（顯示小字用） */
   roundTableModel?: string;
-  /** 圓桌模式：這一輪前面成員的發言（只在組提示詞時標，不存）。找「使用者這一輪說了什麼」時跳過 */
-  roundTableSameRound?: boolean;
   /** 是否為撤回訊息 */
   isRecall?: boolean;
   /** 撤回的原始內容 */
