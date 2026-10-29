@@ -6041,6 +6041,17 @@ const showTextVoiceTranscript = ref(true);
     }
   }
 
+  // 清單：全域把 padding 歸零了，符號／編號會貼在氣泡邊上，這裡留出縮排
+  :deep(ul),
+  :deep(ol) {
+    margin: 4px 0;
+    padding-left: 1.4em;
+  }
+
+  :deep(li + li) {
+    margin-top: 2px;
+  }
+
   :deep(code) {
     background: rgba(0, 0, 0, 0.1);
     padding: 2px 6px;
