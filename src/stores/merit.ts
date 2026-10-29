@@ -13,7 +13,7 @@ import {
 } from "@/data/meritSentences";
 import { db, DB_STORES } from "@/db/database";
 import { defineStore } from "pinia";
-import { ref, toRaw } from "vue";
+import { computed, ref, toRaw } from "vue";
 
 /** 功德狀態 key（存在 gameStates store 裡） */
 const MERIT_STATE_KEY = "merit_global";
@@ -38,6 +38,22 @@ export interface MeritState {
   unlockedSentences: string[];
   customSentences: CustomSentence[];
   customSlots: number;
+  /** 每天敲／撥的次數（本地日期 YYYY-MM-DD → 次數），只留最近 14 天 */
+  dailyCounts: Record<string, number>;
+}
+
+const DAILY_KEEP_DAYS = 14;
+
+function localDateKey(d: Date): string {
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${m}-${day}`;
+}
+
+function daysAgoKey(n: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() - n);
+  return localDateKey(d);
 }
 
 function createDefaultMeritState(): MeritState {
@@ -56,6 +72,7 @@ function createDefaultMeritState(): MeritState {
     unlockedSentences: [],
     customSentences: [],
     customSlots: 0,
+    dailyCounts: {},
   };
 }
 
@@ -100,17 +117,54 @@ export const useMeritStore = defineStore("merit", () => {
     state.value.totalEarned += amount;
   }
 
+  function countPractice(): void {
+    const counts = state.value.dailyCounts ?? {};
+    const today = localDateKey(new Date());
+    counts[today] = (counts[today] ?? 0) + 1;
+    const oldest = daysAgoKey(DAILY_KEEP_DAYS - 1);
+    for (const key of Object.keys(counts)) {
+      if (key < oldest) delete counts[key];
+    }
+    state.value.dailyCounts = counts;
+  }
+
   /** 敲木魚 +1 功德 */
   function tapWoodfish(): void {
     addMerit(1);
     state.value.woodfish.totalTaps += 1;
+    countPractice();
   }
 
   /** 盤佛珠 +1 功德 */
   function rollBead(): void {
     addMerit(1);
     state.value.beads.totalBeadsRolled += 1;
+    countPractice();
   }
+
+  /** 今天敲／撥了幾下 */
+  const todayCount = computed(
+    () => state.value.dailyCounts?.[localDateKey(new Date())] ?? 0,
+  );
+
+  /** 最近 7 天（含今天）共幾下 */
+  const weekCount = computed(() => {
+    let sum = 0;
+    for (let i = 0; i < 7; i++) sum += state.value.dailyCounts?.[daysAgoKey(i)] ?? 0;
+    return sum;
+  });
+
+  /** 連續修行天數：今天還沒敲時從昨天往回算 */
+  const streakDays = computed(() => {
+    const counts = state.value.dailyCounts ?? {};
+    const start = counts[daysAgoKey(0)] ? 0 : 1;
+    let days = 0;
+    for (let i = start; i < DAILY_KEEP_DAYS; i++) {
+      if (!counts[daysAgoKey(i)]) break;
+      days++;
+    }
+    return days;
+  });
 
   /** 完成一圈佛珠 +5 額外功德 */
   function completeBeadRound(): void {
@@ -246,6 +300,9 @@ export const useMeritStore = defineStore("merit", () => {
     tapWoodfish,
     rollBead,
     completeBeadRound,
+    todayCount,
+    weekCount,
+    streakDays,
     isSentenceUnlocked,
     unlockSentence,
     selectWoodfishSentence,
