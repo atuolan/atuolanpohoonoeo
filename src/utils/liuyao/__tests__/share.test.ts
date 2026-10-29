@@ -1,7 +1,7 @@
 import type { GanzhiTime, LiuyaoReading } from "@/types/liuyao";
 import { describe, expect, it } from "vitest";
 import { paipan } from "../paipan";
-import { buildLiuyaoShareSnapshot, describeLiuyaoShareForPrompt, liuyaoShareSummary } from "../share";
+import { buildLiuyaoShareSnapshot, describeLiuyaoShareForPrompt, liuyaoShareSummary, liuyaoValuesSummary } from "../share";
 
 const time: GanzhiTime = {
   timestamp: new Date(2026, 9, 29, 14, 5).getTime(),
@@ -41,6 +41,11 @@ describe("六爻卡片", () => {
       readerName: "小夜",
       excerpt: "【卦象】\n天風姤，不期而遇。",
     });
+  });
+
+  it("紀錄列表摘要", () => {
+    expect(liuyaoValuesSummary([8, 7, 7, 9, 7, 7])).toBe("天風姤 → 巽為風（四爻動）");
+    expect(liuyaoValuesSummary([7, 7, 7, 8, 8, 8])).toBe("地天泰（六爻安靜）");
   });
 
   it("摘要", () => {

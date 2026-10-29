@@ -2,10 +2,11 @@
 /**
  * 命運占卜主畫面（外殼）
  * 塔羅／雷諾曼／神諭卡共用一套流程：首頁 → 設定 → 抽牌＋翻牌 → 解讀
- * 占星骰子沿用自己的面板
+ * 占星骰子、六爻各用自己的面板
  */
 import AstroDicePanel from "@/components/fate/AstroDicePanel.vue";
 import FateHome from "@/components/fate/FateHome.vue";
+import LiuyaoPanel from "@/components/fate/liuyao/LiuyaoPanel.vue";
 import ReadingHistory from "@/components/fate/ReadingHistory.vue";
 import ReadingSetup from "@/components/fate/ReadingSetup.vue";
 import ReadingTable from "@/components/fate/ReadingTable.vue";
@@ -13,25 +14,36 @@ import type { HistoryItem } from "@/components/fate/useCombinedHistory";
 import { useFateTheme } from "@/composables/useFateTheme";
 import { useAstroDiceStore } from "@/stores/astroDice";
 import { useDivinationStore } from "@/stores/divination";
+import { useLiuyaoStore } from "@/stores/liuyao";
 import type { DeckId } from "@/types/divination";
-import { computed, onMounted, ref } from "vue";
+import type { LiuyaoReading, LiuyaoShareSnapshot } from "@/types/liuyao";
+import { computed, onMounted, ref, watch } from "vue";
 
-const emit = defineEmits<{ back: [] }>();
+const props = defineProps<{ openLiuyaoReadingId?: string | null }>();
+
+const emit = defineEmits<{
+  back: [];
+  liuyaoOpened: [];
+  shareToChat: [payload: { chatId: string; characterId: string; snapshot: LiuyaoShareSnapshot; text: string }];
+}>();
 
 const store = useDivinationStore();
 const astroStore = useAstroDiceStore();
+const liuyaoStore = useLiuyaoStore();
 const { mode, isNight, themeClass, cycleMode } = useFateTheme();
 
-type View = "main" | "history" | "astro";
+type View = "main" | "history" | "astro" | "liuyao";
 const view = ref<View>("main");
 const historyItem = ref<HistoryItem | null>(null);
 
 const tableRef = ref<InstanceType<typeof ReadingTable> | null>(null);
 const historyRef = ref<InstanceType<typeof ReadingHistory> | null>(null);
+const liuyaoRef = ref<InstanceType<typeof LiuyaoPanel> | null>(null);
 
 const title = computed(() => {
   if (view.value === "history") return "占卜紀錄";
   if (view.value === "astro") return "占星骰子";
+  if (view.value === "liuyao") return "六爻";
   switch (store.phase) {
     case "setup":
       return `${store.deck.label}占卜`;
@@ -55,7 +67,22 @@ function openAstro() {
   view.value = "astro";
 }
 
+function openLiuyao() {
+  liuyaoStore.reset();
+  view.value = "liuyao";
+}
+
+async function openLiuyaoReading(r: LiuyaoReading) {
+  await liuyaoStore.openReading(r);
+  view.value = "liuyao";
+}
+
 function openHistory(item: HistoryItem | null = null) {
+  // 六爻紀錄直接回到六爻面板的卦盤
+  if (item?.liuyao) {
+    void openLiuyaoReading(item.liuyao);
+    return;
+  }
   historyItem.value = item;
   view.value = "history";
 }
@@ -80,6 +107,12 @@ function handleBack() {
     view.value = "main";
     return;
   }
+  if (view.value === "liuyao") {
+    if (liuyaoRef.value?.handleBack()) return;
+    liuyaoStore.reset();
+    view.value = "main";
+    return;
+  }
   switch (store.phase) {
     case "table":
     case "interpret":
@@ -97,7 +130,22 @@ function handleBack() {
 onMounted(() => {
   if (!store.isHistoryLoaded) void store.loadHistory();
   if (!astroStore.isHistoryLoaded) void astroStore.loadHistory();
+  if (!liuyaoStore.isHistoryLoaded) void liuyaoStore.loadHistory();
 });
+
+// 從聊天的卦象卡片點進來：打開那一卦
+watch(
+  () => props.openLiuyaoReadingId,
+  async (id) => {
+    if (!id) return;
+    if (!liuyaoStore.isHistoryLoaded) await liuyaoStore.loadHistory();
+    const r = liuyaoStore.readings.find((x) => x.id === id);
+    emit("liuyaoOpened");
+    if (r) await openLiuyaoReading(r);
+    else alert("這一卦的紀錄已經不在了");
+  },
+  { immediate: true },
+);
 </script>
 
 <template>
@@ -127,15 +175,23 @@ onMounted(() => {
         ref="historyRef"
         :initial-item="historyItem"
         @reinterpreted="onReinterpreted"
+        @open-liuyao="openLiuyaoReading"
       />
 
       <AstroDicePanel v-else-if="view === 'astro'" @back="view = 'main'" />
+
+      <LiuyaoPanel
+        v-else-if="view === 'liuyao'"
+        ref="liuyaoRef"
+        @share-to-chat="(p) => emit('shareToChat', p)"
+      />
 
       <template v-else>
         <FateHome
           v-if="store.phase === 'home'"
           @open-deck="openDeck"
           @open-astro="openAstro"
+          @open-liuyao="openLiuyao"
           @open-item="openHistory"
           @open-history="openHistory()"
         />

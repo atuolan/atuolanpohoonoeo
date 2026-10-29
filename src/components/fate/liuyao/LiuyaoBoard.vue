@@ -431,8 +431,13 @@ const isAllMoving = computed(() => {
   align-items: center;
   justify-content: flex-end;
   gap: 4px;
+  align-self: stretch;
+  padding-left: 6px;
+  margin-left: 2px;
   color: var(--f-ink-2);
   white-space: nowrap;
+  // 跟本卦隔開，世應才不會看起來像是變卦的
+  border-left: 1px solid var(--f-line);
 
   &.is-active {
     color: var(--f-ink);

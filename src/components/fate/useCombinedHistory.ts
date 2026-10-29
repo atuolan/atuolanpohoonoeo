@@ -1,13 +1,16 @@
 /**
- * 合併四種占卜的歷史紀錄（塔羅／雷諾曼／神諭卡＋占星骰子），新到舊
+ * 合併五種占卜的歷史紀錄（塔羅／雷諾曼／神諭卡＋占星骰子＋六爻），新到舊
  */
 import { useAstroDiceStore } from "@/stores/astroDice";
 import { useDivinationStore } from "@/stores/divination";
+import { useLiuyaoStore } from "@/stores/liuyao";
 import type { AstroDiceReading } from "@/types/astroDice";
 import type { DeckId, ReadingRecord } from "@/types/divination";
+import type { LiuyaoReading } from "@/types/liuyao";
+import { liuyaoValuesSummary } from "@/utils/liuyao/share";
 import { computed } from "vue";
 
-export type HistoryKind = DeckId | "astro";
+export type HistoryKind = DeckId | "astro" | "liuyao";
 
 export interface HistoryItem {
   kind: HistoryKind;
@@ -18,6 +21,7 @@ export interface HistoryItem {
   interpretation?: string;
   record?: ReadingRecord;
   astro?: AstroDiceReading;
+  liuyao?: LiuyaoReading;
 }
 
 export const HISTORY_KIND_LABEL: Record<HistoryKind, string> = {
@@ -25,6 +29,7 @@ export const HISTORY_KIND_LABEL: Record<HistoryKind, string> = {
   lenormand: "雷諾曼",
   oracle: "神諭卡",
   astro: "占星骰子",
+  liuyao: "六爻",
 };
 
 /** 列表上的單字標記 */
@@ -33,6 +38,7 @@ export const HISTORY_KIND_MARK: Record<HistoryKind, string> = {
   lenormand: "雷",
   oracle: "諭",
   astro: "骰",
+  liuyao: "爻",
 };
 
 export function astroSummary(r: AstroDiceReading): string {
@@ -48,6 +54,7 @@ function recordSummary(r: ReadingRecord): string {
 export function useCombinedHistory() {
   const store = useDivinationStore();
   const astroStore = useAstroDiceStore();
+  const liuyaoStore = useLiuyaoStore();
 
   const items = computed<HistoryItem[]>(() => {
     const cardItems = store.records.map((record) => ({
@@ -68,16 +75,26 @@ export function useCombinedHistory() {
       interpretation: astro.interpretation,
       astro,
     }));
-    return [...cardItems, ...astroItems].sort((a, b) => b.createdAt - a.createdAt);
+    const liuyaoItems = liuyaoStore.readings.map((liuyao) => ({
+      kind: "liuyao" as const,
+      id: liuyao.id,
+      question: liuyao.question,
+      summary: liuyaoValuesSummary(liuyao.values),
+      createdAt: liuyao.createdAt,
+      interpretation: liuyao.interpretation,
+      liuyao,
+    }));
+    return [...cardItems, ...astroItems, ...liuyaoItems].sort((a, b) => b.createdAt - a.createdAt);
   });
 
   async function remove(item: HistoryItem) {
     if (item.kind === "astro") await astroStore.deleteReading(item.id);
+    else if (item.kind === "liuyao") await liuyaoStore.deleteReading(item.id);
     else await store.deleteRecord(item.kind, item.id);
   }
 
   async function clearAll() {
-    await Promise.all([store.clearHistory(), astroStore.clearHistory()]);
+    await Promise.all([store.clearHistory(), astroStore.clearHistory(), liuyaoStore.clearHistory()]);
   }
 
   return { items, remove, clearAll };
