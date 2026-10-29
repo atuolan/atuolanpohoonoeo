@@ -31,6 +31,7 @@ export class SnakeGame {
   public gridSize: number
   public foodCount: number
 
+  private dirQueue: Direction[] = []
   private lastEnemyMoveTime: number = 0
   private enemyMoveInterval: number = 500
   private nextEnemyId: number = 0
@@ -153,6 +154,7 @@ export class SnakeGame {
   }
 
   public reset(): void {
+    this.dirQueue = []
     this.gridSize = this.INITIAL_GRID_SIZE
     this.foodCount = 0
     this.snake = this.getInitialSnake()
@@ -169,14 +171,22 @@ export class SnakeGame {
   }
 
   public changeDirection(newDirection: Direction): boolean {
-    if (OPPOSITE_DIRECTION[this.direction] === newDirection) return false
-    if (OPPOSITE_DIRECTION[this.nextDirection] === newDirection) return false
-    this.nextDirection = newDirection
+    const baseDir = this.dirQueue.length > 0
+      ? this.dirQueue[this.dirQueue.length - 1]
+      : this.direction
+    if (newDirection === baseDir) return false
+    if (OPPOSITE_DIRECTION[baseDir] === newDirection) return false
+    if (this.dirQueue.length >= 2) return false
+    this.dirQueue.push(newDirection)
     return true
   }
 
   private move(): boolean {
-    this.direction = this.nextDirection
+    if (this.dirQueue.length > 0) {
+      const next = this.dirQueue.shift()!
+      this.direction = next
+      this.nextDirection = next
+    }
     const head = this.snake[0]
     const vector = DIRECTION_VECTOR[this.direction]
     const newHead: Position = { x: head.x + vector.x, y: head.y + vector.y }
@@ -367,6 +377,7 @@ export class SnakeGame {
     this.snake = [...data.snake]
     this.foods = Array.isArray(data.food) ? data.food : [data.food]
     this.direction = data.direction; this.nextDirection = data.direction
+    this.dirQueue = []
     this.score = data.score; this.speed = data.speed
     this.gridSize = data.gridSize || this.INITIAL_GRID_SIZE
     this.foodCount = data.foodCount || 0; this.enemies = data.enemies || []

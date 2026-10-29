@@ -66,8 +66,13 @@
     height: 20px;
   }
 
-  &:active {
+  &:active:not(:disabled) {
     transform: scale(0.94);
+  }
+
+  &:disabled {
+    opacity: 0.4;
+    cursor: default;
   }
 }
 
