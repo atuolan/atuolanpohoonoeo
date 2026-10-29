@@ -5,6 +5,7 @@
  */
 
 import type { PlurkShareSnapshot } from "@/types/chat";
+import type { LiuyaoShareSnapshot } from "@/types/liuyao";
 import {
   dollPromptNote,
   DOLL_TAG_RE,
@@ -13,6 +14,7 @@ import {
   formatDollTag,
 } from "@/services/empathyDoll";
 import { formatGiftTag, GIFT_TAGS_RE } from "@/utils/giftTag";
+import { describeLiuyaoShareForPrompt } from "@/utils/liuyao/share";
 import { describePlurkShareForPrompt } from "@/utils/plurkShare";
 
 type TransferStatus = "sent" | "pending" | "received" | "refunded";
@@ -57,6 +59,7 @@ export interface PromptMessageLike {
   isWaimaiDelivery?: boolean;
   waimaiOrder?: { status?: string };
   plurkShare?: PlurkShareSnapshot;
+  liuyaoShare?: LiuyaoShareSnapshot;
 }
 
 export interface PromptMessageNames {
@@ -149,6 +152,10 @@ export function describeMessageForPrompt(
       memberNames: names.memberNames,
       groupChat: names.groupChat,
     });
+  }
+  // 六爻卦象卡片：同上，寫成角色看得懂的卦象說明
+  if (m.liuyaoShare) {
+    return describeLiuyaoShareForPrompt(m.liuyaoShare, { userName: names.userName, charId: names.charId });
   }
 
   let text = original;

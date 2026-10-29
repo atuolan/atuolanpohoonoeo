@@ -1,5 +1,5 @@
 <script setup lang="ts">
-/** 占卜首頁：2×2 方格＋最近 3 筆紀錄 */
+/** 占卜首頁：2×2 方格＋六爻寬格＋最近 3 筆紀錄 */
 import {
   HISTORY_KIND_MARK,
   formatWhen,
@@ -13,6 +13,7 @@ import { computed } from "vue";
 const emit = defineEmits<{
   openDeck: [id: DeckId];
   openAstro: [];
+  openLiuyao: [];
   openItem: [item: HistoryItem];
   openHistory: [];
 }>();
@@ -61,6 +62,19 @@ const deckTiles = deckOrder.map((id) => decks[id]);
         <span class="fate-home__tile-text">
           <b>占星骰子</b>
           <small>{{ "三顆骰\n快速解答" }}</small>
+        </span>
+      </button>
+      <button type="button" class="fate-home__tile fate-home__tile--wide" @click="emit('openLiuyao')">
+        <span class="fate-home__thumb fate-home__thumb--icon">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.5">
+            <circle cx="12" cy="12" r="8.5" />
+            <circle cx="12" cy="12" r="6.6" stroke-width="0.8" />
+            <rect x="9.8" y="9.8" width="4.4" height="4.4" />
+          </svg>
+        </span>
+        <span class="fate-home__tile-text">
+          <b>六爻</b>
+          <small>三枚銅錢起卦・納甲排盤</small>
         </span>
       </button>
     </div>
@@ -127,6 +141,10 @@ const deckTiles = deckOrder.map((id) => decks[id]);
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 10px;
+  }
+
+  &__tile--wide {
+    grid-column: 1 / -1;
   }
 
   &__tile {

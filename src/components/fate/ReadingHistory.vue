@@ -12,16 +12,17 @@ import {
 } from "@/components/fate/useCombinedHistory";
 import { decks } from "@/data/decks";
 import { useDivinationStore } from "@/stores/divination";
+import type { LiuyaoReading } from "@/types/liuyao";
 import { marked } from "marked";
 import { computed, ref } from "vue";
 
 const props = defineProps<{ initialItem?: HistoryItem | null }>();
-const emit = defineEmits<{ reinterpreted: [] }>();
+const emit = defineEmits<{ reinterpreted: []; openLiuyao: [reading: LiuyaoReading] }>();
 
 const store = useDivinationStore();
 const { items, remove, clearAll } = useCombinedHistory();
 
-const FILTERS: ("all" | HistoryKind)[] = ["all", "tarot", "lenormand", "oracle", "astro"];
+const FILTERS: ("all" | HistoryKind)[] = ["all", "tarot", "lenormand", "oracle", "astro", "liuyao"];
 const filter = ref<"all" | HistoryKind>("all");
 const filtered = computed(() =>
   filter.value === "all" ? items.value : items.value.filter((i) => i.kind === filter.value),
@@ -47,6 +48,11 @@ const allRevealed = computed(
 );
 
 function openDetail(item: HistoryItem) {
+  // 六爻紀錄回到六爻面板的卦盤
+  if (item.liuyao) {
+    emit("openLiuyao", item.liuyao);
+    return;
+  }
   detail.value = item;
   openedDirectly.value = false;
 }

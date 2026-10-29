@@ -119,6 +119,8 @@ import {
   updateRuntimeSessionStage,
 } from "@/utils/runtimeDiagnostics";
 import { plurkShareSummary } from "@/utils/plurkShare";
+import { liuyaoShareSummary } from "@/utils/liuyao/share";
+import type { LiuyaoShareSnapshot } from "@/types/liuyao";
 import { applyServiceWorkerUpdate } from "@/utils/storagePersistence";
 import { isNativeApp } from "@/native/platform";
 import { getIncomingCallScheduler } from "./services/IncomingCallScheduler";
@@ -884,6 +886,7 @@ interface PendingInjectedMessage {
     lyrics?: string;
   };
   plurkShare?: PlurkShareSnapshot;
+  liuyaoShare?: LiuyaoShareSnapshot;
   followUpText?: string;
 }
 
@@ -2501,6 +2504,29 @@ async function handlePlurkShareToChat(payload: {
   navigateToPage("chat");
 }
 
+// 六爻卦象卡片傳到聊天（用戶已選擇聊天）
+function handleLiuyaoShareToChat(payload: {
+  chatId: string;
+  characterId: string;
+  snapshot: LiuyaoShareSnapshot;
+  text: string;
+}) {
+  const character = charactersStore.characters.find((c) => c.id === payload.characterId);
+  if (!character) return;
+
+  chatCharacterName.value = character.nickname || character.data?.name || "角色";
+  chatCharacterAvatar.value = character.avatar || "";
+  currentChatCharacterId.value = payload.characterId;
+  currentChatId.value = payload.chatId;
+  pendingChatMessage.value = {
+    content: liuyaoShareSummary(payload.snapshot),
+    liuyaoShare: payload.snapshot,
+    followUpText: payload.text || undefined,
+  };
+  navigationHistory.value.push(currentPage.value);
+  navigateToPage("chat");
+}
+
 // 外賣商城分享/下單注入聊天
 async function handleDeliveryMallSendToChat(payload: {
   characterId: string;
@@ -2883,6 +2909,26 @@ async function openPlurkThreadFromChat(target: { postId: string; commentId?: str
   navigateToPage("qzone");
 }
 
+// 從聊天的卦象卡片打開占卜裡那一卦
+const fateOpenLiuyaoId = ref<string | null>(null);
+const fateOpenedFromChat = ref(false);
+
+function openLiuyaoFromChat(readingId: string) {
+  fateOpenLiuyaoId.value = readingId;
+  fateOpenedFromChat.value = true;
+  navigationHistory.value.push(currentPage.value);
+  navigateToPage("fate");
+}
+
+function goBackFromFate() {
+  if (fateOpenedFromChat.value) {
+    fateOpenedFromChat.value = false;
+    navigateBackWithFallback(() => goHome());
+    return;
+  }
+  goHome();
+}
+
 // 噗浪的返回：從聊天點進來的，返回時回聊天
 function goBackFromQzone() {
   if (qzoneOpenedFromChat.value) {
@@ -3141,6 +3187,7 @@ useSwipeBack(handleGlobalSwipeBack, swipeBackEnabled);
       @open-chat="onOpenExistingChatEvent"
       @chat-switched="onChatSwitchedEvent"
       @open-plurk-thread="(...args: any[]) => openPlurkThreadFromChat(args[0])"
+      @open-liuyao-reading="(...args: any[]) => openLiuyaoFromChat(args[0])"
     />
 
     <!-- 設定頁 -->
@@ -3229,7 +3276,13 @@ useSwipeBack(handleGlobalSwipeBack, swipeBackEnabled);
     <FitnessScreen v-else-if="currentPage === 'fitness'" @back="goHome" />
 
     <!-- 塔羅占卜 -->
-    <FateScreen v-else-if="currentPage === 'fate'" @back="goHome" />
+    <FateScreen
+      v-else-if="currentPage === 'fate'"
+      :open-liuyao-reading-id="fateOpenLiuyaoId"
+      @back="goBackFromFate"
+      @liuyao-opened="fateOpenLiuyaoId = null"
+      @share-to-chat="handleLiuyaoShareToChat"
+    />
     <NoteBoardScreen
       v-else-if="currentPage === 'note-board'"
       @back="goHome"
