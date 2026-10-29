@@ -345,6 +345,8 @@ export interface PromptBuilderOptions {
   companionReadingLogs?: string;
   /** 群聊模式 */
   groupChatMode?: boolean;
+  /** 圓桌模式這次的發言人：只有他的歷史訊息是 assistant，其他成員的改成 user（帶名字前綴） */
+  roundTableSpeaker?: { characterId: string; name: string };
   /** 群聊裡用過骰子機器人（有擲骰紀錄）：成員列表後面接上擲骰規則 */
   diceBotActive?: boolean;
   /** 群聊成員列表（群聊模式時必填） */
@@ -3803,6 +3805,15 @@ ${open}好啊，我等你[emotion=calm]</msg>`;
         } else {
           msgRole = "system";
         }
+      }
+
+      // 圓桌模式：別的模型寫的話不是「你」說的
+      const roundTableSpeaker = this.options.roundTableSpeaker;
+      if (roundTableSpeaker && msgRole === "assistant") {
+        const isSpeaker = msg.senderCharacterId
+          ? msg.senderCharacterId === roundTableSpeaker.characterId
+          : msg.name === roundTableSpeaker.name;
+        if (!isSpeaker) msgRole = "user";
       }
 
       // 為 user/assistant 訊息加上時間戳，讓 AI 感知時間（如果啟用了現實時間感知）

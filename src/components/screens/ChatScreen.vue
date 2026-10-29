@@ -153,6 +153,13 @@ import {
   toPromptGroupMember,
   withLiveSubCharSnapshot,
 } from "@/utils/groupMembers";
+import {
+  buildRoundTableInstruction,
+  isRoundTableActive,
+  orderRoundTableSpeakers,
+  pickRoundTableMessages,
+  type RoundTableSpeaker,
+} from "@/utils/roundTable";
 import { useChatSearch } from "@/composables/useChatSearch";
 import { resolveLastSummaryTime, useChatSummaryDiary } from "@/composables/useChatSummaryDiary";
 import {
@@ -5112,7 +5119,106 @@ function computeTheaterPhoneScriptRoleMap(
 
 // 觸發 AI 回覆（不發送用戶訊息，只生成 AI 回覆）
 // skipAutoTrigger: 跳過自動觸發總結/日記（用於重新生成場景）
+// ===== 圓桌模式：每個成員用自己的 API，一人一次呼叫、輪流發言 =====
+
+interface RoundTableTurn {
+  speaker: RoundTableSpeaker;
+  /** 群裡其他能發言的成員（提示詞裡叫模型別替他們講） */
+  otherNames: string[];
+  taskConfig: ReturnType<typeof settingsStore.getAPIForTask>;
+  modelLabel: string;
+}
+
+let roundTableRunning = false;
+/** 這輪任何一位被中止（停止鍵、串流視窗、全域膠囊）就停掉整輪 */
+let roundTableStopRequested = false;
+
+function roundTableSenderFields(turn: RoundTableTurn | undefined): Partial<Message> {
+  if (!turn) return {};
+  return {
+    senderCharacterId: turn.speaker.characterId,
+    senderCharacterName: turn.speaker.name,
+    senderCharacterAvatar: turn.speaker.avatar,
+    roundTableModel: turn.modelLabel,
+  };
+}
+
+function getRoundTableSpeakers(): RoundTableSpeaker[] {
+  const meta = groupMetadata.value;
+  if (!meta) return [];
+  return meta.members
+    .filter((m) => !m.isMuted)
+    .map((m) => ({
+      characterId: m.characterId,
+      name: getGroupMemberDisplayName(m, charactersStore.characters),
+      avatar: getGroupMemberAvatarUrl(m, charactersStore.characters),
+      apiProfileId: m.apiProfileId,
+    }))
+    .filter((s) => !!s.name);
+}
+
+/** 上一則 AI 回覆之後，使用者 @ 了誰 */
+function getTurnMentionedNames(speakers: readonly RoundTableSpeaker[]): string[] {
+  const turnTexts: string[] = [];
+  for (let i = messages.value.length - 1; i >= 0; i--) {
+    const m = messages.value[i];
+    if (m.role === "ai") break;
+    if (m.role === "user") turnTexts.unshift(m.content);
+  }
+  return findMentionedNames(turnTexts.join("\n"), speakers.map((s) => s.name));
+}
+
 async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
+  if (!isGroupChat.value || !isRoundTableActive(groupMetadata.value)) {
+    return runAIResponseOnce(options);
+  }
+  // 接力中間使用者又送訊息：後面的人本來就看得到，不另開一輪
+  if (roundTableRunning || isGenerating.value) return;
+
+  const chatIdAtStart = currentChatId.value;
+  const allSpeakers = getRoundTableSpeakers();
+  const speakers = orderRoundTableSpeakers(
+    allSpeakers,
+    getTurnMentionedNames(allSpeakers),
+    groupMetadata.value?.roundTable?.maxSpeakersPerRound,
+  );
+  roundTableRunning = true;
+  roundTableStopRequested = false;
+  try {
+    for (let i = 0; i < speakers.length; i++) {
+      if (roundTableStopRequested || currentChatId.value !== chatIdAtStart) break;
+      const speaker = speakers[i];
+      const taskConfig =
+        settingsStore.getAPIForProfile(speaker.apiProfileId) ?? settingsStore.getAPIForTask("chat");
+      const turn: RoundTableTurn = {
+        speaker,
+        otherNames: allSpeakers.filter((s) => s !== speaker).map((s) => s.name),
+        taskConfig,
+        modelLabel: taskConfig.api.model,
+      };
+      const idsBefore = new Set(messages.value.map((m) => m.id));
+      // 總結／日記這類收尾只在最後一位講完才跑
+      const isLast = i === speakers.length - 1;
+      await runAIResponseOnce(isLast ? options : { ...options, skipAutoTrigger: true }, turn);
+      let tagged = false;
+      for (const m of messages.value) {
+        if (!idsBefore.has(m.id) && m.senderCharacterId === speaker.characterId && !m.roundTableModel) {
+          m.roundTableModel = turn.modelLabel;
+          tagged = true;
+        }
+      }
+      if (tagged) saveChat();
+    }
+  } finally {
+    roundTableRunning = false;
+    roundTableStopRequested = false;
+  }
+}
+
+async function runAIResponseOnce(
+  options?: ChatTriggerAIResponseOptions,
+  roundTableTurn?: RoundTableTurn,
+) {
   if (!currentChatId.value) return;
   if (isGenerating.value) return;
   // 被角色封鎖期間，除非明確繞過（如好友申請），否則不觸發 AI 生成
@@ -5124,8 +5230,9 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
 
   // 使用全局狀態管理開始生成
   const startResult = startChatGeneration({
-    characterName: currentCharacter.value?.data?.name || props.characterName,
-    characterAvatar: props.characterAvatar,
+    characterName:
+      roundTableTurn?.speaker.name || currentCharacter.value?.data?.name || props.characterName,
+    characterAvatar: roundTableTurn?.speaker.avatar || props.characterAvatar,
   });
 
   if (!startResult.success) {
@@ -5148,7 +5255,7 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
   _theaterPhoneScriptForCurrentGeneration = !!options?.theaterPhoneScript;
 
   try {
-    const chatTaskConfig = settingsStore.getAPIForTask("chat");
+    const chatTaskConfig = roundTableTurn?.taskConfig ?? settingsStore.getAPIForTask("chat");
 
     if (
       !chatTaskConfig.api.endpoint ||
@@ -5976,6 +6083,9 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
       groupChatMode:
         isGroupChat.value &&
         !(groupMetadata.value?.isMultiCharCard && chatFaceToFaceMode.value),
+      roundTableSpeaker: roundTableTurn
+        ? { characterId: roundTableTurn.speaker.characterId, name: roundTableTurn.speaker.name }
+        : undefined,
       // 群聊用過骰子機器人才注入擲骰規則
       diceBotActive: isGroupChat.value && messages.value.some((m) => m.isDiceRoll),
       // 多人卡模式參數
@@ -6227,11 +6337,22 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
         turnTexts.join("\n"),
         mentionCandidates.value.map((c) => c.name),
       );
-      if (mentioned.length > 0) {
+      if (mentioned.length > 0 && !roundTableTurn) {
         appendedUserPrompts.push(
           buildMentionInstruction(mentioned, activeUserName, !useGroupChatMode.value),
         );
       }
+    }
+
+    // 🪑 圓桌：這一輪只由一位成員發言
+    if (roundTableTurn) {
+      appendedUserPrompts.push(
+        buildRoundTableInstruction(
+          roundTableTurn.speaker.name,
+          roundTableTurn.otherNames,
+          activeUserName,
+        ),
+      );
     }
 
     // 🎭 當小劇場指令是最後一條時，補一條隱藏催促消息
@@ -6299,6 +6420,7 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
       timestamp: Date.now(),
       isStreaming: true,
       turnId: generationTurnId || undefined,
+      ...roundTableSenderFields(roundTableTurn),
     };
     messages.value.push(aiMessage);
     scrollToBottom();
@@ -6575,7 +6697,8 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
 
     let fullContent = "";
 
-    if (settingsStore.backgroundGenerationEnabled) {
+    // 圓桌輪次一律本機生成：遠端任務只認一組 API
+    if (settingsStore.backgroundGenerationEnabled && !roundTableTurn) {
       const lastMessageHash = hashString(JSON.stringify({ chatId: currentChatId.value, messages: apiMessages }));
       const deviceId = await selfHostedSyncStore.ensureDeviceId();
       // 取得雲端推送 userId（與 Web Push 訂閱同一套 ID），讓 HF 完成時能在關閉瀏覽器後仍推送
@@ -6834,6 +6957,14 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
           console.log("[ChatScreen][render] 進入群聊解析器路徑");
           const parsed = parseGroupChatResponse(finalContent);
           console.log("[ChatScreen][render] parseGroupChatResponse 完成", { count: parsed.messages.length });
+          if (roundTableTurn) {
+            const speakerId = roundTableTurn.speaker.characterId;
+            parsed.messages = pickRoundTableMessages(
+              parsed.messages,
+              (name) => resolveGroupMemberByName(name).characterId === speakerId,
+              roundTableTurn.speaker.name,
+            );
+          }
 
           // 移除原始的佔位訊息
           if (msgIndex !== -1) {
@@ -7833,6 +7964,7 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
     }
   } catch (error) {
     if ((error as Error).name === "AbortError") {
+      if (roundTableTurn) roundTableStopRequested = true;
       // 用戶取消生成：保留已有內容，沒有內容就直接移除佔位氣泡
       const lastMsg = getActiveStreamingAIMessage();
       if (lastMsg && lastMsg.isStreaming) {
@@ -7872,6 +8004,7 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
         content: `${GENERATION_ERROR_PREFIX}${errorMsg}`,
         timestamp: Date.now(),
         turnId: generationTurnId || undefined,
+        ...roundTableSenderFields(roundTableTurn),
       };
       messages.value.push(aiMessage);
     }
@@ -7884,6 +8017,7 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
     // 設置全局狀態錯誤
     setChatGenerationError(errorMsg);
   } finally {
+    if (roundTableTurn && controller.signal.aborted) roundTableStopRequested = true;
     let persistedGenerationContent = latestFinalContent;
     // 同上：緩衝區必須仍屬於本輪，否則不能當成本輪的生成結果落地
     const finallyOwnContent = usedStreamingWindowForCurrentGeneration

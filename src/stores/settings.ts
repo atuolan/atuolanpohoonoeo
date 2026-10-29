@@ -1181,6 +1181,29 @@ export const useSettingsStore = defineStore("settings", () => {
   }
 
   /**
+   * 圓桌模式：成員綁的主 API 設定。沒綁、找不到或沒填好 → null（呼叫端改用聊天 API）。
+   * 綁的是目前使用中的設定時，直接用聊天 API（可能有還沒存回設定的修改）。
+   */
+  function getAPIForProfile(profileId: string | null | undefined): {
+    api: APISettings;
+    generation: GenerationParams;
+    profileName: string;
+  } | null {
+    if (!profileId) return null;
+    const profile = profiles.value.find((p) => p.id === profileId);
+    if (!profile) return null;
+    if (profileId === currentProfileId.value) {
+      return { ...getAPIForTask("chat"), profileName: profile.name };
+    }
+    if (!profile.api?.endpoint || !profile.api.apiKey || !profile.api.model) return null;
+    return {
+      api: { ...profile.api },
+      generation: getGlobalGenerationParams(profile.generation),
+      profileName: profile.name,
+    };
+  }
+
+  /**
    * 重置為默認值
    */
   function resetToDefaults(): void {
@@ -1380,6 +1403,7 @@ export const useSettingsStore = defineStore("settings", () => {
     updateAuxiliaryProfile,
     shouldUseAuxiliary,
     getAPIForTask,
+    getAPIForProfile,
     resetToDefaults,
     resetAuxiliary,
     setLanguage,

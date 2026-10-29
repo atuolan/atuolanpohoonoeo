@@ -130,6 +130,8 @@ export interface ChatScreenMessage {
   senderCharacterId?: string;
   senderCharacterName?: string;
   senderCharacterAvatar?: string;
+  /** 圓桌模式：這則是哪個模型寫的 */
+  roundTableModel?: string;
   isRecall?: boolean;
   recallContent?: string;
   isPrivateMessage?: boolean;

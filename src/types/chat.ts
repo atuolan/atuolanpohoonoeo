@@ -553,6 +553,8 @@ export interface ChatMessage {
   senderCharacterName?: string;
   /** 發送者角色頭像快照（群聊匯入/離線顯示兜底） */
   senderCharacterAvatar?: string;
+  /** 圓桌模式：這則是哪個模型寫的（顯示小字用） */
+  roundTableModel?: string;
   /** 是否為撤回訊息 */
   isRecall?: boolean;
   /** 撤回的原始內容 */
@@ -825,6 +827,8 @@ export interface GroupMember {
   affinity?: SubCharAffinitySnapshot;
   /** 記憶互通：連結到哪個私聊（未設定視為 auto） */
   memoryLink?: MemoryLink;
+  /** 圓桌模式：這位成員用的主 API 設定（APIProfile id）；未設定跟主 API */
+  apiProfileId?: string;
 }
 
 /** 群管理動作：改群名、移出、禁言、解禁、拉回被移出的成員 */
@@ -957,6 +961,18 @@ export interface GroupChatMetadata {
   multiCharMembers?: MultiCharMember[];
   /** 記憶互通設定（未設定視為關閉） */
   memorySharing?: MemorySharingSettings;
+  /** 圓桌模式：每個成員用自己的 API、輪流發言（多人卡不適用） */
+  roundTable?: RoundTableSettings;
+}
+
+/** 圓桌發言順序：接力／同時／主持人／只有被 @ 的 */
+export type RoundTableOrder = "relay" | "parallel" | "host" | "mention";
+
+export interface RoundTableSettings {
+  enabled: boolean;
+  order: RoundTableOrder;
+  /** 一輪最多幾位發言（被 @ 的不受限）；未設定 = 全部 */
+  maxSpeakersPerRound?: number;
 }
 
 // ===== 群聊日記條目 =====
