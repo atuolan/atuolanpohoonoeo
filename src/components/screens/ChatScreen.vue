@@ -8797,9 +8797,14 @@ async function handleStreamingClose() {
   // 取得目前仍在流式中的 AI 訊息，避免被隱藏的 [繼續] 提示干擾
   const lastMsg = getActiveStreamingAIMessage();
   const closeTurnId = lastMsg?.turnId || currentTurnId.value || "";
-  const windowContent = stripPicNote(
+  const rawWindowContent = stripPicNote(
     processAiOutputTemplate(applyAIOutputRegex(ownedCloseContent)),
   );
+  // 多人卡面對面：<dice> 從正文拿掉，回覆處理完才擲（跟正常完成一樣）
+  const { content: windowContent, requests: closeDiceRequests } =
+    isGroupChat.value && !useGroupChatParser.value
+      ? extractDiceTags(rawWindowContent)
+      : { content: rawWindowContent, requests: [] as DiceTagRequest[] };
 
   // 只有當最後一條訊息還在流式狀態時，才需要處理
   if (
@@ -8973,6 +8978,33 @@ async function handleStreamingClose() {
                 `[表情：${parsedMsg.stickerMeaning}]`,
               );
               continue;
+            }
+            continue;
+          }
+
+          // 骰子機器人：生成中途關掉視窗也照樣擲（跟正常完成一樣）
+          if (parsedMsg.isDiceRoll) {
+            const roll = runDiceCommand(
+              diceCommandFromTag({
+                expr: parsedMsg.diceExpr,
+                reason: parsedMsg.diceReason,
+                target: parsedMsg.diceTarget,
+              }),
+              senderName,
+            );
+            if (roll) {
+              messages.value.push({
+                id: `msg_${Date.now()}_${i}_dice`,
+                role: "ai",
+                content: formatDiceRoll(roll),
+                timestamp: Date.now() + i,
+                turnId: closeTurnId || undefined,
+                senderCharacterId: senderCharId,
+                senderCharacterName: senderName,
+                senderCharacterAvatar: senderAvatar,
+                isDiceRoll: true,
+                diceRoll: roll,
+              });
             }
             continue;
           }
@@ -9471,6 +9503,9 @@ async function handleStreamingClose() {
       lastMsg.isStreaming = false;
     }
 
+    if (closeDiceRequests.length > 0) {
+      appendCharDiceRolls(closeDiceRequests, closeTurnId);
+    }
     await settleTransfersAfterReply();
     // 保存聊天
     saveChat();
