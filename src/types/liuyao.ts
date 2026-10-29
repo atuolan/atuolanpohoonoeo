@@ -164,6 +164,24 @@ export interface ChartFacts {
   shiYing: string[];
 }
 
+/** 傳進聊天的卦象卡片 */
+export interface LiuyaoShareSnapshot {
+  readingId: string;
+  question: string;
+  category: QuestionCategory | null;
+  values: YaoValue[];
+  castTime: number;
+  /** 例如「天風姤」 */
+  originalName: string;
+  changedName?: string;
+  /** 動爻位置 1–6 */
+  movingPositions: number[];
+  readerCharacterId?: string;
+  readerName?: string;
+  /** 解讀摘要（前段） */
+  excerpt?: string;
+}
+
 /** 存檔用：卦盤由 values＋castTime 重算 */
 export interface LiuyaoReading {
   id: string;
