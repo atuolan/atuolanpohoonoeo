@@ -1,641 +1,328 @@
 <template>
   <teleport to="body">
-    <transition name="modal">
-      <div v-if="visible" class="game-overlay" @click.self="handleClose">
-        <div class="game-modal pixel-theme">
-          <!-- 頭部 -->
-          <div class="modal-header">
-            <div class="header-left">
-              <div class="game-icon">
-                <!-- Pixel Fish Icon -->
-                <svg
-                  viewBox="0 0 16 16"
-                  fill="currentColor"
-                  shape-rendering="crispEdges"
-                >
-                  <path
-                    d="M3 5h2v1h1v1h1v-1h2v-1h3v1h1v1h1v2h1v1h-1v1h-1v1h-3v-1h-2v-1h-1v1h-1v1h-2v-1h-1v-1h-1v-2h1v-1h1v-1z M12 7h1v1h-1v-1z"
-                  />
+    <transition name="fish-slide">
+      <div v-if="visible" class="fish-screen" :style="themeStyle">
+        <!-- 頂欄 -->
+        <header class="fish-header">
+          <div class="header-main">
+            <button class="nav-btn" aria-label="返回" @click="handleClose">
+              <ChevronLeft :size="20" />
+            </button>
+            <h1 class="header-title">釣魚</h1>
+            <div class="header-right">
+              <button class="nav-btn" aria-label="釣魚說明" @click="showGuide = true">
+                <HelpCircle :size="20" />
+              </button>
+              <div class="coin-chip">
+                <svg viewBox="0 0 20 20" class="coin-icon" aria-hidden="true">
+                  <circle cx="10" cy="10" r="9" fill="#E8A93A" />
+                  <circle cx="10" cy="10" r="6" fill="none" stroke="#FFF1CF" stroke-width="1.5" />
+                  <path d="M10 7v6" stroke="#FFF1CF" stroke-width="1.5" stroke-linecap="round" />
                 </svg>
+                <span class="coin-amount">{{ gameEconomyStore.getBalance(GLOBAL_WALLET_ID).toLocaleString() }}</span>
               </div>
-              <div class="header-info">
-                <h3>釣魚</h3>
-                <p class="subtitle">裝備魚竿，釣取珍稀魚種</p>
-              </div>
-            </div>
-            <div class="header-actions">
-              <button
-                class="guide-btn"
-                @click="showGuide = true"
-                title="遊戲指南"
-              >
-                <HelpCircle :size="18" />
-              </button>
-              <button class="close-btn" @click="handleClose">
-                <X :size="20" />
-              </button>
             </div>
           </div>
+          <div class="stats-row">
+            <div class="stat-chip">累計 {{ gameEconomyStore.getFishingStats(GLOBAL_WALLET_ID).totalFishCaught }} 條</div>
+            <div class="stat-chip">魚簍 {{ fishInventory.length }} 條</div>
+          </div>
+        </header>
 
-          <!-- 可滾動內容區 -->
-          <div class="modal-body">
-            <!-- 魚竿資訊 -->
-            <div class="rod-section">
-              <div
-                v-if="equippedRod"
-                class="rod-info clickable"
-                @click="showRodSelector = true"
-              >
-                <div class="rod-icon" :class="getRodRarity(equippedRod)">
-                  <PixelRod :rod-id="getRodItemId(equippedRod)" :size="40" />
+        <!-- 場景 -->
+        <div class="scene">
+          <div class="sky" />
+          <div class="water" />
+          <div class="sun-moon" />
+          <div v-if="timeOfDay === 'night'" class="stars" aria-hidden="true">
+            <span class="star s1" />
+            <span class="star s2" />
+            <span class="star s3" />
+            <span class="star s4" />
+            <span class="star s5" />
+          </div>
+          <!-- 水面山丘 -->
+          <svg class="scene-hills" viewBox="0 0 390 52" preserveAspectRatio="none" aria-hidden="true">
+            <path d="M0 52V30Q60 6 122 26T236 20Q300 2 390 26V52Z" />
+          </svg>
+          <!-- 水面倒影 -->
+          <div class="sun-reflection" aria-hidden="true">
+            <span class="ref-line r1" />
+            <span class="ref-line r2" />
+            <span class="ref-line r3" />
+          </div>
+
+          <!-- 全尺寸 SVG：魚線、浮標、水下魚影、漣漪、魚竿 -->
+          <svg class="fishing-svg" viewBox="0 0 390 550" preserveAspectRatio="xMidYMax slice" aria-hidden="true">
+            <!-- 水下魚影（只在 waiting / hooked 顯示） -->
+            <g
+              v-if="gamePhase === 'waiting' || gamePhase === 'hooked'"
+              class="fish-shadow"
+              :class="{ 'swimming-hooked': gamePhase === 'hooked' }"
+              opacity="0.3"
+            >
+              <ellipse cx="264" cy="424" rx="34" ry="11" fill="#0B1224" />
+              <path d="M296 424l18-12v24z" fill="#0B1224" />
+            </g>
+
+            <!-- 漣漪兩圈 -->
+            <g
+              v-if="gamePhase !== 'idle'"
+              class="ripples"
+              :class="{ 'ripples-fast': gamePhase === 'hooked', 'ripples-slow': gamePhase === 'waiting' }"
+            >
+              <ellipse cx="236" cy="362" rx="28" ry="5" fill="none" stroke="#FFFFFF" stroke-opacity="0.6" stroke-width="1.2" />
+              <ellipse cx="236" cy="364" rx="50" ry="9" fill="none" stroke="#FFFFFF" stroke-opacity="0.3" stroke-width="1.2" />
+            </g>
+
+            <!-- 魚線（idle 時不畫） -->
+            <path
+              v-if="gamePhase !== 'idle'"
+              class="fishing-line"
+              d="M300 104Q296 240 236 340"
+              stroke="var(--line)"
+              stroke-width="1.2"
+              fill="none"
+            />
+
+            <!-- 浮標（idle 時不畫） -->
+            <g
+              v-if="gamePhase !== 'idle'"
+              class="bobber-group"
+              :class="{
+                'bobber-casting': gamePhase === 'casting',
+                'bobber-waiting': gamePhase === 'waiting',
+                'bobber-hooked': gamePhase === 'hooked',
+              }"
+            >
+              <path d="M236 340V348" stroke="#121214" stroke-width="2" stroke-linecap="round" />
+              <path d="M226 358a10 10 0 0 1 20 0Z" fill="#E5533D" stroke="#121214" stroke-width="1.6" stroke-linejoin="round" />
+              <path d="M226 358a10 10 0 0 0 20 0Z" fill="#FFFFFF" stroke="#121214" stroke-width="1.6" stroke-linejoin="round" />
+            </g>
+
+            <!-- 魚竿 -->
+            <g class="fishing-rod-graphic" :class="{ 'rod-bending': gamePhase === 'hooked' }">
+              <path d="M430 590L300 104" stroke="#3A2A1E" stroke-width="7" stroke-linecap="round" />
+              <path d="M430 590L370 362" stroke="#1F1712" stroke-width="12" stroke-linecap="round" />
+              <circle cx="352" cy="300" r="12" fill="#5A4636" stroke="#1F1712" stroke-width="2" />
+            </g>
+          </svg>
+
+          <!-- 浮標上方的狀態膠囊（idle 不顯示） -->
+          <div v-if="gamePhase !== 'idle'" class="scene-status-capsule" :class="`status-${gamePhase}`">
+            <span class="status-dot" />
+            <span class="status-label">
+              <template v-if="gamePhase === 'casting'">拋竿中…</template>
+              <template v-else-if="gamePhase === 'waiting'">等魚上鉤…</template>
+              <template v-else-if="gamePhase === 'hooked'">咬鉤了！</template>
+              <template v-else-if="gamePhase === 'caught'">釣到了！</template>
+              <template v-else-if="gamePhase === 'trash'">釣到垃圾…</template>
+              <template v-else-if="gamePhase === 'missed'">魚跑了</template>
+            </span>
+          </div>
+        </div>
+        <!-- 底部白色操作抽屜 -->
+        <main class="fish-drawer">
+          <!-- a. 魚竿列 -->
+          <button class="rod-card-btn" type="button" aria-label="換魚竿" @click="showRodSelector = true">
+            <template v-if="equippedRod">
+              <div class="rod-thumb">
+                <PixelRod :rod-id="getRodItemId(equippedRod)" :size="32" />
+              </div>
+              <div class="rod-detail">
+                <div class="rod-detail-top">
+                  <span class="rod-name">{{ equippedRod.name }}</span>
+                  <span class="rod-durability-num">耐久 {{ equippedRod.durability }}/{{ equippedRod.maxDurability }}</span>
                 </div>
-                <div class="rod-details">
-                  <div class="rod-name">{{ equippedRod.name }}</div>
-                  <div class="rod-stats">
-                    <span class="durability">
-                      <Heart :size="12" />
-                      {{ equippedRod.durability }}/{{
-                        equippedRod.maxDurability
-                      }}
-                    </span>
-                    <span class="tier">
-                      Tier {{ equippedRod.minFishTier }}-{{
-                        equippedRod.maxFishTier
-                      }}
-                    </span>
-                  </div>
-                </div>
-                <div class="durability-bar">
+                <div class="rod-meter-track">
                   <div
-                    class="durability-fill"
+                    class="rod-meter-fill"
                     :style="{
-                      width: `${(equippedRod.durability / equippedRod.maxDurability) * 100}%`,
-                    }"
-                    :class="{
-                      low:
-                        equippedRod.durability <
-                        equippedRod.maxDurability * 0.2,
+                      width: `${Math.min(100, Math.max(0, (equippedRod.durability / equippedRod.maxDurability) * 100))}%`,
+                      backgroundColor:
+                        equippedRod.durability / equippedRod.maxDurability > 0.5
+                          ? '#2F7A4A'
+                          : equippedRod.durability / equippedRod.maxDurability >= 0.2
+                            ? '#C9861A'
+                            : '#B4233F'
                     }"
                   />
                 </div>
-                <div class="change-hint">
-                  <RefreshCw :size="14" />
-                </div>
               </div>
-              <div v-else class="no-rod">
-                <AlertCircle :size="20" />
-                <span>請先裝備魚竿</span>
-                <button class="equip-btn" @click="showRodSelector = true">
-                  選擇魚竿
-                </button>
+              <ChevronRight :size="18" class="rod-arrow" />
+            </template>
+            <template v-else>
+              <div class="rod-empty-info">
+                <span class="empty-text">還沒裝備魚竿</span>
+                <span class="equip-chip">去裝備</span>
+              </div>
+              <ChevronRight :size="18" class="rod-arrow" />
+            </template>
+          </button>
+
+          <!-- b. 主按鈕 -->
+          <button
+            class="main-action-btn"
+            type="button"
+            :class="{
+              'btn-idle': gamePhase === 'idle' && !isIdling,
+              'btn-waiting': (gamePhase === 'casting' || gamePhase === 'waiting') && !isIdling,
+              'btn-hooked': gamePhase === 'hooked' && !isIdling,
+              'btn-recast': ['caught', 'trash', 'missed'].includes(gamePhase) && !isIdling,
+              'btn-claim': isIdling,
+            }"
+            :disabled="(!canFish && gamePhase === 'idle' && !isIdling) || ((gamePhase === 'casting' || gamePhase === 'waiting') && !isIdling)"
+            @click="handlePrimaryAction"
+          >
+            <template v-if="isIdling">
+              <span class="btn-main-text">領取收益</span>
+              <span class="btn-sub-text">掛機中 {{ idleDurationText }} · 預計 {{ idleRewards?.fishCount || 0 }} 條</span>
+            </template>
+            <template v-else-if="gamePhase === 'idle'">
+              <span class="btn-main-text">拋竿</span>
+              <span class="btn-sub-text">{{ canFish ? '等浮標沉下去再收竿' : '魚竿壞了，先換一支' }}</span>
+            </template>
+            <template v-else-if="gamePhase === 'casting' || gamePhase === 'waiting'">
+              <span class="btn-main-text">等魚上鉤…</span>
+            </template>
+            <template v-else-if="gamePhase === 'hooked'">
+              <span class="btn-main-text">收竿！</span>
+              <span class="btn-sub-text">快！3 秒內</span>
+            </template>
+            <template v-else>
+              <span class="btn-main-text">再拋一次</span>
+              <span v-if="!canFish" class="btn-sub-text">魚竿壞了，先換一支</span>
+            </template>
+          </button>
+
+          <!-- c. 次要操作列 -->
+          <div v-if="(gamePhase === 'idle' && canFish && !isIdling) || isIdling" class="secondary-actions">
+            <button
+              v-if="!isIdling"
+              type="button"
+              class="sec-btn idle-start-btn"
+              @click="handleStartIdle"
+            >
+              <Moon :size="16" />
+              <span>掛機釣魚</span>
+            </button>
+            <button
+              v-else
+              type="button"
+              class="sec-btn idle-cancel-btn"
+              @click="handleCancelIdle"
+            >
+              <span>取消掛機</span>
+            </button>
+          </div>
+
+          <!-- d. 收穫卡 -->
+          <div v-if="gamePhase === 'caught' && caughtFish" class="result-card catch-card">
+            <div class="result-fish-thumb">
+              <PixelFish :fish-id="caughtFish.fishTypeId" :size="36" />
+            </div>
+            <div class="result-fish-meta">
+              <div class="result-title-row">
+                <span class="result-name">{{ caughtFish.name }}</span>
+                <span class="rarity-tag" :class="`rarity-${caughtFish.rarity}`">
+                  {{ rarityLabels[caughtFish.rarity] || caughtFish.rarity }}
+                </span>
+              </div>
+              <span class="result-weight">{{ caughtFish.weight.toFixed(2) }} kg</span>
+            </div>
+            <div class="result-price">+{{ caughtFish.finalPrice }}</div>
+          </div>
+          <div v-else-if="gamePhase === 'trash' && trashResult" class="result-card trash-card">
+            <div class="result-trash-icon">
+              <Trash2 :size="28" />
+            </div>
+            <div class="result-fish-meta">
+              <span class="result-name">{{ trashResult.name }}</span>
+            </div>
+            <div class="result-cost">-{{ trashResult.cost }}</div>
+          </div>
+
+          <!-- e. 魚簍 -->
+          <section class="creel-section">
+            <div class="creel-header">
+              <h2 class="creel-title">魚簍 {{ fishInventory.length }}</h2>
+              <button
+                v-if="fishInventory.length > 0"
+                type="button"
+                class="sell-all-btn"
+                @click="handleSellAll"
+              >
+                全部賣出 +{{ totalFishValue.toLocaleString() }}
+              </button>
+            </div>
+            <div v-if="fishInventory.length > 0" class="creel-scroll">
+              <div
+                v-for="fish in fishInventory"
+                :key="fish.id"
+                class="creel-item"
+              >
+                <PixelFish :fish-id="fish.fishTypeId" :size="28" />
+                <span class="creel-fish-name">{{ fish.name }}</span>
+                <span class="creel-fish-price">{{ fish.finalPrice }}</span>
               </div>
             </div>
-
-            <!-- 遊戲區域 -->
-            <div class="game-area">
-              <!-- 釣魚場景 -->
-              <div class="fishing-scene" :class="gamePhase">
-                <!-- 天空背景層 -->
-                <div class="sky-layer">
-                  <!-- 太陽 -->
-                  <div class="sun"></div>
-                  <!-- 像素雲朵 -->
-                  <div class="cloud cloud-1"></div>
-                  <div class="cloud cloud-2"></div>
-                  <div class="cloud cloud-3"></div>
-                </div>
-
-                <!-- 遠山層 -->
-                <div class="mountains-layer">
-                  <div class="mountain mountain-far"></div>
-                  <div class="mountain mountain-mid"></div>
-                  <div class="mountain mountain-near"></div>
-                </div>
-
-                <!-- 樹林層 -->
-                <div class="trees-layer">
-                  <div class="tree tree-1"></div>
-                  <div class="tree tree-2"></div>
-                  <div class="tree tree-3"></div>
-                  <div class="tree tree-4"></div>
-                </div>
-
-                <!-- 水面 -->
-                <div class="water">
-                  <div class="water-surface"></div>
-                  <div class="water-reflection"></div>
-                  <div class="water-sparkles">
-                    <div class="sparkle s1"></div>
-                    <div class="sparkle s2"></div>
-                    <div class="sparkle s3"></div>
-                    <div class="sparkle s4"></div>
-                    <div class="sparkle s5"></div>
-                  </div>
-                </div>
-
-                <!-- 船和史萊姆 -->
-                <div class="boat-group">
-                  <!-- 船身 -->
-                  <div class="boat">
-                    <svg viewBox="0 0 80 25" class="boat-svg">
-                      <path
-                        d="M5 8 L75 8 L70 22 Q40 25 10 22 L5 8"
-                        fill="#92400e"
-                        stroke="#451a03"
-                        stroke-width="2"
-                      />
-                      <rect
-                        x="3"
-                        y="5"
-                        width="74"
-                        height="5"
-                        fill="#a16207"
-                        stroke="#451a03"
-                        stroke-width="1"
-                      />
-                      <line
-                        x1="20"
-                        y1="10"
-                        x2="20"
-                        y2="20"
-                        stroke="#78350f"
-                        stroke-width="1"
-                      />
-                      <line
-                        x1="40"
-                        y1="10"
-                        x2="40"
-                        y2="21"
-                        stroke="#78350f"
-                        stroke-width="1"
-                      />
-                      <line
-                        x1="60"
-                        y1="10"
-                        x2="60"
-                        y2="20"
-                        stroke="#78350f"
-                        stroke-width="1"
-                      />
-                    </svg>
-                  </div>
-
-                  <!-- 像素史萊姆 -->
-                  <div
-                    class="slime-fisher"
-                    :class="{
-                      casting: gamePhase === 'casting',
-                      hooked: gamePhase === 'hooked',
-                    }"
-                  >
-                    <svg
-                      viewBox="0 0 48 38"
-                      class="slime-svg"
-                      shape-rendering="crispEdges"
-                    >
-                      <!-- 像素史萊姆 - 藍色，面向右邊（用戶編輯版本，黑色瞳孔） -->
-                      <!-- 第1行 - 頂部輪廓 -->
-                      <rect x="12" y="2" width="4" height="4" fill="#1e3a5f" />
-                      <rect x="16" y="2" width="4" height="4" fill="#1e3a5f" />
-                      <rect x="20" y="2" width="4" height="4" fill="#1e3a5f" />
-                      <rect x="24" y="2" width="4" height="4" fill="#1e3a5f" />
-                      <rect x="28" y="2" width="4" height="4" fill="#1e3a5f" />
-                      <rect x="32" y="2" width="4" height="4" fill="#1e3a5f" />
-
-                      <!-- 第2行 -->
-                      <rect x="8" y="6" width="4" height="4" fill="#1e3a5f" />
-                      <rect x="12" y="6" width="4" height="4" fill="#a5d8ff" />
-                      <rect x="16" y="6" width="4" height="4" fill="#a5d8ff" />
-                      <rect x="20" y="6" width="4" height="4" fill="#a5d8ff" />
-                      <rect x="24" y="6" width="4" height="4" fill="#74c0fc" />
-                      <rect x="28" y="6" width="4" height="4" fill="#74c0fc" />
-                      <rect x="32" y="6" width="4" height="4" fill="#74c0fc" />
-                      <rect x="36" y="6" width="4" height="4" fill="#1e3a5f" />
-
-                      <!-- 第3行 - 高光 -->
-                      <rect x="4" y="10" width="4" height="4" fill="#1e3a5f" />
-                      <rect x="8" y="10" width="4" height="4" fill="#a5d8ff" />
-                      <rect x="12" y="10" width="4" height="4" fill="#fff" />
-                      <rect x="16" y="10" width="4" height="4" fill="#a5d8ff" />
-                      <rect x="20" y="10" width="4" height="4" fill="#74c0fc" />
-                      <rect x="24" y="10" width="4" height="4" fill="#74c0fc" />
-                      <rect x="28" y="10" width="4" height="4" fill="#4dabf7" />
-                      <rect x="32" y="10" width="4" height="4" fill="#4dabf7" />
-                      <rect x="36" y="10" width="4" height="4" fill="#4dabf7" />
-                      <rect x="40" y="10" width="4" height="4" fill="#1e3a5f" />
-
-                      <!-- 第4行 -->
-                      <rect x="4" y="14" width="4" height="4" fill="#1e3a5f" />
-                      <rect x="8" y="14" width="4" height="4" fill="#a5d8ff" />
-                      <rect x="12" y="14" width="4" height="4" fill="#a5d8ff" />
-                      <rect x="16" y="14" width="4" height="4" fill="#74c0fc" />
-                      <rect x="20" y="14" width="4" height="4" fill="#74c0fc" />
-                      <rect x="24" y="14" width="4" height="4" fill="#4dabf7" />
-                      <rect x="28" y="14" width="4" height="4" fill="#4dabf7" />
-                      <rect x="32" y="14" width="4" height="4" fill="#4dabf7" />
-                      <rect x="36" y="14" width="4" height="4" fill="#339af0" />
-                      <rect x="40" y="14" width="4" height="4" fill="#1e3a5f" />
-
-                      <!-- 第5行 - 眼睛（往右看，黑色瞳孔） -->
-                      <rect x="4" y="18" width="4" height="4" fill="#1e3a5f" />
-                      <rect x="8" y="18" width="4" height="4" fill="#74c0fc" />
-                      <rect x="12" y="18" width="4" height="4" fill="#74c0fc" />
-                      <rect x="16" y="18" width="4" height="4" fill="#ffffff" />
-                      <rect x="20" y="18" width="4" height="4" fill="#000000" />
-                      <rect x="24" y="18" width="4" height="4" fill="#4dabf7" />
-                      <rect x="28" y="18" width="4" height="4" fill="#fff" />
-                      <rect x="32" y="18" width="4" height="4" fill="#000000" />
-                      <rect x="36" y="18" width="4" height="4" fill="#339af0" />
-                      <rect x="40" y="18" width="4" height="4" fill="#1e3a5f" />
-
-                      <!-- 第6行 - 臉部下半（眼睛下方黑色） -->
-                      <rect x="4" y="22" width="4" height="4" fill="#1e3a5f" />
-                      <rect x="8" y="22" width="4" height="4" fill="#74c0fc" />
-                      <rect x="12" y="22" width="4" height="4" fill="#4dabf7" />
-                      <rect x="16" y="22" width="4" height="4" fill="#000000" />
-                      <rect x="20" y="22" width="4" height="4" fill="#000000" />
-                      <rect x="24" y="22" width="4" height="4" fill="#339af0" />
-                      <rect x="28" y="22" width="4" height="4" fill="#000000" />
-                      <rect x="32" y="22" width="4" height="4" fill="#000000" />
-                      <rect x="36" y="22" width="4" height="4" fill="#228be6" />
-                      <rect x="40" y="22" width="4" height="4" fill="#1e3a5f" />
-
-                      <!-- 第7行 - 底部 -->
-                      <rect x="4" y="26" width="4" height="4" fill="#1e3a5f" />
-                      <rect x="8" y="26" width="4" height="4" fill="#4dabf7" />
-                      <rect x="12" y="26" width="4" height="4" fill="#4dabf7" />
-                      <rect x="16" y="26" width="4" height="4" fill="#339af0" />
-                      <rect x="20" y="26" width="4" height="4" fill="#339af0" />
-                      <rect x="24" y="26" width="4" height="4" fill="#339af0" />
-                      <rect x="28" y="26" width="4" height="4" fill="#228be6" />
-                      <rect x="32" y="26" width="4" height="4" fill="#228be6" />
-                      <rect x="36" y="26" width="4" height="4" fill="#1e3a5f" />
-
-                      <!-- 第8行 - 最底部（淺色反光） -->
-                      <rect x="8" y="30" width="4" height="4" fill="#1e3a5f" />
-                      <rect x="12" y="30" width="4" height="4" fill="#a5d8ff" />
-                      <rect x="16" y="30" width="4" height="4" fill="#a5d8ff" />
-                      <rect x="20" y="30" width="4" height="4" fill="#a5d8ff" />
-                      <rect x="24" y="30" width="4" height="4" fill="#a5d8ff" />
-                      <rect x="28" y="30" width="4" height="4" fill="#a5d8ff" />
-                      <rect x="32" y="30" width="4" height="4" fill="#1e3a5f" />
-                    </svg>
-                  </div>
-
-                  <!-- 像素魚竿（根據裝備的魚竿顯示） -->
-                  <div
-                    class="fishing-rod"
-                    :class="{
-                      casting: gamePhase === 'casting',
-                      hooked: gamePhase === 'hooked',
-                    }"
-                  >
-                    <PixelRod
-                      :rod-id="
-                        equippedRod ? getRodItemId(equippedRod) : 'rod_bamboo'
-                      "
-                      :size="100"
-                    />
-                  </div>
-                </div>
-
-                <!-- 魚線和浮標（移到 boat-group 外面） -->
-                <div
-                  class="fishing-line-group"
-                  :class="{
-                    casting: gamePhase === 'casting',
-                    waiting: gamePhase === 'waiting',
-                    hooked: gamePhase === 'hooked',
-                    caught: gamePhase === 'caught',
-                  }"
-                >
-                  <div class="line"></div>
-                  <div class="bobber">
-                    <svg viewBox="0 0 12 18" class="bobber-svg">
-                      <ellipse
-                        cx="6"
-                        cy="9"
-                        rx="5"
-                        ry="8"
-                        fill="#ef4444"
-                        stroke="#1e293b"
-                        stroke-width="1"
-                      />
-                      <ellipse cx="6" cy="13" rx="5" ry="4" fill="#fff" />
-                      <ellipse
-                        cx="4"
-                        cy="6"
-                        rx="1.5"
-                        ry="2"
-                        fill="#fff"
-                        opacity="0.5"
-                      />
-                    </svg>
-                  </div>
-                </div>
-
-                <!-- 魚（上鉤時顯示） -->
-                <transition name="fish">
-                  <div
-                    v-if="gamePhase === 'hooked' || gamePhase === 'caught'"
-                    class="fish-sprite"
-                    :class="{ caught: gamePhase === 'caught' }"
-                  >
-                    <!-- 根據釣到的魚顯示對應圖案 -->
-                    <PixelFish
-                      :fish-id="caughtFish?.fishTypeId || 'fish_goldfish'"
-                      :size="42"
-                    />
-                  </div>
-                </transition>
-
-                <!-- 水中小魚裝飾 -->
-                <div class="underwater-fish">
-                  <div class="small-fish fish-a"></div>
-                  <div class="small-fish fish-b"></div>
-                </div>
-
-                <!-- 提示文字 -->
-                <div class="phase-hint" :class="gamePhase">
-                  <div class="hint-box">
-                    <div class="hint-icon">
-                      <template v-if="gamePhase === 'idle'">
-                        <svg viewBox="0 0 16 16" fill="currentColor">
-                          <path
-                            d="M8 2v2h2v2h2v2h-2v2h-2v2h-2v-2h-2v-2h-2v-2h2v-2h2v-2z"
-                          />
-                        </svg>
-                      </template>
-                      <template v-else-if="gamePhase === 'hooked'">
-                        <svg viewBox="0 0 16 16" fill="currentColor">
-                          <path d="M7 2h2v8h-2zM7 12h2v2h-2z" />
-                        </svg>
-                      </template>
-                      <template v-else-if="gamePhase === 'caught'">
-                        <svg viewBox="0 0 16 16" fill="currentColor">
-                          <path d="M2 8l2-2 3 3 5-5 2 2-7 7z" />
-                        </svg>
-                      </template>
-                      <template v-else>
-                        <svg viewBox="0 0 16 16" fill="currentColor">
-                          <path d="M4 4h8v2h-8zM4 8h6v2h-6zM4 12h4v2h-4z" />
-                        </svg>
-                      </template>
-                    </div>
-                    <div class="hint-text">
-                      <template v-if="gamePhase === 'idle'">
-                        <span v-if="equippedRod">PRESS CAST</span>
-                        <span v-else>EQUIP ROD</span>
-                      </template>
-                      <template v-else-if="gamePhase === 'casting'">
-                        <span>CASTING...</span>
-                      </template>
-                      <template v-else-if="gamePhase === 'waiting'">
-                        <span>WAITING...</span>
-                      </template>
-                      <template v-else-if="gamePhase === 'hooked'">
-                        <span class="alert-text">!!! PULL !!!</span>
-                      </template>
-                      <template v-else-if="gamePhase === 'caught'">
-                        <span class="success-text">CAUGHT!</span>
-                      </template>
-                      <template v-else-if="gamePhase === 'missed'">
-                        <span class="fail-text">MISSED...</span>
-                      </template>
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <!-- 結束 fishing-scene -->
-
-              <!-- 操作按鈕 -->
-              <div class="action-buttons">
-                <!-- 掛機中狀態 -->
-                <template v-if="isIdling">
-                  <div class="idle-status">
-                    <div class="idle-info">
-                      <Clock :size="16" />
-                      <span>掛機中 {{ idleDurationText }}</span>
-                    </div>
-                    <div class="idle-preview">
-                      <Fish :size="14" />
-                      <span>預計 {{ idleRewards?.fishCount || 0 }} 條魚</span>
-                    </div>
-                  </div>
-                  <button class="claim-btn pixel-btn" @click="handleClaimIdle">
-                    <Gift :size="20" />
-                    <span>領取收益</span>
-                  </button>
-                  <button
-                    class="cancel-idle-btn pixel-btn secondary"
-                    @click="handleCancelIdle"
-                  >
-                    <X :size="16" />
-                    <span>取消</span>
-                  </button>
-                </template>
-                <!-- 正常遊戲狀態 -->
-                <template v-else>
-                  <button
-                    v-if="gamePhase === 'idle'"
-                    class="cast-btn pixel-btn"
-                    :disabled="!canFish"
-                    @click="startFishing"
-                  >
-                    <Anchor :size="20" />
-                    <span>拋竿</span>
-                  </button>
-                  <button
-                    v-if="gamePhase === 'idle' && canFish"
-                    class="idle-btn pixel-btn secondary"
-                    @click="handleStartIdle"
-                  >
-                    <Moon :size="18" />
-                    <span>掛機釣魚</span>
-                  </button>
-                  <button
-                    v-if="gamePhase === 'hooked'"
-                    class="reel-btn pixel-btn"
-                    @click="reelIn"
-                  >
-                    <ArrowUp :size="20" />
-                    <span>收竿！</span>
-                  </button>
-                  <button
-                    v-if="gamePhase === 'caught' || gamePhase === 'missed' || gamePhase === 'trash'"
-                    class="continue-btn pixel-btn"
-                    @click="resetGame"
-                  >
-                    <RotateCcw :size="20" />
-                    <span>繼續</span>
-                  </button>
-                </template>
-              </div>
-              <!-- 結束 action-buttons -->
-            </div>
-            <!-- 結束 game-area -->
-
-            <!-- 釣到的魚展示 -->
-            <transition name="catch-result">
-              <div
-                v-if="caughtFish && gamePhase === 'caught'"
-                class="catch-result"
-              >
-                <div class="fish-card" :class="caughtFish.rarity">
-                  <div class="fish-icon">
-                    <PixelFish :fish-id="caughtFish.fishTypeId" :size="32" />
-                  </div>
-                  <div class="fish-info">
-                    <div class="fish-name">{{ caughtFish.name }}</div>
-                    <div class="fish-details">
-                      <span class="weight"
-                        >{{ caughtFish.weight.toFixed(2) }} kg</span
-                      >
-                      <span class="rarity-badge" :class="caughtFish.rarity">{{
-                        rarityLabels[caughtFish.rarity]
-                      }}</span>
-                    </div>
-                    <div class="fish-price">
-                      <Coins :size="14" />
-                      <span>{{ caughtFish.finalPrice }}</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </transition>
-
-            <!-- 釣到垃圾展示 -->
-            <transition name="catch-result">
-              <div
-                v-if="trashResult && gamePhase === 'trash'"
-                class="catch-result trash-result"
-              >
-                <div class="fish-card trash">
-                  <div class="fish-icon trash-icon">
-                    <Trash2 :size="32" />
-                  </div>
-                  <div class="fish-info">
-                    <div class="fish-name trash-name">釣到垃圾！</div>
-                    <div class="fish-details">
-                      <span class="trash-item-name">{{ trashResult.name }}</span>
-                    </div>
-                    <div class="fish-price trash-cost">
-                      <Coins :size="14" />
-                      <span>-{{ trashResult.cost }}</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </transition>
-
-            <!-- 魚簍 -->
-            <div class="inventory-section">
-              <div class="section-header">
-                <Package :size="18" />
-                <span>魚簍 ({{ fishInventory.length }})</span>
+            <p v-else class="creel-empty">魚簍是空的</p>
+          </section>
+        </main>
+        <!-- 魚竿選擇器（從抽屜上方滑出的底部抽屜） -->
+        <transition name="drawer-slide">
+          <div v-if="showRodSelector" class="rod-selector-backdrop" @click.self="showRodSelector = false">
+            <div class="rod-selector-drawer">
+              <div class="rod-selector-header">
+                <h3 class="rod-selector-title">換魚竿</h3>
                 <button
-                  v-if="fishInventory.length > 0"
-                  class="sell-all-btn pixel-btn"
-                  @click="handleSellAll"
+                  type="button"
+                  class="rod-selector-close"
+                  aria-label="關閉"
+                  @click="showRodSelector = false"
                 >
-                  <Coins :size="14" />
-                  <span>全部賣出 ({{ totalFishValue }})</span>
+                  <X :size="20" />
                 </button>
               </div>
-              <div v-if="fishInventory.length > 0" class="fish-list">
+              <div class="rod-list">
                 <div
-                  v-for="fish in fishInventory.slice(0, 6)"
-                  :key="fish.id"
-                  class="fish-item"
-                  :class="fish.rarity"
+                  v-for="rod in sortedRods"
+                  :key="rod.id"
+                  class="rod-item-card"
+                  :class="{
+                    'is-equipped': equippedRod?.id === rod.id,
+                    'is-broken': rod.durability <= 0,
+                  }"
+                  @click="selectRod(rod)"
                 >
-                  <div class="fish-mini-icon">
-                    <PixelFish :fish-id="fish.fishTypeId" :size="20" />
+                  <div class="rod-item-thumb">
+                    <PixelRod :rod-id="getRodItemId(rod)" :size="32" />
                   </div>
-                  <div class="fish-mini-info">
-                    <span class="name">{{ fish.name }}</span>
-                    <span class="price">{{ fish.finalPrice }}</span>
+                  <div class="rod-item-meta">
+                    <div class="rod-item-name-row">
+                      <span class="rod-item-name">{{ rod.name }}</span>
+                      <span v-if="equippedRod?.id === rod.id" class="equipped-badge">已裝備</span>
+                    </div>
+                    <div class="rod-item-durability">
+                      耐久 {{ rod.durability }}/{{ rod.maxDurability }}
+                      <span v-if="rod.durability <= 0" class="broken-hint">（已損壞）</span>
+                    </div>
                   </div>
                 </div>
-                <div v-if="fishInventory.length > 6" class="more-fish">
-                  +{{ fishInventory.length - 6 }} MORE
-                </div>
-              </div>
-              <div v-else class="empty-inventory">
-                <span>魚簍是空的</span>
               </div>
             </div>
           </div>
-          <!-- 結束 modal-body -->
+        </transition>
 
-          <!-- 魚竿選擇器 -->
-          <transition name="slide-up">
-            <div
-              v-if="showRodSelector"
-              class="rod-selector-overlay"
-              @click.self="showRodSelector = false"
-            >
-              <div class="rod-selector pixel-theme">
-                <div class="selector-header">
-                  <h4>SELECT ROD</h4>
-                  <button class="close-btn" @click="showRodSelector = false">
-                    <X :size="18" />
-                  </button>
-                </div>
-                <div class="rod-list">
-                  <!-- 直接顯示每根魚竿（每種類型只有一根） -->
-                  <div
-                    v-for="rod in sortedRods"
-                    :key="rod.id"
-                    class="rod-item"
-                    :class="{
-                      selected: equippedRod?.id === rod.id,
-                      [getRodRarity(rod)]: true,
-                    }"
-                    @click="selectRod(rod)"
-                  >
-                    <div class="rod-item-icon" :class="getRodRarity(rod)">
-                      <PixelRod :rod-id="getRodItemId(rod)" :size="32" />
-                    </div>
-                    <div class="rod-item-info">
-                      <span class="rod-item-name">{{ rod.name }}</span>
-                      <div class="rod-item-durability">
-                        <div
-                          class="dur-bar"
-                          :style="{
-                            width: `${(rod.durability / rod.maxDurability) * 100}%`,
-                          }"
-                          :class="{
-                            low: rod.durability < rod.maxDurability * 0.2,
-                          }"
-                        />
-                      </div>
-                      <span class="rod-item-stats">
-                        {{ rod.durability }}/{{ rod.maxDurability }}
-                      </span>
-                    </div>
-                    <CheckCircle
-                      v-if="equippedRod?.id === rod.id"
-                      :size="20"
-                      class="check-icon"
-                    />
-                  </div>
-                  <div v-if="fishingRods.length === 0" class="no-rods">
-                    <span>NO RODS AVAILABLE</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </transition>
-
-          <!-- 遊戲指南 -->
-          <FishingGuideModal :visible="showGuide" @close="showGuide = false" />
-        </div>
+        <!-- 說明彈窗 -->
+        <FishingGuideModal
+          :visible="showGuide"
+          @close="showGuide = false"
+        />
       </div>
     </transition>
   </teleport>
 </template>
-
 <script setup lang="ts">
 import PixelFish from "@/components/common/PixelFish.vue";
 import PixelRod from "@/components/common/PixelRod.vue";
@@ -645,22 +332,12 @@ import type { CaughtFish, FishingRod, Rarity } from "@/schemas/gameEconomy";
 import { useNotificationStore } from "@/stores";
 import { useGameEconomyStore } from "@/stores/gameEconomy";
 import {
-    AlertCircle,
-    Anchor,
-    ArrowUp,
-    CheckCircle,
-    Clock,
-    Coins,
-    Fish,
-    Trash2,
-    Gift,
-    Heart,
-    HelpCircle,
-    Moon,
-    Package,
-    RefreshCw,
-    RotateCcw,
-    X,
+  ChevronLeft,
+  ChevronRight,
+  HelpCircle,
+  Moon,
+  Trash2,
+  X,
 } from "lucide-vue-next";
 import { computed, onUnmounted, ref, watch } from "vue";
 
@@ -700,6 +377,62 @@ const showGuide = ref(false);
 // 計時器
 let waitTimer: ReturnType<typeof setTimeout> | null = null;
 let hookTimer: ReturnType<typeof setTimeout> | null = null;
+let castTimer: ReturnType<typeof setTimeout> | null = null;
+
+// 時段計算
+const now = ref(new Date());
+let nowTimer: ReturnType<typeof setInterval> | null = null;
+
+const timeOfDay = computed<'day' | 'dusk' | 'night'>(() => {
+  const h = now.value.getHours();
+  if (h >= 6 && h < 16) return 'day';
+  if (h >= 16 && h < 19) return 'dusk';
+  return 'night';
+});
+
+const themeStyle = computed(() => {
+  const t = timeOfDay.value;
+  if (t === 'day') {
+    return {
+      '--sky-top': '#9CC3E6',
+      '--sky-bot': '#E6F0F7',
+      '--water-top': '#6F9CC4',
+      '--water-bot': '#3E6A93',
+      '--sun': '#FBE7A8',
+      '--sun-top': '120px',
+      '--hill': '#7FA58C',
+      '--line': '#FFFFFF',
+      '--fg': '#121214',
+      '--chip': 'rgba(255,255,255,0.8)',
+    };
+  }
+  if (t === 'dusk') {
+    return {
+      '--sky-top': '#5E7FA8',
+      '--sky-bot': '#EDB892',
+      '--water-top': '#8A7F95',
+      '--water-bot': '#3E4A66',
+      '--sun': '#F6A66B',
+      '--sun-top': '236px',
+      '--hill': '#4E4A5A',
+      '--line': '#FFFFFF',
+      '--fg': '#FFFFFF',
+      '--chip': 'rgba(16,16,18,0.32)',
+    };
+  }
+  return {
+    '--sky-top': '#0F1830',
+    '--sky-bot': '#2B3A5C',
+    '--water-top': '#1E2A47',
+    '--water-bot': '#0B1224',
+    '--sun': '#E8E4D8',
+    '--sun-top': '130px',
+    '--hill': '#0A1022',
+    '--line': '#C9D2E6',
+    '--fg': '#FFFFFF',
+    '--chip': 'rgba(255,255,255,0.14)',
+  };
+});
 
 // 稀有度標籤
 const rarityLabels: Record<Rarity, string> = {
@@ -791,6 +524,10 @@ function handleClose() {
 }
 
 function clearTimers() {
+  if (castTimer) {
+    clearTimeout(castTimer);
+    castTimer = null;
+  }
   if (waitTimer) {
     clearTimeout(waitTimer);
     waitTimer = null;
@@ -846,11 +583,12 @@ function getRodItemId(rod: FishingRod): string {
 function startFishing() {
   if (!canFish.value) return;
 
+  clearTimers();
   gamePhase.value = "casting";
   caughtFish.value = null;
 
   // 拋竿動畫後進入等待
-  setTimeout(() => {
+  castTimer = setTimeout(() => {
     gamePhase.value = "waiting";
 
     // 隨機等待時間 (2-8 秒)
@@ -866,6 +604,23 @@ function startFishing() {
       }, 3000);
     }, waitTime);
   }, 800);
+}
+
+function handlePrimaryAction() {
+  if (isIdling.value) {
+    handleClaimIdle();
+  } else if (gamePhase.value === 'idle') {
+    startFishing();
+  } else if (gamePhase.value === 'hooked') {
+    reelIn();
+  } else if (['caught', 'trash', 'missed'].includes(gamePhase.value)) {
+    if (canFish.value) {
+      resetGame();
+      startFishing();
+    } else {
+      resetGame();
+    }
+  }
 }
 
 async function reelIn() {
@@ -972,11 +727,27 @@ async function handleCancelIdle() {
   stopIdleUpdateTimer();
 }
 
+function startNowTimer() {
+  now.value = new Date();
+  if (nowTimer) return;
+  nowTimer = setInterval(() => {
+    now.value = new Date();
+  }, 60000);
+}
+
+function stopNowTimer() {
+  if (nowTimer) {
+    clearInterval(nowTimer);
+    nowTimer = null;
+  }
+}
+
 // 監聯可見性
 watch(
   () => props.visible,
   async (visible) => {
     if (visible) {
+      startNowTimer();
       // 強制重新載入狀態（會自動合併魚竿）
       await gameEconomyStore.loadState(GLOBAL_WALLET_ID, true);
       // 額外保存一次確保合併結果被保存
@@ -987,6 +758,7 @@ watch(
         startIdleUpdateTimer();
       }
     } else {
+      stopNowTimer();
       clearTimers();
       stopIdleUpdateTimer();
     }
@@ -996,1530 +768,839 @@ watch(
 
 // 清理
 onUnmounted(() => {
+  stopNowTimer();
   clearTimers();
   stopIdleUpdateTimer();
 });
 </script>
 
+
 <style scoped lang="scss">
-@import url("https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap");
-
-// Pixel Art Theme Variables
-$pixel-black: #1a1a1a;
-$pixel-white: #ffffff;
-$pixel-gray: #9ca3af;
-$pixel-dark-gray: #4b5563;
-$pixel-border: 4px solid $pixel-black;
-$pixel-shadow: 4px 4px 0px rgba(0, 0, 0, 0.2);
-$pixel-font: "Press Start 2P", "Courier New", monospace;
-
-.game-overlay {
+@use "@/components/games/gameShell" as gs;
+.fish-screen {
   position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.7);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 10000;
-  backdrop-filter: none; // Disable glass effect for retro look
-  padding: 20px;
-}
-
-.game-modal {
-  background: $pixel-white;
-  border-radius: 0; // No rounded corners
-  border: $pixel-border; // Hard border
-  width: 100%;
-  max-width: 420px;
-  max-height: 90vh;
-  display: flex;
-  flex-direction: column;
+  inset: 0;
+  z-index: 1000;
   overflow: hidden;
-  box-shadow: 8px 8px 0px rgba(0, 0, 0, 0.5); // Hard block shadow
-  font-family: $pixel-font; // Retro font
+  @include gs.vars;
+  background: var(--g-surface);
+  --sheet-h: 380px;
 }
 
-// ===== 可滾動內容區 =====
-.modal-body {
-  flex: 1;
-  overflow-y: auto;
+// 畫面進入淡入與往上滑入動畫
+.fish-slide-enter-active,
+.fish-slide-leave-active {
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+.fish-slide-enter-from,
+.fish-slide-leave-to {
+  opacity: 0;
+  transform: translateY(24px);
+}
+
+// 頂欄
+.fish-header {
+  position: absolute;
+  left: 20px;
+  right: 20px;
+  top: max(16px, var(--safe-area-inset-top, env(safe-area-inset-top)));
+  z-index: 20;
+  color: var(--fg);
   display: flex;
   flex-direction: column;
-  scrollbar-width: thin;
-  scrollbar-color: $pixel-black #e5e7eb;
+  gap: 12px;
 
-  &::-webkit-scrollbar {
-    width: 8px;
-  }
-  &::-webkit-scrollbar-thumb {
-    background: $pixel-black;
-    border-radius: 0;
-  }
-  &::-webkit-scrollbar-track {
-    background: #e5e7eb;
-  }
-}
-
-// ===== 頭部 =====
-.modal-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 16px 20px;
-  border-bottom: $pixel-border;
-  background: #f3f4f6;
-
-  .header-left {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-  }
-
-  .game-icon {
-    width: 44px;
+  .header-main {
     height: 44px;
-    background: #22d3ee;
-    border: 2px solid $pixel-black;
-    border-radius: 0;
-    box-shadow: 2px 2px 0px rgba(0, 0, 0, 0.5);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-
-    svg {
-      width: 28px;
-      height: 28px;
-      color: $pixel-black;
-    }
-  }
-
-  .header-info {
-    h3 {
-      margin: 0;
-      font-size: 14px; // Smaller pixel font
-      font-weight: 400; // Pixel font usually doesn't need bold
-      color: $pixel-black;
-      line-height: 1.5;
-    }
-
-    .subtitle {
-      margin: 4px 0 0;
-      font-size: 10px;
-      color: $pixel-dark-gray;
-    }
-  }
-
-  .header-actions {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-
-  .guide-btn {
-    width: 36px;
-    height: 36px;
-    border: 2px solid $pixel-black;
-    background: #3b82f6;
-    border-radius: 0;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: white;
-    transition: none;
-    box-shadow: 2px 2px 0px rgba(0, 0, 0, 0.5);
-
-    &:active {
-      transform: translate(2px, 2px);
-      box-shadow: none;
-    }
-
-    &:hover {
-      background: #2563eb;
-    }
-  }
-
-  .close-btn {
-    width: 36px;
-    height: 36px;
-    border: 2px solid $pixel-black;
-    background: #ef4444;
-    border-radius: 0;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: white;
-    transition: none; // No smooth transition
-    box-shadow: 2px 2px 0px rgba(0, 0, 0, 0.5);
-
-    &:active {
-      transform: translate(2px, 2px);
-      box-shadow: none;
-    }
-  }
-}
-
-// ===== 魚竿區域 =====
-.rod-section {
-  padding: 12px 20px;
-  background: #ffffff;
-  border-bottom: $pixel-border;
-}
-
-.rod-info {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  position: relative;
-
-  &.clickable {
-    cursor: pointer;
-    transition: background 0.1s;
-    padding: 8px;
-    margin: -8px;
-    border: 2px solid transparent;
-
-    &:hover {
-      background: rgba(0, 0, 0, 0.05);
-      border-color: #d1d5db;
-    }
-
-    &:active {
-      background: rgba(0, 0, 0, 0.1);
-    }
-  }
-
-  .change-hint {
-    color: #9ca3af;
-    display: flex;
-    align-items: center;
-    margin-left: 8px;
-  }
-
-  .rod-icon {
-    width: 40px;
-    height: 40px;
-    border: 2px solid $pixel-black;
-    box-shadow: 2px 2px 0px rgba(0, 0, 0, 0.3);
-    border-radius: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: $pixel-black;
-    background: #e5e7eb;
-
-    svg {
-      width: 24px;
-      height: 24px;
-    }
-
-    &.common {
-      background: #d1d5db;
-    }
-    &.uncommon {
-      background: #86efac;
-    }
-    &.rare {
-      background: #93c5fd;
-    }
-    &.epic {
-      background: #d8b4fe;
-    }
-    &.legendary {
-      background: #fcd34d;
-    }
-  }
-
-  .rod-details {
-    flex: 1;
-
-    .rod-name {
-      font-size: 12px;
-      font-weight: 400;
-      color: $pixel-black;
-      margin-bottom: 4px;
-    }
-
-    .rod-stats {
-      display: flex;
-      gap: 12px;
-      font-size: 10px;
-      color: $pixel-dark-gray;
-
-      span {
-        display: flex;
-        align-items: center;
-        gap: 4px;
-      }
-    }
-  }
-
-  .durability-bar {
-    width: 60px;
-    height: 12px;
-    background: #e5e7eb;
-    border: 2px solid $pixel-black;
-    border-radius: 0;
-    overflow: hidden;
-
-    .durability-fill {
-      height: 100%;
-      background: #22c55e;
-      border-right: 2px solid $pixel-black; // Indicator line
-      transition: width 0.3s steps(5); // Stepped animation
-
-      &.low {
-        background: #ef4444;
-      }
-    }
-  }
-}
-
-.no-rod {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: $pixel-dark-gray;
-  font-size: 10px;
-
-  .equip-btn {
-    margin-left: auto;
-    padding: 8px 12px;
-    background: #06b6d4;
-    border: 2px solid $pixel-black;
-    border-radius: 0;
-    font-size: 10px;
-    font-weight: 400;
-    color: white;
-    cursor: pointer;
-    box-shadow: 2px 2px 0px rgba(0, 0, 0, 0.5);
-    font-family: $pixel-font;
-
-    &:active {
-      transform: translate(2px, 2px);
-      box-shadow: none;
-    }
-  }
-}
-
-// ===== 釣魚場景 - 精緻像素風格 =====
-.game-area {
-  display: flex;
-  flex-direction: column;
-  flex-shrink: 0;
-  background: #f0f9ff;
-}
-
-.fishing-scene {
-  position: relative;
-  overflow: hidden;
-  border-bottom: $pixel-border;
-  image-rendering: pixelated;
-  height: 220px;
-  min-height: 220px;
-
-  // 天空漸層背景
-  background: linear-gradient(
-    180deg,
-    #7dd3fc 0%,
-    #38bdf8 25%,
-    #0ea5e9 50%,
-    #bae6fd 75%,
-    #e0f2fe 100%
-  );
-}
-
-// ===== 天空層 =====
-.sky-layer {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 55%;
-  pointer-events: none;
-}
-
-.sun {
-  position: absolute;
-  top: 12px;
-  right: 25px;
-  width: 28px;
-  height: 28px;
-  background: #fef08a;
-  border: 3px solid #fde047;
-  box-shadow: 0 0 0 3px rgba(253, 224, 71, 0.3);
-}
-
-.cloud {
-  position: absolute;
-  background: #fff;
-
-  &::before,
-  &::after {
-    content: "";
-    position: absolute;
-    background: #fff;
-  }
-
-  &.cloud-1 {
-    top: 18px;
-    left: 12%;
-    width: 40px;
-    height: 14px;
-
-    &::before {
-      top: -7px;
-      left: 6px;
-      width: 28px;
-      height: 10px;
-    }
-    &::after {
-      top: -3px;
-      left: 24px;
-      width: 14px;
-      height: 6px;
-    }
-  }
-
-  &.cloud-2 {
-    top: 32px;
-    left: 50%;
-    width: 32px;
-    height: 10px;
-
-    &::before {
-      top: -5px;
-      left: 5px;
-      width: 22px;
-      height: 8px;
-    }
-  }
-
-  &.cloud-3 {
-    top: 45px;
-    left: 22%;
-    width: 24px;
-    height: 8px;
-    opacity: 0.7;
-
-    &::before {
-      top: -4px;
-      left: 3px;
-      width: 18px;
-      height: 6px;
-    }
-  }
-}
-
-// ===== 遠山層 =====
-.mountains-layer {
-  position: absolute;
-  bottom: 48%;
-  left: 0;
-  right: 0;
-  height: 50px;
-  pointer-events: none;
-}
-
-.mountain {
-  position: absolute;
-  bottom: 0;
-
-  &.mountain-far {
-    left: 3%;
-    width: 0;
-    height: 0;
-    border-left: 45px solid transparent;
-    border-right: 45px solid transparent;
-    border-bottom: 38px solid #c7d2fe;
-    opacity: 0.7;
-  }
-
-  &.mountain-mid {
-    left: 22%;
-    width: 0;
-    height: 0;
-    border-left: 60px solid transparent;
-    border-right: 60px solid transparent;
-    border-bottom: 48px solid #a5b4fc;
-    opacity: 0.8;
-  }
-
-  &.mountain-near {
-    right: 8%;
-    width: 0;
-    height: 0;
-    border-left: 55px solid transparent;
-    border-right: 55px solid transparent;
-    border-bottom: 42px solid #818cf8;
-    opacity: 0.85;
-  }
-}
-
-// ===== 樹林層 =====
-.trees-layer {
-  position: absolute;
-  bottom: 48%;
-  left: 0;
-  right: 0;
-  height: 35px;
-  pointer-events: none;
-}
-
-.tree {
-  position: absolute;
-  bottom: 0;
-
-  &::before {
-    content: "";
-    position: absolute;
-    bottom: 7px;
-    left: 50%;
-    transform: translateX(-50%);
-    width: 0;
-    height: 0;
-    border-left: 10px solid transparent;
-    border-right: 10px solid transparent;
-    border-bottom: 18px solid #166534;
-  }
-
-  &::after {
-    content: "";
-    position: absolute;
-    bottom: 0;
-    left: 50%;
-    transform: translateX(-50%);
-    width: 5px;
-    height: 8px;
-    background: #78350f;
-  }
-
-  &.tree-1 {
-    left: 3%;
-  }
-  &.tree-2 {
-    left: 10%;
-    &::before {
-      border-bottom-color: #15803d;
-    }
-  }
-  &.tree-3 {
-    right: 12%;
-  }
-  &.tree-4 {
-    right: 3%;
-    &::before {
-      border-bottom-color: #14532d;
-    }
-  }
-}
-
-// ===== 水面 =====
-.water {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: 48%;
-  background: linear-gradient(180deg, #0284c7 0%, #0369a1 40%, #075985 100%);
-
-  .water-surface {
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 6px;
-    background: repeating-linear-gradient(
-      90deg,
-      #7dd3fc 0px,
-      #7dd3fc 6px,
-      #38bdf8 6px,
-      #38bdf8 12px
-    );
-  }
-
-  .water-reflection {
-    position: absolute;
-    top: 8px;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: repeating-linear-gradient(
-      0deg,
-      transparent 0px,
-      transparent 10px,
-      rgba(125, 211, 252, 0.12) 10px,
-      rgba(125, 211, 252, 0.12) 12px
-    );
-  }
-
-  .water-sparkles {
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-  }
-
-  .sparkle {
-    position: absolute;
-    width: 3px;
-    height: 3px;
-    background: rgba(255, 255, 255, 0.5);
-
-    &.s1 {
-      top: 18%;
-      left: 12%;
-    }
-    &.s2 {
-      top: 32%;
-      left: 42%;
-    }
-    &.s3 {
-      top: 22%;
-      right: 22%;
-    }
-    &.s4 {
-      top: 48%;
-      left: 28%;
-    }
-    &.s5 {
-      top: 38%;
-      right: 38%;
-    }
-  }
-}
-
-// ===== 船和史萊姆 =====
-.boat-group {
-  position: absolute;
-  bottom: 44%;
-  left: 15%;
-  width: 200px;
-  height: 70px;
-}
-
-.boat {
-  position: absolute;
-  bottom: 0;
-  left: 10px;
-  width: 80px;
-  height: 25px;
-
-  .boat-svg {
-    width: 100%;
-    height: 100%;
-  }
-}
-
-.slime-fisher {
-  position: absolute;
-  bottom: 12px;
-  left: 25px;
-  width: 48px;
-  height: 38px;
-
-  .slime-svg {
-    width: 100%;
-    height: 100%;
-    image-rendering: pixelated;
-  }
-
-  &.casting {
-    animation: slimeCast 0.5s ease-out;
-  }
-
-  &.hooked {
-    animation: slimePull 0.3s steps(2) infinite;
-  }
-}
-
-.fishing-rod {
-  position: absolute;
-  bottom: 10px;
-  left: 65px;
-  width: 100px;
-  height: 40px;
-  transform-origin: left center;
-
-  .rod-svg {
-    width: 100%;
-    height: 100%;
-    image-rendering: pixelated;
-  }
-
-  &.casting {
-    animation: rodCast 0.5s ease-out;
-  }
-
-  &.hooked {
-    animation: rodPull 0.3s steps(2) infinite;
-  }
-}
-
-@keyframes rodCast {
-  0% {
-    transform: rotate(0deg);
-  }
-  30% {
-    transform: rotate(-8deg);
-  }
-  60% {
-    transform: rotate(3deg);
-  }
-  100% {
-    transform: rotate(0deg);
-  }
-}
-
-@keyframes rodPull {
-  0%,
-  100% {
-    transform: rotate(0deg);
-  }
-  50% {
-    transform: rotate(-3deg);
-  }
-}
-
-@keyframes slimeCast {
-  0% {
-    transform: rotate(0deg);
-  }
-  30% {
-    transform: rotate(-3deg) scaleY(0.95);
-  }
-  60% {
-    transform: rotate(2deg) scaleY(1.02);
-  }
-  100% {
-    transform: rotate(0deg) scaleY(1);
-  }
-}
-
-@keyframes slimePull {
-  0%,
-  100% {
-    transform: scaleX(1) scaleY(1);
-  }
-  50% {
-    transform: scaleX(1.02) scaleY(0.98);
-  }
-}
-
-.fishing-line-group {
-  position: absolute;
-  top: 35%;
-  left: 50%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-
-  .line {
-    width: 1px;
-    height: 0;
-    background: #475569;
-  }
-
-  .bobber {
-    width: 14px;
-    height: 20px;
-    opacity: 0;
-
-    .bobber-svg {
-      width: 100%;
-      height: 100%;
-    }
-  }
-
-  &.waiting,
-  &.hooked,
-  &.caught {
-    .line {
-      height: 45px;
-    }
-    .bobber {
-      opacity: 1;
-    }
-  }
-
-  &.casting {
-    .line {
-      height: 45px;
-      transition: height 0.4s ease-out;
-    }
-    .bobber {
-      opacity: 1;
-      transition: opacity 0.3s ease-out 0.2s;
-    }
-  }
-
-  &.waiting .bobber {
-    animation: bobberFloat 1.5s ease-in-out infinite;
-  }
-
-  &.hooked {
-    .bobber {
-      animation: bobberAlert 0.2s steps(2) infinite;
-    }
-    .line {
-      animation: linePull 0.2s steps(2) infinite;
-    }
-  }
-}
-
-@keyframes bobberFloat {
-  0%,
-  100% {
-    transform: translateY(0);
-  }
-  50% {
-    transform: translateY(3px);
-  }
-}
-
-@keyframes bobberAlert {
-  0%,
-  100% {
-    transform: translateY(0) scale(1);
-  }
-  50% {
-    transform: translateY(-8px) scale(1.15);
-  }
-}
-
-@keyframes linePull {
-  0%,
-  100% {
-    transform: scaleY(1);
-  }
-  50% {
-    transform: scaleY(0.95);
-  }
-}
-
-// ===== 魚 =====
-.fish-sprite {
-  position: absolute;
-  top: 62%;
-  left: 48%;
-  animation: fishStruggle 0.5s steps(3) infinite alternate;
-
-  svg {
-    width: 42px;
-    height: 42px;
-    filter: drop-shadow(2px 2px 0 rgba(0, 0, 0, 0.25));
-  }
-
-  &.caught {
-    animation: fishCaught 0.5s ease-out forwards;
-  }
-}
-
-@keyframes fishStruggle {
-  0% {
-    transform: translateX(0) rotate(0deg);
-  }
-  100% {
-    transform: translateX(-6px) rotate(-8deg);
-  }
-}
-
-@keyframes fishCaught {
-  0% {
-    transform: translateY(0);
-    opacity: 1;
-  }
-  100% {
-    transform: translateY(-35px);
-    opacity: 0;
-  }
-}
-
-// ===== 水中小魚裝飾 =====
-.underwater-fish {
-  position: absolute;
-  bottom: 4%;
-  left: 0;
-  right: 0;
-  pointer-events: none;
-}
-
-.small-fish {
-  position: absolute;
-  width: 10px;
-  height: 6px;
-
-  &::before {
-    content: "";
-    position: absolute;
-    width: 6px;
-    height: 5px;
-    background: rgba(251, 191, 36, 0.35);
-    border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%;
-  }
-
-  &::after {
-    content: "";
-    position: absolute;
-    left: -3px;
-    top: 1px;
-    width: 0;
-    height: 0;
-    border-top: 2px solid transparent;
-    border-bottom: 2px solid transparent;
-    border-right: 4px solid rgba(251, 191, 36, 0.35);
-  }
-
-  &.fish-a {
-    left: 18%;
-    bottom: 28%;
-  }
-
-  &.fish-b {
-    right: 22%;
-    bottom: 48%;
-    transform: scaleX(-1);
-  }
-}
-
-// ===== 提示框 =====
-.phase-hint {
-  position: absolute;
-  bottom: 10px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 10;
-
-  .hint-box {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 6px 12px;
-    background: rgba(255, 255, 255, 0.95);
-    border: 3px solid #1e293b;
-    box-shadow:
-      3px 3px 0 rgba(0, 0, 0, 0.25),
-      inset 0 -2px 0 rgba(0, 0, 0, 0.08);
-
-    .hint-icon {
-      width: 14px;
-      height: 14px;
-      color: #475569;
-
-      svg {
-        width: 100%;
-        height: 100%;
-      }
-    }
-
-    .hint-text {
-      font-size: 10px;
-      font-weight: 600;
-      color: #1e293b;
-      letter-spacing: 0.5px;
-    }
-  }
-
-  &.hooked .hint-box {
-    background: #fef3c7;
-    border-color: #d97706;
-    animation: hintPulse 0.3s steps(2) infinite;
-
-    .hint-icon {
-      color: #d97706;
-    }
-    .alert-text {
-      color: #c2410c;
-    }
-  }
-
-  &.caught .hint-box {
-    background: #dcfce7;
-    border-color: #16a34a;
-
-    .hint-icon {
-      color: #16a34a;
-    }
-    .success-text {
-      color: #15803d;
-    }
-  }
-
-  &.missed .hint-box {
-    background: #fee2e2;
-    border-color: #dc2626;
-
-    .hint-icon {
-      color: #dc2626;
-    }
-    .fail-text {
-      color: #b91c1c;
-    }
-  }
-}
-
-@keyframes hintPulse {
-  0%,
-  100% {
-    transform: scale(1);
-  }
-  50% {
-    transform: scale(1.02);
-  }
-}
-
-.action-buttons {
-  padding: 16px 20px;
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 10px;
-  background: #f3f4f6;
-  border-top: $pixel-border; // Separate game area from buttons
-
-  .pixel-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    padding: 12px 24px;
-    border: 4px solid black; // Extra thick border for main buttons
-    border-radius: 0;
-    font-size: 12px;
-    font-weight: 600;
-    cursor: pointer;
-    font-family: $pixel-font;
-    box-shadow: 4px 4px 0px rgba(0, 0, 0, 0.5);
-    transition: none;
-
-    &:active:not(:disabled) {
-      transform: translate(4px, 4px);
-      box-shadow: none;
-    }
-
-    &:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
-      box-shadow: none;
-      transform: translate(2px, 2px);
-    }
-
-    &.secondary {
-      padding: 10px 16px;
-      font-size: 10px;
-      border-width: 3px;
-      box-shadow: 3px 3px 0px rgba(0, 0, 0, 0.4);
-
-      &:active:not(:disabled) {
-        transform: translate(3px, 3px);
-      }
-    }
-  }
-
-  .cast-btn {
-    background: #06b6d4;
-    color: white;
-  }
-  .reel-btn {
-    background: #f59e0b;
-    color: white;
-    animation: btnPulse 0.5s steps(2) infinite;
-  }
-  .continue-btn {
-    background: #6b7280;
-    color: white;
-  }
-  .idle-btn {
-    background: #8b5cf6;
-    color: white;
-  }
-  .claim-btn {
-    background: #22c55e;
-    color: white;
-  }
-  .cancel-idle-btn {
-    background: #ef4444;
-    color: white;
-  }
-
-  .idle-status {
-    width: 100%;
-    display: flex;
-    justify-content: center;
-    gap: 16px;
-    padding: 8px 12px;
-    background: #ede9fe;
-    border: 2px solid #8b5cf6;
-    margin-bottom: 8px;
-    font-family: $pixel-font;
-    font-size: 10px;
-
-    .idle-info {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      color: #6d28d9;
-    }
-
-    .idle-preview {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      color: #7c3aed;
-    }
-  }
-}
-
-@keyframes btnPulse {
-  0% {
-    background: #f59e0b;
-  }
-  50% {
-    background: #d97706;
-  }
-}
-
-// ===== 釣魚結果 =====
-.catch-result {
-  padding: 16px 20px;
-  background: #fef3c7;
-  border-bottom: $pixel-border;
-
-  &.trash-result {
-    background: #fde2e2;
-  }
-}
-
-.fish-card.trash {
-  border-color: #991b1b;
-  background: #fff5f5;
-
-  .trash-icon {
-    color: #991b1b;
-  }
-
-  .trash-name {
-    color: #991b1b !important;
-  }
-
-  .trash-item-name {
-    font-size: 11px;
-    color: #6b7280;
-  }
-
-  .trash-cost {
-    color: #dc2626 !important;
-    font-weight: bold;
-  }
-}
-
-.fish-card {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px;
-  background: white;
-  border: 4px solid black;
-  box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.2);
-
-  &.common {
-    border-color: #9ca3af;
-  }
-  &.uncommon {
-    border-color: #22c55e;
-  }
-  &.rare {
-    border-color: #3b82f6;
-  }
-  &.epic {
-    border-color: #a855f7;
-  }
-  &.legendary {
-    border-color: #f59e0b;
-    background: #fffbeb;
-  }
-
-  .fish-icon {
-    width: 64px;
-    height: 64px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: rgba(0, 0, 0, 0.05);
-    border: 2px solid black;
-
-    svg {
-      width: 48px;
-      height: 48px;
-    }
-  }
-
-  // Icon colors
-  &.common .fish-icon {
-    color: #6b7280;
-  }
-  &.uncommon .fish-icon {
-    color: #16a34a;
-  }
-  &.rare .fish-icon {
-    color: #2563eb;
-  }
-  &.epic .fish-icon {
-    color: #9333ea;
-  }
-  &.legendary .fish-icon {
-    color: #d97706;
-  }
-
-  .fish-info {
-    flex: 1;
-
-    .fish-name {
-      font-size: 14px;
-      font-weight: 600;
-      color: black;
-      margin-bottom: 8px;
-    }
-
-    .fish-details {
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-
-      .weight {
-        font-size: 10px;
-        color: #4b5563;
-      }
-
-      .rarity-badge {
-        display: inline-block;
-        padding: 4px 6px;
-        font-size: 10px;
-        color: white;
-        background: black;
-        width: fit-content;
-
-        &.common {
-          background: #9ca3af;
-        }
-        &.uncommon {
-          background: #22c55e;
-        }
-        &.rare {
-          background: #3b82f6;
-        }
-        &.epic {
-          background: #a855f7;
-        }
-        &.legendary {
-          background: #f59e0b;
-        }
-      }
-    }
-
-    .fish-price {
-      display: flex;
-      align-items: center;
-      gap: 4px;
-      margin-top: 8px;
-      font-size: 12px;
-      color: #d97706;
-      font-weight: bold;
-    }
-  }
-}
-
-// ===== 魚簍區域 =====
-.inventory-section {
-  padding: 16px 20px;
-  background: #ffffff;
-
-  .section-header {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-bottom: 12px;
-    font-size: 12px;
-    color: black;
-
-    .sell-all-btn {
-      margin-left: auto;
-      display: flex;
-      align-items: center;
-      gap: 4px;
-      padding: 6px 10px;
-      background: #d97706;
-      border: 2px solid black;
-      color: white;
-      font-size: 10px;
-      cursor: pointer;
-      box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.3);
-      font-family: $pixel-font;
-
-      &:active {
-        transform: translate(2px, 2px);
-        box-shadow: none;
-      }
-    }
-  }
-
-  .fish-list {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-  }
-
-  .fish-item {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 6px;
-    background: white;
-    border: 2px solid;
-    box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.1);
-
-    &.common {
-      border-color: #d1d5db;
-    }
-    &.uncommon {
-      border-color: #86efac;
-    }
-    &.rare {
-      border-color: #93c5fd;
-    }
-    &.epic {
-      border-color: #d8b4fe;
-    }
-    &.legendary {
-      border-color: #fcd34d;
-      background: #fffbeb;
-    }
-
-    .fish-mini-icon {
-      width: 16px;
-      height: 16px;
-      svg {
-        width: 100%;
-        height: 100%;
-      }
-    }
-
-    // Mini icon colors
-    &.common .fish-mini-icon {
-      color: #6b7280;
-    }
-    &.uncommon .fish-mini-icon {
-      color: #16a34a;
-    }
-    &.rare .fish-mini-icon {
-      color: #2563eb;
-    }
-    &.epic .fish-mini-icon {
-      color: #9333ea;
-    }
-    &.legendary .fish-mini-icon {
-      color: #d97706;
-    }
-
-    .fish-mini-info {
-      display: flex;
-      flex-direction: column;
-      .name {
-        font-size: 10px;
-        color: black;
-      }
-      .price {
-        font-size: 8px;
-        color: #d97706;
-      }
-    }
-  }
-}
-
-// ===== 魚竿選擇器 =====
-.rod-selector-overlay {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 10;
-  padding: 20px;
-}
-
-.rod-selector {
-  width: 100%;
-  max-width: 380px;
-  background: white;
-  border: $pixel-border;
-  box-shadow: 8px 8px 0 rgba(0, 0, 0, 0.5);
-  max-height: 70%;
-  display: flex;
-  flex-direction: column;
-  font-family: $pixel-font;
-
-  .selector-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 12px 16px;
-    border-bottom: 2px solid black;
-    background: #f3f4f6;
+  }
 
-    h4 {
-      margin: 0;
-      font-size: 12px;
-      color: black;
+  .nav-btn {
+    width: 44px;
+    height: 44px;
+    border-radius: 22px;
+    border: none;
+    background: var(--chip);
+    color: inherit;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    backdrop-filter: blur(8px);
+    transition: opacity 0.15s ease;
+
+    &:active {
+      opacity: 0.8;
+    }
+  }
+
+  .header-title {
+    font-size: 17px;
+    font-weight: 700;
+    margin: 0;
+    color: inherit;
+  }
+
+  .header-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .coin-chip {
+    height: 36px;
+    padding: 0 12px 0 8px;
+    border-radius: 18px;
+    background: var(--chip);
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    backdrop-filter: blur(8px);
+
+    .coin-icon {
+      width: 18px;
+      height: 18px;
+      flex-shrink: 0;
     }
 
-    .close-btn {
-      width: 28px;
-      height: 28px;
-      border: 2px solid black;
-      background: #ef4444;
-      color: white;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.3);
+    .coin-amount {
+      font-family: var(--g-num);
+      font-size: 14px;
+      font-weight: 600;
+      color: inherit;
+    }
+  }
 
-      &:active {
-        translate: 2px 2px;
-        box-shadow: none;
+  .stats-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .stat-chip {
+    height: 28px;
+    padding: 0 10px;
+    border-radius: 14px;
+    background: var(--chip);
+    font-size: 12px;
+    color: var(--fg);
+    display: inline-flex;
+    align-items: center;
+    backdrop-filter: blur(8px);
+  }
+}
+// 場景
+.scene {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: calc(100% - var(--sheet-h));
+  overflow: hidden;
+
+  .sky {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 60%;
+    background: linear-gradient(180deg, var(--sky-top) 0%, var(--sky-bot) 100%);
+  }
+
+  .water {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 40%;
+    background: linear-gradient(180deg, var(--water-top) 0%, var(--water-bot) 100%);
+  }
+
+  .sun-moon {
+    position: absolute;
+    left: 62px;
+    top: var(--sun-top);
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    background: var(--sun);
+    box-shadow: 0 0 32px var(--sun);
+    pointer-events: none;
+    transition: top 0.4s ease;
+  }
+
+  .stars {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 60%;
+    pointer-events: none;
+
+    .star {
+      position: absolute;
+      background: #FFFFFF;
+      border-radius: 50%;
+      opacity: 0.85;
+
+      &.s1 { width: 3px; height: 3px; top: 18%; left: 22%; }
+      &.s2 { width: 2px; height: 2px; top: 28%; left: 45%; }
+      &.s3 { width: 3px; height: 3px; top: 12%; left: 78%; }
+      &.s4 { width: 2px; height: 2px; top: 35%; left: 82%; }
+      &.s5 { width: 2.5px; height: 2.5px; top: 44%; left: 32%; }
+    }
+  }
+
+  .scene-hills {
+    position: absolute;
+    top: calc(60% - 26px);
+    left: 0;
+    width: 100%;
+    height: 52px;
+    path {
+      fill: var(--hill);
+    }
+  }
+
+  .sun-reflection {
+    position: absolute;
+    left: 62px;
+    top: calc(60% + 8px);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    pointer-events: none;
+
+    .ref-line {
+      height: 2px;
+      border-radius: 1px;
+      background: var(--sun);
+
+      &.r1 { width: 36px; opacity: 0.55; }
+      &.r2 { width: 24px; opacity: 0.4; }
+      &.r3 { width: 14px; opacity: 0.3; }
+    }
+  }
+
+  .fishing-svg {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+  }
+
+  // 魚影游動動畫
+  .fish-shadow {
+    transition: transform 0.3s ease;
+    &.swimming-hooked {
+      animation: fishSwim 1s ease-in-out infinite alternate;
+    }
+  }
+
+  // 漣漪動畫
+  .ripples {
+    transform-origin: 236px 363px;
+    &.ripples-slow {
+      animation: ripplePulse 2.4s ease-out infinite;
+    }
+    &.ripples-fast {
+      animation: ripplePulse 0.9s ease-out infinite;
+    }
+  }
+
+  // 浮標各階段動畫
+  .bobber-group {
+    transform-origin: 236px 350px;
+    &.bobber-waiting {
+      animation: bobberFloat 2s ease-in-out infinite alternate;
+    }
+    &.bobber-hooked {
+      animation: bobberShake 0.15s ease-in-out infinite alternate;
+    }
+    &.bobber-casting {
+      animation: bobberCast 0.8s cubic-bezier(0.2, 0.8, 0.4, 1) forwards;
+    }
+  }
+
+  // 魚竿彎曲抖動
+  .fishing-rod-graphic {
+    transform-origin: 430px 590px;
+    &.rod-bending {
+      animation: rodBend 0.2s ease-in-out infinite alternate;
+    }
+  }
+
+  // 浮標上方狀態膠囊
+  .scene-status-capsule {
+    position: absolute;
+    left: 236px;
+    top: calc(100% - 190px);
+    transform: translateX(-50%);
+    height: 34px;
+    padding: 0 14px;
+    border-radius: 17px;
+    background: #FFFFFF;
+    color: #121214;
+    font-size: 14px;
+    font-weight: 700;
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.18);
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    white-space: nowrap;
+    z-index: 10;
+    pointer-events: none;
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #8E8E93;
+    }
+
+    &.status-hooked {
+      animation: capsuleBounce 0.4s ease-in-out infinite alternate;
+      .status-dot {
+        background: #E5533D;
       }
     }
+
+    &.status-caught .status-dot {
+      background: #2F7A4A;
+    }
+
+    &.status-trash .status-dot,
+    &.status-missed .status-dot {
+      background: #8E8E93;
+    }
+  }
+}
+
+@keyframes fishSwim {
+  0% { transform: translate(0, 0); }
+  100% { transform: translate(-28px, -60px) scale(1.05); }
+}
+
+@keyframes ripplePulse {
+  0% { transform: scale(0.85); opacity: 0.9; }
+  100% { transform: scale(1.3); opacity: 0.15; }
+}
+
+@keyframes bobberFloat {
+  0% { transform: translateY(-3px); }
+  100% { transform: translateY(4px); }
+}
+
+@keyframes bobberShake {
+  0% { transform: translateY(6px) rotate(-3deg); }
+  100% { transform: translateY(14px) rotate(3deg); }
+}
+
+@keyframes bobberCast {
+  0% { transform: translate(64px, -240px) scale(0.6); opacity: 0; }
+  40% { transform: translate(20px, -140px) scale(0.85); opacity: 1; }
+  100% { transform: translate(0, 0) scale(1); opacity: 1; }
+}
+
+@keyframes rodBend {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(4deg); }
+}
+
+@keyframes capsuleBounce {
+  0% { transform: translate(-50%, 0); }
+  100% { transform: translate(-50%, -4px); }
+}
+// 底部抽屜
+.fish-drawer {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: var(--sheet-h);
+  max-height: 60%;
+  background: var(--g-surface);
+  color: var(--g-text);
+  border-radius: 28px 28px 0 0;
+  padding: 22px 20px max(28px, var(--safe-area-inset-bottom, env(safe-area-inset-bottom)));
+  box-sizing: border-box;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.08);
+  z-index: 25;
+}
+
+// a. 魚竿列按鈕
+.rod-card-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  background: transparent;
+  border: 1px solid var(--g-border);
+  border-radius: 18px;
+  cursor: pointer;
+  text-align: left;
+  color: inherit;
+  transition: background-color 0.15s ease;
+
+  &:hover {
+    background: var(--g-muted);
+  }
+
+  .rod-thumb {
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+    background: var(--g-muted);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .rod-detail {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .rod-detail-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .rod-name {
+    font-size: 14px;
+    font-weight: 700;
+  }
+
+  .rod-durability-num {
+    font-size: 11px;
+    color: var(--g-text-2);
+  }
+
+  .rod-meter-track {
+    width: 100%;
+    height: 8px;
+    border-radius: 4px;
+    background: var(--g-muted);
+    overflow: hidden;
+  }
+
+  .rod-meter-fill {
+    height: 100%;
+    border-radius: 4px;
+    transition: width 0.25s ease, background-color 0.25s ease;
+  }
+
+  .rod-empty-info {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+
+    .empty-text {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--g-text-2);
+    }
+
+    .equip-chip {
+      height: 24px;
+      padding: 0 10px;
+      border-radius: 12px;
+      background: var(--g-muted);
+      font-size: 12px;
+      display: inline-flex;
+      align-items: center;
+    }
+  }
+
+  .rod-arrow {
+    color: var(--g-text-2);
+    flex-shrink: 0;
+  }
+}
+
+// b. 主按鈕
+.main-action-btn {
+  height: 62px;
+  border-radius: 31px;
+  border: none;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: transform 0.12s ease, opacity 0.15s ease, background-color 0.2s ease;
+  user-select: none;
+
+  &:active:not(:disabled) {
+    transform: scale(0.98);
+  }
+
+  .btn-main-text {
+    font-size: 18px;
+    font-weight: 700;
+  }
+
+  .btn-sub-text {
+    font-size: 11px;
+    opacity: 0.85;
+    margin-top: 2px;
+  }
+
+  &.btn-idle {
+    background: var(--g-text);
+    color: var(--g-surface);
+  }
+
+  &.btn-waiting {
+    background: var(--g-text);
+    color: var(--g-surface);
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  &.btn-hooked {
+    background: #E5533D;
+    color: #FFFFFF;
+    animation: hookPulse 0.6s infinite alternate;
+  }
+
+  &.btn-recast {
+    background: var(--g-text);
+    color: var(--g-surface);
+  }
+
+  &.btn-claim {
+    background: var(--g-text);
+    color: var(--g-surface);
+  }
+
+  &:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+}
+
+@keyframes hookPulse {
+  0% { transform: scale(1); box-shadow: 0 0 0 rgba(229, 83, 61, 0.4); }
+  100% { transform: scale(1.02); box-shadow: 0 4px 16px rgba(229, 83, 61, 0.6); }
+}
+
+// c. 次要操作列
+.secondary-actions {
+  display: flex;
+  gap: 8px;
+
+  .sec-btn {
+    @include gs.pill-outline(44px);
+    width: 100%;
+    justify-content: center;
+    gap: 6px;
+    cursor: pointer;
+    font-weight: 600;
+  }
+}
+
+// d. 收穫卡
+.result-card {
+  border: 1px solid var(--g-border);
+  border-radius: 18px;
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+
+  .result-fish-thumb,
+  .result-trash-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+    background: var(--g-muted);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .result-fish-meta {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .result-title-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .result-name {
+    font-size: 16px;
+    font-weight: 700;
+  }
+
+  .result-weight {
+    font-size: 12px;
+    color: var(--g-text-2);
+  }
+
+  .rarity-tag {
+    height: 22px;
+    padding: 0 8px;
+    border-radius: 11px;
+    font-size: 11px;
+    display: inline-flex;
+    align-items: center;
+    font-weight: 600;
+
+    &.rarity-common { background: var(--g-muted); color: var(--g-text-2); }
+    &.rarity-uncommon { background: #E4F0E8; color: #2F7A4A; }
+    &.rarity-rare { background: #E3ECF8; color: #3D6A9E; }
+    &.rarity-epic { background: #EFE6F7; color: #7A4FA0; }
+    &.rarity-legendary { background: #FFF3DA; color: #8A5A00; }
+  }
+
+  .result-price {
+    font-family: var(--g-num);
+    font-size: 16px;
+    font-weight: 700;
+    color: #2F7A4A;
+    flex-shrink: 0;
+  }
+
+  .result-cost {
+    font-family: var(--g-num);
+    font-size: 16px;
+    font-weight: 700;
+    color: #B4233F;
+    flex-shrink: 0;
+  }
+}
+
+// e. 魚簍
+.creel-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+
+  .creel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .creel-title {
+    font-size: 15px;
+    font-weight: 700;
+    margin: 0;
+  }
+
+  .sell-all-btn {
+    @include gs.pill-dark(36px);
+    cursor: pointer;
+    font-size: 13px;
+    padding: 0 14px;
+    border: none;
+  }
+
+  .creel-scroll {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    padding-bottom: 4px;
+
+    &::-webkit-scrollbar {
+      display: none;
+    }
+  }
+
+  .creel-item {
+    width: 64px;
+    height: 72px;
+    flex-shrink: 0;
+    border-radius: 14px;
+    background: var(--g-muted);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    padding: 4px;
+    box-sizing: border-box;
+
+    .creel-fish-name {
+      font-size: 11px;
+      max-width: 56px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .creel-fish-price {
+      font-family: var(--g-num);
+      font-size: 11px;
+      color: var(--g-text-2);
+    }
+  }
+
+  .creel-empty {
+    font-size: 13px;
+    color: var(--g-text-2);
+    margin: 8px 0;
+  }
+}
+
+// 魚竿選擇器抽屜
+.rod-selector-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 1050;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+
+.rod-selector-drawer {
+  background: var(--g-surface);
+  color: var(--g-text);
+  border-radius: 24px 24px 0 0;
+  padding: 20px 20px max(24px, var(--safe-area-inset-bottom, env(safe-area-inset-bottom)));
+  max-height: 75vh;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+
+  .rod-selector-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .rod-selector-title {
+    font-size: 17px;
+    font-weight: 700;
+    margin: 0;
+  }
+
+  .rod-selector-close {
+    width: 32px;
+    height: 32px;
+    border-radius: 16px;
+    border: none;
+    background: var(--g-muted);
+    color: inherit;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
   }
 
   .rod-list {
-    flex: 1;
     overflow-y: auto;
-    padding: 12px;
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 10px;
   }
 
-  .rod-item {
+  .rod-item-card {
     display: flex;
     align-items: center;
     gap: 12px;
-    padding: 10px 12px;
-    border: 2px solid #e5e7eb;
+    padding: 12px 14px;
+    border-radius: 16px;
+    border: 1px solid var(--g-border);
     cursor: pointer;
-    transition: all 0.15s;
+    transition: border-color 0.15s ease, opacity 0.15s ease;
 
-    &:hover {
-      background: #f3f4f6;
-      border-color: #d1d5db;
-    }
-
-    &.selected {
-      background: #ecfdf5;
-      border: 2px solid #10b981;
-      box-shadow: 2px 2px 0 #10b981;
+    &.is-equipped {
+      border: 2px solid var(--g-text);
     }
 
-    &.common {
-      border-left: 4px solid #9ca3af;
-    }
-    &.uncommon {
-      border-left: 4px solid #22c55e;
-    }
-    &.rare {
-      border-left: 4px solid #3b82f6;
-    }
-    &.epic {
-      border-left: 4px solid #a855f7;
-    }
-    &.legendary {
-      border-left: 4px solid #f59e0b;
+    &.is-broken {
+      opacity: 0.45;
+      cursor: not-allowed;
     }
 
-    .rod-item-icon {
-      width: 36px;
-      height: 36px;
-      border: 2px solid black;
+    .rod-item-thumb {
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      background: var(--g-muted);
       display: flex;
       align-items: center;
       justify-content: center;
       flex-shrink: 0;
-
-      &.common {
-        background: #d1d5db;
-      }
-      &.uncommon {
-        background: #86efac;
-      }
-      &.rare {
-        background: #93c5fd;
-      }
-      &.epic {
-        background: #d8b4fe;
-      }
-      &.legendary {
-        background: #fcd34d;
-      }
     }
 
-    .rod-item-info {
+    .rod-item-meta {
       flex: 1;
       display: flex;
       flex-direction: column;
       gap: 4px;
-
-      .rod-item-name {
-        font-size: 11px;
-        font-weight: 600;
-        color: black;
-      }
-
-      .rod-item-durability {
-        width: 100%;
-        height: 8px;
-        background: #e5e7eb;
-        border: 1px solid #9ca3af;
-
-        .dur-bar {
-          height: 100%;
-          background: #22c55e;
-          transition: width 0.2s;
-
-          &.low {
-            background: #ef4444;
-          }
-        }
-      }
-
-      .rod-item-stats {
-        font-size: 9px;
-        color: #6b7280;
-      }
     }
 
-    .check-icon {
-      color: #10b981;
-      flex-shrink: 0;
+    .rod-item-name-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .rod-item-name {
+      font-size: 14px;
+      font-weight: 700;
+    }
+
+    .equipped-badge {
+      font-size: 11px;
+      background: var(--g-text);
+      color: var(--g-surface);
+      padding: 1px 6px;
+      border-radius: 6px;
+    }
+
+    .rod-item-durability {
+      font-size: 12px;
+      color: var(--g-text-2);
+    }
+
+    .broken-hint {
+      color: #B4233F;
     }
   }
 }
 
-// Transitions
-.modal-enter-active,
-.modal-leave-active {
-  transition: opacity 0.2s steps(4);
+// 抽屜滑入滑出
+.drawer-slide-enter-active,
+.drawer-slide-leave-active {
+  transition: opacity 0.2s ease;
+  .rod-selector-drawer {
+    transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  }
 }
-.modal-enter-from,
-.modal-leave-to {
+
+.drawer-slide-enter-from,
+.drawer-slide-leave-to {
   opacity: 0;
+  .rod-selector-drawer {
+    transform: translateY(100%);
+  }
 }
 </style>

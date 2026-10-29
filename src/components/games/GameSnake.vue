@@ -1,158 +1,211 @@
 <template>
   <div class="game-snake">
-    <div class="header">
-      <button class="back-btn" @click="$emit('close')">
-        <ChevronLeft class="icon" />
+    <!-- 1. 頂欄 -->
+    <header class="topbar">
+      <button class="round-btn" aria-label="返回" @click="$emit('close')">
+        <ChevronLeft />
       </button>
-      <h1 class="title">貪吃蛇</h1>
-      <div class="header-actions">
-        <button
-          class="icon-btn"
-          :class="{ active: isPaused }"
-          @click="togglePause"
-        >
-          <Play v-if="isPaused" class="icon" />
-          <Pause v-else class="icon" />
-        </button>
-        <button class="icon-btn" @click="restartGame">
-          <RotateCcw class="icon" />
-        </button>
+      <h1 class="topbar-title">貪吃蛇</h1>
+      <button
+        class="round-btn"
+        :aria-label="isPaused ? '繼續' : '暫停'"
+        :disabled="!isStarted || isGameOver"
+        @click="togglePause"
+      >
+        <Play v-if="isPaused" />
+        <Pause v-else />
+      </button>
+    </header>
+
+    <!-- 2. 數據卡 -->
+    <div class="stat-card">
+      <div class="stat-col">
+        <span class="stat-label">分數</span>
+        <span class="stat-num">{{ score }}</span>
+      </div>
+      <div class="stat-col center-col">
+        <span class="stat-label">長度</span>
+        <span class="stat-num">{{ snake.length }}</span>
+      </div>
+      <div class="stat-col">
+        <span class="stat-label">最高</span>
+        <span class="stat-num">{{ bestScore }}</span>
       </div>
     </div>
 
-    <div class="game-container">
-      <div class="score-container">
-        <div class="score-box">
-          <div class="score-label">分數</div>
-          <div class="score-value">{{ score }}</div>
+    <!-- 3. 棋盤與遮罩 -->
+    <div class="game-board-wrapper">
+      <div
+        class="game-board"
+        ref="gameBoard"
+        @touchstart="handleTouchStart"
+        @touchend="handleTouchEnd"
+        @mousedown="handleClick"
+      >
+        <div class="grid-background">
+          <div v-for="row in gridSize" :key="`row-${row}`" class="grid-row">
+            <div
+              v-for="col in gridSize"
+              :key="`cell-${row}-${col}`"
+              class="grid-cell"
+              :class="{ odd: (row + col) % 2 === 1, even: (row + col) % 2 === 0 }"
+            ></div>
+          </div>
         </div>
-        <div class="score-box best">
-          <div class="score-label">最高</div>
-          <div class="score-value">{{ bestScore }}</div>
-        </div>
-        <div class="score-box grid-info" :class="{ expanded: gridSize >= 20 }">
-          <div class="score-label">網格</div>
-          <div class="score-value">{{ gridSize }}×{{ gridSize }}</div>
-        </div>
-      </div>
 
-      <div class="game-board-wrapper">
-        <div
-          class="game-board"
-          ref="gameBoard"
-          @touchstart="handleTouchStart"
-          @touchend="handleTouchEnd"
-          @click="handleClick"
-        >
-          <div class="grid-background">
-            <div v-for="row in gridSize" :key="`row-${row}`" class="grid-row">
-              <div
-                v-for="col in gridSize"
-                :key="`cell-${row}-${col}`"
-                class="grid-cell"
-              ></div>
-            </div>
-          </div>
-          <div class="snake-layer">
-            <div
-              v-for="(segment, index) in snake"
-              :key="`snake-${index}`"
-              class="snake-segment"
-              :class="getSnakeSegmentClass(index)"
-              :style="getPositionStyle(segment)"
-            >
-              <div class="pixel-inner"></div>
-            </div>
-          </div>
-          <div class="food-layer">
-            <div
-              v-for="(foodItem, index) in foods"
-              :key="`food-${index}`"
-              class="food"
-              :style="getPositionStyle(foodItem)"
-            >
-              <div class="food-inner"></div>
-              <div class="food-glow"></div>
-            </div>
-          </div>
-          <div class="enemy-layer">
-            <template v-for="enemy in enemies" :key="`enemy-${enemy.id}`">
-              <div
-                v-for="(segment, index) in enemy.body"
-                v-show="enemy.alive"
-                :key="`enemy-${enemy.id}-${index}`"
-                class="enemy-segment"
-                :class="getEnemySegmentClass(Number(index), enemy.body.length)"
-                :style="getPositionStyle(segment)"
-              >
-                <div class="enemy-pixel"></div>
-              </div>
+        <div class="snake-layer">
+          <div
+            v-for="(segment, index) in snake"
+            :key="`snake-${index}`"
+            class="snake-segment"
+            :class="{ head: index === 0, body: index > 0 }"
+            :style="[
+              getPositionStyle(segment),
+              index === 0 ? { transform: `rotate(${headRotation}deg)` } : {},
+            ]"
+          >
+            <template v-if="index === 0">
+              <span class="eye eye-top"><span class="pupil"></span></span>
+              <span class="eye eye-bottom"><span class="pupil"></span></span>
             </template>
           </div>
         </div>
+
+        <div class="food-layer">
+          <div
+            v-for="(foodItem, index) in foods"
+            :key="`food-${index}`"
+            class="food-item"
+            :style="getPositionStyle(foodItem)"
+          >
+            <div class="food-apple">
+              <span class="apple-leaf"></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="enemy-layer">
+          <template v-for="enemy in enemies" :key="`enemy-${enemy.id}`">
+            <template v-if="enemy.alive">
+              <div
+                v-for="(segment, index) in enemy.body"
+                :key="`enemy-${enemy.id}-${index}`"
+                class="enemy-segment"
+                :class="{ head: index === 0 }"
+                :style="getPositionStyle(segment)"
+              ></div>
+            </template>
+          </template>
+        </div>
       </div>
 
-      <div class="controls-hint"><p>滑動或點擊方向 | 方向鍵/WASD</p></div>
+      <!-- 遮罩：還沒開始 -->
+      <div v-if="!isStarted && !isGameOver" class="board-scrim">
+        <h2 class="scrim-title-lg">貪吃蛇</h2>
+        <p class="scrim-desc">吃蘋果變長，別撞牆也別咬到自己</p>
+        <button class="btn-pill-dark" @click="startGame">
+          <Play /> 開始遊戲
+        </button>
+      </div>
 
-      <div v-if="!isStarted && !isGameOver" class="start-overlay">
-        <div class="start-card">
-          <div class="snake-icon">🐍</div>
-          <h2>貪吃蛇</h2>
-          <p>準備好開始了嗎？</p>
-          <button class="start-btn" @click="startGame">
-            <Play :size="20" /> 開始遊戲
+      <!-- 遮罩：暫停中 -->
+      <div v-if="isPaused" class="board-scrim">
+        <h2 class="scrim-title-lg">暫停中</h2>
+        <div class="scrim-btn-row">
+          <button class="btn-pill-outline" @click="restartGame">重新開始</button>
+          <button class="btn-pill-dark" @click="togglePause">繼續</button>
+        </div>
+      </div>
+
+      <!-- 遮罩：遊戲結束 -->
+      <div v-if="isGameOver" class="board-scrim">
+        <h2 class="scrim-title-xl">撞到了</h2>
+        <div class="final-score-block">
+          <span class="final-label">最終分數</span>
+          <span class="final-value">{{ score }}</span>
+        </div>
+        <div v-if="score > startBest" class="new-record-badge">
+          <Trophy /> 新紀錄！
+        </div>
+        <div class="scrim-btn-row">
+          <button class="btn-pill-outline" @click="shareScore">
+            <Share2 /> 分享成績
           </button>
-          <button class="back-to-center-btn" @click="emit('close')">
-            <ArrowLeft :size="16" /> 返回遊戲中心
-          </button>
+          <button class="btn-pill-dark" @click="restartGame">再來一局</button>
         </div>
       </div>
     </div>
 
-    <Teleport to="body">
-      <transition name="fade">
-        <div v-if="isGameOver" class="game-over-overlay">
-          <div class="game-over-card">
-            <div class="game-over-icon"><Skull :size="80" /></div>
-            <h2>遊戲結束</h2>
-            <div class="final-score">
-              <span class="label">最終分數</span
-              ><span class="value">{{ score }}</span>
-            </div>
-            <div v-if="score === bestScore && score > 0" class="new-record">
-              <Trophy :size="24" /> 新紀錄！
-            </div>
-            <div class="game-over-buttons">
-              <button class="game-over-btn share" @click="shareScore">
-                <Share2 :size="18" /> 分享成績
-              </button>
-              <div class="game-over-buttons-row">
-                <button class="game-over-btn secondary" @click="emit('close')">
-                  <ArrowLeft :size="18" /> 返回
-                </button>
-                <button class="game-over-btn primary" @click="restartGame">
-                  <RotateCcw :size="18" /> 重新開始
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </transition>
-    </Teleport>
+    <!-- 4. 方向鍵 -->
+    <div class="dpad">
+      <span></span>
+      <button
+        type="button"
+        class="dpad-btn"
+        :class="{ active: headDir === Direction.UP }"
+        aria-label="上"
+        @pointerdown.prevent="turn(Direction.UP)"
+      >
+        <ChevronUp :size="22" :stroke-width="2.4" />
+      </button>
+      <span></span>
+
+      <button
+        type="button"
+        class="dpad-btn"
+        :class="{ active: headDir === Direction.LEFT }"
+        aria-label="左"
+        @pointerdown.prevent="turn(Direction.LEFT)"
+      >
+        <ChevronLeft :size="22" :stroke-width="2.4" />
+      </button>
+      <span class="dpad-center"></span>
+      <button
+        type="button"
+        class="dpad-btn"
+        :class="{ active: headDir === Direction.RIGHT }"
+        aria-label="右"
+        @pointerdown.prevent="turn(Direction.RIGHT)"
+      >
+        <ChevronRight :size="22" :stroke-width="2.4" />
+      </button>
+
+      <span></span>
+      <button
+        type="button"
+        class="dpad-btn"
+        :class="{ active: headDir === Direction.DOWN }"
+        aria-label="下"
+        @pointerdown.prevent="turn(Direction.DOWN)"
+      >
+        <ChevronDown :size="22" :stroke-width="2.4" />
+      </button>
+      <span></span>
+    </div>
+
+    <!-- 5. 底部提示 -->
+    <p class="bottom-hint">
+      <template v-if="gridSize <= 15">
+        再吃 {{ Math.max(0, 10 - foodCount) }} 顆地圖會變大・也可以在棋盤上滑動
+      </template>
+      <template v-else>
+        地圖變大了：別撞到紅蛇，用身體擋住牠
+      </template>
+    </p>
   </div>
 </template>
 
 <script setup lang="ts">
 import type { GameScoreData, SnakeMetadata } from "@/types";
 import {
-    ArrowLeft,
-    ChevronLeft,
-    Pause,
-    Play,
-    RotateCcw,
-    Share2,
-    Skull,
-    Trophy,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  ChevronUp,
+  Pause,
+  Play,
+  Share2,
+  Trophy,
 } from "lucide-vue-next";
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import { SnakeGame } from "./snake/SnakeGame";
@@ -169,21 +222,41 @@ const foods = ref<Position[]>([]);
 const enemies = ref<any[]>([]);
 const score = ref(0);
 const bestScore = ref(0);
+const startBest = ref(0);
 const gameState = ref<GameState>(GameState.READY);
 const gridSize = ref(15);
+const foodCount = ref(0);
+const headDir = ref<Direction>(Direction.RIGHT);
 const gameBoard = ref<HTMLElement | null>(null);
+
 let touchStartX = 0;
 let touchStartY = 0;
+let hasTurnedInSwipe = false;
 
 const isStarted = computed(() => gameState.value !== GameState.READY);
 const isPaused = computed(() => gameState.value === GameState.PAUSED);
 const isGameOver = computed(() => gameState.value === GameState.GAME_OVER);
+
+const headRotation = computed(() => {
+  switch (headDir.value) {
+    case Direction.UP:
+      return 270;
+    case Direction.DOWN:
+      return 90;
+    case Direction.LEFT:
+      return 180;
+    case Direction.RIGHT:
+    default:
+      return 0;
+  }
+});
 
 function initGame() {
   game = new SnakeGame();
   updateGameState();
   loadBestScore();
 }
+
 function updateGameState() {
   if (!game) return;
   snake.value = [...game.snake];
@@ -192,6 +265,8 @@ function updateGameState() {
   score.value = game.score;
   gameState.value = game.state;
   gridSize.value = game.gridSize;
+  foodCount.value = game.foodCount;
+  headDir.value = game.direction;
 }
 
 function gameLoop() {
@@ -200,15 +275,20 @@ function gameLoop() {
     bestScore.value = score.value;
     saveBestScore();
   }
-  if (gameState.value === GameState.PLAYING) requestAnimationFrame(gameLoop);
+  if (gameState.value === GameState.PLAYING) {
+    requestAnimationFrame(gameLoop);
+  }
 }
 
 function startGame() {
   if (!game) return;
+  loadBestScore();
+  startBest.value = bestScore.value;
   game.start();
   gameState.value = game.state;
   gameLoop();
 }
+
 function togglePause() {
   if (!game) return;
   if (gameState.value === GameState.PLAYING) {
@@ -219,6 +299,7 @@ function togglePause() {
   }
   gameState.value = game.state;
 }
+
 function restartGame() {
   if (!game) return;
   game.reset();
@@ -226,16 +307,11 @@ function restartGame() {
   startGame();
 }
 
-function getSnakeSegmentClass(index: number): string {
-  if (index === 0) return "head";
-  if (index === snake.value.length - 1) return "tail";
-  return "body";
+function turn(dir: Direction) {
+  if (!game || gameState.value !== GameState.PLAYING) return;
+  game.changeDirection(dir);
 }
-function getEnemySegmentClass(index: number, length: number): string {
-  if (index === 0) return "enemy-head";
-  if (index === length - 1) return "enemy-tail";
-  return "enemy-body";
-}
+
 function getPositionStyle(pos: Position) {
   const cellSize = 100 / gridSize.value;
   return {
@@ -277,28 +353,43 @@ function handleKeyDown(event: KeyboardEvent) {
 function handleTouchStart(event: TouchEvent) {
   touchStartX = event.touches[0].clientX;
   touchStartY = event.touches[0].clientY;
+  hasTurnedInSwipe = false;
 }
+
+function handleTouchMove(event: TouchEvent) {
+  event.preventDefault();
+  if (!game || gameState.value !== GameState.PLAYING) return;
+  const currentX = event.touches[0].clientX;
+  const currentY = event.touches[0].clientY;
+  const dx = currentX - touchStartX;
+  const dy = currentY - touchStartY;
+  const threshold = 24;
+
+  if (Math.abs(dx) >= threshold || Math.abs(dy) >= threshold) {
+    if (Math.abs(dx) > Math.abs(dy)) {
+      turn(dx > 0 ? Direction.RIGHT : Direction.LEFT);
+    } else {
+      turn(dy > 0 ? Direction.DOWN : Direction.UP);
+    }
+    touchStartX = currentX;
+    touchStartY = currentY;
+    hasTurnedInSwipe = true;
+  }
+}
+
 function handleTouchEnd(event: TouchEvent) {
   if (!game || !isStarted.value) return;
-  const dx = event.changedTouches[0].clientX - touchStartX;
-  const dy = event.changedTouches[0].clientY - touchStartY;
-  if (Math.abs(dx) < 30 && Math.abs(dy) < 30) {
+  if (!hasTurnedInSwipe) {
     handleClick(event);
-    return;
   }
-  if (Math.abs(dx) > Math.abs(dy)) {
-    game.changeDirection(dx > 0 ? Direction.RIGHT : Direction.LEFT);
-  } else {
-    game.changeDirection(dy > 0 ? Direction.DOWN : Direction.UP);
-  }
-  event.preventDefault();
 }
 
 function handleClick(event: TouchEvent | MouseEvent) {
-  if (!game || !isStarted.value || snake.value.length === 0) return;
+  if (!game || gameState.value !== GameState.PLAYING || snake.value.length === 0) return;
   const board = gameBoard.value;
   if (!board) return;
-  let clientX: number, clientY: number;
+  let clientX: number;
+  let clientY: number;
   if (event instanceof TouchEvent) {
     clientX = event.changedTouches[0].clientX;
     clientY = event.changedTouches[0].clientY;
@@ -314,9 +405,16 @@ function handleClick(event: TouchEvent | MouseEvent) {
   const deltaX = gridX - head.x;
   const deltaY = gridY - head.y;
   if (Math.abs(deltaX) > Math.abs(deltaY)) {
-    game.changeDirection(deltaX > 0 ? Direction.RIGHT : Direction.LEFT);
+    turn(deltaX > 0 ? Direction.RIGHT : Direction.LEFT);
   } else {
-    game.changeDirection(deltaY > 0 ? Direction.DOWN : Direction.UP);
+    turn(deltaY > 0 ? Direction.DOWN : Direction.UP);
+  }
+}
+
+function handleVisibilityChange() {
+  if (document.hidden && game && gameState.value === GameState.PLAYING) {
+    game.pause();
+    gameState.value = game.state;
   }
 }
 
@@ -331,7 +429,7 @@ function shareScore() {
     gameIcon: "mdi:snake",
     score: score.value,
     bestScore: bestScore.value,
-    isNewRecord: score.value === bestScore.value && score.value > 0,
+    isNewRecord: score.value > startBest.value,
     timestamp: Date.now(),
     metadata,
   });
@@ -341,6 +439,7 @@ function loadBestScore() {
   const s = localStorage.getItem("snake_best_score");
   if (s) bestScore.value = parseInt(s, 10);
 }
+
 function saveBestScore() {
   localStorage.setItem("snake_best_score", bestScore.value.toString());
 }
@@ -348,494 +447,359 @@ function saveBestScore() {
 onMounted(() => {
   initGame();
   window.addEventListener("keydown", handleKeyDown);
+  document.addEventListener("visibilitychange", handleVisibilityChange);
+  if (gameBoard.value) {
+    gameBoard.value.addEventListener("touchmove", handleTouchMove, {
+      passive: false,
+    });
+  }
 });
+
 onUnmounted(() => {
   if (game) game.destroy();
   window.removeEventListener("keydown", handleKeyDown);
+  document.removeEventListener("visibilitychange", handleVisibilityChange);
+  if (gameBoard.value) {
+    gameBoard.value.removeEventListener("touchmove", handleTouchMove);
+  }
 });
 </script>
 
 <style scoped lang="scss">
+@use "@/components/games/gameShell" as gs;
+
 .game-snake {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: #1a1a1a;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
+  @include gs.screen;
+  gap: 14px;
+  background: color-mix(in srgb, #3f7a47 8%, var(--g-bg));
+  --snake: #3f7a47;
+  --enemy: #b4334e;
+  --apple: #e5533d;
 }
 
-.header {
-  display: flex;
-  align-items: center;
-  padding: 16px;
-  padding-top: max(16px, var(--safe-area-inset-top, env(safe-area-inset-top)));
-  background: rgba(0, 0, 0, 0.5);
-  backdrop-filter: blur(10px);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-  z-index: 10;
+// 1. 頂欄
+.topbar {
+  @include gs.topbar;
 
-  .back-btn {
-    width: 40px;
-    height: 40px;
-    border: none;
-    background: rgba(255, 255, 255, 0.1);
-    border-radius: 50%;
+  .round-btn {
+    @include gs.round-btn;
+  }
+
+  .topbar-title {
+    @include gs.title;
+    font-family: inherit;
+    font-size: 17px;
+  }
+}
+
+// 2. 數據卡
+.stat-card {
+  background: var(--g-surface);
+  border-radius: 18px;
+  padding: 10px 0;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  align-items: center;
+
+  .stat-col {
     display: flex;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
-    cursor: pointer;
-    transition: all 0.2s;
-    .icon {
-      width: 20px;
-      height: 20px;
-      color: #fff;
-    }
-    &:active {
-      transform: scale(0.95);
-      background: rgba(255, 255, 255, 0.2);
+    gap: 2px;
+
+    &.center-col {
+      border-left: 1px solid var(--g-border);
+      border-right: 1px solid var(--g-border);
     }
   }
 
-  .title {
-    flex: 1;
-    text-align: center;
-    font-size: 20px;
-    font-weight: 600;
-    color: #fff;
-    margin: 0;
+  .stat-label {
+    font-size: 11px;
+    color: var(--g-text-2);
   }
 
-  .header-actions {
-    display: flex;
-    gap: 8px;
-
-    .icon-btn {
-      width: 40px;
-      height: 40px;
-      border: none;
-      background: rgba(255, 255, 255, 0.1);
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-      transition: all 0.2s;
-      .icon {
-        width: 20px;
-        height: 20px;
-        color: #fff;
-      }
-      &:active {
-        transform: scale(0.95);
-      }
-      &.active {
-        background: #22c55e;
-      }
-    }
+  .stat-num {
+    font-family: var(--g-num);
+    font-size: 22px;
+    font-weight: 700;
+    line-height: 1.1;
+    color: var(--g-text);
   }
 }
 
-.game-container {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 20px;
-  padding-bottom: max(20px, var(--safe-bottom, 0px));
-  overflow: auto;
+// 3. 棋盤與遮罩
+.game-board-wrapper {
   position: relative;
-}
+  background: var(--g-surface);
+  border-radius: 22px;
+  padding: 10px;
+  width: min(calc(100vw - 40px), calc(100dvh - 500px), 350px);
+  height: min(calc(100vw - 40px), calc(100dvh - 500px), 350px);
+  aspect-ratio: 1;
+  align-self: center;
+  box-sizing: border-box;
 
-.score-container {
-  display: flex;
-  gap: 12px;
-  margin-bottom: 20px;
-
-  .score-box {
-    background: rgba(255, 255, 255, 0.1);
-    backdrop-filter: blur(10px);
+  .game-board {
+    position: relative;
+    width: 100%;
+    height: 100%;
     border-radius: 12px;
-    padding: 12px 24px;
-    text-align: center;
-    border: 1px solid rgba(255, 255, 255, 0.2);
+    overflow: hidden;
+    touch-action: none;
+  }
 
-    .score-label {
-      font-size: 12px;
-      color: rgba(255, 255, 255, 0.7);
-      margin-bottom: 4px;
-    }
-    .score-value {
-      font-size: 24px;
-      font-weight: 700;
-      color: #fff;
-      font-family: "Courier New", monospace;
+  .grid-background {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+
+    .grid-row {
+      flex: 1;
+      display: flex;
     }
 
-    &.best {
-      background: rgba(252, 211, 77, 0.2);
-      border-color: rgba(252, 211, 77, 0.3);
-      .score-value {
-        color: #fcd34d;
+    .grid-cell {
+      flex: 1;
+
+      &.odd {
+        background: color-mix(in srgb, var(--snake) 12%, var(--g-surface));
+      }
+      &.even {
+        background: color-mix(in srgb, var(--snake) 5%, var(--g-surface));
+      }
+    }
+  }
+
+  .snake-layer,
+  .food-layer,
+  .enemy-layer {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+  }
+
+  .snake-segment {
+    position: absolute;
+    box-sizing: border-box;
+    padding: 2px;
+    transition: transform 0.08s ease;
+
+    &.body {
+      &::before {
+        content: "";
+        display: block;
+        width: 100%;
+        height: 100%;
+        border-radius: 6px;
+        background: var(--snake);
       }
     }
 
-    &.grid-info {
-      transition: all 0.3s ease;
-      &.expanded {
-        background: rgba(34, 197, 94, 0.3);
-        border-color: rgba(74, 222, 128, 0.4);
-        .score-value {
-          color: #4ade80;
+    &.head {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-around;
+      align-items: flex-end;
+      padding-right: 3px;
+      border-radius: 9px;
+      background: var(--snake);
+      box-sizing: border-box;
+      transform-origin: center center;
+
+      .eye {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: #ffffff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+
+        .pupil {
+          width: 3px;
+          height: 3px;
+          border-radius: 50%;
+          background: #000000;
         }
       }
     }
   }
-}
 
-.game-board-wrapper {
-  width: 100%;
-  max-width: 500px;
-  aspect-ratio: 1;
-  margin: 0 auto;
-}
-
-.game-board {
-  width: 100%;
-  height: 100%;
-  background: #1a1a1a;
-  border-radius: 8px;
-  position: relative;
-  overflow: hidden;
-  box-shadow:
-    0 4px 6px rgba(0, 0, 0, 0.1),
-    inset 0 0 0 2px rgba(255, 255, 255, 0.05);
-  touch-action: none;
-  user-select: none;
-  -webkit-user-select: none;
-  -webkit-touch-callout: none;
-  cursor: pointer;
-}
-
-.grid-background {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  flex-direction: column;
-  .grid-row {
-    flex: 1;
-    display: flex;
-    .grid-cell {
-      flex: 1;
-      border: 0.5px solid rgba(255, 255, 255, 0.05);
-    }
-  }
-}
-
-.snake-layer,
-.food-layer,
-.enemy-layer {
-  position: absolute;
-  inset: 0;
-}
-.snake-layer {
-  z-index: 2;
-}
-.food-layer {
-  z-index: 1;
-}
-.enemy-layer {
-  z-index: 3;
-}
-
-.snake-segment {
-  position: absolute;
-  transition: all 0.1s ease-out;
-  .pixel-inner {
-    width: 100%;
-    height: 100%;
-    border-radius: 2px;
-    box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.3);
-  }
-  &.head .pixel-inner {
-    background: #4ade80;
-    box-shadow:
-      inset 0 0 10px rgba(0, 0, 0, 0.3),
-      0 0 15px rgba(74, 222, 128, 0.5);
-  }
-  &.body .pixel-inner {
-    background: #22c55e;
-  }
-  &.tail .pixel-inner {
-    background: #16a34a;
-  }
-}
-
-.food {
-  position: absolute;
-  animation: foodPulse 1s ease-in-out infinite;
-  .food-inner {
-    width: 100%;
-    height: 100%;
-    background: #ef4444;
-    border-radius: 50%;
-    box-shadow:
-      inset 0 0 10px rgba(0, 0, 0, 0.3),
-      0 0 15px rgba(239, 68, 68, 0.5);
-  }
-  .food-glow {
+  .food-item {
     position: absolute;
-    top: 50%;
-    left: 50%;
-    width: 150%;
-    height: 150%;
-    background: radial-gradient(
-      circle,
-      rgba(239, 68, 68, 0.3),
-      transparent 70%
-    );
-    transform: translate(-50%, -50%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    .food-apple {
+      position: relative;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: var(--apple);
+
+      .apple-leaf {
+        position: absolute;
+        top: -3px;
+        right: 0px;
+        width: 6px;
+        height: 4px;
+        border-radius: 4px 0;
+        background: #3f7a47;
+      }
+    }
+  }
+
+  .enemy-segment {
+    position: absolute;
+    box-sizing: border-box;
+    padding: 2px;
+
+    &::before {
+      content: "";
+      display: block;
+      width: 100%;
+      height: 100%;
+      border-radius: 6px;
+      background: var(--enemy);
+    }
+
+    &.head::before {
+      border-radius: 9px;
+    }
   }
 }
 
-@keyframes foodPulse {
-  0%,
-  100% {
-    transform: scale(1);
-  }
-  50% {
-    transform: scale(1.1);
-  }
-}
+// 遮罩樣式
+.board-scrim {
+  @include gs.board-scrim;
 
-.enemy-segment {
-  position: absolute;
-  transition: all 0.1s ease-out;
-  .enemy-pixel {
-    width: 100%;
-    height: 100%;
-    border-radius: 2px;
-    box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.3);
-  }
-  &.enemy-head .enemy-pixel {
-    background: #9d4edd;
-    box-shadow:
-      inset 0 0 10px rgba(0, 0, 0, 0.3),
-      0 0 15px rgba(157, 78, 221, 0.5);
-  }
-  &.enemy-body .enemy-pixel {
-    background: #7b2cbf;
-  }
-  &.enemy-tail .enemy-pixel {
-    background: #5a189a;
-  }
-}
-
-.controls-hint {
-  margin-top: 20px;
-  text-align: center;
-  p {
-    color: rgba(255, 255, 255, 0.5);
-    font-size: 14px;
+  .scrim-title-lg {
     margin: 0;
+    font-size: 24px;
+    font-weight: 700;
+    color: var(--g-text);
   }
-}
 
-.start-overlay {
-  position: absolute;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.8);
-  backdrop-filter: blur(10px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 100;
-}
-
-.start-card {
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 20px;
-  padding: 40px;
-  text-align: center;
-  max-width: 300px;
-
-  .snake-icon {
-    font-size: 64px;
-    margin-bottom: 16px;
-  }
-  h2 {
-    color: #fff;
+  .scrim-title-xl {
+    margin: 0;
     font-size: 28px;
-    margin: 0 0 12px 0;
-  }
-  p {
-    color: rgba(255, 255, 255, 0.7);
-    font-size: 16px;
-    margin: 0 0 24px 0;
+    font-weight: 700;
+    color: var(--g-text);
   }
 
-  .start-btn {
-    padding: 14px 32px;
-    background: var(--color-primary, #7dd3a8);
-    color: white;
-    border: none;
-    border-radius: 12px;
-    font-size: 16px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.2s;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    width: 100%;
-    &:active {
-      transform: scale(0.95);
-    }
-  }
-
-  .back-to-center-btn {
-    margin-top: 12px;
-    padding: 12px 24px;
-    background: rgba(255, 255, 255, 0.1);
-    color: rgba(255, 255, 255, 0.8);
-    border: 2px solid rgba(255, 255, 255, 0.2);
-    border-radius: 12px;
+  .scrim-desc {
+    margin: 0 0 8px 0;
     font-size: 14px;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.2s;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
-    width: 100%;
-    &:active {
-      transform: scale(0.95);
-    }
-  }
-}
-
-.game-over-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.9);
-  backdrop-filter: blur(10px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 10000;
-  padding: 20px;
-}
-
-.game-over-card {
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 20px;
-  padding: 40px;
-  text-align: center;
-  max-width: 320px;
-  width: 100%;
-  max-height: calc(100vh - 40px);
-  max-height: calc(100dvh - 40px);
-  overflow-y: auto;
-
-  .game-over-icon {
-    margin-bottom: 20px;
-    color: #ef4444;
-    filter: drop-shadow(0 0 20px rgba(239, 68, 68, 0.5));
-  }
-  h2 {
-    color: #fff;
-    font-size: 32px;
-    margin: 0 0 20px 0;
+    color: var(--g-text-2);
   }
 
-  .final-score {
-    background: rgba(0, 0, 0, 0.3);
-    border-radius: 12px;
-    padding: 20px;
-    margin-bottom: 16px;
-    .label {
-      display: block;
-      color: rgba(255, 255, 255, 0.7);
-      font-size: 14px;
-      margin-bottom: 8px;
-    }
-    .value {
-      display: block;
-      color: #fff;
-      font-size: 48px;
-      font-weight: 700;
-      font-family: "Courier New", monospace;
-    }
-  }
-
-  .new-record {
-    color: #fcd34d;
-    font-size: 16px;
-    font-weight: 600;
-    margin-bottom: 20px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-  }
-
-  .game-over-buttons {
+  .final-score-block {
     display: flex;
     flex-direction: column;
-    gap: 12px;
-    margin-top: 8px;
-  }
-  .game-over-buttons-row {
-    display: flex;
-    gap: 12px;
+    align-items: center;
+    gap: 2px;
+    margin: 4px 0;
+
+    .final-label {
+      font-size: 13px;
+      color: var(--g-text-2);
+    }
+
+    .final-value {
+      font-family: var(--g-num);
+      font-size: 32px;
+      font-weight: 700;
+      color: var(--g-text);
+      line-height: 1.1;
+    }
   }
 
-  .game-over-btn {
-    flex: 1;
-    padding: 14px 24px;
-    border: none;
-    border-radius: 12px;
-    font-size: 15px;
+  .new-record-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 13px;
     font-weight: 600;
-    cursor: pointer;
-    transition: all 0.2s;
+    color: #8a5a00;
+    margin-bottom: 4px;
+
+    svg {
+      width: 16px;
+      height: 16px;
+    }
+  }
+
+  .scrim-btn-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 6px;
+  }
+
+  .btn-pill-dark {
+    @include gs.pill-dark(44px);
+  }
+
+  .btn-pill-outline {
+    @include gs.pill-outline(44px);
+  }
+}
+
+// 4. 方向鍵
+.dpad {
+  display: grid;
+  grid-template-columns: repeat(3, clamp(48px, 7.5dvh, 64px));
+  grid-template-rows: repeat(3, clamp(48px, 7.5dvh, 64px));
+  gap: 6px;
+  justify-content: center;
+  align-items: center;
+  align-self: center;
+
+  .dpad-btn {
+    width: 100%;
+    height: 100%;
+    padding: 0;
+    border: none;
+    border-radius: 20px;
+    background: var(--g-surface);
+    color: var(--g-text);
+    box-shadow: 0 3px 0 color-mix(in srgb, var(--snake) 22%, var(--g-bg));
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 6px;
+    cursor: pointer;
+    touch-action: manipulation;
+    transition: transform 0.1s;
 
-    &.primary {
-      background: var(--color-primary, #7dd3a8);
-      color: white;
-    }
-    &.secondary {
-      background: rgba(255, 255, 255, 0.1);
-      color: white;
-      border: 2px solid rgba(255, 255, 255, 0.3);
-    }
-    &.share {
-      background: #3b82f6;
-      color: white;
-    }
     &:active {
-      transform: scale(0.95);
+      transform: translateY(2px);
+      box-shadow: 0 1px 0 color-mix(in srgb, var(--snake) 22%, var(--g-bg));
     }
+
+    &.active {
+      background: var(--snake);
+      color: #ffffff;
+      box-shadow: 0 3px 0 rgba(0, 0, 0, 0.2);
+    }
+  }
+
+  .dpad-center {
+    width: 100%;
+    height: 100%;
+    border-radius: 20px;
+    background: var(--snake);
+    opacity: 0.15;
   }
 }
 
-.fade-enter-active,
-.fade-leave-active {
-  transition: opacity 0.3s;
-}
-.fade-enter-from,
-.fade-leave-to {
-  opacity: 0;
+// 5. 提示
+.bottom-hint {
+  margin: 0;
+  text-align: center;
+  font-size: 12px;
+  color: var(--g-text-2);
 }
 </style>
