@@ -1,8 +1,8 @@
 <template>
   <div class="tetris-board-container" ref="containerRef">
-    <!-- 游戏板 -->
+    <!-- 遊戲板 -->
     <div class="tetris-board" :style="boardStyle">
-      <!-- 背景网格 -->
+      <!-- 背景網格 -->
       <div class="grid-background">
         <div v-for="(row, y) in grid" :key="'row-' + y" class="grid-row">
           <div
@@ -11,24 +11,21 @@
             class="grid-cell"
             :class="getCellClass(cell)"
             :style="getCellStyle(cell)"
-          >
-            <!-- 空单元格显示边框 -->
-            <div v-if="cell === 0" class="cell-border"></div>
-          </div>
+          ></div>
         </div>
       </div>
 
-      <!-- 幽灵方块层（下落预览） -->
+      <!-- 幽靈方塊層（下落預覽） -->
       <div v-if="ghostPiece" class="ghost-layer">
         <div
           v-for="(block, index) in getGhostPieceBlocks()"
           :key="'ghost-' + index"
           class="ghost-block"
-          :style="getBlockStyle(block.x, block.y, ghostPiece.color)"
+          :style="getGhostBlockStyle(block.x, block.y, ghostPiece.color)"
         ></div>
       </div>
 
-      <!-- 当前下落方块层 -->
+      <!-- 目前下落方塊層 -->
       <div v-if="currentPiece" class="piece-layer">
         <div
           v-for="(block, index) in getCurrentPieceBlocks()"
@@ -39,18 +36,18 @@
       </div>
     </div>
 
-    <!-- 调试信息（可选） -->
+    <!-- 偵錯資訊（可選） -->
     <div v-if="showDebug" class="debug-info">
       <div class="debug-row">
-        <span class="label">网格大小:</span>
+        <span class="label">網格大小：</span>
         <span class="value">{{ GRID_WIDTH }} × {{ GRID_HEIGHT }}</span>
       </div>
       <div v-if="currentPiece" class="debug-row">
-        <span class="label">当前方块:</span>
+        <span class="label">目前方塊：</span>
         <span class="value">{{ currentPiece.type }} ({{ currentPiece.x }}, {{ currentPiece.y }})</span>
       </div>
       <div v-if="currentPiece" class="debug-row">
-        <span class="label">旋转状态:</span>
+        <span class="label">旋轉狀態：</span>
         <span class="value">{{ currentPiece.rotation }}</span>
       </div>
     </div>
@@ -254,9 +251,20 @@ function getBlockStyle(x: number, y: number, color: string): Record<string, stri
     backgroundColor: color,
   };
 }
+
+// 取得幽靈方塊樣式：透明底 + 方塊顏色的虛線框
+function getGhostBlockStyle(x: number, y: number, color: string): Record<string, string> {
+  return {
+    ...getBlockStyle(x, y, color),
+    backgroundColor: 'transparent',
+    borderColor: color,
+  };
+}
 </script>
 
 <style scoped lang="scss">
+@use "@/components/games/gameShell" as gs;
+
 .tetris-board-container {
   display: flex;
   flex-direction: column;
@@ -273,22 +281,20 @@ function getBlockStyle(x: number, y: number, color: string): Record<string, stri
 
 .tetris-board {
   position: relative;
-  background: #1a1a1a;
-  // ✅ 使用 box-shadow 替代 border，不占用布局空间
-  box-shadow:
-    0 0 0 3px #333,
-    // 模拟 3px 边框
-    0 0 0 5px #000,
-    // 外层 2px 黑边
-    0 4px 8px rgba(0, 0, 0, 0.3); // 阴影效果
-  // 重要：tetris-board 本身作为 grid 容器
+  // 棋盤外框：深色底 + 內距 + 圓角
+  background: #23222b;
+  padding: 6px;
+  border-radius: 16px;
+  box-sizing: border-box;
+  // 重要：tetris-board 本身作為 grid 容器
   display: grid;
-  // 自适应网格布局
+  // 格子間距 1px
+  gap: 1px;
+  // 自適應網格佈局
   grid-template-columns: repeat(10, 1fr);
   grid-template-rows: repeat(20, 1fr);
-  // 尺寸由 JS (ResizeObserver) 计算并以 inline style 写入，确保 10:20
-  // 框完整容纳于父容器内。
-  box-sizing: border-box;
+  // 尺寸由 JS (ResizeObserver) 計算並以 inline style 寫入，確保 10:20
+  // 框完整容納於父容器內。
 
   .grid-background {
     // 移除 position: absolute 和 display: grid
@@ -301,33 +307,20 @@ function getBlockStyle(x: number, y: number, color: string): Record<string, stri
 
     .grid-cell {
       position: relative;
-      // ✅ 关键：确保边框不会超出单元格
+      // 空格：深色底 + 圓角，取代舊的格線樣式
       box-sizing: border-box;
-      // 增强网格线条，更清晰
-      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: #2c2b36;
+      border-radius: 4px;
 
       &.empty {
-        background: transparent;
-
-        .cell-border {
-          position: absolute;
-          inset: 0;
-          box-sizing: border-box;
-          // 轻微内边框
-          border: 0.5px solid rgba(255, 255, 255, 0.03);
-        }
+        background: #2c2b36;
       }
 
       &.filled {
-        // 扁平风格 - 无渐变
-        // 增强边框，让每个方块更清晰
-        border: 2px solid rgba(0, 0, 0, 0.5);
-
-        // 轻微内阴影增加质感
+        border-radius: 4px;
         box-shadow:
-          inset 0 0 0 1px rgba(255, 255, 255, 0.15),
-          inset 2px 2px 4px rgba(255, 255, 255, 0.25),
-          inset -2px -2px 4px rgba(0, 0, 0, 0.3);
+          inset 0 -3px 0 rgba(0, 0, 0, 0.18),
+          inset 0 2px 0 rgba(255, 255, 255, 0.25);
       }
     }
   }
@@ -341,12 +334,10 @@ function getBlockStyle(x: number, y: number, color: string): Record<string, stri
     .ghost-block {
       position: absolute;
       box-sizing: border-box;
-      // 幽灵方块样式：半透明边框
-      border: 2px solid rgba(255, 255, 255, 0.3);
+      // 幽靈方塊：透明底 + 方塊顏色的虛線框
       background: transparent;
-
-      // 使用背景色的半透明版本
-      opacity: 0.3;
+      border: 2px dashed currentColor;
+      border-radius: 4px;
 
       // 平滑过渡
       transition:
@@ -363,17 +354,12 @@ function getBlockStyle(x: number, y: number, color: string): Record<string, stri
 
     .piece-block {
       position: absolute;
-      // ✅ 确保边框包含在尺寸内
       box-sizing: border-box;
-      // 扁平风格 - 纯色，无渐变
-      // 增强边框，与填充方块一致
-      border: 2px solid rgba(0, 0, 0, 0.5);
-
-      // 轻微内阴影
+      border-radius: 4px;
+      // 立體感：下方暗邊 + 上方亮邊
       box-shadow:
-        inset 0 0 0 1px rgba(255, 255, 255, 0.15),
-        inset 2px 2px 4px rgba(255, 255, 255, 0.25),
-        inset -2px -2px 4px rgba(0, 0, 0, 0.3);
+        inset 0 -3px 0 rgba(0, 0, 0, 0.18),
+        inset 0 2px 0 rgba(255, 255, 255, 0.25);
 
       // 平滑过渡
       transition:
@@ -383,7 +369,7 @@ function getBlockStyle(x: number, y: number, color: string): Record<string, stri
   }
 }
 
-// 调试信息
+// 偵錯資訊
 .debug-info {
   background: rgba(0, 0, 0, 0.8);
   border-radius: 8px;

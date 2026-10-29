@@ -39,13 +39,13 @@ export const MAX_HIGH_SCORES = 5;
  * 使用现代俄罗斯方块标准配色
  */
 export const PIECE_COLORS: Record<PieceType, string> = {
-  I: '#00f0f0', // 青色 (Cyan)
-  O: '#f0f000', // 黄色 (Yellow)
-  T: '#a000f0', // 紫色 (Purple)
-  L: '#f07000', // 橙色 (Orange)
-  J: '#0000f0', // 蓝色 (Blue)
-  S: '#00f000', // 绿色 (Green)
-  Z: '#f00000', // 红色 (Red)
+  I: '#8FB3C9', // 灰藍
+  O: '#E3C77A', // 淺金
+  T: '#B79BC9', // 柔紫
+  L: '#E3A36F', // 暖橘
+  J: '#7F96C2', // 靜謐藍
+  S: '#9CC59A', // 鼠尾草綠
+  Z: '#D98C8C', // 柔紅
 };
 
 /**
@@ -633,7 +633,7 @@ export const SRS_WALL_KICKS_I: Record<string, number[][]> = {
 export const DIFFICULTY_CONFIGS: Record<string, DifficultyConfig> = {
   easy: {
     name: 'easy',
-    label: '简单',
+    label: '簡單',
     startLevel: 1,
     startSpeed: 1200, // 0.5倍速 = 间隔时间 × 2
     speedIncrease: 60,
@@ -641,7 +641,7 @@ export const DIFFICULTY_CONFIGS: Record<string, DifficultyConfig> = {
     scoreMultiplier: 0.5,
     ghostEnabled: true,
     holdEnabled: true,
-    description: '适合新手，速度较慢，有辅助功能',
+    description: '適合新手，速度較慢，有輔助功能',
   },
   normal: {
     name: 'normal',
@@ -653,11 +653,11 @@ export const DIFFICULTY_CONFIGS: Record<string, DifficultyConfig> = {
     scoreMultiplier: 0.8,
     ghostEnabled: true,
     holdEnabled: true,
-    description: '标准游戏体验',
+    description: '標準遊戲體驗',
   },
   hard: {
     name: 'hard',
-    label: '困难',
+    label: '困難',
     startLevel: 5,
     startSpeed: 600, // 1.0倍速 = 基准速度
     speedIncrease: 30,
@@ -669,7 +669,7 @@ export const DIFFICULTY_CONFIGS: Record<string, DifficultyConfig> = {
   },
   expert: {
     name: 'expert',
-    label: '专家',
+    label: '專家',
     startLevel: 10,
     startSpeed: 462, // 1.3倍速 = 间隔时间 / 1.3 ≈ × 0.77
     speedIncrease: 23,
@@ -677,7 +677,7 @@ export const DIFFICULTY_CONFIGS: Record<string, DifficultyConfig> = {
     scoreMultiplier: 1.3,
     ghostEnabled: false,
     holdEnabled: false,
-    description: '极限挑战，禁用所有辅助功能',
+    description: '極限挑戰，禁用所有輔助功能',
   },
 };
 

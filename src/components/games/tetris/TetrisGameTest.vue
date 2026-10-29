@@ -1,6 +1,6 @@
 <template>
   <div class="tetris-game-test">
-    <!-- 难度选择菜单 -->
+    <!-- 難度選擇選單 -->
     <TetrisStartMenu
       v-if="showStartMenu && !showHighScoresPanel"
       @start="handleStartWithDifficulty"
@@ -15,16 +15,32 @@
       @close="showHighScoresPanel = false"
     />
 
-    <!-- 游戏界面 -->
+    <!-- 遊戲介面 -->
     <template v-else-if="!showStartMenu && !showHighScoresPanel">
-      <button class="close-btn" @click="$emit('close')">
-        <X :size="20" />
-      </button>
+      <header class="tetris-topbar">
+        <button
+          class="topbar-btn"
+          aria-label="返回"
+          @click="$emit('close')"
+        >
+          <ChevronLeft :size="20" />
+        </button>
 
-      <div class="test-header">
-        <h2>俄罗斯方块</h2>
-        <p class="subtitle">{{ difficultyLabel }}</p>
-      </div>
+        <div class="topbar-title">
+          <h2>俄羅斯方塊</h2>
+          <p class="subtitle">{{ difficultyLabel }}</p>
+        </div>
+
+        <button
+          class="topbar-btn"
+          :aria-label="isPaused ? '繼續' : '暫停'"
+          :disabled="!isPlaying || isGameOver"
+          @click="togglePause"
+        >
+          <Play v-if="isPaused" :size="20" />
+          <Pause v-else :size="20" />
+        </button>
+      </header>
 
       <div class="game-container" :class="{ 'desktop-mode': isDesktop }">
         <!-- === PC 桌面佈局 === -->
@@ -122,7 +138,7 @@
               <button v-else class="pause-btn-small" @click="togglePause">
                 RESUME
               </button>
-              <button v-if="isPlaying" class="select-btn" @click="restart">
+              <button v-if="isPlaying" class="select-btn" @click="confirmRestart">
                 RESET
               </button>
               <button
@@ -219,227 +235,148 @@
         </template>
 
         <!-- === 手機掌機佈局 === -->
-        <div v-else class="handheld-console">
-          <!-- 棋盤區域：HOLD + Board + NEXT 水平排列 -->
-          <div class="board-row">
-            <!-- 左側 HOLD 預覽 -->
-            <div class="side-preview">
-              <template v-if="holdEnabled">
-                <h4>HOLD</h4>
-                <div class="preview-box">
-                  <div
-                    v-if="holdPiece"
-                    class="preview-grid"
-                    :style="{ '--preview-size': '10px' }"
-                  >
-                    <div
-                      v-for="(row, y) in holdPiece.shape"
-                      :key="'hold-row-' + y"
-                      class="preview-row"
-                    >
-                      <div
-                        v-for="(cell, x) in row"
-                        :key="'hold-cell-' + x"
-                        class="preview-cell"
-                        :class="{ disabled: !canHold }"
-                        :style="{
-                          backgroundColor: cell
-                            ? holdPiece.color
-                            : 'transparent',
-                          opacity: canHold ? 1 : 0.3,
-                        }"
-                      ></div>
-                    </div>
-                  </div>
-                  <div v-else class="empty-preview">-</div>
-                </div>
-                <div
-                  v-if="holdPiece"
-                  class="hold-status"
-                  :class="{ disabled: !canHold }"
-                >
-                  {{ canHold ? "OK" : "NO" }}
-                </div>
-              </template>
-            </div>
-
-            <!-- 中間棋盤 -->
+        <div v-else class="mobile-layout">
+          <!-- 1. 主列 -->
+          <div class="mobile-main-row">
+            <!-- 左：棋盤容器 -->
             <div class="tetris-screen-container" ref="screenContainerRef">
-              <div class="tetris-screen-area">
-                <TetrisBoard
-                  :grid="grid"
-                  :current-piece="currentPiece"
-                  :ghost-piece="ghostEnabled ? ghostPiece : null"
-                  :cell-size="dynamicCellSize"
-                />
+              <TetrisBoard
+                :grid="grid"
+                :current-piece="currentPiece"
+                :ghost-piece="ghostEnabled ? ghostPiece : null"
+                :cell-size="dynamicCellSize"
+              />
+
+              <!-- 暫停遮罩 -->
+              <div
+                v-if="isPaused && !isGameOver"
+                class="mobile-board-overlay"
+              >
+                <div class="overlay-title">暫停中</div>
+                <div class="overlay-summary">
+                  分數 {{ score.toLocaleString() }} · 等級 {{ level }} · 行數 {{ lines }}
+                </div>
+                <div class="overlay-actions">
+                  <button class="overlay-btn-resume" @click="togglePause">
+                    繼續
+                  </button>
+                  <button class="overlay-btn-restart" @click="confirmRestart">
+                    重新開始
+                  </button>
+                </div>
+                <div class="overlay-tools">
+                  <button
+                    class="tool-btn"
+                    aria-label="切換左右手"
+                    :aria-pressed="isLeftHanded"
+                    @click="toggleHandMode"
+                  >
+                    <Hand :size="18" />
+                  </button>
+                  <button
+                    class="tool-btn"
+                    aria-label="音效"
+                    @click="audio.toggleAudio"
+                  >
+                    <component
+                      :is="audio.settings.value.enabled ? Volume2Icon : VolumeXIcon"
+                      :size="18"
+                    />
+                  </button>
+                </div>
+              </div>
+
+              <!-- 未開始遮罩 -->
+              <div
+                v-else-if="!isPlaying && !isGameOver"
+                class="mobile-board-overlay"
+              >
+                <div class="overlay-title">準備好了嗎</div>
+                <div class="overlay-actions">
+                  <button class="overlay-btn-resume" @click="handleStartGameClick">
+                    開始遊戲
+                  </button>
+                </div>
               </div>
             </div>
 
-            <!-- 右側 NEXT 預覽 -->
-            <div class="side-preview">
-              <h4>NEXT</h4>
-              <div class="preview-box">
+            <!-- 右：三張白卡 -->
+            <div class="mobile-side-cards">
+              <!-- a. 暫存卡 -->
+              <button
+                v-if="holdEnabled"
+                class="side-card hold-card"
+                aria-label="暫存目前方塊"
+                :disabled="!canControl || !canHold"
+                @click="handleHold"
+              >
+                <span class="card-label">暫存</span>
                 <div
-                  v-if="nextPiece"
-                  class="preview-grid"
-                  :style="{ '--preview-size': '10px' }"
+                  v-if="holdPiece"
+                  class="mini-preview-grid"
+                  :style="{ opacity: canHold ? 1 : 0.3 }"
                 >
                   <div
-                    v-for="(row, y) in nextPiece.shape"
-                    :key="'preview-row-' + y"
-                    class="preview-row"
+                    v-for="(row, y) in holdPiece.shape"
+                    :key="'m-hold-row-' + y"
+                    class="mini-preview-row"
                   >
                     <div
                       v-for="(cell, x) in row"
-                      :key="'preview-cell-' + x"
-                      class="preview-cell"
+                      :key="'m-hold-cell-' + x"
+                      class="mini-preview-cell"
+                      :style="{
+                        backgroundColor: cell ? holdPiece.color : 'transparent',
+                      }"
+                    ></div>
+                  </div>
+                </div>
+                <div v-else class="empty-mini-preview">—</div>
+              </button>
+
+              <!-- b. 下一個卡 -->
+              <div class="side-card next-card">
+                <span class="card-label">下一個</span>
+                <div v-if="nextPiece" class="mini-preview-grid">
+                  <div
+                    v-for="(row, y) in nextPiece.shape"
+                    :key="'m-next-row-' + y"
+                    class="mini-preview-row"
+                  >
+                    <div
+                      v-for="(cell, x) in row"
+                      :key="'m-next-cell-' + x"
+                      class="mini-preview-cell"
                       :style="{
                         backgroundColor: cell ? nextPiece.color : 'transparent',
                       }"
                     ></div>
                   </div>
                 </div>
-                <div v-else class="empty-preview">-</div>
+                <div v-else class="empty-mini-preview">—</div>
               </div>
-            </div>
-          </div>
 
-          <!-- 控制器区域 -->
-          <div class="controller-area" :class="{ 'left-handed': isLeftHanded }">
-            <div class="move-buttons">
+              <!-- c. 數據卡 -->
               <button
-                class="move-btn move-left"
-                :disabled="!canControl"
-                @touchstart.prevent="handleTouchStart(handleMoveLeft)"
-                @touchend.prevent="handleTouchEnd"
-                @touchcancel.prevent="handleTouchEnd"
-                @click="handleMoveLeft"
+                class="side-card stats-card"
+                @click="showStatsPanel = !showStatsPanel"
               >
-                <ChevronLeft :size="42" />
+                <div class="stat-group">
+                  <span class="card-label">分數</span>
+                  <span class="card-val">{{ score.toLocaleString() }}</span>
+                </div>
+                <div class="stat-group">
+                  <span class="card-label">行數</span>
+                  <span class="card-val">{{ lines }}</span>
+                </div>
+                <div class="stat-group">
+                  <span class="card-label">等級</span>
+                  <span class="card-val">{{ level }}</span>
+                </div>
               </button>
-              <button
-                class="move-btn move-right"
-                :disabled="!canControl"
-                @touchstart.prevent="handleTouchStart(handleMoveRight)"
-                @touchend.prevent="handleTouchEnd"
-                @touchcancel.prevent="handleTouchEnd"
-                @click="handleMoveRight"
-              >
-                <ChevronRight :size="42" />
-              </button>
-            </div>
 
-            <div class="diamond-buttons">
-              <button
-                class="diamond-btn diamond-up"
-                :disabled="!canControl"
-                @touchstart.prevent="handleRotate"
-                @click="handleRotate"
-              >
-                <RotateCw :size="20" />
-              </button>
-              <button
-                v-if="!isLeftHanded && holdEnabled"
-                class="diamond-btn diamond-left"
-                :disabled="!canControl || !canHold"
-                @touchstart.prevent="handleHold"
-                @click="handleHold"
-              >
-                <span class="btn-label">B</span>
-              </button>
-              <button
-                v-else-if="isLeftHanded"
-                class="diamond-btn diamond-left"
-                :disabled="!canControl"
-                @touchstart.prevent="handleHardDrop"
-                @click="handleHardDrop"
-              >
-                <span class="btn-label">A</span>
-              </button>
-              <div class="diamond-center"></div>
-              <button
-                v-if="!isLeftHanded"
-                class="diamond-btn diamond-right"
-                :disabled="!canControl"
-                @touchstart.prevent="handleHardDrop"
-                @click="handleHardDrop"
-              >
-                <span class="btn-label">A</span>
-              </button>
-              <button
-                v-else-if="isLeftHanded && holdEnabled"
-                class="diamond-btn diamond-right"
-                :disabled="!canControl || !canHold"
-                @touchstart.prevent="handleHold"
-                @click="handleHold"
-              >
-                <span class="btn-label">B</span>
-              </button>
-              <button
-                class="diamond-btn diamond-down"
-                :disabled="!canControl"
-                @touchstart.prevent="handleTouchStart(handleMoveDown)"
-                @touchend.prevent="handleTouchEnd"
-                @touchcancel.prevent="handleTouchEnd"
-                @click="handleMoveDown"
-              >
-                <ChevronDown :size="20" />
-              </button>
-            </div>
-          </div>
-
-          <!-- 系统按钮 -->
-          <div class="center-buttons">
-            <button v-if="!isPlaying" class="start-btn" @click="handleStartGameClick">
-              START
-            </button>
-            <button
-              v-else-if="!isPaused"
-              class="pause-btn-small"
-              @click="togglePause"
-            >
-              PAUSE
-            </button>
-            <button v-else class="pause-btn-small" @click="togglePause">
-              RESUME
-            </button>
-            <button v-if="isPlaying" class="select-btn" @click="restart">
-              RESET
-            </button>
-            <button class="hand-switch-btn" @click="toggleHandMode">
-              <Hand :size="18" />
-            </button>
-            <button
-              class="audio-toggle-btn"
-              :class="{ 'audio-disabled': !audio.settings.value.enabled }"
-              @click="audio.toggleAudio"
-            >
-              <component
-                :is="audio.settings.value.enabled ? Volume2Icon : VolumeXIcon"
-                :size="18"
-              />
-            </button>
-          </div>
-
-          <!-- 浮动统计徽章 -->
-          <div v-if="isPlaying && !isGameOver" class="floating-stats-wrapper">
-            <div
-              class="floating-stats-badge"
-              @click="showStatsPanel = !showStatsPanel"
-            >
-              <BarChart3 :size="14" />
-              <span class="badge-score">{{ score.toLocaleString() }}</span>
-              <span class="badge-sep">|</span>
-              <span class="badge-info">Lv.{{ level }}</span>
-              <span class="badge-sep">|</span>
-              <span class="badge-info">{{ lines }}行</span>
-              <ChevronUp v-if="showStatsPanel" :size="14" />
-              <ChevronDown v-else :size="14" />
-            </div>
-
-            <!-- 统计迷你浮窗 -->
-            <Transition name="stats-slide">
-              <div v-if="showStatsPanel" class="stats-mini-panel" @click.stop>
+              <!-- 統計迷你浮窗（點數據卡從右欄下方浮出） -->
+              <div v-if="showStatsPanel" class="mobile-stats-popup" @click.stop>
                 <TetrisStats
                   :score="score"
                   :level="level"
@@ -450,14 +387,88 @@
                   :back-to-back-count="backToBackCount"
                   :statistics="statistics"
                 />
-                <button class="stats-close-btn" @click="showStatsPanel = false">
-                  <X :size="14" />
+                <button
+                  class="stats-close-btn"
+                  aria-label="關閉統計"
+                  @click="showStatsPanel = false"
+                >
+                  <X :size="16" />
                 </button>
               </div>
-            </Transition>
+            </div>
           </div>
 
-          <!-- 游戏结束弹窗 -->
+          <!-- 2. 操作列 -->
+          <div class="mobile-controls-row" :class="{ 'left-handed': isLeftHanded }">
+            <button
+              class="control-btn btn-move"
+              aria-label="左移"
+              :disabled="!canControl"
+              @pointerdown.prevent="handleTouchStart(handleMoveLeft)"
+              @pointerup.prevent="handleTouchEnd"
+              @pointercancel.prevent="handleTouchEnd"
+              @pointerleave.prevent="handleTouchEnd"
+            >
+              <ChevronLeft :size="22" />
+            </button>
+            <button
+              class="control-btn btn-move"
+              aria-label="右移"
+              :disabled="!canControl"
+              @pointerdown.prevent="handleTouchStart(handleMoveRight)"
+              @pointerup.prevent="handleTouchEnd"
+              @pointercancel.prevent="handleTouchEnd"
+              @pointerleave.prevent="handleTouchEnd"
+            >
+              <ChevronRight :size="22" />
+            </button>
+            <button
+              class="control-btn btn-move"
+              aria-label="加速下落"
+              :disabled="!canControl"
+              @pointerdown.prevent="handleTouchStart(handleMoveDown)"
+              @pointerup.prevent="handleTouchEnd"
+              @pointercancel.prevent="handleTouchEnd"
+              @pointerleave.prevent="handleTouchEnd"
+            >
+              <ChevronDown :size="22" />
+            </button>
+            <button
+              class="control-btn btn-rotate"
+              aria-label="旋轉"
+              :disabled="!canControl"
+              @pointerdown.prevent="handleRotate"
+            >
+              <RotateCw :size="22" />
+            </button>
+            <button
+              class="control-btn btn-harddrop"
+              aria-label="直接落下"
+              :disabled="!canControl"
+              @pointerdown.prevent="handleHardDrop"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                width="22"
+                height="22"
+                stroke="currentColor"
+                stroke-width="2.4"
+                fill="none"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M7 5l5 5 5-5M7 11l5 5 5-5M5 20h14" />
+              </svg>
+            </button>
+          </div>
+
+          <!-- 3. 提示列 -->
+          <div class="mobile-hint-row">
+            滑動移動 · 點一下旋轉 · 往下甩直接落下
+          </div>
+
+          <!-- 遊戲結束遮罩 -->
           <div v-if="isGameOver" class="game-over-overlay">
             <TetrisGameOver
               :score="score"
@@ -472,37 +483,9 @@
               @share="shareScore"
             />
           </div>
-
-          <!-- 暂停提示 -->
-          <div
-            v-if="isPaused && !isGameOver"
-            class="pause-overlay"
-            @click="togglePause"
-          >
-            <div class="pause-message">
-              <PauseCircle :size="64" />
-              <h2>游戏已暂停</h2>
-              <p>点击任意处或按 Esc 继续</p>
-              <div class="pause-stats">
-                <div class="pause-stat">
-                  <span class="label">分数</span
-                  ><span class="value">{{ score.toLocaleString() }}</span>
-                </div>
-                <div class="pause-stat">
-                  <span class="label">等级</span
-                  ><span class="value">{{ level }}</span>
-                </div>
-                <div class="pause-stat">
-                  <span class="label">消行</span
-                  ><span class="value">{{ lines }}</span>
-                </div>
-              </div>
-            </div>
-          </div>
         </div>
 
-        <!-- PC 端遊戲結束 / 暫停覆蓋層 -->
-        <template v-if="isDesktop">
+    <template v-if="isDesktop">
           <div v-if="isGameOver" class="desktop-overlay">
             <TetrisGameOver
               :score="score"
@@ -524,19 +507,19 @@
           >
             <div class="pause-message">
               <PauseCircle :size="64" />
-              <h2>游戏已暂停</h2>
-              <p>点击任意处或按 Esc 继续</p>
+              <h2>暫停中</h2>
+              <p>點擊任意處或按 Esc 繼續</p>
               <div class="pause-stats">
                 <div class="pause-stat">
-                  <span class="label">分数</span
+                  <span class="label">分數</span
                   ><span class="value">{{ score.toLocaleString() }}</span>
                 </div>
                 <div class="pause-stat">
-                  <span class="label">等级</span
+                  <span class="label">等級</span
                   ><span class="value">{{ level }}</span>
                 </div>
                 <div class="pause-stat">
-                  <span class="label">消行</span
+                  <span class="label">行數</span
                   ><span class="value">{{ lines }}</span>
                 </div>
               </div>
@@ -558,7 +541,9 @@ import {
     ChevronRight,
     ChevronUp,
     Hand,
+    Pause,
     PauseCircle,
+    Play,
     RotateCw,
     Volume2 as Volume2Icon,
     VolumeX as VolumeXIcon,
@@ -603,18 +588,10 @@ const dynamicCellSize = computed(() => {
     );
     return Math.max(16, Math.min(36, computedSize));
   }
-  // 手機模式：同時考慮寬度和高度，取較小值
-  // 寬度：扣除兩側 preview(~50px*2) + gaps + padding
-  const availableWidth = vw - 140;
-  const cellFromWidth = Math.floor(availableWidth / GRID_WIDTH);
-  // 高度：扣除 header(~60px) + controller(~140px) + buttons(~50px) + stats(~40px) + gaps+padding(~80px)
-  const availableHeight = vh - 370;
-  const cellFromHeight = Math.floor(
-    Math.max(availableHeight, 100) / GRID_HEIGHT,
-  );
-  // 取寬高中較小的，確保棋盤不溢出
-  const computedSize = Math.min(cellFromWidth, cellFromHeight);
-  return Math.max(12, Math.min(28, computedSize));
+  // 手機模式
+  const cellFromWidth = Math.floor((vw - 40 - 12 - 12 - 92) / GRID_WIDTH);
+  const cellFromHeight = Math.floor(Math.max(vh - 280, 100) / GRID_HEIGHT);
+  return Math.max(12, Math.min(26, Math.min(cellFromWidth, cellFromHeight)));
 });
 
 const handleResize = () => {
@@ -624,6 +601,7 @@ const handleResize = () => {
 
 onMounted(async () => {
   window.addEventListener("resize", handleResize);
+  document.addEventListener("visibilitychange", handleVisibilityChange);
   handleResize();
   try {
     const record = await db.get<{ value: boolean }>(
@@ -647,11 +625,83 @@ onMounted(async () => {
   } catch (_e) {
     /* ignore */
   }
+
+  // 手機版棋盤手勢
+  if (screenContainerRef.value) {
+    screenContainerRef.value.addEventListener("touchstart", handleTouchStartGesture, { passive: false });
+    screenContainerRef.value.addEventListener("touchmove", handleTouchMoveGesture, { passive: false });
+    screenContainerRef.value.addEventListener("touchend", handleTouchEndGesture, { passive: false });
+  }
 });
 
 onBeforeUnmount(() => {
   window.removeEventListener("resize", handleResize);
+  document.removeEventListener("visibilitychange", handleVisibilityChange);
+  if (screenContainerRef.value) {
+    screenContainerRef.value.removeEventListener("touchstart", handleTouchStartGesture);
+    screenContainerRef.value.removeEventListener("touchmove", handleTouchMoveGesture);
+    screenContainerRef.value.removeEventListener("touchend", handleTouchEndGesture);
+  }
 });
+
+const handleVisibilityChange = () => {
+  if (document.hidden && isPlaying.value && !isPaused.value && !isGameOver.value) {
+    togglePause();
+  }
+};
+
+let startTouchX = 0;
+let startTouchY = 0;
+let anchorX = 0;
+let anchorY = 0;
+let touchMoved = false;
+let touchStartTime = 0;
+
+const handleTouchStartGesture = (e: TouchEvent) => {
+  const touch = e.touches[0];
+  startTouchX = touch.clientX;
+  startTouchY = touch.clientY;
+  anchorX = touch.clientX;
+  anchorY = touch.clientY;
+  touchMoved = false;
+  touchStartTime = Date.now();
+};
+
+const handleTouchMoveGesture = (e: TouchEvent) => {
+  e.preventDefault();
+  if (!canControl.value) return;
+
+  const touch = e.touches[0];
+  const dx = touch.clientX - anchorX;
+  const dy = touch.clientY - anchorY;
+  const threshold = dynamicCellSize.value;
+
+  if (Math.abs(dx) >= threshold) {
+    if (dx > 0) handleMoveRight();
+    else handleMoveLeft();
+    anchorX += (dx > 0 ? 1 : -1) * threshold;
+    touchMoved = true;
+  }
+  
+  if (dy >= threshold) {
+    handleMoveDown();
+    anchorY += threshold;
+    touchMoved = true;
+  }
+};
+
+const handleTouchEndGesture = (e: TouchEvent) => {
+  const touch = e.changedTouches[0];
+  const totalDx = touch.clientX - startTouchX;
+  const totalDy = touch.clientY - startTouchY;
+  const duration = Date.now() - touchStartTime;
+
+  if (totalDy > 60 && duration < 250 && totalDy > Math.abs(totalDx) * 1.5) {
+    handleHardDrop();
+  } else if (!touchMoved && Math.abs(totalDx) < 10 && Math.abs(totalDy) < 10) {
+    handleRotate();
+  }
+};
 
 watch(isLeftHanded, async (newValue) => {
   try {
@@ -754,13 +804,29 @@ const shareScore = () => {
   emit("shareScore", scoreData);
 };
 
+const confirmRestart = () => {
+  if (isPlaying.value && !isGameOver.value) {
+    if (!confirm("確定要重新開始嗎？這局的進度會消失。")) {
+      return;
+    }
+  }
+  restart();
+};
+
 const difficultyLabel = computed(
   () =>
-    `难度: ${currentDifficulty.value.label} (×${currentDifficulty.value.scoreMultiplier})`,
+    `${currentDifficulty.value.label} ×${currentDifficulty.value.scoreMultiplier}`,
 );
 const canControl = computed(
   () => isPlaying.value && !isPaused.value && !isGameOver.value,
 );
+
+// Bug 修正 2：canControl 變成 false 時清除長按連發計時器
+watch(canControl, (val) => {
+  if (!val) {
+    handleTouchEnd();
+  }
+});
 
 const vibrate = (duration: number = 10) => {
   if ("vibrate" in navigator) navigator.vibrate(duration);
@@ -770,6 +836,8 @@ let touchTimer: number | null = null;
 let touchAction: (() => void) | null = null;
 
 const handleTouchStart = (action: () => void) => {
+  // Bug 修正 2：先呼叫 handleTouchEnd 清掉前一個計時器
+  handleTouchEnd();
   action();
   vibrate(10);
   touchTimer = window.setTimeout(() => {
@@ -816,6 +884,8 @@ const handleHold = () => {
 </script>
 
 <style scoped lang="scss">
+@use "@/components/games/gameShell" as gs;
+
 /* === 樣式已重構，支援 PC 桌面 + 手機掌機雙佈局 === */
 .tetris-game-test {
   position: fixed;
@@ -1844,6 +1914,213 @@ const handleHold = () => {
     to {
       opacity: 1;
     }
+  }
+
+  // ========== 最終佈局（gameShell 共用樣式） ==========
+  @include gs.screen;
+  gap: 14px;
+  background: color-mix(in srgb, #5b52b5 5%, var(--g-bg));
+  --tt-accent: #5b52b5;
+
+  .tetris-topbar {
+    @include gs.topbar;
+  }
+
+  .topbar-btn {
+    @include gs.round-btn;
+  }
+
+  .topbar-title {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+
+    h2 {
+      margin: 0;
+      font-size: 17px;
+      font-weight: 700;
+      color: var(--g-text);
+    }
+
+    .subtitle {
+      margin: 0;
+      font-size: 11px;
+      color: var(--g-text-2);
+    }
+  }
+
+  .mobile-layout {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    flex: 1;
+    min-height: 0;
+  }
+
+  .mobile-main-row {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+  }
+
+  .tetris-screen-container {
+    position: relative;
+    flex-shrink: 0;
+  }
+
+  .mobile-board-overlay {
+    @include gs.board-scrim(16px);
+    background: var(--g-surface);
+  }
+
+  .overlay-title {
+    font-size: 22px;
+    font-weight: 700;
+    margin-bottom: 4px;
+  }
+
+  .overlay-summary {
+    font-size: 13px;
+    color: var(--g-text-2);
+    margin-bottom: 12px;
+  }
+
+  .overlay-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    width: 150px;
+  }
+
+  .overlay-btn-resume {
+    @include gs.pill-dark(44px);
+  }
+
+  .overlay-btn-restart {
+    @include gs.pill-outline(44px);
+  }
+
+  .overlay-tools {
+    display: flex;
+    gap: 8px;
+    margin-top: 8px;
+  }
+
+  .tool-btn {
+    @include gs.round-btn;
+    border: 1px solid var(--g-border);
+  }
+
+  .mobile-side-cards {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-width: 0;
+    gap: 10px;
+  }
+
+  .side-card {
+    @include gs.stat-card;
+    border: 1px solid var(--g-border);
+    padding: 8px;
+    gap: 4px;
+    align-items: center;
+  }
+
+  .card-label {
+    font-size: 11px;
+    color: var(--g-text-2);
+  }
+
+  .card-val {
+    font-family: var(--g-num);
+    font-size: 17px;
+    font-weight: 700;
+  }
+
+  .mini-preview-grid {
+    display: grid;
+    gap: 2px;
+    justify-content: center;
+  }
+
+  .mini-preview-cell {
+    width: 12px;
+    height: 12px;
+    border-radius: 3px;
+  }
+
+  .empty-mini-preview {
+    font-size: 11px;
+    color: var(--g-text-2);
+    height: 12px;
+  }
+
+  .mobile-stats-popup {
+    position: absolute;
+    right: 0;
+    top: 180px;
+    z-index: 20;
+    background: var(--g-surface);
+    border-radius: 14px;
+    padding: 12px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  }
+
+  .stats-close-btn {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+  }
+
+  .mobile-controls-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .control-btn {
+    width: 58px;
+    height: 58px;
+    border-radius: 29px;
+    border: none;
+    background: var(--g-surface);
+    color: var(--g-text);
+    box-shadow: 0 3px 0 color-mix(in srgb, var(--tt-accent) 18%, var(--g-bg));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .btn-rotate {
+    background: var(--g-text);
+    color: var(--g-surface);
+  }
+
+  .btn-harddrop {
+    background: var(--tt-accent);
+    color: white;
+  }
+
+  .mobile-hint-row {
+    font-size: 12px;
+    color: var(--g-text-2);
+    text-align: center;
+  }
+
+  .game-over-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--g-scrim);
+    padding: 20px;
   }
 }
 </style>
