@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { MealLog } from "@/types/fitness";
 import {
   findRecordedFoodIndex,
+  formatFoodRecordForPrompt,
   findSameFood,
   mergeSameDateMealLogs,
   normalizeFoodName,
@@ -81,5 +82,27 @@ describe("mergeSameDateMealLogs", () => {
     expect(logs).toHaveLength(1);
     expect(changed).toEqual([]);
     expect(removedIds).toEqual([]);
+  });
+});
+
+describe("formatFoodRecordForPrompt", () => {
+  it("講明已經記好了，附上日期、時間、份量", () => {
+    const text = formatFoodRecordForPrompt({
+      date: "2026-10-28",
+      meal: "lunch",
+      name: "干煎母螃蟹",
+      time: "13:22",
+      portion: "三到四只",
+      calories: 300,
+    });
+    expect(text).toBe(
+      "（系統：「干煎母螃蟹」已記進 10/28 13:22 的食記（三到四只，300kcal），這筆已經記好了，之後不要再為它輸出 <food-record>）",
+    );
+  });
+
+  it("沒有時間、份量就省略", () => {
+    expect(formatFoodRecordForPrompt({ date: "2026-10-05", meal: "snack", name: "珍奶" })).toBe(
+      "（系統：「珍奶」已記進 10/5 的食記，這筆已經記好了，之後不要再為它輸出 <food-record>）",
+    );
   });
 });
