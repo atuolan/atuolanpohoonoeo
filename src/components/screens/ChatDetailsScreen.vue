@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
 import { proxyImageUrl } from "@/composables/useProxyImage";
+import { formatRoundTableUsage } from "@/utils/roundTable";
 
 interface GroupMemberInfo {
   characterId: string;
@@ -30,6 +31,8 @@ interface GroupMemberInfo {
   fallbackApiProfileId?: string;
   /** 圓桌模式：模型本人成員 */
   isModelSelf?: boolean;
+  /** 圓桌模式：累計用量 */
+  roundTableUsage?: { calls: number; promptTokens: number; completionTokens: number };
 }
 
 type RoundTableOrder = "relay" | "parallel" | "host" | "mention";
@@ -209,6 +212,8 @@ const emit = defineEmits<{
   "update-member-api": [characterId: string, profileId: string, kind: "main" | "fallback"];
   /** 圓桌模式：加入模型本人成員 */
   "add-model-self-member": [profileId: string, name: string];
+  /** 圓桌模式：開始跟這位成員講悄悄話（關掉詳情頁） */
+  "whisper-member": [characterId: string, name: string];
   /** 記憶互通：修改成員連結 */
   "update-member-memory-link": [characterId: string, link: MemoryLinkInfo];
   /** 把被移出的成員拉回群裡 */
@@ -2047,6 +2052,9 @@ function handleAction(action: string) {
                   <option v-for="p in apiProfileOptions || []" :key="p.id" :value="p.id">{{ profileLabel(p) }}</option>
                 </select>
               </label>
+              <p v-if="sheetMember.roundTableUsage" class="subchar-hint-mini">
+                用量：{{ formatRoundTableUsage(sheetMember.roundTableUsage) }}
+              </p>
             </div>
 
             <!-- 動作 -->
@@ -2059,6 +2067,19 @@ function handleAction(action: string) {
                   </svg>
                 </div>
                 <span class="list-label">在聊天裡 @他</span>
+              </button>
+              <button
+                v-if="!isMultiCharCard && roundTable?.enabled && !sheetMember.isMuted"
+                class="list-item"
+                @click="emit('whisper-member', sheetMember.characterId, sheetMember.nickname || sheetMember.name)"
+              >
+                <div class="list-icon">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="4" y="11" width="16" height="10" rx="2" />
+                    <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+                  </svg>
+                </div>
+                <span class="list-label">悄悄話給他</span>
               </button>
               <button
                 class="list-item danger"

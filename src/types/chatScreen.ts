@@ -132,6 +132,8 @@ export interface ChatScreenMessage {
   senderCharacterAvatar?: string;
   /** 圓桌模式：這則是哪個模型寫的 */
   roundTableModel?: string;
+  /** 圓桌悄悄話：只有使用者和這位成員看得到 */
+  whisperWith?: string;
   isRecall?: boolean;
   recallContent?: string;
   isPrivateMessage?: boolean;

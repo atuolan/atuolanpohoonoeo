@@ -555,6 +555,8 @@ export interface ChatMessage {
   senderCharacterAvatar?: string;
   /** 圓桌模式：這則是哪個模型寫的（顯示小字用） */
   roundTableModel?: string;
+  /** 圓桌悄悄話：只有使用者和這位成員（characterId）看得到 */
+  whisperWith?: string;
   /** 是否為撤回訊息 */
   isRecall?: boolean;
   /** 撤回的原始內容 */
@@ -967,6 +969,14 @@ export interface GroupChatMetadata {
   memorySharing?: MemorySharingSettings;
   /** 圓桌模式：每個成員用自己的 API、輪流發言（多人卡不適用） */
   roundTable?: RoundTableSettings;
+  /** 圓桌模式：每位成員累計用量（key 是 characterId） */
+  roundTableUsage?: Record<string, RoundTableUsage>;
+}
+
+export interface RoundTableUsage {
+  calls: number;
+  promptTokens: number;
+  completionTokens: number;
 }
 
 /** 圓桌發言順序：接力／同時／主持人／只有被 @ 的 */

@@ -60,6 +60,8 @@ export function buildRoundTableInstruction(
   options: {
     style?: "chat" | "long";
     independent?: boolean;
+    /** 使用者私下傳給這位成員的悄悄話 */
+    whisper?: boolean;
     /** 接力：這一輪前面成員說的話（照順序） */
     earlierReplies?: readonly { speaker: string; content: string }[];
   } = {},
@@ -81,6 +83,11 @@ export function buildRoundTableInstruction(
       ? `這一輪大家各自作答，你看不到其他成員這一輪的回答，請直接講你自己的看法。`
       : `可以回應、補充或反駁前面其他人說的話。`,
   );
+  if (options.whisper) {
+    lines.push(
+      `這一輪是 ${userName} 私下傳給 ${speakerName} 的悄悄話，其他成員看不到；${speakerName} 的回覆也只有 ${userName} 看得到，可以講不方便在群裡講的話。`,
+    );
+  }
   if (options.style === "long") {
     lines.push(`這是一場討論：可以寫長一點、條列重點、把理由講清楚，不必拘泥聊天短句。`);
   }
@@ -114,6 +121,12 @@ export function pickRoundTableMessages<
     }
   }
   return picked;
+}
+
+/** 用量小字：12 次・輸入 34.5k／輸出 2.1k tokens */
+export function formatRoundTableUsage(usage: { calls: number; promptTokens: number; completionTokens: number }): string {
+  const k = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n));
+  return `${usage.calls} 次・輸入 ${k(usage.promptTokens)}／輸出 ${k(usage.completionTokens)} tokens`;
 }
 
 // ===== 主持人 =====

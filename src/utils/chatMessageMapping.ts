@@ -366,6 +366,7 @@ export function convertToStorableMessage(m: any, charName: string): ChatMessage 
       ? undefined
       : m.senderCharacterAvatar,
     roundTableModel: m.roundTableModel,
+    whisperWith: m.whisperWith,
     isRecall: m.isRecall,
     recallContent: m.recallContent,
     isPrivateMessage: m.isPrivateMessage,

@@ -421,6 +421,8 @@ interface MessageBubbleProps {
   senderCharacterName?: string;
   /** 圓桌模式：這則是哪個模型寫的，名字後面用小字顯示 */
   roundTableModel?: string;
+  /** 圓桌悄悄話：泡泡下的小字（例如「悄悄話・只有甲看得到」） */
+  whisperHint?: string;
   // 群聊訊息類型
   isRecall?: boolean;
   recallContent?: string;
@@ -647,6 +649,8 @@ const emit = defineEmits<{
   (e: "delete", id: string): void;
   (e: "copy", id: string): void;
   (e: "regenerate", id: string): void;
+  /** 圓桌：用其他 API 讓這位成員重講 */
+  (e: "roundTableRetell", id: string): void;
   (e: "regenerateVoice", id: string): void;
   (e: "regenerateImage", id: string): void;
   (e: "readImageNote", id: string): void;
@@ -2603,6 +2607,12 @@ function handleRegenerate() {
   if (menuOpenedAt && Date.now() - menuOpenedAt < 800) return;
   showMenu.value = false;
   emit("regenerate", props.id);
+}
+
+function handleRoundTableRetell() {
+  if (menuOpenedAt && Date.now() - menuOpenedAt < 800) return;
+  showMenu.value = false;
+  emit("roundTableRetell", props.id);
 }
 
 function handleRegenerateVoice() {
@@ -4745,6 +4755,8 @@ const showTextVoiceTranscript = ref(true);
           {{ formattedTime }}
         </div>
 
+        <div v-if="whisperHint" class="away-hint">{{ whisperHint }}</div>
+
         <!-- 角色暫時離開：泡泡下的灰色小字 -->
         <div v-if="awayHint" class="away-hint">
           {{ awayHint.text }}<template v-if="awayHint.action === 'urge'"> · <button type="button" class="away-hint-action" @click.stop="emit('quickBack')">{{ awayHint.label }}</button></template><template v-else-if="awayHint.action === 'locked'"> · {{ awayHint.lockedText }}</template>
@@ -4964,6 +4976,17 @@ const showTextVoiceTranscript = ref(true);
                 </svg>
                 <span>重新生成</span>
               </button>
+              <template v-if="role === 'ai' && roundTableModel">
+                <div class="menu-divider"></div>
+                <button class="menu-item" @click="handleRoundTableRetell">
+                  <svg viewBox="0 0 24 24" fill="currentColor">
+                    <path
+                      d="M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4z"
+                    />
+                  </svg>
+                  <span>換個模型重講</span>
+                </button>
+              </template>
               <template v-if="role === 'ai'">
                 <div class="menu-divider"></div>
                 <button class="menu-item" @click="handleRegenerateVoice">

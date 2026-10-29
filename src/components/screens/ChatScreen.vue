@@ -94,6 +94,7 @@ import { useChatWeatherModal } from "@/composables/useChatWeatherModal";
 import {
   runChatGenerationRequest,
   useChatGeneration,
+  type ChatGenerationTokenUsage,
   type ChatTriggerAIResponseOptions,
 } from "@/composables/useChatGeneration";
 import { bgGenerationPoller } from "@/services/BgGenerationPoller";
@@ -712,6 +713,7 @@ const groupMembersForInfo = computed(() => {
     apiProfileId: member.apiProfileId,
     fallbackApiProfileId: member.fallbackApiProfileId,
     isModelSelf: !!member.isModelSelf,
+    roundTableUsage: groupMetadata.value?.roundTableUsage?.[member.characterId],
     subCharSource: member.source,
     isPersonaMember: member.isPersonaMember,
     boundPersonaName:
@@ -2771,6 +2773,7 @@ const onMessageEdit = (...args: any[]) => handleMessageEdit(args[0] as string);
 const onMessageDelete = (...args: any[]) => handleMessageDelete(args[0] as string);
 const onMessageCopy = (...args: any[]) => handleMessageCopy(args[0] as string);
 const onMessageRegenerate = (...args: any[]) => handleRegenerate(args[0] as string);
+const onRoundTableRetell = (...args: any[]) => openRoundTableRetell(args[0] as string);
 const onMessageRegenerateImage = (...args: any[]) =>
   handleRegenerateImage(args[0] as string);
 
@@ -4202,6 +4205,9 @@ async function sendAndTriggerAI() {
       content: applyUserInputRegex(text),
       timestamp: Date.now(),
       replyTo: replyingTo.value?.id,
+      ...(roundTableWhisperTarget.value && isRoundTableActive(groupMetadata.value)
+        ? { whisperWith: roundTableWhisperTarget.value.id }
+        : {}),
       // 被角色封鎖時，用戶發的訊息標記為「發送失敗」（角色暫時看不到，解封後可見）
       ...(isBlockedByChar.value ? { sentWhileBlocked: true } : {}),
       ...(charAwayCtl.activeAwayId.value
@@ -5201,6 +5207,10 @@ interface RoundTableTurn {
   sameRoundIds: ReadonlySet<string>;
   /** 各自作答：這一輪前面成員的發言不給他看 */
   hideSameRound: boolean;
+  /** 換個模型重講：原本那段和之後的訊息都不給看（脈絡跟原本那次一樣） */
+  hiddenIds?: ReadonlySet<string>;
+  /** 使用者私下傳給這位的悄悄話 */
+  whisper?: boolean;
   style?: "chat" | "long";
   /** 群裡其他能發言的成員（提示詞裡叫模型別替他們講） */
   otherNames: string[];
@@ -5252,6 +5262,117 @@ function getTurnMentionedNames(speakers: readonly RoundTableSpeaker[]): string[]
   return findMentionedNames(turnTexts.join("\n"), speakers.map((s) => s.name));
 }
 
+/** 上一則 AI 回覆之後，使用者的悄悄話是傳給誰 */
+function getTurnWhisperTargetId(): string | undefined {
+  for (let i = messages.value.length - 1; i >= 0; i--) {
+    const m = messages.value[i];
+    if (m.role === "ai") break;
+    if (m.role === "user" && m.whisperWith) return m.whisperWith;
+  }
+  return undefined;
+}
+
+function recordRoundTableUsage(characterId: string, usage: ChatGenerationTokenUsage | undefined) {
+  const meta = groupMetadata.value;
+  if (!meta) return;
+  const all = (meta.roundTableUsage ??= {});
+  const prev = all[characterId] ?? { calls: 0, promptTokens: 0, completionTokens: 0 };
+  all[characterId] = {
+    calls: prev.calls + 1,
+    promptTokens: prev.promptTokens + (usage?.prompt_tokens ?? 0),
+    completionTokens: prev.completionTokens + (usage?.completion_tokens ?? 0),
+  };
+}
+
+// 換個模型重講：長按訊息選 API，以同一位成員、跟原本一樣的脈絡重講；
+// 原本那段留著放在旁邊比較（原本是錯誤泡泡就直接換掉）
+const roundTableRetellTargetId = ref<string | null>(null);
+
+function openRoundTableRetell(messageId: string) {
+  if (isGenerating.value || roundTableRunning) return;
+  roundTableRetellTargetId.value = messageId;
+}
+
+async function retellRoundTableMessage(profileId: string) {
+  const messageId = roundTableRetellTargetId.value;
+  roundTableRetellTargetId.value = null;
+  if (!messageId || isGenerating.value || roundTableRunning) return;
+  const list = messages.value;
+  const idx = list.findIndex((m) => m.id === messageId);
+  const speakerId = list[idx]?.senderCharacterId;
+  const speaker = getRoundTableSpeakers().find((s) => s.characterId === speakerId);
+  if (idx === -1 || !speakerId || !speaker) return;
+
+  // 這位成員連續的那段、這一輪開頭（上一則使用者訊息之後）
+  let start = idx;
+  let end = idx;
+  const sameSpeaker = (m: Message | undefined) => m?.role === "ai" && m.senderCharacterId === speakerId;
+  while (sameSpeaker(list[start - 1])) start--;
+  while (sameSpeaker(list[end + 1])) end++;
+  let roundStart = start;
+  while (roundStart > 0 && list[roundStart - 1].role !== "user") roundStart--;
+  const block = list.slice(start, end + 1);
+  const whisper = !!block[0].whisperWith;
+
+  const taskConfig = resolveRoundTableTaskConfig(profileId || undefined);
+  const turn: RoundTableTurn = {
+    speaker,
+    sameRoundIds: new Set(list.slice(roundStart, start).map((m) => m.id)),
+    hiddenIds: new Set(list.slice(start).map((m) => m.id)),
+    hideSameRound: groupMetadata.value?.roundTable?.order === "parallel",
+    whisper,
+    style: groupMetadata.value?.roundTable?.discussionStyle,
+    otherNames: getRoundTableSpeakers()
+      .filter((s) => s.characterId !== speakerId)
+      .map((s) => s.name),
+    taskConfig,
+    modelLabel: taskConfig.api.model,
+  };
+
+  roundTableRunning = true;
+  try {
+    const idsBefore = new Set(list.map((m) => m.id));
+    await runAIResponseOnce({ skipAutoTrigger: true }, turn);
+    const added = messages.value.filter((m) => !idsBefore.has(m.id));
+    if (added.length === 0) return;
+    for (const m of added) {
+      if (m.senderCharacterId === speakerId && !m.roundTableModel) m.roundTableModel = turn.modelLabel;
+      if (whisper) m.whisperWith = speakerId;
+    }
+    // 搬到原本那段旁邊
+    const rest = messages.value.filter((m) => !added.includes(m));
+    const blockFailed = block.every((m) => isGenerationErrorMessage(m));
+    const anchor = rest.indexOf(blockFailed ? block[0] : block[block.length - 1]);
+    if (anchor === -1) return;
+    if (blockFailed) {
+      rest.splice(anchor, block.length, ...added);
+    } else {
+      rest.splice(anchor + 1, 0, ...added);
+    }
+    messages.value = rest;
+  } finally {
+    roundTableRunning = false;
+    await saveChatImmediate();
+  }
+}
+
+/** 悄悄話小字：使用者傳的寫給誰看，成員回的寫只有你看得到 */
+function getWhisperHint(message: Message): string {
+  if (!message.whisperWith) return "";
+  if (message.role !== "user") return "悄悄話・只有你看得到";
+  const member = groupMetadata.value?.members.find((m) => m.characterId === message.whisperWith);
+  const name = member ? getGroupMemberDisplayName(member, charactersStore.characters) : "對方";
+  return `悄悄話・只有${name}看得到`;
+}
+
+// 圓桌悄悄話：從成員面板開始，輸入框上方顯示提示條，送出的訊息只有他看得到
+const roundTableWhisperTarget = ref<{ id: string; name: string } | null>(null);
+
+function startWhisperFromDetails(characterId: string, name: string) {
+  closeChatDetails();
+  roundTableWhisperTarget.value = { id: characterId, name };
+}
+
 /** 主持人點下一位；說結束、對不到人或呼叫失敗 → null（這一輪結束） */
 async function askRoundTableHost(
   speakers: readonly RoundTableSpeaker[],
@@ -5301,6 +5422,7 @@ async function runRoundTableSpeaker(
   allSpeakers: readonly RoundTableSpeaker[],
   idsAtRoundStart: ReadonlySet<string>,
   options: ChatTriggerAIResponseOptions | undefined,
+  whisper = false,
 ) {
   const meta = groupMetadata.value;
   const independent = meta?.roundTable?.order === "parallel";
@@ -5314,6 +5436,7 @@ async function runRoundTableSpeaker(
         messages.value.filter((m) => !idsAtRoundStart.has(m.id)).map((m) => m.id),
       ),
       hideSameRound: independent,
+      whisper,
       style: meta?.roundTable?.discussionStyle,
       otherNames: allSpeakers.filter((s) => s !== speaker).map((s) => s.name),
       taskConfig,
@@ -5326,6 +5449,7 @@ async function runRoundTableSpeaker(
     );
     for (const m of added) {
       if (!m.roundTableModel) m.roundTableModel = turn.modelLabel;
+      if (whisper) m.whisperWith = speaker.characterId;
     }
     const failed = added.filter((m) => isGenerationErrorMessage(m));
     if (failed.length === 0 || roundTableStopRequested || attempt + 1 >= profileIds.length || !profileIds[attempt + 1]) {
@@ -5350,9 +5474,11 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
   const chatIdAtStart = currentChatId.value;
   const allSpeakers = getRoundTableSpeakers();
   const mentioned = getTurnMentionedNames(allSpeakers);
-  // 主持人模式：被 @ 的先講，之後每一位都問主持人
-  const planned =
-    order === "host"
+  const whisperTarget = allSpeakers.find((s) => s.characterId === getTurnWhisperTargetId());
+  // 悄悄話：只有那位回；主持人模式：被 @ 的先講，之後每一位都問主持人
+  const planned = whisperTarget
+    ? [whisperTarget]
+    : order === "host"
       ? orderRoundTableSpeakers(allSpeakers, mentioned, undefined, true).filter((s) =>
           mentioned.includes(s.name),
         )
@@ -5367,14 +5493,20 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
     for (let i = 0; ; i++) {
       if (roundTableStopRequested || currentChatId.value !== chatIdAtStart) break;
       let speaker: RoundTableSpeaker | null = planned[i] ?? null;
-      if (!speaker && order === "host" && spoken.length < Math.max(hostLimit, planned.length)) {
+      if (!speaker && !whisperTarget && order === "host" && spoken.length < Math.max(hostLimit, planned.length)) {
         speaker = await askRoundTableHost(allSpeakers, spoken);
         // 同一個人不連續講
         if (speaker && speaker.name === spoken[spoken.length - 1]) speaker = null;
       }
       if (!speaker || roundTableStopRequested || currentChatId.value !== chatIdAtStart) break;
       // 總結／日記這類收尾等整輪講完才跑
-      await runRoundTableSpeaker(speaker, allSpeakers, idsAtRoundStart, { ...options, skipAutoTrigger: true });
+      await runRoundTableSpeaker(
+        speaker,
+        allSpeakers,
+        idsAtRoundStart,
+        { ...options, skipAutoTrigger: true },
+        !!whisperTarget,
+      );
       spoken.push(speaker.name);
     }
   } finally {
@@ -5622,7 +5754,10 @@ async function runAIResponseOnce(
         !isGenerationErrorMessage(m) &&
         !m.diaryNoticeId &&
         // 圓桌：這一輪前面成員的發言不進聊天紀錄（接力時接在圓桌指令裡，排在使用者提問後面）
-        !roundTableTurn?.sameRoundIds.has(m.id),
+        !roundTableTurn?.sameRoundIds.has(m.id) &&
+        !roundTableTurn?.hiddenIds?.has(m.id) &&
+        // 圓桌悄悄話：只有那位成員看得到
+        !(roundTableTurn && m.whisperWith && m.whisperWith !== roundTableTurn.speaker.characterId),
     );
 
     let messagesToUse: Message[];
@@ -6529,6 +6664,7 @@ async function runAIResponseOnce(
           {
             style: roundTableTurn.style,
             independent: roundTableTurn.hideSameRound,
+            whisper: roundTableTurn.whisper,
             earlierReplies: roundTableTurn.hideSameRound
               ? []
               : messages.value
@@ -7029,6 +7165,9 @@ async function runAIResponseOnce(
 
       if (useWindow && resolvedGenerationResult.tokenUsage) {
         streamingWindow.setUsage(resolvedGenerationResult.tokenUsage, streamingWindowOwnerId);
+      }
+      if (roundTableTurn) {
+        recordRoundTableUsage(roundTableTurn.speaker.characterId, resolvedGenerationResult.tokenUsage);
       }
 
       // 串流本身已結束（所有 token 已收到），立刻把窗口標為完成，
@@ -11555,6 +11694,7 @@ useChatCleanup({
           @restore-member="restoreRemovedMemberByUser"
           @forget-removed-member="handleForgetRemovedMember"
           @mention-member="handleMentionFromDetails"
+          @whisper-member="startWhisperFromDetails"
         />
       </Transition>
     </Teleport>
@@ -11805,6 +11945,7 @@ useChatCleanup({
             message.isTransactionClaimNotice,
             message.imageNote,
             message.roundTableModel,
+            message.whisperWith,
             readingImageNoteId === message.id,
             groupMemberAvatarVersion,
             removedMembersVersion,
@@ -12053,6 +12194,7 @@ useChatCleanup({
             "
             :sender-character-name="message.senderCharacterName || ''"
             :round-table-model="message.roundTableModel"
+            :whisper-hint="getWhisperHint(message)"
             :is-recall="message.isRecall"
             :recall-content="message.recallContent"
             :edit-noticed="message.editNoticed && !chatFaceToFaceMode"
@@ -12129,6 +12271,7 @@ useChatCleanup({
             @delete="onMessageDelete"
             @copy="onMessageCopy"
             @regenerate="onMessageRegenerate"
+            @round-table-retell="onRoundTableRetell"
             @regenerate-voice="onMessageRegenerateVoice"
             @regenerate-image="onMessageRegenerateImage"
             @read-image-note="onMessageReadImageNote"
@@ -12254,12 +12397,40 @@ useChatCleanup({
       @confirm="confirmForward"
     />
 
+    <!-- 圓桌：換個模型重講 -->
+    <Teleport to="body">
+      <div
+        v-if="roundTableRetellTargetId"
+        class="rt-retell-overlay"
+        @click.self="roundTableRetellTargetId = null"
+      >
+        <div class="rt-retell-sheet" role="dialog" aria-label="換個模型重講">
+          <div class="rt-retell-title">換個模型重講</div>
+          <p class="rt-retell-hint">同一位成員、同樣的前文，用選的 API 再講一次，原本那段留著比較。</p>
+          <button type="button" class="rt-retell-item" @click="retellRoundTableMessage('')">
+            主 API<span class="rt-retell-model">{{ settingsStore.api.model }}</span>
+          </button>
+          <button
+            v-for="p in settingsStore.profiles"
+            :key="p.id"
+            type="button"
+            class="rt-retell-item"
+            @click="retellRoundTableMessage(p.id)"
+          >
+            {{ p.name }}<span class="rt-retell-model">{{ p.api?.model }}</span>
+          </button>
+          <button type="button" class="rt-retell-cancel" @click="roundTableRetellTargetId = null">取消</button>
+        </div>
+      </div>
+    </Teleport>
+
     <ChatScreenInputArea
       ref="inputAreaRef"
       :hidden="isSelectingMessages"
       :docked="inputBarStyle.docked"
       :is-blocked-by-char="isBlockedByChar"
       :replying-to="replyingTo"
+      :whisper-target-name="isRoundTableActive(groupMetadata) ? roundTableWhisperTarget?.name : null"
       :character-name="characterName"
       :chat-face-to-face-mode="chatFaceToFaceMode"
       :is-group-chat="isGroupChat"
@@ -12287,6 +12458,7 @@ useChatCleanup({
       @set-speaker-mode="setSpeakerMode($event)"
       @show-friend-request-input="showFriendRequestInput = true"
       @cancel-reply="cancelReply"
+      @cancel-whisper="roundTableWhisperTarget = null"
       @handle-quick-input-wheel="onInputQuickWheel"
       @insert-quick-action="onInputInsertQuickAction"
       @open-quick-action-editor="openQuickActionEditor"
@@ -14931,6 +15103,70 @@ useChatCleanup({
 </template>
 
 <style lang="scss" scoped>
+.rt-retell-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.rt-retell-sheet {
+  width: 100%;
+  max-width: 480px;
+  max-height: 70vh;
+  overflow-y: auto;
+  padding: 16px 16px calc(16px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom)));
+  border-radius: 16px 16px 0 0;
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+.rt-retell-title {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.rt-retell-hint {
+  margin: 4px 0 12px;
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.rt-retell-item,
+.rt-retell-cancel {
+  display: flex;
+  width: 100%;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: inherit;
+  font-size: 15px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.rt-retell-item:hover {
+  background: var(--color-surface-hover);
+}
+
+.rt-retell-model {
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.rt-retell-cancel {
+  justify-content: center;
+  margin-top: 4px;
+  color: var(--color-text-secondary);
+}
+
 .chat-screen {
   // 底色跟 .app-container 一樣，平常看起來跟透明沒差；
   // 但切頁時離場的聊天列表還疊在下面，透明的話桌布圖還沒解碼、或桌布透明度不到 100% 時會透出列表

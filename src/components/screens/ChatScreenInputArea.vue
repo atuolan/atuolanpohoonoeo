@@ -25,6 +25,8 @@ const props = defineProps<{
   isBlockedByChar: boolean;
   // 回覆相關
   replyingTo: ReplyTarget | null;
+  /** 圓桌悄悄話：正在私下傳給誰 */
+  whisperTargetName?: string | null;
   characterName: string;
   // 面對面模式
   chatFaceToFaceMode: boolean;
@@ -62,6 +64,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: "showFriendRequestInput"): void;
   (e: "cancelReply"): void;
+  (e: "cancelWhisper"): void;
   (e: "handleQuickInputWheel", event: WheelEvent): void;
   (e: "insertQuickAction", text: string): void;
   (e: "openQuickActionEditor"): void;
@@ -412,6 +415,25 @@ const isDarkBackground = computed(() =>
         發送好友申請
       </button>
     </div>
+
+    <!-- 圓桌悄悄話 -->
+    <Transition name="slide-up">
+      <div v-if="whisperTargetName" class="reply-preview-bar">
+        <div class="reply-preview-content">
+          <div class="reply-preview-header">
+            <span class="reply-to-name">悄悄話給 {{ whisperTargetName }}</span>
+          </div>
+          <div class="reply-preview-text">只有他看得到，其他成員看不到</div>
+        </div>
+        <button class="cancel-reply-btn" title="結束悄悄話" @click="emit('cancelWhisper')">
+          <svg viewBox="0 0 24 24" fill="currentColor">
+            <path
+              d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
+            />
+          </svg>
+        </button>
+      </div>
+    </Transition>
 
     <!-- 回覆預覽欄 -->
     <Transition name="slide-up">

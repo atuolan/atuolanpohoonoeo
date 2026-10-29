@@ -4,6 +4,7 @@ import {
   buildHostMessages,
   buildHostTranscript,
   buildRoundTableInstruction,
+  formatRoundTableUsage,
   parseHostDecision,
   isRoundTableActive,
   orderRoundTableSpeakers,
@@ -137,3 +138,13 @@ describe("接力：前面的人說了什麼", () => {
   });
 });
 
+describe("悄悄話與用量", () => {
+  it("悄悄話指令講明其他人看不到", () => {
+    expect(buildRoundTableInstruction("甲", ["乙"], "我", { whisper: true })).toContain("私下傳給 甲 的悄悄話");
+  });
+  it("用量小字", () => {
+    expect(formatRoundTableUsage({ calls: 3, promptTokens: 34567, completionTokens: 800 })).toBe(
+      "3 次・輸入 34.6k／輸出 800 tokens",
+    );
+  });
+});
