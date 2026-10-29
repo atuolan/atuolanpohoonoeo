@@ -11613,7 +11613,9 @@ watch(
   () => isChatGenerating(),
   async (isGenerating, wasGenerating) => {
     // 生成剛完成（從 true 變 false），重新載入聊天記錄
-    if (wasGenerating && !isGenerating && currentChatId.value) {
+    // 圓桌每位成員講完都會停一次，下一位馬上接著生成：這時重載會把下一位的串流佔位
+    // （已被 debounce 存進 IDB）當成空白訊息讀回來，所以整輪講完前都不重載
+    if (wasGenerating && !isGenerating && currentChatId.value && !roundTableRunning) {
       chatPerfMark("generationWatcher:triggered", {
         chatId: currentChatId.value,
         messageCount: messages.value.length,
@@ -11622,6 +11624,7 @@ watch(
       });
       // 等一小段時間確保 saveChat 已寫入 IDB
       await new Promise((r) => setTimeout(r, 300));
+      if (roundTableRunning) return;
       try {
         // v24：從 chatMessages 表讀取最新訊息
         const dbMessages = await loadMessages(currentChatId.value);
