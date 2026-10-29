@@ -239,7 +239,7 @@
           <!-- 1. 主列 -->
           <div class="mobile-main-row">
             <!-- 左：棋盤容器 -->
-            <div class="tetris-screen-container" ref="screenContainerRef">
+            <div class="tetris-screen-container" ref="screenContainerRef" :style="{ width: `${dynamicCellSize * 10 + 21}px`, height: `${dynamicCellSize * 20 + 31}px` }">
               <TetrisBoard
                 :grid="grid"
                 :current-piece="currentPiece"
@@ -1969,6 +1969,23 @@ const handleHold = () => {
     flex-shrink: 0;
   }
 
+  // 蓋掉舊掌機版的深色外框，棋盤本身已有深色底
+  .game-container:not(.desktop-mode) .mobile-main-row .tetris-screen-container {
+    background: none;
+    padding: 0;
+    box-shadow: none;
+    height: auto;
+    aspect-ratio: auto;
+    border-radius: 16px;
+  }
+
+  .game-container:not(.desktop-mode) .mobile-main-row .tetris-screen-area {
+    background: none;
+    padding: 0;
+    border: none;
+    box-shadow: none;
+  }
+
   .mobile-board-overlay {
     @include gs.board-scrim(16px);
     background: var(--g-surface);
@@ -2022,10 +2039,28 @@ const handleHold = () => {
 
   .side-card {
     @include gs.stat-card;
-    border: 1px solid var(--g-border);
+    border: none;
     padding: 8px;
-    gap: 4px;
+    gap: 8px;
     align-items: center;
+    color: var(--g-text);
+    font-family: inherit;
+    cursor: pointer;
+
+    &:disabled {
+      cursor: default;
+    }
+  }
+
+  .stats-card {
+    align-items: flex-start;
+    padding: 10px 12px;
+  }
+
+  .stat-group {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
   }
 
   .card-label {
@@ -2034,15 +2069,23 @@ const handleHold = () => {
   }
 
   .card-val {
+    color: var(--g-text);
     font-family: var(--g-num);
     font-size: 17px;
     font-weight: 700;
   }
 
   .mini-preview-grid {
-    display: grid;
+    display: flex;
+    flex-direction: column;
     gap: 2px;
-    justify-content: center;
+    align-items: center;
+    padding: 4px 0;
+  }
+
+  .mini-preview-row {
+    display: flex;
+    gap: 2px;
   }
 
   .mini-preview-cell {
