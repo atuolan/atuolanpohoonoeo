@@ -553,6 +553,12 @@ export interface ChatMessage {
   senderCharacterName?: string;
   /** 發送者角色頭像快照（群聊匯入/離線顯示兜底） */
   senderCharacterAvatar?: string;
+  /** 圓桌模式：這則是哪個模型寫的（顯示小字用） */
+  roundTableModel?: string;
+  /** 圓桌悄悄話：只有使用者和這位成員（characterId）看得到 */
+  whisperWith?: string;
+  /** 圓桌卡片：整理討論／裁判結論／投票結果（不進提示詞） */
+  roundTableCard?: RoundTableCard;
   /** 是否為撤回訊息 */
   isRecall?: boolean;
   /** 撤回的原始內容 */
@@ -825,6 +831,14 @@ export interface GroupMember {
   affinity?: SubCharAffinitySnapshot;
   /** 記憶互通：連結到哪個私聊（未設定視為 auto） */
   memoryLink?: MemoryLink;
+  /** 圓桌模式：這位成員用的主 API 設定（APIProfile id）；未設定跟主 API */
+  apiProfileId?: string;
+  /** 圓桌模式：主要 API 失敗時改用這個再試一次 */
+  fallbackApiProfileId?: string;
+  /** 圓桌模式：「模型本人」成員（不演角色，用模型自己的觀點討論） */
+  isModelSelf?: boolean;
+  /** 圓桌模式：辯論立場（有填就照這個立場論證） */
+  stance?: string;
 }
 
 /** 群管理動作：改群名、移出、禁言、解禁、拉回被移出的成員 */
@@ -957,6 +971,39 @@ export interface GroupChatMetadata {
   multiCharMembers?: MultiCharMember[];
   /** 記憶互通設定（未設定視為關閉） */
   memorySharing?: MemorySharingSettings;
+  /** 圓桌模式：每個成員用自己的 API、輪流發言（多人卡不適用） */
+  roundTable?: RoundTableSettings;
+  /** 圓桌模式：每位成員累計用量（key 是 characterId） */
+  roundTableUsage?: Record<string, RoundTableUsage>;
+}
+
+export interface RoundTableCard {
+  kind: "summary" | "verdict" | "vote";
+  title: string;
+  body: string;
+  /** 投票只有一位最高票：可以發紅包給他 */
+  winner?: string;
+  redpacketSent?: boolean;
+}
+
+export interface RoundTableUsage {
+  calls: number;
+  promptTokens: number;
+  completionTokens: number;
+}
+
+/** 圓桌發言順序：接力／同時／主持人／只有被 @ 的 */
+export type RoundTableOrder = "relay" | "parallel" | "host" | "mention";
+
+export interface RoundTableSettings {
+  enabled: boolean;
+  order: RoundTableOrder;
+  /** 一輪最多幾位發言（被 @ 的不受限）；未設定 = 全部 */
+  maxSpeakersPerRound?: number;
+  /** 主持人模式：主持人用的 API 設定；未設定跟主 API */
+  hostApiProfileId?: string;
+  /** chat = 聊天短句（預設）；long = 長篇討論，可以條列、講理由 */
+  discussionStyle?: "chat" | "long";
 }
 
 // ===== 群聊日記條目 =====

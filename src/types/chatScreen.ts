@@ -130,6 +130,12 @@ export interface ChatScreenMessage {
   senderCharacterId?: string;
   senderCharacterName?: string;
   senderCharacterAvatar?: string;
+  /** 圓桌模式：這則是哪個模型寫的 */
+  roundTableModel?: string;
+  /** 圓桌悄悄話：只有使用者和這位成員看得到 */
+  whisperWith?: string;
+  /** 圓桌卡片：整理討論／裁判結論／投票結果 */
+  roundTableCard?: import("@/types/chat").RoundTableCard;
   isRecall?: boolean;
   recallContent?: string;
   isPrivateMessage?: boolean;

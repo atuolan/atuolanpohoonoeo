@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
 import { proxyImageUrl } from "@/composables/useProxyImage";
+import { formatRoundTableUsage } from "@/utils/roundTable";
 
 interface GroupMemberInfo {
   characterId: string;
@@ -24,6 +25,26 @@ interface GroupMemberInfo {
   relationLabel?: string;
   /** 是否引入好感度 */
   affinityEnabled?: boolean;
+  /** 圓桌模式：這位成員綁的 API 設定 */
+  apiProfileId?: string;
+  /** 圓桌模式：主要 API 失敗時改用 */
+  fallbackApiProfileId?: string;
+  /** 圓桌模式：模型本人成員 */
+  isModelSelf?: boolean;
+  /** 圓桌模式：累計用量 */
+  roundTableUsage?: { calls: number; promptTokens: number; completionTokens: number };
+  /** 圓桌模式：辯論立場 */
+  stance?: string;
+}
+
+type RoundTableOrder = "relay" | "parallel" | "host" | "mention";
+
+interface RoundTableInfo {
+  enabled: boolean;
+  maxSpeakersPerRound: number;
+  order: RoundTableOrder;
+  hostApiProfileId: string;
+  discussionStyle: "chat" | "long";
 }
 
 /** 被移出群聊的成員 */
@@ -143,6 +164,10 @@ const props = defineProps<{
   presetCount?: number;
   /** 記憶互通設定（普通群聊） */
   memorySharing?: { enabled: boolean; maxRawTurns: number };
+  /** 圓桌模式（普通群聊）：每個成員用自己的 API 輪流發言 */
+  roundTable?: RoundTableInfo;
+  /** 圓桌模式：可以綁的主 API 設定 */
+  apiProfileOptions?: Array<{ id: string; name: string; model: string }>;
   /** 記憶互通：每位成員的連結選項 */
   memberLinkOptions?: MemberLinkOptionInfo[];
   /** 記憶互通：連到這個私聊的群名（私聊） */
@@ -183,6 +208,18 @@ const emit = defineEmits<{
   "add-group-member-rich": [payload: AddSubCharEmitPayload];
   /** 記憶互通：修改開關或輪數 */
   "update-memory-sharing": [patch: { enabled?: boolean; maxRawTurns?: number }];
+  /** 圓桌模式：修改開關或每輪人數 */
+  "update-round-table": [patch: Partial<RoundTableInfo>];
+  /** 圓桌模式：成員改用哪個 API 設定（空字串 = 跟主 API／不用備用） */
+  "update-member-api": [characterId: string, profileId: string, kind: "main" | "fallback"];
+  /** 圓桌模式：加入模型本人成員 */
+  "add-model-self-member": [profileId: string, name: string];
+  /** 圓桌模式：開始跟這位成員講悄悄話（關掉詳情頁） */
+  "whisper-member": [characterId: string, name: string];
+  /** 圓桌模式：討論工具（整理討論、裁判結論、互評投票） */
+  "round-table-tool": [kind: "summary" | "verdict" | "vote"];
+  /** 圓桌模式：改辯論立場 */
+  "update-member-stance": [characterId: string, stance: string];
   /** 記憶互通：修改成員連結 */
   "update-member-memory-link": [characterId: string, link: MemoryLinkInfo];
   /** 把被移出的成員拉回群裡 */
@@ -696,6 +733,49 @@ const showLorebooks = ref(false);
 const boundLorebookCount = computed(
   () => lorebooks.value.filter((lb) => isLorebookBound(lb.id)).length,
 );
+
+// ===== 圓桌模式 =====
+function onRoundTableToggle(event: Event) {
+  emit("update-round-table", { enabled: (event.target as HTMLInputElement).checked });
+}
+
+function onRoundTableMaxChange(event: Event) {
+  const raw = (event.target as HTMLInputElement).value;
+  if (raw === "") return;
+  emit("update-round-table", { maxSpeakersPerRound: Number(raw) });
+}
+
+function onRoundTableSelect(key: "order" | "hostApiProfileId" | "discussionStyle", event: Event) {
+  emit("update-round-table", { [key]: (event.target as HTMLSelectElement).value });
+}
+
+function onMemberApiChange(characterId: string, event: Event, kind: "main" | "fallback" = "main") {
+  emit("update-member-api", characterId, (event.target as HTMLSelectElement).value, kind);
+}
+
+/** 綁的設定被刪掉了：選單顯示「跟主 API」 */
+function profileValue(id: string | undefined): string {
+  return id && props.apiProfileOptions?.some((p) => p.id === id) ? id : "";
+}
+
+function profileLabel(p: { name: string; model: string }): string {
+  return p.model ? `${p.name}（${p.model}）` : p.name;
+}
+
+const roundTableOrderOptions: Array<{ value: RoundTableOrder; label: string }> = [
+  { value: "relay", label: "接力：輪流講，看得到前面的人" },
+  { value: "parallel", label: "各自作答：這一輪互相看不到" },
+  { value: "host", label: "主持人：由主持人點下一位" },
+  { value: "mention", label: "只有被 @ 的講" },
+];
+
+// 加入模型本人
+const modelSelfProfileId = ref("");
+const modelSelfName = ref("");
+function addModelSelfMember() {
+  emit("add-model-self-member", modelSelfProfileId.value, modelSelfName.value);
+  modelSelfName.value = "";
+}
 
 // ===== 記憶互通 =====
 /** 下拉選單的值：auto / none / chat:<chatId> */
@@ -1314,6 +1394,117 @@ function handleAction(action: string) {
           </template>
         </section>
 
+        <!-- 圓桌模式（多人卡不支援） -->
+        <section v-if="!isMultiCharCard && roundTable" class="panel">
+          <h3 class="panel-title">圓桌模式</h3>
+          <div class="memory-sharing">
+            <label class="member-switch">
+              <span class="member-switch-text">
+                <span class="member-switch-title">開啟圓桌模式</span>
+                <span class="subchar-hint-mini">每個成員用自己的 API 輪流發言，後面的人看得到前面說了什麼</span>
+              </span>
+              <input
+                type="checkbox"
+                role="switch"
+                class="switch-input"
+                :checked="roundTable.enabled"
+                @change="onRoundTableToggle"
+              />
+            </label>
+            <template v-if="roundTable.enabled">
+              <label class="memory-link-row">
+                <span class="memory-link-name">發言順序</span>
+                <select
+                  class="subchar-select memory-link-select"
+                  :value="roundTable.order"
+                  @change="onRoundTableSelect('order', $event)"
+                >
+                  <option v-for="o in roundTableOrderOptions" :key="o.value" :value="o.value">{{ o.label }}</option>
+                </select>
+              </label>
+              <label v-if="roundTable.order === 'host'" class="memory-link-row">
+                <span class="memory-link-name">主持人 API</span>
+                <select
+                  class="subchar-select memory-link-select"
+                  :value="profileValue(roundTable.hostApiProfileId)"
+                  @change="onRoundTableSelect('hostApiProfileId', $event)"
+                >
+                  <option value="">跟主 API</option>
+                  <option v-for="p in apiProfileOptions || []" :key="p.id" :value="p.id">{{ profileLabel(p) }}</option>
+                </select>
+              </label>
+              <label class="memory-link-row">
+                <span class="memory-link-name">討論風格</span>
+                <select
+                  class="subchar-select memory-link-select"
+                  :value="roundTable.discussionStyle"
+                  @change="onRoundTableSelect('discussionStyle', $event)"
+                >
+                  <option value="chat">聊天：短句、像群聊</option>
+                  <option value="long">討論：可以寫長、條列、講理由</option>
+                </select>
+              </label>
+              <label class="memory-sharing-turns">
+                <span>每輪最多</span>
+                <input
+                  type="number"
+                  class="subchar-input memory-sharing-turns-input"
+                  min="0"
+                  max="20"
+                  :value="roundTable.maxSpeakersPerRound"
+                  @change="onRoundTableMaxChange"
+                />
+                <span>位發言</span>
+              </label>
+              <p class="subchar-hint-mini">
+                0 = 全部。被 @ 的成員先講，禁言的不講。每位成員各呼叫一次 API{{ roundTable.order === 'host' ? '，主持人每點一次也會呼叫一次' : '' }}。
+              </p>
+              <div class="memory-link-list">
+                <div
+                  v-for="member in allMembers"
+                  :key="member.characterId"
+                  class="memory-link-row"
+                >
+                  <span class="memory-link-name">{{ member.nickname || member.name }}</span>
+                  <select
+                    class="subchar-select memory-link-select"
+                    :value="profileValue(member.apiProfileId)"
+                    @change="onMemberApiChange(member.characterId, $event)"
+                  >
+                    <option value="">跟主 API</option>
+                    <option v-for="p in apiProfileOptions || []" :key="p.id" :value="p.id">{{ profileLabel(p) }}</option>
+                  </select>
+                </div>
+              </div>
+              <div class="memory-link-row">
+                <span class="memory-link-name">加入模型本人</span>
+                <select v-model="modelSelfProfileId" class="subchar-select memory-link-select">
+                  <option value="">主 API</option>
+                  <option v-for="p in apiProfileOptions || []" :key="p.id" :value="p.id">{{ profileLabel(p) }}</option>
+                </select>
+              </div>
+              <div class="memory-link-row">
+                <input
+                  v-model="modelSelfName"
+                  class="subchar-input"
+                  maxlength="30"
+                  placeholder="名字（留空用模型名稱）"
+                />
+                <button type="button" class="round-table-add-btn" @click="addModelSelfMember">加入</button>
+              </div>
+              <p class="subchar-hint-mini">模型本人不演角色，用模型自己的觀點跟大家討論。</p>
+              <div class="round-table-tools">
+                <button type="button" class="round-table-tool-btn" @click="emit('round-table-tool', 'summary')">整理討論</button>
+                <button type="button" class="round-table-tool-btn" @click="emit('round-table-tool', 'vote')">請大家投票</button>
+                <button type="button" class="round-table-tool-btn" @click="emit('round-table-tool', 'verdict')">請裁判結論</button>
+              </div>
+              <p class="subchar-hint-mini">
+                整理和裁判用主持人 API；投票是每位成員用自己的 API，選出這一輪最好的回答（不能投自己）。成員面板可以填辯論立場。
+              </p>
+            </template>
+          </div>
+        </section>
+
         <!-- 記憶互通（多人卡不支援） -->
         <section v-if="!isMultiCharCard && memorySharing" class="panel">
           <h3 class="panel-title">記憶互通</h3>
@@ -1739,6 +1930,7 @@ function handleAction(action: string) {
               <div class="member-row-badges">
                 <span v-if="sheetMember.isAdmin" class="badge badge--admin">管理員</span>
                 <span v-if="sheetMember.isMuted" class="badge badge--muted">已禁言</span>
+                <span v-if="sheetMember.isModelSelf" class="badge badge--persona">模型本人</span>
                 <span v-if="sheetMember.isPersonaMember" class="badge badge--persona">使用者角色·代演</span>
                 <span v-else-if="sheetMember.subCharSource === 'character'" class="badge badge--source">角色卡</span>
                 <span v-else-if="sheetMember.subCharSource === 'multichar'" class="badge badge--source">多人卡</span>
@@ -1850,6 +2042,46 @@ function handleAction(action: string) {
               </label>
             </div>
 
+            <!-- 圓桌模式：這位成員用哪個 API -->
+            <div v-if="!isMultiCharCard && roundTable?.enabled" class="member-sheet-section">
+              <label class="memory-link-row">
+                <span class="memory-link-name">使用的 API</span>
+                <select
+                  class="subchar-select memory-link-select"
+                  :value="profileValue(sheetMember.apiProfileId)"
+                  @change="onMemberApiChange(sheetMember.characterId, $event)"
+                >
+                  <option value="">跟主 API</option>
+                  <option v-for="p in apiProfileOptions || []" :key="p.id" :value="p.id">{{ profileLabel(p) }}</option>
+                </select>
+              </label>
+              <label class="memory-link-row">
+                <span class="memory-link-name">失敗時改用</span>
+                <select
+                  class="subchar-select memory-link-select"
+                  :value="profileValue(sheetMember.fallbackApiProfileId)"
+                  @change="onMemberApiChange(sheetMember.characterId, $event, 'fallback')"
+                >
+                  <option value="">不用備用</option>
+                  <option v-for="p in apiProfileOptions || []" :key="p.id" :value="p.id">{{ profileLabel(p) }}</option>
+                </select>
+              </label>
+              <label class="memory-link-row">
+                <span class="memory-link-name">辯論立場</span>
+                <input
+                  :key="sheetMember.characterId"
+                  class="subchar-input"
+                  maxlength="60"
+                  placeholder="例如：正方／支持遠端工作"
+                  :value="sheetMember.stance || ''"
+                  @change="emit('update-member-stance', sheetMember.characterId, ($event.target as HTMLInputElement).value)"
+                />
+              </label>
+              <p v-if="sheetMember.roundTableUsage" class="subchar-hint-mini">
+                用量：{{ formatRoundTableUsage(sheetMember.roundTableUsage) }}
+              </p>
+            </div>
+
             <!-- 動作 -->
             <div class="list-group member-sheet-actions">
               <button v-if="!sheetMember.isMuted" class="list-item" @click="mentionSheetMember">
@@ -1860,6 +2092,19 @@ function handleAction(action: string) {
                   </svg>
                 </div>
                 <span class="list-label">在聊天裡 @他</span>
+              </button>
+              <button
+                v-if="!isMultiCharCard && roundTable?.enabled && !sheetMember.isMuted"
+                class="list-item"
+                @click="emit('whisper-member', sheetMember.characterId, sheetMember.nickname || sheetMember.name)"
+              >
+                <div class="list-icon">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="4" y="11" width="16" height="10" rx="2" />
+                    <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+                  </svg>
+                </div>
+                <span class="list-label">悄悄話給他</span>
               </button>
               <button
                 class="list-item danger"
@@ -3217,6 +3462,35 @@ function handleAction(action: string) {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+.round-table-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.round-table-tool-btn {
+  flex: 1 1 auto;
+  padding: 8px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: var(--color-background);
+  color: var(--color-text);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.round-table-add-btn {
+  flex-shrink: 0;
+  padding: 6px 14px;
+  border: none;
+  border-radius: 8px;
+  background: var(--color-primary);
+  color: var(--color-on-primary-contrast, #fff);
+  font-size: 13px;
+  cursor: pointer;
 }
 
 .memory-link-row {

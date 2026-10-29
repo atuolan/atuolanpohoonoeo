@@ -419,6 +419,14 @@ interface MessageBubbleProps {
   isGroupChat?: boolean;
   senderCharacterAvatar?: string;
   senderCharacterName?: string;
+  /** 圓桌模式：這則是哪個模型寫的，名字後面用小字顯示 */
+  roundTableModel?: string;
+  /** 圓桌悄悄話：泡泡下的小字（例如「悄悄話・只有甲看得到」） */
+  whisperHint?: string;
+  /** 圓桌模式：選單不放「重新生成」（改成長按頭像讓那位成員重說） */
+  hideRegenerate?: boolean;
+  /** 圓桌模式：長按頭像 → 讓這位成員重說 */
+  avatarLongPress?: boolean;
   // 群聊訊息類型
   isRecall?: boolean;
   recallContent?: string;
@@ -645,6 +653,10 @@ const emit = defineEmits<{
   (e: "delete", id: string): void;
   (e: "copy", id: string): void;
   (e: "regenerate", id: string): void;
+  /** 圓桌：用其他 API 讓這位成員重講 */
+  (e: "roundTableRetell", id: string): void;
+  /** 圓桌：長按頭像 */
+  (e: "avatarLongPress", id: string): void;
   (e: "regenerateVoice", id: string): void;
   (e: "regenerateImage", id: string): void;
   (e: "readImageNote", id: string): void;
@@ -2603,6 +2615,66 @@ function handleRegenerate() {
   emit("regenerate", props.id);
 }
 
+// 圓桌：長按頭像讓這位成員重說（不觸發整則訊息的長按選單；點一下照舊 @ 他）
+let avatarPressTimer: number | null = null;
+let avatarPressStart = { x: 0, y: 0 };
+let avatarPressFiredAt = 0;
+
+function cancelAvatarPress() {
+  if (avatarPressTimer) {
+    clearTimeout(avatarPressTimer);
+    avatarPressTimer = null;
+  }
+}
+
+function onAvatarTouchStart(e: TouchEvent) {
+  if (!props.avatarLongPress) return;
+  e.stopPropagation();
+  avatarPressStart = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+  cancelAvatarPress();
+  avatarPressTimer = window.setTimeout(() => {
+    avatarPressTimer = null;
+    avatarPressFiredAt = Date.now();
+    emit("avatarLongPress", props.id);
+  }, 500);
+}
+
+function onAvatarTouchMove(e: TouchEvent) {
+  if (!props.avatarLongPress) return;
+  e.stopPropagation();
+  const dx = Math.abs(e.touches[0].clientX - avatarPressStart.x);
+  const dy = Math.abs(e.touches[0].clientY - avatarPressStart.y);
+  if (dx > 10 || dy > 10) cancelAvatarPress();
+}
+
+function onAvatarTouchEnd(e: TouchEvent) {
+  if (!props.avatarLongPress) return;
+  e.stopPropagation();
+  cancelAvatarPress();
+  // 長按已觸發：不要再補一個 click（會落在剛打開的選單遮罩上把它關掉）
+  if (Date.now() - avatarPressFiredAt < 2000) e.preventDefault();
+}
+
+function onAvatarClick() {
+  // 長按放開後的合成 click 不算點一下
+  if (Date.now() - avatarPressFiredAt < 600) return;
+  emit("avatarClick", props.id);
+}
+
+function onAvatarContextMenu(e: MouseEvent) {
+  if (!props.avatarLongPress) return;
+  e.preventDefault();
+  e.stopPropagation();
+  if (Date.now() - avatarPressFiredAt < 600) return;
+  emit("avatarLongPress", props.id);
+}
+
+function handleRoundTableRetell() {
+  if (menuOpenedAt && Date.now() - menuOpenedAt < 800) return;
+  showMenu.value = false;
+  emit("roundTableRetell", props.id);
+}
+
 function handleRegenerateVoice() {
   if (menuOpenedAt && Date.now() - menuOpenedAt < 800) return;
   showMenu.value = false;
@@ -3611,7 +3683,13 @@ const showTextVoiceTranscript = ref(true);
       <div
         v-if="!isUser && showAvatar && !isHtmlOnlyBubble"
         class="avatar-container"
-        @click="emit('avatarClick', id)"
+        :class="{ 'avatar-long-press': avatarLongPress }"
+        @click="onAvatarClick"
+        @touchstart.passive="onAvatarTouchStart"
+        @touchmove.passive="onAvatarTouchMove"
+        @touchend="onAvatarTouchEnd"
+        @touchcancel="onAvatarTouchEnd"
+        @contextmenu="onAvatarContextMenu"
       >
         <!-- 群聊模式：使用發送者角色頭像（簡化，不套用頭像框） -->
         <template v-if="isGroupChat && senderCharacterAvatar">
@@ -3734,7 +3812,8 @@ const showTextVoiceTranscript = ref(true);
           "
           class="sender-name"
         >
-          {{ isGroupChat ? senderCharacterName : senderName }}
+          {{ isGroupChat ? senderCharacterName : senderName
+          }}<span v-if="isGroupChat && roundTableModel" class="sender-model"> · {{ roundTableModel }}</span>
         </div>
 
         <!-- 回覆引用 (移至氣泡外) -->
@@ -4742,6 +4821,8 @@ const showTextVoiceTranscript = ref(true);
           {{ formattedTime }}
         </div>
 
+        <div v-if="whisperHint" class="away-hint">{{ whisperHint }}</div>
+
         <!-- 角色暫時離開：泡泡下的灰色小字 -->
         <div v-if="awayHint" class="away-hint">
           {{ awayHint.text }}<template v-if="awayHint.action === 'urge'"> · <button type="button" class="away-hint-action" @click.stop="emit('quickBack')">{{ awayHint.label }}</button></template><template v-else-if="awayHint.action === 'locked'"> · {{ awayHint.lockedText }}</template>
@@ -4952,6 +5033,7 @@ const showTextVoiceTranscript = ref(true);
               </button>
             </template>
             <template v-if="!isUser">
+              <template v-if="!hideRegenerate">
               <div class="menu-divider"></div>
               <button class="menu-item" @click="handleRegenerate">
                 <svg viewBox="0 0 24 24" fill="currentColor">
@@ -4961,6 +5043,18 @@ const showTextVoiceTranscript = ref(true);
                 </svg>
                 <span>重新生成</span>
               </button>
+              </template>
+              <template v-if="role === 'ai' && roundTableModel">
+                <div class="menu-divider"></div>
+                <button class="menu-item" @click="handleRoundTableRetell">
+                  <svg viewBox="0 0 24 24" fill="currentColor">
+                    <path
+                      d="M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4z"
+                    />
+                  </svg>
+                  <span>讓他重說</span>
+                </button>
+              </template>
               <template v-if="role === 'ai'">
                 <div class="menu-divider"></div>
                 <button class="menu-item" @click="handleRegenerateVoice">
@@ -5689,6 +5783,16 @@ const showTextVoiceTranscript = ref(true);
   .user & {
     align-items: flex-end;
   }
+}
+
+.avatar-long-press {
+  -webkit-touch-callout: none;
+  user-select: none;
+}
+
+.sender-model {
+  font-size: 10px;
+  opacity: 0.6;
 }
 
 .sender-name {

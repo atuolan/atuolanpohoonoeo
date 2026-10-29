@@ -73,6 +73,7 @@ import PhoneCallModal from "@/components/modals/PhoneCallModal.vue";
 import ProactiveMessageSettingsModal from "@/components/modals/ProactiveMessageSettingsModal.vue";
 import RedPacketVoiceClaimModal from "@/components/modals/RedPacketVoiceClaimModal.vue";
 import GroupPlayTutorialOverlay from "@/components/common/GroupPlayTutorialOverlay.vue";
+import RoundTableTutorialOverlay from "@/components/common/RoundTableTutorialOverlay.vue";
 import ScreenshotPreviewModal from "@/components/modals/ScreenshotPreviewModal.vue";
 import StoryClockReturnDialog from "@/components/modals/StoryClockReturnDialog.vue";
 import ForwardTargetPickerModal from "@/components/modals/ForwardTargetPickerModal.vue";
@@ -94,6 +95,7 @@ import { useChatWeatherModal } from "@/composables/useChatWeatherModal";
 import {
   runChatGenerationRequest,
   useChatGeneration,
+  type ChatGenerationTokenUsage,
   type ChatTriggerAIResponseOptions,
 } from "@/composables/useChatGeneration";
 import { bgGenerationPoller } from "@/services/BgGenerationPoller";
@@ -153,6 +155,21 @@ import {
   toPromptGroupMember,
   withLiveSubCharSnapshot,
 } from "@/utils/groupMembers";
+import {
+  buildHostMessages,
+  buildHostTranscript,
+  buildRoundTableInstruction,
+  buildSummaryMessages,
+  buildVoteMessages,
+  parseVote,
+  tallyVotes,
+  isRoundTableActive,
+  MODEL_SELF_DESCRIPTION,
+  orderRoundTableSpeakers,
+  parseHostDecision,
+  pickRoundTableMessages,
+  type RoundTableSpeaker,
+} from "@/utils/roundTable";
 import { useChatSearch } from "@/composables/useChatSearch";
 import { resolveLastSummaryTime, useChatSummaryDiary } from "@/composables/useChatSummaryDiary";
 import {
@@ -257,6 +274,7 @@ import type {
   GenerationDiagnostics,
   GenerationContaminationProbeResult,
   PlurkActivity,
+  RoundTableSettings,
   SubCharSource,
   SubCharUserBinding,
   SubCharAffinitySnapshot,
@@ -697,6 +715,11 @@ const groupMembersForInfo = computed(() => {
     isAdmin: member.isAdmin,
     isMuted: member.isMuted,
     isVirtual: !!member.isVirtual,
+    apiProfileId: member.apiProfileId,
+    fallbackApiProfileId: member.fallbackApiProfileId,
+    isModelSelf: !!member.isModelSelf,
+    roundTableUsage: groupMetadata.value?.roundTableUsage?.[member.characterId],
+    stance: member.stance,
     subCharSource: member.source,
     isPersonaMember: member.isPersonaMember,
     boundPersonaName:
@@ -2756,6 +2779,7 @@ const onMessageEdit = (...args: any[]) => handleMessageEdit(args[0] as string);
 const onMessageDelete = (...args: any[]) => handleMessageDelete(args[0] as string);
 const onMessageCopy = (...args: any[]) => handleMessageCopy(args[0] as string);
 const onMessageRegenerate = (...args: any[]) => handleRegenerate(args[0] as string);
+const onRoundTableRetell = (...args: any[]) => openRoundTableRetell(args[0] as string);
 const onMessageRegenerateImage = (...args: any[]) =>
   handleRegenerateImage(args[0] as string);
 
@@ -3130,6 +3154,72 @@ async function handleDetailsToggleLorebook(lorebookId: string) {
   } else {
     groupMetadata.value.lorebookIds = ids.filter((id) => id !== lorebookId);
   }
+  await saveChatImmediate();
+}
+
+// 圓桌模式（群組詳情的面板；多人卡不支援）
+const detailsRoundTable = computed(() => {
+  const meta = groupMetadata.value;
+  if (!meta || meta.isMultiCharCard) return undefined;
+  return {
+    enabled: meta.roundTable?.enabled === true,
+    maxSpeakersPerRound: meta.roundTable?.maxSpeakersPerRound ?? 0,
+    order: meta.roundTable?.order ?? ("relay" as const),
+    hostApiProfileId: meta.roundTable?.hostApiProfileId ?? "",
+    discussionStyle: meta.roundTable?.discussionStyle ?? ("chat" as const),
+  };
+});
+
+const detailsApiProfileOptions = computed(() =>
+  settingsStore.profiles.map((p) => ({ id: p.id, name: p.name, model: p.api?.model || "" })),
+);
+
+async function handleDetailsUpdateRoundTable(patch: Partial<RoundTableSettings>) {
+  const meta = groupMetadata.value;
+  if (!meta) return;
+  const next: RoundTableSettings = { enabled: false, order: "relay", ...meta.roundTable, ...patch };
+  if (patch.maxSpeakersPerRound !== undefined) {
+    next.maxSpeakersPerRound = Math.max(0, Math.floor(patch.maxSpeakersPerRound)) || undefined;
+  }
+  if (patch.hostApiProfileId !== undefined) next.hostApiProfileId = patch.hostApiProfileId || undefined;
+  meta.roundTable = next;
+  await saveChatImmediate();
+}
+
+async function handleDetailsUpdateMemberApi(
+  characterId: string,
+  profileId: string,
+  kind: "main" | "fallback" = "main",
+) {
+  const member = groupMetadata.value?.members.find((m) => m.characterId === characterId);
+  if (!member) return;
+  if (kind === "fallback") member.fallbackApiProfileId = profileId || undefined;
+  else member.apiProfileId = profileId || undefined;
+  await saveChatImmediate();
+}
+
+/** 圓桌：加入「模型本人」成員（虛擬成員，不演角色，綁指定的 API） */
+async function handleDetailsAddModelSelfMember(profileId: string, rawName: string) {
+  const meta = groupMetadata.value;
+  if (!meta || meta.isMultiCharCard) return;
+  const profile = settingsStore.profiles.find((p) => p.id === profileId);
+  const baseName = rawName.trim() || profile?.api?.model || profile?.name || "模型";
+  const taken = new Set(meta.members.map((m) => getGroupMemberDisplayName(m, charactersStore.characters)));
+  let name = baseName;
+  for (let n = 2; taken.has(name); n++) name = `${baseName} ${n}`;
+  meta.members.push({
+    characterId: `gm_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+    isAdmin: false,
+    isMuted: false,
+    joinedAt: Date.now(),
+    isVirtual: true,
+    name,
+    avatar: "",
+    source: "inline",
+    personaSnapshot: { description: MODEL_SELF_DESCRIPTION },
+    isModelSelf: true,
+    apiProfileId: profileId || undefined,
+  });
   await saveChatImmediate();
 }
 
@@ -4121,6 +4211,9 @@ async function sendAndTriggerAI() {
       content: applyUserInputRegex(text),
       timestamp: Date.now(),
       replyTo: replyingTo.value?.id,
+      ...(roundTableWhisperTarget.value && isRoundTableActive(groupMetadata.value)
+        ? { whisperWith: roundTableWhisperTarget.value.id }
+        : {}),
       // 被角色封鎖時，用戶發的訊息標記為「發送失敗」（角色暫時看不到，解封後可見）
       ...(isBlockedByChar.value ? { sentWhileBlocked: true } : {}),
       ...(charAwayCtl.activeAwayId.value
@@ -5112,7 +5205,511 @@ function computeTheaterPhoneScriptRoleMap(
 
 // 觸發 AI 回覆（不發送用戶訊息，只生成 AI 回覆）
 // skipAutoTrigger: 跳過自動觸發總結/日記（用於重新生成場景）
+// ===== 圓桌模式：每個成員用自己的 API，一人一次呼叫、輪流發言 =====
+
+interface RoundTableTurn {
+  speaker: RoundTableSpeaker;
+  /** 這一輪前面成員剛發的訊息 */
+  sameRoundIds: ReadonlySet<string>;
+  /** 各自作答：這一輪前面成員的發言不給他看 */
+  hideSameRound: boolean;
+  /** 換個模型重講：原本那段和之後的訊息都不給看（脈絡跟原本那次一樣） */
+  hiddenIds?: ReadonlySet<string>;
+  /** 使用者私下傳給這位的悄悄話 */
+  whisper?: boolean;
+  style?: "chat" | "long";
+  /** 群裡其他能發言的成員（提示詞裡叫模型別替他們講） */
+  otherNames: string[];
+  taskConfig: ReturnType<typeof settingsStore.getAPIForTask>;
+  modelLabel: string;
+}
+
+let roundTableRunning = false;
+/** 圓桌整輪（含重說）進行中，給畫面用 */
+const roundTableBusy = ref(false);
+const roundTableOn = computed(() => isGroupChat.value && isRoundTableActive(groupMetadata.value));
+const roundTableTutorialReady = computed(
+  () =>
+    roundTableOn.value &&
+    !roundTableBusy.value &&
+    !isGenerating.value &&
+    messages.value.some((m) => m.role === "ai" && !!m.roundTableModel),
+);
+/** 這輪任何一位被中止（停止鍵、串流視窗、全域膠囊）就停掉整輪 */
+let roundTableStopRequested = false;
+
+function roundTableSenderFields(turn: RoundTableTurn | undefined): Partial<Message> {
+  if (!turn) return {};
+  return {
+    senderCharacterId: turn.speaker.characterId,
+    senderCharacterName: turn.speaker.name,
+    senderCharacterAvatar: turn.speaker.avatar,
+    roundTableModel: turn.modelLabel,
+  };
+}
+
+function getRoundTableSpeakers(): RoundTableSpeaker[] {
+  const meta = groupMetadata.value;
+  if (!meta) return [];
+  return meta.members
+    .filter((m) => !m.isMuted)
+    .map((m) => ({
+      characterId: m.characterId,
+      name: getGroupMemberDisplayName(m, charactersStore.characters),
+      avatar: getGroupMemberAvatarUrl(m, charactersStore.characters),
+      apiProfileId: m.apiProfileId,
+      fallbackApiProfileId: m.fallbackApiProfileId,
+      stance: m.stance,
+    }))
+    .filter((s) => !!s.name);
+}
+
+function resolveRoundTableTaskConfig(profileId: string | undefined) {
+  return settingsStore.getAPIForProfile(profileId) ?? settingsStore.getAPIForTask("chat");
+}
+
+/** 上一則 AI 回覆之後，使用者 @ 了誰 */
+function getTurnMentionedNames(speakers: readonly RoundTableSpeaker[]): string[] {
+  const turnTexts: string[] = [];
+  for (let i = messages.value.length - 1; i >= 0; i--) {
+    const m = messages.value[i];
+    if (m.role === "ai") break;
+    if (m.role === "user") turnTexts.unshift(m.content);
+  }
+  return findMentionedNames(turnTexts.join("\n"), speakers.map((s) => s.name));
+}
+
+/** 上一則 AI 回覆之後，使用者的悄悄話是傳給誰 */
+function getTurnWhisperTargetId(): string | undefined {
+  for (let i = messages.value.length - 1; i >= 0; i--) {
+    const m = messages.value[i];
+    if (m.role === "ai") break;
+    if (m.role === "user" && m.whisperWith) return m.whisperWith;
+  }
+  return undefined;
+}
+
+function recordRoundTableUsage(characterId: string, usage: ChatGenerationTokenUsage | undefined) {
+  const meta = groupMetadata.value;
+  if (!meta) return;
+  const all = (meta.roundTableUsage ??= {});
+  const prev = all[characterId] ?? { calls: 0, promptTokens: 0, completionTokens: 0 };
+  all[characterId] = {
+    calls: prev.calls + 1,
+    promptTokens: prev.promptTokens + (usage?.prompt_tokens ?? 0),
+    completionTokens: prev.completionTokens + (usage?.completion_tokens ?? 0),
+  };
+}
+
+// 換個模型重講：長按訊息選 API，以同一位成員、跟原本一樣的脈絡重講；
+// 原本那段留著放在旁邊比較（原本是錯誤泡泡就直接換掉）
+const roundTableRetellTargetId = ref<string | null>(null);
+const ROUND_TABLE_RETELL_SAME = "__same__";
+
+/** 重說選單：這位成員是誰、他現在綁的模型 */
+const roundTableRetellSpeaker = computed(() => {
+  const msg = messages.value.find((m) => m.id === roundTableRetellTargetId.value);
+  const speaker = getRoundTableSpeakers().find((s) => s.characterId === msg?.senderCharacterId);
+  if (!speaker) return null;
+  return { name: speaker.name, model: resolveRoundTableTaskConfig(speaker.apiProfileId).api.model };
+});
+
+let roundTableRetellOpenedAt = 0;
+
+function openRoundTableRetell(messageId: string) {
+  if (isGenerating.value || roundTableRunning) return;
+  roundTableRetellOpenedAt = Date.now();
+  roundTableRetellTargetId.value = messageId;
+}
+
+/** 點遮罩關掉；剛打開的那一下（長按放開補發的 click）不算 */
+function closeRoundTableRetellFromOverlay() {
+  if (Date.now() - roundTableRetellOpenedAt < 600) return;
+  roundTableRetellTargetId.value = null;
+}
+
+async function retellRoundTableMessage(profileId: string) {
+  const messageId = roundTableRetellTargetId.value;
+  roundTableRetellTargetId.value = null;
+  if (!messageId || isGenerating.value || roundTableRunning) return;
+  const list = messages.value;
+  const idx = list.findIndex((m) => m.id === messageId);
+  const speakerId = list[idx]?.senderCharacterId;
+  const speaker = getRoundTableSpeakers().find((s) => s.characterId === speakerId);
+  if (idx === -1 || !speakerId || !speaker) return;
+
+  // 這位成員連續的那段、這一輪開頭（上一則使用者訊息之後）
+  let start = idx;
+  let end = idx;
+  const sameSpeaker = (m: Message | undefined) => m?.role === "ai" && m.senderCharacterId === speakerId;
+  while (sameSpeaker(list[start - 1])) start--;
+  while (sameSpeaker(list[end + 1])) end++;
+  let roundStart = start;
+  while (roundStart > 0 && list[roundStart - 1].role !== "user") roundStart--;
+  const block = list.slice(start, end + 1);
+  const whisper = !!block[0].whisperWith;
+
+  const taskConfig = resolveRoundTableTaskConfig(
+    profileId === ROUND_TABLE_RETELL_SAME ? speaker.apiProfileId : profileId || undefined,
+  );
+  const turn: RoundTableTurn = {
+    speaker,
+    sameRoundIds: new Set(list.slice(roundStart, start).map((m) => m.id)),
+    hiddenIds: new Set(list.slice(start).map((m) => m.id)),
+    hideSameRound: groupMetadata.value?.roundTable?.order === "parallel",
+    whisper,
+    style: groupMetadata.value?.roundTable?.discussionStyle,
+    otherNames: getRoundTableSpeakers()
+      .filter((s) => s.characterId !== speakerId)
+      .map((s) => s.name),
+    taskConfig,
+    modelLabel: taskConfig.api.model,
+  };
+
+  roundTableRunning = true;
+  roundTableBusy.value = true;
+  try {
+    const idsBefore = new Set(list.map((m) => m.id));
+    await runAIResponseOnce({ skipAutoTrigger: true }, turn);
+    const added = messages.value.filter((m) => !idsBefore.has(m.id));
+    if (added.length === 0) return;
+    for (const m of added) {
+      if (m.senderCharacterId === speakerId && !m.roundTableModel) m.roundTableModel = turn.modelLabel;
+      if (whisper) m.whisperWith = speakerId;
+    }
+    // 搬到原本那段旁邊
+    const rest = messages.value.filter((m) => !added.includes(m));
+    const blockFailed = block.every((m) => isGenerationErrorMessage(m));
+    const anchor = rest.indexOf(blockFailed ? block[0] : block[block.length - 1]);
+    if (anchor === -1) return;
+    if (blockFailed) {
+      rest.splice(anchor, block.length, ...added);
+    } else {
+      rest.splice(anchor + 1, 0, ...added);
+    }
+    messages.value = rest;
+  } finally {
+    roundTableRunning = false;
+    roundTableBusy.value = false;
+    await saveChatImmediate();
+  }
+}
+
+/** 悄悄話小字：使用者傳的寫給誰看，成員回的寫只有你看得到 */
+function getWhisperHint(message: Message): string {
+  if (!message.whisperWith) return "";
+  if (message.role !== "user") return "悄悄話・只有你看得到";
+  const member = groupMetadata.value?.members.find((m) => m.characterId === message.whisperWith);
+  const name = member ? getGroupMemberDisplayName(member, charactersStore.characters) : "對方";
+  return `悄悄話・只有${name}看得到`;
+}
+
+// 圓桌悄悄話：從成員面板開始，輸入框上方顯示提示條，送出的訊息只有他看得到
+const roundTableWhisperTarget = ref<{ id: string; name: string } | null>(null);
+
+function startWhisperFromDetails(characterId: string, name: string) {
+  closeChatDetails();
+  roundTableWhisperTarget.value = { id: characterId, name };
+}
+
+/** 圓桌的短呼叫（主持人、整理、投票）：不串流、不進聊天 */
+async function callRoundTableApi(
+  config: ReturnType<typeof settingsStore.getAPIForTask>,
+  apiMessages: { role: string; content: string }[],
+  maxResponseLength: number,
+  temperature = config.generation.temperature,
+) {
+  const client = new OpenAICompatibleClient(config.api);
+  return client.generate({
+    messages: apiMessages as APIMessage[],
+    settings: {
+      maxContextLength: config.generation.maxContextLength || 128000,
+      maxResponseLength,
+      temperature,
+      topP: config.generation.topP,
+      ...pickGenerationToggles(config.generation),
+      frequencyPenalty: 0,
+      presencePenalty: 0,
+      repetitionPenalty: 1,
+      stopSequences: [],
+      streaming: false,
+      useStreamingWindow: false,
+    },
+    apiSettings: config.api,
+  });
+}
+
+/** 圓桌短呼叫看的對話：公開的發言（不含悄悄話、錯誤、卡片） */
+function getRoundTableTranscriptItems(fromIndex = 0) {
+  const userName = effectivePersona.value?.name || "User";
+  return messages.value
+    .slice(fromIndex)
+    .filter(
+      (m) =>
+        (m.role === "user" || m.role === "ai") &&
+        !m.whisperWith &&
+        !m.roundTableCard &&
+        !isGenerationErrorMessage(m) &&
+        !!m.content?.trim(),
+    )
+    .map((m) => ({
+      speaker: m.role === "user" ? userName : m.senderCharacterName || "成員",
+      content: m.content,
+    }));
+}
+
+function pushRoundTableCard(card: NonNullable<Message["roundTableCard"]>) {
+  messages.value.push({
+    id: `msg_${Date.now()}_rt`,
+    role: "system",
+    content: "",
+    timestamp: Date.now(),
+    roundTableCard: card,
+  });
+  scrollToBottom();
+}
+
+// 討論工具：整理討論、裁判結論（用主持人 API）、互評投票（每位成員用自己的 API）
+const roundTableToolBusy = ref(false);
+
+async function runRoundTableTool(kind: "summary" | "verdict" | "vote") {
+  closeChatDetails();
+  if (roundTableToolBusy.value || isGenerating.value || roundTableRunning) {
+    showToast?.("圓桌還在講話，等這一輪結束再用");
+    return;
+  }
+  const speakers = getRoundTableSpeakers();
+  roundTableToolBusy.value = true;
+  try {
+    if (kind === "vote") {
+      // 只看最新一輪：最後一則使用者訊息之後、每位成員的公開發言
+      let start = messages.value.length;
+      while (start > 0 && messages.value[start - 1].role !== "user") start--;
+      const answers = speakers
+        .map((s) => ({
+          speaker: s.name,
+          content: messages.value
+            .slice(start)
+            .filter(
+              (m) =>
+                m.role === "ai" &&
+                m.senderCharacterId === s.characterId &&
+                !m.whisperWith &&
+                !isGenerationErrorMessage(m),
+            )
+            .map((m) => m.content)
+            .join("\n")
+            .trim(),
+        }))
+        .filter((a) => a.content);
+      if (answers.length < 2) {
+        showToast?.("這一輪至少要有兩位成員發言才能投票");
+        return;
+      }
+      showToast?.("大家投票中…");
+      const names = answers.map((a) => a.speaker);
+      const voters = speakers.filter((s) => names.includes(s.name));
+      const results = await Promise.all(
+        voters.map(async (s) => {
+          try {
+            const result = await callRoundTableApi(
+              resolveRoundTableTaskConfig(s.apiProfileId),
+              buildVoteMessages(s.name, answers),
+              1000,
+            );
+            recordRoundTableUsage(s.characterId, {
+              prompt_tokens: result.tokenCount?.prompt ?? 0,
+              completion_tokens: result.tokenCount?.completion ?? 0,
+              total_tokens: result.tokenCount?.total ?? 0,
+            });
+            const vote = parseVote(result.content, names, s.name);
+            return vote ? { voter: s.name, ...vote } : null;
+          } catch (error) {
+            console.warn("[ChatScreen] 圓桌投票失敗", s.name, error);
+            return null;
+          }
+        }),
+      );
+      const tally = tallyVotes(results.filter((v): v is NonNullable<typeof v> => !!v));
+      pushRoundTableCard({ kind, title: "互評投票", body: tally.body, winner: tally.winner });
+    } else {
+      showToast?.(kind === "verdict" ? "裁判評議中…" : "整理討論中…");
+      const config = resolveRoundTableTaskConfig(groupMetadata.value?.roundTable?.hostApiProfileId);
+      const transcript = buildHostTranscript(getRoundTableTranscriptItems(), 60, 800);
+      const result = await callRoundTableApi(
+        config,
+        buildSummaryMessages(transcript, speakers, kind === "verdict"),
+        4000,
+        0.4,
+      );
+      const body = result.content.replace(/<think(?:ing)?>[\s\S]*?<\/think(?:ing)?>/gi, "").trim();
+      if (!body) throw new Error("API 回了空內容");
+      pushRoundTableCard({ kind, title: kind === "verdict" ? "裁判結論" : "討論整理", body });
+    }
+    await saveChatImmediate();
+  } catch (error) {
+    showToast?.(`圓桌工具失敗：${error instanceof Error ? error.message : String(error)}`);
+  } finally {
+    roundTableToolBusy.value = false;
+  }
+}
+
+// 投票卡片：發專屬紅包給最高票（跟禮物面板一樣從錢包扣）
+const roundTableRedpacketAmount = ref(66);
+
+async function sendRoundTableRedpacket(messageId: string) {
+  const card = messages.value.find((m) => m.id === messageId)?.roundTableCard;
+  const amount = Number(roundTableRedpacketAmount.value);
+  if (!card?.winner || card.redpacketSent || !(amount > 0)) return;
+  const result = gameEconomyStore.transfer(GLOBAL_WALLET_ID, amount);
+  if (!result.success) {
+    showToast?.("錢包餘額不夠");
+    return;
+  }
+  await gameEconomyStore.saveState(GLOBAL_WALLET_ID);
+  card.redpacketSent = true;
+  handleSendRedpacket({
+    type: "exclusive",
+    amount,
+    count: 1,
+    blessing: "恭喜拿下最佳回答",
+    target: card.winner,
+  });
+}
+
+async function handleDetailsUpdateMemberStance(characterId: string, stance: string) {
+  const member = groupMetadata.value?.members.find((m) => m.characterId === characterId);
+  if (!member) return;
+  member.stance = stance.trim() || undefined;
+  await saveChatImmediate();
+}
+
+/** 主持人點下一位；說結束、對不到人或呼叫失敗 → null（這一輪結束） */
+async function askRoundTableHost(
+  speakers: readonly RoundTableSpeaker[],
+  spoken: readonly string[],
+): Promise<RoundTableSpeaker | null> {
+  const config = resolveRoundTableTaskConfig(groupMetadata.value?.roundTable?.hostApiProfileId);
+  const transcript = buildHostTranscript(getRoundTableTranscriptItems());
+  const names = speakers.map((s) => s.name);
+  try {
+    const result = await callRoundTableApi(config, buildHostMessages(transcript, names, spoken), 2000, 0.3);
+    const name = parseHostDecision(result.content, names);
+    return speakers.find((s) => s.name === name) ?? null;
+  } catch (error) {
+    console.warn("[ChatScreen] 圓桌主持人呼叫失敗，這一輪結束", error);
+    return null;
+  }
+}
+
+/** 一位成員發言；主要 API 失敗、有備用的就換備用再試一次 */
+async function runRoundTableSpeaker(
+  speaker: RoundTableSpeaker,
+  allSpeakers: readonly RoundTableSpeaker[],
+  idsAtRoundStart: ReadonlySet<string>,
+  options: ChatTriggerAIResponseOptions | undefined,
+  whisper = false,
+) {
+  const meta = groupMetadata.value;
+  const independent = meta?.roundTable?.order === "parallel";
+  const profileIds = [speaker.apiProfileId, speaker.fallbackApiProfileId];
+  for (let attempt = 0; attempt < profileIds.length; attempt++) {
+    if (attempt > 0 && !profileIds[attempt]) break;
+    const taskConfig = resolveRoundTableTaskConfig(profileIds[attempt]);
+    const turn: RoundTableTurn = {
+      speaker,
+      sameRoundIds: new Set(
+        messages.value.filter((m) => !idsAtRoundStart.has(m.id)).map((m) => m.id),
+      ),
+      hideSameRound: independent,
+      whisper,
+      style: meta?.roundTable?.discussionStyle,
+      otherNames: allSpeakers.filter((s) => s !== speaker).map((s) => s.name),
+      taskConfig,
+      modelLabel: taskConfig.api.model,
+    };
+    const idsBefore = new Set(messages.value.map((m) => m.id));
+    await runAIResponseOnce(options, turn);
+    const added = messages.value.filter(
+      (m) => !idsBefore.has(m.id) && m.senderCharacterId === speaker.characterId,
+    );
+    for (const m of added) {
+      if (!m.roundTableModel) m.roundTableModel = turn.modelLabel;
+      if (whisper) m.whisperWith = speaker.characterId;
+    }
+    const failed = added.filter((m) => isGenerationErrorMessage(m));
+    if (failed.length === 0 || roundTableStopRequested || attempt + 1 >= profileIds.length || !profileIds[attempt + 1]) {
+      if (added.length) saveChat();
+      return;
+    }
+    // 換備用 API：主要那次的錯誤泡泡拿掉
+    messages.value = messages.value.filter((m) => !failed.includes(m));
+  }
+}
+
 async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
+  const meta = groupMetadata.value;
+  if (!isGroupChat.value || !isRoundTableActive(meta)) {
+    return runAIResponseOnce(options);
+  }
+  // 接力中間使用者又送訊息：後面的人本來就看得到，不另開一輪
+  if (roundTableRunning || isGenerating.value) return;
+
+  const order = meta?.roundTable?.order ?? "relay";
+  const maxSpeakers = meta?.roundTable?.maxSpeakersPerRound;
+  const chatIdAtStart = currentChatId.value;
+  const allSpeakers = getRoundTableSpeakers();
+  const mentioned = getTurnMentionedNames(allSpeakers);
+  const whisperTarget = allSpeakers.find((s) => s.characterId === getTurnWhisperTargetId());
+  // 悄悄話：只有那位回；主持人模式：被 @ 的先講，之後每一位都問主持人
+  const planned = whisperTarget
+    ? [whisperTarget]
+    : order === "host"
+      ? orderRoundTableSpeakers(allSpeakers, mentioned, undefined, true).filter((s) =>
+          mentioned.includes(s.name),
+        )
+      : orderRoundTableSpeakers(allSpeakers, mentioned, maxSpeakers, order === "mention");
+  const hostLimit = maxSpeakers || allSpeakers.length;
+
+  roundTableRunning = true;
+  roundTableBusy.value = true;
+  roundTableStopRequested = false;
+  const idsAtRoundStart = new Set(messages.value.map((m) => m.id));
+  const spoken: string[] = [];
+  try {
+    for (let i = 0; ; i++) {
+      if (roundTableStopRequested || currentChatId.value !== chatIdAtStart) break;
+      let speaker: RoundTableSpeaker | null = planned[i] ?? null;
+      if (!speaker && !whisperTarget && order === "host" && spoken.length < Math.max(hostLimit, planned.length)) {
+        speaker = await askRoundTableHost(allSpeakers, spoken);
+        // 同一個人不連續講
+        if (speaker && speaker.name === spoken[spoken.length - 1]) speaker = null;
+      }
+      if (!speaker || roundTableStopRequested || currentChatId.value !== chatIdAtStart) break;
+      // 總結／日記這類收尾等整輪講完才跑
+      await runRoundTableSpeaker(
+        speaker,
+        allSpeakers,
+        idsAtRoundStart,
+        { ...options, skipAutoTrigger: true },
+        !!whisperTarget,
+      );
+      spoken.push(speaker.name);
+    }
+  } finally {
+    attachPendingRoundSwipes(currentTurnId.value || undefined);
+    saveChat();
+    roundTableRunning = false;
+    roundTableBusy.value = false;
+    roundTableStopRequested = false;
+  }
+  if (spoken.length > 0 && !options?.skipAutoTrigger) checkAndTriggerSummaryOrDiary();
+}
+
+async function runAIResponseOnce(
+  options?: ChatTriggerAIResponseOptions,
+  roundTableTurn?: RoundTableTurn,
+) {
   if (!currentChatId.value) return;
   if (isGenerating.value) return;
   // 被角色封鎖期間，除非明確繞過（如好友申請），否則不觸發 AI 生成
@@ -5124,8 +5721,9 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
 
   // 使用全局狀態管理開始生成
   const startResult = startChatGeneration({
-    characterName: currentCharacter.value?.data?.name || props.characterName,
-    characterAvatar: props.characterAvatar,
+    characterName:
+      roundTableTurn?.speaker.name || currentCharacter.value?.data?.name || props.characterName,
+    characterAvatar: roundTableTurn?.speaker.avatar || props.characterAvatar,
   });
 
   if (!startResult.success) {
@@ -5148,7 +5746,7 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
   _theaterPhoneScriptForCurrentGeneration = !!options?.theaterPhoneScript;
 
   try {
-    const chatTaskConfig = settingsStore.getAPIForTask("chat");
+    const chatTaskConfig = roundTableTurn?.taskConfig ?? settingsStore.getAPIForTask("chat");
 
     if (
       !chatTaskConfig.api.endpoint ||
@@ -5340,7 +5938,15 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
     const now = Date.now();
     const eligibleMessages = getMessageHistory().filter(
       (m) =>
-        !(m.isWaimaiProgress && m.timestamp > now) && !isGenerationErrorMessage(m) && !m.diaryNoticeId,
+        !(m.isWaimaiProgress && m.timestamp > now) &&
+        !isGenerationErrorMessage(m) &&
+        !m.diaryNoticeId &&
+        // 圓桌：這一輪前面成員的發言不進聊天紀錄（接力時接在圓桌指令裡，排在使用者提問後面）
+        !roundTableTurn?.sameRoundIds.has(m.id) &&
+        !roundTableTurn?.hiddenIds?.has(m.id) &&
+        !m.roundTableCard &&
+        // 圓桌悄悄話：只有那位成員看得到
+        !(roundTableTurn && m.whisperWith && m.whisperWith !== roundTableTurn.speaker.characterId),
     );
 
     let messagesToUse: Message[];
@@ -5976,6 +6582,9 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
       groupChatMode:
         isGroupChat.value &&
         !(groupMetadata.value?.isMultiCharCard && chatFaceToFaceMode.value),
+      roundTableSpeaker: roundTableTurn
+        ? { characterId: roundTableTurn.speaker.characterId, name: roundTableTurn.speaker.name }
+        : undefined,
       // 群聊用過骰子機器人才注入擲骰規則
       diceBotActive: isGroupChat.value && messages.value.some((m) => m.isDiceRoll),
       // 多人卡模式參數
@@ -6227,11 +6836,33 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
         turnTexts.join("\n"),
         mentionCandidates.value.map((c) => c.name),
       );
-      if (mentioned.length > 0) {
+      if (mentioned.length > 0 && !roundTableTurn) {
         appendedUserPrompts.push(
           buildMentionInstruction(mentioned, activeUserName, !useGroupChatMode.value),
         );
       }
+    }
+
+    // 🪑 圓桌：這一輪只由一位成員發言
+    if (roundTableTurn) {
+      appendedUserPrompts.push(
+        buildRoundTableInstruction(
+          roundTableTurn.speaker.name,
+          roundTableTurn.otherNames,
+          activeUserName,
+          {
+            style: roundTableTurn.style,
+            independent: roundTableTurn.hideSameRound,
+            whisper: roundTableTurn.whisper,
+            stance: roundTableTurn.speaker.stance,
+            earlierReplies: roundTableTurn.hideSameRound
+              ? []
+              : messages.value
+                  .filter((m) => roundTableTurn.sameRoundIds.has(m.id) && m.role === "ai")
+                  .map((m) => ({ speaker: m.senderCharacterName || "成員", content: m.content || "" })),
+          },
+        ),
+      );
     }
 
     // 🎭 當小劇場指令是最後一條時，補一條隱藏催促消息
@@ -6299,6 +6930,7 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
       timestamp: Date.now(),
       isStreaming: true,
       turnId: generationTurnId || undefined,
+      ...roundTableSenderFields(roundTableTurn),
     };
     messages.value.push(aiMessage);
     scrollToBottom();
@@ -6575,7 +7207,8 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
 
     let fullContent = "";
 
-    if (settingsStore.backgroundGenerationEnabled) {
+    // 圓桌輪次一律本機生成：遠端任務只認一組 API
+    if (settingsStore.backgroundGenerationEnabled && !roundTableTurn) {
       const lastMessageHash = hashString(JSON.stringify({ chatId: currentChatId.value, messages: apiMessages }));
       const deviceId = await selfHostedSyncStore.ensureDeviceId();
       // 取得雲端推送 userId（與 Web Push 訂閱同一套 ID），讓 HF 完成時能在關閉瀏覽器後仍推送
@@ -6723,6 +7356,9 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
       if (useWindow && resolvedGenerationResult.tokenUsage) {
         streamingWindow.setUsage(resolvedGenerationResult.tokenUsage, streamingWindowOwnerId);
       }
+      if (roundTableTurn) {
+        recordRoundTableUsage(roundTableTurn.speaker.characterId, resolvedGenerationResult.tokenUsage);
+      }
 
       // 串流本身已結束（所有 token 已收到），立刻把窗口標為完成，
       // 讓「停止」按鈕 / spinner 停下來。後續的逐條氣泡渲染延遲（每條依字數 0.8～3 秒）
@@ -6834,6 +7470,14 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
           console.log("[ChatScreen][render] 進入群聊解析器路徑");
           const parsed = parseGroupChatResponse(finalContent);
           console.log("[ChatScreen][render] parseGroupChatResponse 完成", { count: parsed.messages.length });
+          if (roundTableTurn) {
+            const speakerId = roundTableTurn.speaker.characterId;
+            parsed.messages = pickRoundTableMessages(
+              parsed.messages,
+              (name) => resolveGroupMemberByName(name).characterId === speakerId,
+              roundTableTurn.speaker.name,
+            );
+          }
 
           // 移除原始的佔位訊息
           if (msgIndex !== -1) {
@@ -7833,6 +8477,7 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
     }
   } catch (error) {
     if ((error as Error).name === "AbortError") {
+      if (roundTableTurn) roundTableStopRequested = true;
       // 用戶取消生成：保留已有內容，沒有內容就直接移除佔位氣泡
       const lastMsg = getActiveStreamingAIMessage();
       if (lastMsg && lastMsg.isStreaming) {
@@ -7872,6 +8517,7 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
         content: `${GENERATION_ERROR_PREFIX}${errorMsg}`,
         timestamp: Date.now(),
         turnId: generationTurnId || undefined,
+        ...roundTableSenderFields(roundTableTurn),
       };
       messages.value.push(aiMessage);
     }
@@ -7884,6 +8530,7 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
     // 設置全局狀態錯誤
     setChatGenerationError(errorMsg);
   } finally {
+    if (roundTableTurn && controller.signal.aborted) roundTableStopRequested = true;
     let persistedGenerationContent = latestFinalContent;
     // 同上：緩衝區必須仍屬於本輪，否則不能當成本輪的生成結果落地
     const finallyOwnContent = usedStreamingWindowForCurrentGeneration
@@ -7949,7 +8596,8 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
     }
 
     // 附加暫存的 roundSwipes 到最後一條 AI 訊息
-    attachPendingRoundSwipes(generationTurnId || undefined);
+    // 圓桌：整輪講完才收成一個重新生成版本（在 triggerAIResponse 收尾）
+    if (!roundTableTurn) attachPendingRoundSwipes(generationTurnId || undefined);
 
     scrollToBottom();
     chatPerfMark("generation:beforeSave", {
@@ -11227,10 +11875,18 @@ useChatCleanup({
           :linked-group-names="detailsLinkedGroupNames"
           @update-memory-sharing="handleDetailsUpdateMemorySharing"
           @update-member-memory-link="handleDetailsUpdateMemberMemoryLink"
+          :round-table="detailsRoundTable"
+          :api-profile-options="detailsApiProfileOptions"
+          @update-round-table="handleDetailsUpdateRoundTable"
+          @update-member-api="handleDetailsUpdateMemberApi"
+          @add-model-self-member="handleDetailsAddModelSelfMember"
           :removed-members="detailsRemovedMembers"
           @restore-member="restoreRemovedMemberByUser"
           @forget-removed-member="handleForgetRemovedMember"
           @mention-member="handleMentionFromDetails"
+          @whisper-member="startWhisperFromDetails"
+          @round-table-tool="runRoundTableTool"
+          @update-member-stance="handleDetailsUpdateMemberStance"
         />
       </Transition>
     </Teleport>
@@ -11480,6 +12136,10 @@ useChatCleanup({
             message.isCharRecall,
             message.isTransactionClaimNotice,
             message.imageNote,
+            message.roundTableModel,
+            message.whisperWith,
+            message.roundTableCard?.redpacketSent,
+            roundTableOn,
             readingImageNoteId === message.id,
             groupMemberAvatarVersion,
             removedMembersVersion,
@@ -11626,6 +12286,31 @@ useChatCleanup({
             <button class="recall-undo-btn" @click.stop="handleUndoRecall(message.id)">取消</button>
           </div>
 
+          <div
+            v-else-if="message.roundTableCard"
+            class="rt-card"
+            :class="`rt-card--${message.roundTableCard.kind}`"
+            @contextmenu.prevent="handleMessageDelete(message.id)"
+          >
+            <div class="rt-card-title">{{ message.roundTableCard.title }}</div>
+            <div class="rt-card-body">{{ message.roundTableCard.body }}</div>
+            <div
+              v-if="message.roundTableCard.winner && !message.roundTableCard.redpacketSent"
+              class="rt-card-actions"
+            >
+              <input
+                v-model.number="roundTableRedpacketAmount"
+                type="number"
+                min="1"
+                class="rt-card-amount"
+                aria-label="紅包金額"
+              />
+              <button type="button" class="rt-card-btn" @click="sendRoundTableRedpacket(message.id)">
+                發紅包給 {{ message.roundTableCard.winner }}
+              </button>
+            </div>
+          </div>
+
           <MessageBubble
             v-else
             :id="message.id"
@@ -11727,6 +12412,8 @@ useChatCleanup({
                 : message.senderCharacterAvatar || ''
             "
             :sender-character-name="message.senderCharacterName || ''"
+            :round-table-model="message.roundTableModel"
+            :whisper-hint="getWhisperHint(message)"
             :is-recall="message.isRecall"
             :recall-content="message.recallContent"
             :edit-noticed="message.editNoticed && !chatFaceToFaceMode"
@@ -11803,6 +12490,10 @@ useChatCleanup({
             @delete="onMessageDelete"
             @copy="onMessageCopy"
             @regenerate="onMessageRegenerate"
+            @round-table-retell="onRoundTableRetell"
+            @avatar-long-press="onRoundTableRetell"
+            :hide-regenerate="roundTableOn"
+            :avatar-long-press="roundTableOn && message.role === 'ai' && !!message.senderCharacterId"
             @regenerate-voice="onMessageRegenerateVoice"
             @regenerate-image="onMessageRegenerateImage"
             @read-image-note="onMessageReadImageNote"
@@ -11928,12 +12619,45 @@ useChatCleanup({
       @confirm="confirmForward"
     />
 
+    <!-- 圓桌：換個模型重講 -->
+    <Teleport to="body">
+      <div
+        v-if="roundTableRetellTargetId"
+        class="rt-retell-overlay"
+        @click.self="closeRoundTableRetellFromOverlay"
+      >
+        <div class="rt-retell-sheet" role="dialog" aria-label="換個模型重講">
+          <div class="rt-retell-title">讓{{ roundTableRetellSpeaker?.name || "他" }}重說</div>
+          <p class="rt-retell-hint">同樣的前文再講一次，原本那段留著比較。</p>
+          <button type="button" class="rt-retell-item" @click="retellRoundTableMessage(ROUND_TABLE_RETELL_SAME)">
+            用原本的模型重說<span class="rt-retell-model">{{ roundTableRetellSpeaker?.model }}</span>
+          </button>
+          <div class="rt-retell-divider">或換一個模型</div>
+          <button type="button" class="rt-retell-item" @click="retellRoundTableMessage('')">
+            主 API<span class="rt-retell-model">{{ settingsStore.api.model }}</span>
+          </button>
+          <button
+            v-for="p in settingsStore.profiles"
+            :key="p.id"
+            type="button"
+            class="rt-retell-item"
+            @click="retellRoundTableMessage(p.id)"
+          >
+            {{ p.name }}<span class="rt-retell-model">{{ p.api?.model }}</span>
+          </button>
+          <button type="button" class="rt-retell-cancel" @click="roundTableRetellTargetId = null">取消</button>
+        </div>
+      </div>
+    </Teleport>
+
     <ChatScreenInputArea
       ref="inputAreaRef"
       :hidden="isSelectingMessages"
       :docked="inputBarStyle.docked"
       :is-blocked-by-char="isBlockedByChar"
       :replying-to="replyingTo"
+      :whisper-target-name="isRoundTableActive(groupMetadata) ? roundTableWhisperTarget?.name : null"
+      :hide-regenerate="roundTableOn"
       :character-name="characterName"
       :chat-face-to-face-mode="chatFaceToFaceMode"
       :is-group-chat="isGroupChat"
@@ -11961,6 +12685,7 @@ useChatCleanup({
       @set-speaker-mode="setSpeakerMode($event)"
       @show-friend-request-input="showFriendRequestInput = true"
       @cancel-reply="cancelReply"
+      @cancel-whisper="roundTableWhisperTarget = null"
       @handle-quick-input-wheel="onInputQuickWheel"
       @insert-quick-action="onInputInsertQuickAction"
       @open-quick-action-editor="openQuickActionEditor"
@@ -12162,6 +12887,8 @@ useChatCleanup({
 
       <!-- 群聊玩法教學（骰子機器人、發紅包；第一次打開群聊時出現一次） -->
       <GroupPlayTutorialOverlay v-if="isGroupChat" :chat-id="currentChatId" />
+      <!-- 圓桌教學（長按頭像讓成員重說；第一次有成員講完話時出現一次） -->
+      <RoundTableTutorialOverlay v-if="isGroupChat" :ready="roundTableTutorialReady" />
 
       <!-- 禮物面板 -->
       <GiftDrawer
@@ -14605,6 +15332,126 @@ useChatCleanup({
 </template>
 
 <style lang="scss" scoped>
+.rt-card {
+  margin: 8px 16px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+.rt-card-title {
+  margin-bottom: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-primary);
+}
+
+.rt-card-body {
+  font-size: 14px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.rt-card-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.rt-card-amount {
+  width: 80px;
+  padding: 6px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-background);
+  color: inherit;
+  font-size: 14px;
+}
+
+.rt-card-btn {
+  flex: 1;
+  padding: 6px 12px;
+  border: none;
+  border-radius: 8px;
+  background: var(--color-primary);
+  color: var(--color-on-primary-contrast, #fff);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.rt-retell-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.rt-retell-sheet {
+  width: 100%;
+  max-width: 480px;
+  max-height: 70vh;
+  overflow-y: auto;
+  padding: 16px 16px calc(16px + var(--safe-area-inset-bottom, env(safe-area-inset-bottom)));
+  border-radius: 16px 16px 0 0;
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+.rt-retell-title {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.rt-retell-hint {
+  margin: 4px 0 12px;
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.rt-retell-item,
+.rt-retell-cancel {
+  display: flex;
+  width: 100%;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: inherit;
+  font-size: 15px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.rt-retell-item:hover {
+  background: var(--color-surface-hover);
+}
+
+.rt-retell-divider {
+  margin: 8px 12px 4px;
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.rt-retell-model {
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.rt-retell-cancel {
+  justify-content: center;
+  margin-top: 4px;
+  color: var(--color-text-secondary);
+}
+
 .chat-screen {
   // 底色跟 .app-container 一樣，平常看起來跟透明沒差；
   // 但切頁時離場的聊天列表還疊在下面，透明的話桌布圖還沒解碼、或桌布透明度不到 100% 時會透出列表
