@@ -45,6 +45,8 @@ const props = defineProps<{
   showStickerPanel: boolean;
   isGenerating: boolean;
   hasAIMessages: boolean;
+  /** 圓桌模式：不放重新生成鈕（改成長按成員頭像重說） */
+  hideRegenerate?: boolean;
   canRecord: boolean;
   isRecording: boolean;
   recordingDuration: number;
@@ -604,6 +606,7 @@ const isDarkBackground = computed(() =>
         <!-- 重新生成按鈕（有 AI 訊息且未生成中） -->
         <button
           v-if="
+            !hideRegenerate &&
             hasAIMessages &&
             !isGenerating &&
             !inputText.trim() &&

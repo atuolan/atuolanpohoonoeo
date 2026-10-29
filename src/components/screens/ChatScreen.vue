@@ -73,6 +73,7 @@ import PhoneCallModal from "@/components/modals/PhoneCallModal.vue";
 import ProactiveMessageSettingsModal from "@/components/modals/ProactiveMessageSettingsModal.vue";
 import RedPacketVoiceClaimModal from "@/components/modals/RedPacketVoiceClaimModal.vue";
 import GroupPlayTutorialOverlay from "@/components/common/GroupPlayTutorialOverlay.vue";
+import RoundTableTutorialOverlay from "@/components/common/RoundTableTutorialOverlay.vue";
 import ScreenshotPreviewModal from "@/components/modals/ScreenshotPreviewModal.vue";
 import StoryClockReturnDialog from "@/components/modals/StoryClockReturnDialog.vue";
 import ForwardTargetPickerModal from "@/components/modals/ForwardTargetPickerModal.vue";
@@ -5224,6 +5225,16 @@ interface RoundTableTurn {
 }
 
 let roundTableRunning = false;
+/** 圓桌整輪（含重說）進行中，給畫面用 */
+const roundTableBusy = ref(false);
+const roundTableOn = computed(() => isGroupChat.value && isRoundTableActive(groupMetadata.value));
+const roundTableTutorialReady = computed(
+  () =>
+    roundTableOn.value &&
+    !roundTableBusy.value &&
+    !isGenerating.value &&
+    messages.value.some((m) => m.role === "ai" && !!m.roundTableModel),
+);
 /** 這輪任何一位被中止（停止鍵、串流視窗、全域膠囊）就停掉整輪 */
 let roundTableStopRequested = false;
 
@@ -5293,10 +5304,28 @@ function recordRoundTableUsage(characterId: string, usage: ChatGenerationTokenUs
 // 換個模型重講：長按訊息選 API，以同一位成員、跟原本一樣的脈絡重講；
 // 原本那段留著放在旁邊比較（原本是錯誤泡泡就直接換掉）
 const roundTableRetellTargetId = ref<string | null>(null);
+const ROUND_TABLE_RETELL_SAME = "__same__";
+
+/** 重說選單：這位成員是誰、他現在綁的模型 */
+const roundTableRetellSpeaker = computed(() => {
+  const msg = messages.value.find((m) => m.id === roundTableRetellTargetId.value);
+  const speaker = getRoundTableSpeakers().find((s) => s.characterId === msg?.senderCharacterId);
+  if (!speaker) return null;
+  return { name: speaker.name, model: resolveRoundTableTaskConfig(speaker.apiProfileId).api.model };
+});
+
+let roundTableRetellOpenedAt = 0;
 
 function openRoundTableRetell(messageId: string) {
   if (isGenerating.value || roundTableRunning) return;
+  roundTableRetellOpenedAt = Date.now();
   roundTableRetellTargetId.value = messageId;
+}
+
+/** 點遮罩關掉；剛打開的那一下（長按放開補發的 click）不算 */
+function closeRoundTableRetellFromOverlay() {
+  if (Date.now() - roundTableRetellOpenedAt < 600) return;
+  roundTableRetellTargetId.value = null;
 }
 
 async function retellRoundTableMessage(profileId: string) {
@@ -5320,7 +5349,9 @@ async function retellRoundTableMessage(profileId: string) {
   const block = list.slice(start, end + 1);
   const whisper = !!block[0].whisperWith;
 
-  const taskConfig = resolveRoundTableTaskConfig(profileId || undefined);
+  const taskConfig = resolveRoundTableTaskConfig(
+    profileId === ROUND_TABLE_RETELL_SAME ? speaker.apiProfileId : profileId || undefined,
+  );
   const turn: RoundTableTurn = {
     speaker,
     sameRoundIds: new Set(list.slice(roundStart, start).map((m) => m.id)),
@@ -5336,6 +5367,7 @@ async function retellRoundTableMessage(profileId: string) {
   };
 
   roundTableRunning = true;
+  roundTableBusy.value = true;
   try {
     const idsBefore = new Set(list.map((m) => m.id));
     await runAIResponseOnce({ skipAutoTrigger: true }, turn);
@@ -5358,6 +5390,7 @@ async function retellRoundTableMessage(profileId: string) {
     messages.value = rest;
   } finally {
     roundTableRunning = false;
+    roundTableBusy.value = false;
     await saveChatImmediate();
   }
 }
@@ -5639,6 +5672,7 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
   const hostLimit = maxSpeakers || allSpeakers.length;
 
   roundTableRunning = true;
+  roundTableBusy.value = true;
   roundTableStopRequested = false;
   const idsAtRoundStart = new Set(messages.value.map((m) => m.id));
   const spoken: string[] = [];
@@ -5666,6 +5700,7 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
     attachPendingRoundSwipes(currentTurnId.value || undefined);
     saveChat();
     roundTableRunning = false;
+    roundTableBusy.value = false;
     roundTableStopRequested = false;
   }
   if (spoken.length > 0 && !options?.skipAutoTrigger) checkAndTriggerSummaryOrDiary();
@@ -12104,6 +12139,7 @@ useChatCleanup({
             message.roundTableModel,
             message.whisperWith,
             message.roundTableCard?.redpacketSent,
+            roundTableOn,
             readingImageNoteId === message.id,
             groupMemberAvatarVersion,
             removedMembersVersion,
@@ -12455,6 +12491,9 @@ useChatCleanup({
             @copy="onMessageCopy"
             @regenerate="onMessageRegenerate"
             @round-table-retell="onRoundTableRetell"
+            @avatar-long-press="onRoundTableRetell"
+            :hide-regenerate="roundTableOn"
+            :avatar-long-press="roundTableOn && message.role === 'ai' && !!message.senderCharacterId"
             @regenerate-voice="onMessageRegenerateVoice"
             @regenerate-image="onMessageRegenerateImage"
             @read-image-note="onMessageReadImageNote"
@@ -12585,11 +12624,15 @@ useChatCleanup({
       <div
         v-if="roundTableRetellTargetId"
         class="rt-retell-overlay"
-        @click.self="roundTableRetellTargetId = null"
+        @click.self="closeRoundTableRetellFromOverlay"
       >
         <div class="rt-retell-sheet" role="dialog" aria-label="換個模型重講">
-          <div class="rt-retell-title">換個模型重講</div>
-          <p class="rt-retell-hint">同一位成員、同樣的前文，用選的 API 再講一次，原本那段留著比較。</p>
+          <div class="rt-retell-title">讓{{ roundTableRetellSpeaker?.name || "他" }}重說</div>
+          <p class="rt-retell-hint">同樣的前文再講一次，原本那段留著比較。</p>
+          <button type="button" class="rt-retell-item" @click="retellRoundTableMessage(ROUND_TABLE_RETELL_SAME)">
+            用原本的模型重說<span class="rt-retell-model">{{ roundTableRetellSpeaker?.model }}</span>
+          </button>
+          <div class="rt-retell-divider">或換一個模型</div>
           <button type="button" class="rt-retell-item" @click="retellRoundTableMessage('')">
             主 API<span class="rt-retell-model">{{ settingsStore.api.model }}</span>
           </button>
@@ -12614,6 +12657,7 @@ useChatCleanup({
       :is-blocked-by-char="isBlockedByChar"
       :replying-to="replyingTo"
       :whisper-target-name="isRoundTableActive(groupMetadata) ? roundTableWhisperTarget?.name : null"
+      :hide-regenerate="roundTableOn"
       :character-name="characterName"
       :chat-face-to-face-mode="chatFaceToFaceMode"
       :is-group-chat="isGroupChat"
@@ -12843,6 +12887,8 @@ useChatCleanup({
 
       <!-- 群聊玩法教學（骰子機器人、發紅包；第一次打開群聊時出現一次） -->
       <GroupPlayTutorialOverlay v-if="isGroupChat" :chat-id="currentChatId" />
+      <!-- 圓桌教學（長按頭像讓成員重說；第一次有成員講完話時出現一次） -->
+      <RoundTableTutorialOverlay v-if="isGroupChat" :ready="roundTableTutorialReady" />
 
       <!-- 禮物面板 -->
       <GiftDrawer
@@ -15387,6 +15433,12 @@ useChatCleanup({
 
 .rt-retell-item:hover {
   background: var(--color-surface-hover);
+}
+
+.rt-retell-divider {
+  margin: 8px 12px 4px;
+  font-size: 12px;
+  color: var(--color-text-muted);
 }
 
 .rt-retell-model {
