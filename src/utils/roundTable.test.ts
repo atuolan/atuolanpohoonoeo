@@ -4,7 +4,11 @@ import {
   buildHostMessages,
   buildHostTranscript,
   buildRoundTableInstruction,
+  buildSummaryMessages,
+  buildVoteMessages,
   formatRoundTableUsage,
+  parseVote,
+  tallyVotes,
   parseHostDecision,
   isRoundTableActive,
   orderRoundTableSpeakers,
@@ -148,3 +152,54 @@ describe("悄悄話與用量", () => {
     );
   });
 });
+
+describe("辯論立場", () => {
+  it("有立場才加辯論指令", () => {
+    expect(buildRoundTableInstruction("甲", [], "我", { stance: "支持" })).toContain("立場是「支持」");
+    expect(buildRoundTableInstruction("甲", [], "我", { stance: " " })).not.toContain("辯論");
+  });
+});
+
+describe("整理討論／裁判", () => {
+  it("裁判版和記錄版用不同格式，立場列出來", () => {
+    const [sys, user] = buildSummaryMessages("甲：嗨", [{ name: "甲", stance: "正方" }, { name: "乙" }], true);
+    expect(sys.content).toContain("【裁決】");
+    expect(user.content).toContain("立場：甲＝正方");
+    expect(buildSummaryMessages("", [{ name: "甲" }], false)[0].content).toContain("【共識】");
+  });
+});
+
+describe("互評投票", () => {
+  const names = ["甲", "乙", "丙"];
+  it("候選人不含自己", () => {
+    const [, user] = buildVoteMessages("甲", [
+      { speaker: "甲", content: "a" },
+      { speaker: "乙", content: "b" },
+    ]);
+    expect(user.content).toContain("可以投的人：乙");
+  });
+  it("解析「名字｜理由」，格式跑掉也找得到人", () => {
+    expect(parseVote("乙｜講得最清楚", names, "甲")).toEqual({ vote: "乙", reason: "講得最清楚" });
+    expect(parseVote("<think>…</think>我投丙，因為有數據", names, "甲")?.vote).toBe("丙");
+  });
+  it("投自己或對不到 → null", () => {
+    expect(parseVote("甲｜我最好", names, "甲")).toBeNull();
+    expect(parseVote("都不錯", names, "甲")).toBeNull();
+  });
+  it("計票：唯一最高票才有贏家", () => {
+    const one = tallyVotes([
+      { voter: "甲", vote: "乙", reason: "清楚" },
+      { voter: "丙", vote: "乙", reason: "" },
+      { voter: "乙", vote: "甲", reason: "有趣" },
+    ]);
+    expect(one.winner).toBe("乙");
+    expect(one.body).toContain("結果：乙 2 票、甲 1 票");
+    const tie = tallyVotes([
+      { voter: "甲", vote: "乙", reason: "" },
+      { voter: "乙", vote: "甲", reason: "" },
+    ]);
+    expect(tie.winner).toBeUndefined();
+    expect(tie.body).toContain("（平手）");
+  });
+});
+

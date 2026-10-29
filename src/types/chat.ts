@@ -557,6 +557,8 @@ export interface ChatMessage {
   roundTableModel?: string;
   /** 圓桌悄悄話：只有使用者和這位成員（characterId）看得到 */
   whisperWith?: string;
+  /** 圓桌卡片：整理討論／裁判結論／投票結果（不進提示詞） */
+  roundTableCard?: RoundTableCard;
   /** 是否為撤回訊息 */
   isRecall?: boolean;
   /** 撤回的原始內容 */
@@ -835,6 +837,8 @@ export interface GroupMember {
   fallbackApiProfileId?: string;
   /** 圓桌模式：「模型本人」成員（不演角色，用模型自己的觀點討論） */
   isModelSelf?: boolean;
+  /** 圓桌模式：辯論立場（有填就照這個立場論證） */
+  stance?: string;
 }
 
 /** 群管理動作：改群名、移出、禁言、解禁、拉回被移出的成員 */
@@ -971,6 +975,15 @@ export interface GroupChatMetadata {
   roundTable?: RoundTableSettings;
   /** 圓桌模式：每位成員累計用量（key 是 characterId） */
   roundTableUsage?: Record<string, RoundTableUsage>;
+}
+
+export interface RoundTableCard {
+  kind: "summary" | "verdict" | "vote";
+  title: string;
+  body: string;
+  /** 投票只有一位最高票：可以發紅包給他 */
+  winner?: string;
+  redpacketSent?: boolean;
 }
 
 export interface RoundTableUsage {

@@ -33,6 +33,8 @@ interface GroupMemberInfo {
   isModelSelf?: boolean;
   /** 圓桌模式：累計用量 */
   roundTableUsage?: { calls: number; promptTokens: number; completionTokens: number };
+  /** 圓桌模式：辯論立場 */
+  stance?: string;
 }
 
 type RoundTableOrder = "relay" | "parallel" | "host" | "mention";
@@ -214,6 +216,10 @@ const emit = defineEmits<{
   "add-model-self-member": [profileId: string, name: string];
   /** 圓桌模式：開始跟這位成員講悄悄話（關掉詳情頁） */
   "whisper-member": [characterId: string, name: string];
+  /** 圓桌模式：討論工具（整理討論、裁判結論、互評投票） */
+  "round-table-tool": [kind: "summary" | "verdict" | "vote"];
+  /** 圓桌模式：改辯論立場 */
+  "update-member-stance": [characterId: string, stance: string];
   /** 記憶互通：修改成員連結 */
   "update-member-memory-link": [characterId: string, link: MemoryLinkInfo];
   /** 把被移出的成員拉回群裡 */
@@ -1487,6 +1493,14 @@ function handleAction(action: string) {
                 <button type="button" class="round-table-add-btn" @click="addModelSelfMember">加入</button>
               </div>
               <p class="subchar-hint-mini">模型本人不演角色，用模型自己的觀點跟大家討論。</p>
+              <div class="round-table-tools">
+                <button type="button" class="round-table-tool-btn" @click="emit('round-table-tool', 'summary')">整理討論</button>
+                <button type="button" class="round-table-tool-btn" @click="emit('round-table-tool', 'vote')">請大家投票</button>
+                <button type="button" class="round-table-tool-btn" @click="emit('round-table-tool', 'verdict')">請裁判結論</button>
+              </div>
+              <p class="subchar-hint-mini">
+                整理和裁判用主持人 API；投票是每位成員用自己的 API，選出這一輪最好的回答（不能投自己）。成員面板可以填辯論立場。
+              </p>
             </template>
           </div>
         </section>
@@ -2051,6 +2065,17 @@ function handleAction(action: string) {
                   <option value="">不用備用</option>
                   <option v-for="p in apiProfileOptions || []" :key="p.id" :value="p.id">{{ profileLabel(p) }}</option>
                 </select>
+              </label>
+              <label class="memory-link-row">
+                <span class="memory-link-name">辯論立場</span>
+                <input
+                  :key="sheetMember.characterId"
+                  class="subchar-input"
+                  maxlength="60"
+                  placeholder="例如：正方／支持遠端工作"
+                  :value="sheetMember.stance || ''"
+                  @change="emit('update-member-stance', sheetMember.characterId, ($event.target as HTMLInputElement).value)"
+                />
               </label>
               <p v-if="sheetMember.roundTableUsage" class="subchar-hint-mini">
                 用量：{{ formatRoundTableUsage(sheetMember.roundTableUsage) }}
@@ -3437,6 +3462,24 @@ function handleAction(action: string) {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+.round-table-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.round-table-tool-btn {
+  flex: 1 1 auto;
+  padding: 8px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: var(--color-background);
+  color: var(--color-text);
+  font-size: 13px;
+  cursor: pointer;
 }
 
 .round-table-add-btn {

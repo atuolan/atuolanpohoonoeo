@@ -28,6 +28,7 @@ export interface RoundTableSpeaker {
   avatar: string;
   apiProfileId?: string;
   fallbackApiProfileId?: string;
+  stance?: string;
 }
 
 export function isRoundTableActive(meta: GroupChatMetadata | null | undefined): boolean {
@@ -62,6 +63,8 @@ export function buildRoundTableInstruction(
     independent?: boolean;
     /** 使用者私下傳給這位成員的悄悄話 */
     whisper?: boolean;
+    /** 辯論立場 */
+    stance?: string;
     /** 接力：這一輪前面成員說的話（照順序） */
     earlierReplies?: readonly { speaker: string; content: string }[];
   } = {},
@@ -83,6 +86,11 @@ export function buildRoundTableInstruction(
       ? `這一輪大家各自作答，你看不到其他成員這一輪的回答，請直接講你自己的看法。`
       : `可以回應、補充或反駁前面其他人說的話。`,
   );
+  if (options.stance?.trim()) {
+    lines.push(
+      `這是一場辯論，${speakerName} 的立場是「${options.stance.trim()}」：堅持這個立場、提出論據，並回應對方的論點。`,
+    );
+  }
   if (options.whisper) {
     lines.push(
       `這一輪是 ${userName} 私下傳給 ${speakerName} 的悄悄話，其他成員看不到；${speakerName} 的回覆也只有 ${userName} 看得到，可以講不方便在群裡講的話。`,
@@ -188,3 +196,101 @@ export function parseHostDecision(text: string, memberNames: readonly string[]):
     .sort((a, b) => a.at - b.at)[0];
   return found ? found.n : null;
 }
+
+// ===== 討論工具：整理討論、裁判結論、互評投票 =====
+
+function stripThink(text: string): string {
+  return text.replace(/<think(?:ing)?>[\s\S]*?<\/think(?:ing)?>/gi, "").trim();
+}
+
+export function buildSummaryMessages(
+  transcript: string,
+  speakers: readonly { name: string; stance?: string }[],
+  verdict: boolean,
+): { role: "system" | "user"; content: string }[] {
+  const stances = speakers.filter((s) => s.stance?.trim());
+  const system = verdict
+    ? [
+        "你是這場群組討論的裁判，立場中立。看完討論，判定哪一方（或哪一位）的論證比較有說服力，理由要具體，指出關鍵論點和漏洞。",
+        "用繁體中文，照這個格式輸出（不要多餘的開場白）：",
+        "【裁決】一句話講結果",
+        "【理由】條列 2–4 點",
+        "【各方表現】- 名字：一句評語",
+      ]
+    : [
+        "你是會議記錄員。把這段群組討論整理成重點，不加入自己的意見。",
+        "用繁體中文，照這個格式輸出（不要多餘的開場白；沒有的段落寫「無」）：",
+        "【共識】條列",
+        "【分歧】條列，寫清楚誰站哪邊",
+        "【各自的獨到觀點】- 名字：一句",
+        "【結論／下一步】一到兩句",
+      ];
+  const user = [
+    `成員：${speakers.map((s) => s.name).join("、")}`,
+    ...(stances.length ? [`立場：${stances.map((s) => `${s.name}＝${s.stance!.trim()}`).join("；")}`] : []),
+    "討論內容：",
+    transcript || "（沒有）",
+  ];
+  return [
+    { role: "system", content: system.join("\n") },
+    { role: "user", content: user.join("\n") },
+  ];
+}
+
+export function buildVoteMessages(
+  voter: string,
+  answers: readonly { speaker: string; content: string }[],
+): { role: "system" | "user"; content: string }[] {
+  const candidates = answers.map((a) => a.speaker).filter((n) => n !== voter);
+  return [
+    {
+      role: "system",
+      content: `你是「${voter}」，正在參加一場群組討論的互評投票。從其他成員這一輪的回答裡，選出你覺得最好的一個（不能投自己），並用一句話說明理由。`,
+    },
+    {
+      role: "user",
+      content: [
+        "這一輪的回答：",
+        ...answers.map((a) => `[${a.speaker}] ${a.content.replace(/\s+/g, " ").trim().slice(0, 1200)}`),
+        "",
+        `可以投的人：${candidates.join("、")}`,
+        "只輸出一行，格式：名字｜理由",
+      ].join("\n"),
+    },
+  ];
+}
+
+/** 解析一票：「名字｜理由」；格式跑掉時找第一個出現的候選人。投自己或對不到 → null */
+export function parseVote(
+  text: string,
+  candidates: readonly string[],
+  voter: string,
+): { vote: string; reason: string } | null {
+  const cleaned = stripThink(text);
+  const allowed = candidates.filter((n) => n !== voter);
+  if (!cleaned || allowed.length === 0) return null;
+  const line = cleaned.split("\n").find((l) => /[｜|]/.test(l)) ?? cleaned.split("\n")[0];
+  const [head, ...rest] = line.split(/[｜|]/);
+  const vote = parseHostDecision(head, allowed) ?? parseHostDecision(cleaned, allowed);
+  if (!vote) return null;
+  const reason = rest.join("｜").trim() || cleaned.replace(vote, "").replace(/^[\s:：｜|]+/, "").trim();
+  return { vote, reason: reason.slice(0, 120) };
+}
+
+export function tallyVotes(
+  votes: readonly { voter: string; vote: string; reason: string }[],
+): { body: string; winner?: string } {
+  if (votes.length === 0) return { body: "沒有人投出有效的一票。" };
+  const counts = new Map<string, number>();
+  for (const v of votes) counts.set(v.vote, (counts.get(v.vote) ?? 0) + 1);
+  const ranked = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+  const top = ranked[0][1];
+  const winners = ranked.filter(([, n]) => n === top).map(([name]) => name);
+  const lines = votes.map((v) => `${v.voter} → ${v.vote}${v.reason ? `：${v.reason}` : ""}`);
+  const result = ranked.map(([name, n]) => `${name} ${n} 票`).join("、");
+  return {
+    body: [...lines, "", `結果：${result}${winners.length > 1 ? "（平手）" : ""}`].join("\n"),
+    winner: winners.length === 1 ? winners[0] : undefined,
+  };
+}
+

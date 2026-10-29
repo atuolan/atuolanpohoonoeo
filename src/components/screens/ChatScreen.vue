@@ -158,6 +158,10 @@ import {
   buildHostMessages,
   buildHostTranscript,
   buildRoundTableInstruction,
+  buildSummaryMessages,
+  buildVoteMessages,
+  parseVote,
+  tallyVotes,
   isRoundTableActive,
   MODEL_SELF_DESCRIPTION,
   orderRoundTableSpeakers,
@@ -714,6 +718,7 @@ const groupMembersForInfo = computed(() => {
     fallbackApiProfileId: member.fallbackApiProfileId,
     isModelSelf: !!member.isModelSelf,
     roundTableUsage: groupMetadata.value?.roundTableUsage?.[member.characterId],
+    stance: member.stance,
     subCharSource: member.source,
     isPersonaMember: member.isPersonaMember,
     boundPersonaName:
@@ -5243,6 +5248,7 @@ function getRoundTableSpeakers(): RoundTableSpeaker[] {
       avatar: getGroupMemberAvatarUrl(m, charactersStore.characters),
       apiProfileId: m.apiProfileId,
       fallbackApiProfileId: m.fallbackApiProfileId,
+      stance: m.stance,
     }))
     .filter((s) => !!s.name);
 }
@@ -5373,41 +5379,188 @@ function startWhisperFromDetails(characterId: string, name: string) {
   roundTableWhisperTarget.value = { id: characterId, name };
 }
 
+/** 圓桌的短呼叫（主持人、整理、投票）：不串流、不進聊天 */
+async function callRoundTableApi(
+  config: ReturnType<typeof settingsStore.getAPIForTask>,
+  apiMessages: { role: string; content: string }[],
+  maxResponseLength: number,
+  temperature = config.generation.temperature,
+) {
+  const client = new OpenAICompatibleClient(config.api);
+  return client.generate({
+    messages: apiMessages as APIMessage[],
+    settings: {
+      maxContextLength: config.generation.maxContextLength || 128000,
+      maxResponseLength,
+      temperature,
+      topP: config.generation.topP,
+      ...pickGenerationToggles(config.generation),
+      frequencyPenalty: 0,
+      presencePenalty: 0,
+      repetitionPenalty: 1,
+      stopSequences: [],
+      streaming: false,
+      useStreamingWindow: false,
+    },
+    apiSettings: config.api,
+  });
+}
+
+/** 圓桌短呼叫看的對話：公開的發言（不含悄悄話、錯誤、卡片） */
+function getRoundTableTranscriptItems(fromIndex = 0) {
+  const userName = effectivePersona.value?.name || "User";
+  return messages.value
+    .slice(fromIndex)
+    .filter(
+      (m) =>
+        (m.role === "user" || m.role === "ai") &&
+        !m.whisperWith &&
+        !m.roundTableCard &&
+        !isGenerationErrorMessage(m) &&
+        !!m.content?.trim(),
+    )
+    .map((m) => ({
+      speaker: m.role === "user" ? userName : m.senderCharacterName || "成員",
+      content: m.content,
+    }));
+}
+
+function pushRoundTableCard(card: NonNullable<Message["roundTableCard"]>) {
+  messages.value.push({
+    id: `msg_${Date.now()}_rt`,
+    role: "system",
+    content: "",
+    timestamp: Date.now(),
+    roundTableCard: card,
+  });
+  scrollToBottom();
+}
+
+// 討論工具：整理討論、裁判結論（用主持人 API）、互評投票（每位成員用自己的 API）
+const roundTableToolBusy = ref(false);
+
+async function runRoundTableTool(kind: "summary" | "verdict" | "vote") {
+  closeChatDetails();
+  if (roundTableToolBusy.value || isGenerating.value || roundTableRunning) {
+    showToast?.("圓桌還在講話，等這一輪結束再用");
+    return;
+  }
+  const speakers = getRoundTableSpeakers();
+  roundTableToolBusy.value = true;
+  try {
+    if (kind === "vote") {
+      // 只看最新一輪：最後一則使用者訊息之後、每位成員的公開發言
+      let start = messages.value.length;
+      while (start > 0 && messages.value[start - 1].role !== "user") start--;
+      const answers = speakers
+        .map((s) => ({
+          speaker: s.name,
+          content: messages.value
+            .slice(start)
+            .filter(
+              (m) =>
+                m.role === "ai" &&
+                m.senderCharacterId === s.characterId &&
+                !m.whisperWith &&
+                !isGenerationErrorMessage(m),
+            )
+            .map((m) => m.content)
+            .join("\n")
+            .trim(),
+        }))
+        .filter((a) => a.content);
+      if (answers.length < 2) {
+        showToast?.("這一輪至少要有兩位成員發言才能投票");
+        return;
+      }
+      showToast?.("大家投票中…");
+      const names = answers.map((a) => a.speaker);
+      const voters = speakers.filter((s) => names.includes(s.name));
+      const results = await Promise.all(
+        voters.map(async (s) => {
+          try {
+            const result = await callRoundTableApi(
+              resolveRoundTableTaskConfig(s.apiProfileId),
+              buildVoteMessages(s.name, answers),
+              1000,
+            );
+            recordRoundTableUsage(s.characterId, {
+              prompt_tokens: result.tokenCount?.prompt ?? 0,
+              completion_tokens: result.tokenCount?.completion ?? 0,
+              total_tokens: result.tokenCount?.total ?? 0,
+            });
+            const vote = parseVote(result.content, names, s.name);
+            return vote ? { voter: s.name, ...vote } : null;
+          } catch (error) {
+            console.warn("[ChatScreen] 圓桌投票失敗", s.name, error);
+            return null;
+          }
+        }),
+      );
+      const tally = tallyVotes(results.filter((v): v is NonNullable<typeof v> => !!v));
+      pushRoundTableCard({ kind, title: "互評投票", body: tally.body, winner: tally.winner });
+    } else {
+      showToast?.(kind === "verdict" ? "裁判評議中…" : "整理討論中…");
+      const config = resolveRoundTableTaskConfig(groupMetadata.value?.roundTable?.hostApiProfileId);
+      const transcript = buildHostTranscript(getRoundTableTranscriptItems(), 60, 800);
+      const result = await callRoundTableApi(
+        config,
+        buildSummaryMessages(transcript, speakers, kind === "verdict"),
+        4000,
+        0.4,
+      );
+      const body = result.content.replace(/<think(?:ing)?>[\s\S]*?<\/think(?:ing)?>/gi, "").trim();
+      if (!body) throw new Error("API 回了空內容");
+      pushRoundTableCard({ kind, title: kind === "verdict" ? "裁判結論" : "討論整理", body });
+    }
+    await saveChatImmediate();
+  } catch (error) {
+    showToast?.(`圓桌工具失敗：${error instanceof Error ? error.message : String(error)}`);
+  } finally {
+    roundTableToolBusy.value = false;
+  }
+}
+
+// 投票卡片：發專屬紅包給最高票（跟禮物面板一樣從錢包扣）
+const roundTableRedpacketAmount = ref(66);
+
+async function sendRoundTableRedpacket(messageId: string) {
+  const card = messages.value.find((m) => m.id === messageId)?.roundTableCard;
+  const amount = Number(roundTableRedpacketAmount.value);
+  if (!card?.winner || card.redpacketSent || !(amount > 0)) return;
+  const result = gameEconomyStore.transfer(GLOBAL_WALLET_ID, amount);
+  if (!result.success) {
+    showToast?.("錢包餘額不夠");
+    return;
+  }
+  await gameEconomyStore.saveState(GLOBAL_WALLET_ID);
+  card.redpacketSent = true;
+  handleSendRedpacket({
+    type: "exclusive",
+    amount,
+    count: 1,
+    blessing: "恭喜拿下最佳回答",
+    target: card.winner,
+  });
+}
+
+async function handleDetailsUpdateMemberStance(characterId: string, stance: string) {
+  const member = groupMetadata.value?.members.find((m) => m.characterId === characterId);
+  if (!member) return;
+  member.stance = stance.trim() || undefined;
+  await saveChatImmediate();
+}
+
 /** 主持人點下一位；說結束、對不到人或呼叫失敗 → null（這一輪結束） */
 async function askRoundTableHost(
   speakers: readonly RoundTableSpeaker[],
   spoken: readonly string[],
 ): Promise<RoundTableSpeaker | null> {
   const config = resolveRoundTableTaskConfig(groupMetadata.value?.roundTable?.hostApiProfileId);
-  const userName = effectivePersona.value?.name || "User";
-  const transcript = buildHostTranscript(
-    getMessageHistory()
-      .filter((m) => (m.role === "user" || m.role === "ai") && !isGenerationErrorMessage(m) && !!m.content)
-      .map((m) => ({
-        speaker: m.role === "user" ? userName : m.senderCharacterName || "成員",
-        content: m.content,
-      })),
-  );
+  const transcript = buildHostTranscript(getRoundTableTranscriptItems());
   const names = speakers.map((s) => s.name);
   try {
-    const client = new OpenAICompatibleClient(config.api);
-    const result = await client.generate({
-      messages: buildHostMessages(transcript, names, spoken) as APIMessage[],
-      settings: {
-        maxContextLength: config.generation.maxContextLength || 128000,
-        maxResponseLength: 2000,
-        temperature: 0.3,
-        topP: config.generation.topP,
-        ...pickGenerationToggles(config.generation),
-        frequencyPenalty: 0,
-        presencePenalty: 0,
-        repetitionPenalty: 1,
-        stopSequences: [],
-        streaming: false,
-        useStreamingWindow: false,
-      },
-      apiSettings: config.api,
-    });
+    const result = await callRoundTableApi(config, buildHostMessages(transcript, names, spoken), 2000, 0.3);
     const name = parseHostDecision(result.content, names);
     return speakers.find((s) => s.name === name) ?? null;
   } catch (error) {
@@ -5756,6 +5909,7 @@ async function runAIResponseOnce(
         // 圓桌：這一輪前面成員的發言不進聊天紀錄（接力時接在圓桌指令裡，排在使用者提問後面）
         !roundTableTurn?.sameRoundIds.has(m.id) &&
         !roundTableTurn?.hiddenIds?.has(m.id) &&
+        !m.roundTableCard &&
         // 圓桌悄悄話：只有那位成員看得到
         !(roundTableTurn && m.whisperWith && m.whisperWith !== roundTableTurn.speaker.characterId),
     );
@@ -6665,6 +6819,7 @@ async function runAIResponseOnce(
             style: roundTableTurn.style,
             independent: roundTableTurn.hideSameRound,
             whisper: roundTableTurn.whisper,
+            stance: roundTableTurn.speaker.stance,
             earlierReplies: roundTableTurn.hideSameRound
               ? []
               : messages.value
@@ -11695,6 +11850,8 @@ useChatCleanup({
           @forget-removed-member="handleForgetRemovedMember"
           @mention-member="handleMentionFromDetails"
           @whisper-member="startWhisperFromDetails"
+          @round-table-tool="runRoundTableTool"
+          @update-member-stance="handleDetailsUpdateMemberStance"
         />
       </Transition>
     </Teleport>
@@ -11946,6 +12103,7 @@ useChatCleanup({
             message.imageNote,
             message.roundTableModel,
             message.whisperWith,
+            message.roundTableCard?.redpacketSent,
             readingImageNoteId === message.id,
             groupMemberAvatarVersion,
             removedMembersVersion,
@@ -12090,6 +12248,31 @@ useChatCleanup({
             </svg>
             <span class="system-notification-text">你撤回了一條訊息</span>
             <button class="recall-undo-btn" @click.stop="handleUndoRecall(message.id)">取消</button>
+          </div>
+
+          <div
+            v-else-if="message.roundTableCard"
+            class="rt-card"
+            :class="`rt-card--${message.roundTableCard.kind}`"
+            @contextmenu.prevent="handleMessageDelete(message.id)"
+          >
+            <div class="rt-card-title">{{ message.roundTableCard.title }}</div>
+            <div class="rt-card-body">{{ message.roundTableCard.body }}</div>
+            <div
+              v-if="message.roundTableCard.winner && !message.roundTableCard.redpacketSent"
+              class="rt-card-actions"
+            >
+              <input
+                v-model.number="roundTableRedpacketAmount"
+                type="number"
+                min="1"
+                class="rt-card-amount"
+                aria-label="紅包金額"
+              />
+              <button type="button" class="rt-card-btn" @click="sendRoundTableRedpacket(message.id)">
+                發紅包給 {{ message.roundTableCard.winner }}
+              </button>
+            </div>
           </div>
 
           <MessageBubble
@@ -15103,6 +15286,56 @@ useChatCleanup({
 </template>
 
 <style lang="scss" scoped>
+.rt-card {
+  margin: 8px 16px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+.rt-card-title {
+  margin-bottom: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-primary);
+}
+
+.rt-card-body {
+  font-size: 14px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.rt-card-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.rt-card-amount {
+  width: 80px;
+  padding: 6px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-background);
+  color: inherit;
+  font-size: 14px;
+}
+
+.rt-card-btn {
+  flex: 1;
+  padding: 6px 12px;
+  border: none;
+  border-radius: 8px;
+  background: var(--color-primary);
+  color: var(--color-on-primary-contrast, #fff);
+  font-size: 13px;
+  cursor: pointer;
+}
+
 .rt-retell-overlay {
   position: fixed;
   inset: 0;
