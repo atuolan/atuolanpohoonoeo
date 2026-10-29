@@ -1860,6 +1860,13 @@ const renderedContent = computed(() => {
       "<em>$1</em>",
     );
 
+    // 模型常用 <br> 隔開清單項目（「1. …<br>2. …」），marked 會整串當成同一個項目，
+    // 後面的編號只是內文；<br> 後面接清單符號就改回換行，讓每項都是真的清單項目
+    processedContent = processedContent.replace(
+      /<br\s*\/?>[ \t]*(?=(?:\d+[.)]|[-*+])[ \t])/gi,
+      "\n",
+    );
+
     const renderedMarkdown = marked.parse(processedContent) as string;
     return `${renderedMarkdown}${localInlineHtml}`;
   } catch {
