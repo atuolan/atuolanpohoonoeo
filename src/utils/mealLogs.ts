@@ -1,4 +1,5 @@
 import type { FoodItem, MealLog, MealType } from "@/types/fitness";
+import type { FoodRecordRef } from "@/types/chat";
 
 /** 同一餐、同名的食物，用餐時間相差這麼多分鐘以內就當成同一次 */
 const SAME_FOOD_WINDOW_MINUTES = 60;
@@ -97,4 +98,14 @@ export function mergeSameDateMealLogs(input: MealLog[]): {
     changed.push(merged);
   }
   return { logs, changed, removedIds };
+}
+
+/** 「已記錄」通知送給 AI 的樣子：講明是 App 已經記好的，角色才不會每輪又寫一次 <food-record> */
+export function formatFoodRecordForPrompt(record: FoodRecordRef): string {
+  const [, mm, dd] = record.date.split("-");
+  const when = `${Number(mm)}/${Number(dd)}${record.time ? ` ${record.time}` : ""}`;
+  const detail = [record.portion, record.calories != null ? `${record.calories}kcal` : ""]
+    .filter(Boolean)
+    .join("，");
+  return `（系統：「${record.name}」已記進 ${when} 的食記${detail ? `（${detail}）` : ""}，這筆已經記好了，之後不要再為它輸出 <food-record>）`;
 }

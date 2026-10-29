@@ -272,6 +272,7 @@ import type {
 import { createDefaultChat } from "@/types/chat";
 import { formatMediaLogsForPrompt } from "@/types/mediaLog";
 import { formatFoodLogsForPrompt } from "@/types/fitness";
+import { formatFoodRecordForPrompt } from "@/utils/mealLogs";
 import type { Lorebook } from "@/types/worldinfo";
 import ejs from "ejs";
 import {
@@ -5365,8 +5366,10 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
 
     const chatMessages: ChatMessage[] = messagesToUse.map((m, index) => ({
       id: m.id,
-      sender:
-        m.role === "user"
+      // 「已記錄」飲食通知當系統訊息送，講明已經記好了，角色才不會每輪又記一次
+      sender: m.isFoodRecord && m.foodRecordData
+        ? ("system" as const)
+        : m.role === "user"
           ? ("user" as const)
           : m.role === "system"
             ? ("system" as const)
@@ -5374,22 +5377,24 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
       name:
         m.role === "user"
           ? "User"
-          : m.role === "system"
+          : m.role === "system" || (m.isFoodRecord && m.foodRecordData)
             ? "system"
             : m.senderCharacterName || char.data.name,
       // 群管理訊息畫面上有文字，資料裡 content 是空的；寫成一句話 AI 才知道誰被移出、禁言
       // 一般訊息套用「僅提示詞」正則腳本（depth 0 是最新一則）
       content: m.isGroupAction
         ? describeGroupAction(m)
-        : m.forwardedFrom
-          ? formatForwardedForPrompt(m.content, m.forwardedFrom)
-          : m.role === "system"
-            ? m.content
-            : applyPromptRegex(
-                m.content,
-                m.role === "user" ? "user" : "assistant",
-                messagesToUse.length - 1 - index,
-              ),
+        : m.isFoodRecord && m.foodRecordData
+          ? formatFoodRecordForPrompt(m.foodRecordData)
+          : m.forwardedFrom
+            ? formatForwardedForPrompt(m.content, m.forwardedFrom)
+            : m.role === "system"
+              ? m.content
+              : applyPromptRegex(
+                  m.content,
+                  m.role === "user" ? "user" : "assistant",
+                  messagesToUse.length - 1 - index,
+                ),
       is_user: m.role === "user",
       status: "sent" as const,
       createdAt: m.timestamp,
