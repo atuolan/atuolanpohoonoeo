@@ -101,7 +101,7 @@ import {
 import { bgGenerationPoller } from "@/services/BgGenerationPoller";
 import { useSelfHostedSyncStore } from "@/stores/selfHostedSync";
 import type { BgGenerationTaskView, StartGenerationRequest } from "@/types/bgGeneration";
-import { useChatRegeneration } from "@/composables/useChatRegeneration";
+import { canCarryRoundSwipes, useChatRegeneration } from "@/composables/useChatRegeneration";
 import { useChatAppearance } from "@/composables/useChatAppearance";
 import { useChatAudioRecording } from "@/composables/useChatAudioRecording";
 import { useChatAvatarChange } from "@/composables/useChatAvatarChange";
@@ -2101,8 +2101,8 @@ const showGiftDrawer = ref(false);
 // 獲取最後一條 AI 訊息
 const lastAIMessage = computed(() => {
   for (let i = messages.value.length - 1; i >= 0; i--) {
-    // 骰子結果卡片不算：繼續生成、滑動切換都要接在角色真正的回覆上
-    if (messages.value[i].role === "ai" && !messages.value[i].isDiceRoll) {
+    // 骰子結果、飲食通知這類系統小字不算：繼續生成、滑動切換都要接在角色真正的回覆上
+    if (canCarryRoundSwipes(messages.value[i])) {
       return messages.value[i];
     }
   }
@@ -5974,7 +5974,8 @@ async function runAIResponseOnce(
     const chatMessages: ChatMessage[] = messagesToUse.map((m, index) => ({
       id: m.id,
       // 「已記錄」飲食通知當系統訊息送，講明已經記好了，角色才不會每輪又記一次
-      sender: m.isFoodRecord && m.foodRecordData
+      // 骰子結果也當系統訊息：當成角色說的話，模型會學著自己寫 🎲 結果（畫面變成角色泡泡、點數也是編的）
+      sender: (m.isFoodRecord && m.foodRecordData) || m.isDiceRoll
         ? ("system" as const)
         : m.role === "user"
           ? ("user" as const)
@@ -5982,11 +5983,13 @@ async function runAIResponseOnce(
             ? ("system" as const)
             : ("assistant" as const),
       name:
-        m.role === "user"
-          ? "User"
-          : m.role === "system" || (m.isFoodRecord && m.foodRecordData)
-            ? "system"
-            : m.senderCharacterName || char.data.name,
+        (m.isFoodRecord && m.foodRecordData) || m.isDiceRoll
+          ? "system"
+          : m.role === "user"
+            ? "User"
+            : m.role === "system"
+              ? "system"
+              : m.senderCharacterName || char.data.name,
       // 群管理訊息畫面上有文字，資料裡 content 是空的；寫成一句話 AI 才知道誰被移出、禁言
       // 一般訊息套用「僅提示詞」正則腳本（depth 0 是最新一則）
       content: m.isGroupAction

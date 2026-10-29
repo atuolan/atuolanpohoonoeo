@@ -1,6 +1,22 @@
 import { ref, type ComputedRef, type Ref } from "vue";
 import type { ChatScreenMessage as Message } from "@/types/chatScreen";
 
+/**
+ * 整輪翻頁鈕只畫在一般角色泡泡上：飲食通知、骰子結果、日記提示這類 role 也是 ai，
+ * 但畫成系統小字，掛在它們上面翻頁鈕就不見了
+ */
+export function canCarryRoundSwipes(m: Message): boolean {
+  return (
+    m.role === "ai" &&
+    !m.isSystemNotification &&
+    !m.isTransactionClaimNotice &&
+    !m.isDiceRoll &&
+    !m.diaryNoticeId &&
+    !m.isDollTouch &&
+    !m.roundTableCard
+  );
+}
+
 export function useChatRegeneration(context: {
   messages: Ref<Message[]>;
   isGenerating: ComputedRef<boolean>;
@@ -249,7 +265,7 @@ export function useChatRegeneration(context: {
     const roundMessages = context.messages.value.slice(startIdx, endIdx).filter(
       (msg) =>
         msg.role === "ai" ||
-        (msg.role === "system" && (msg.isTimetravel || msg.isAvatarChange)),
+        (msg.role === "system" && (msg.isTimetravel || msg.isAvatarChange || msg.isCalendarEvent)),
     );
 
     return { startIdx, endIdx, roundMessages };
@@ -369,14 +385,12 @@ export function useChatRegeneration(context: {
       return clone;
     });
 
+    const inTurn = (m: Message) => !targetTurnId || m.turnId === targetTurnId;
+    const reversed = [...context.messages.value].reverse();
     const lastAI =
-      [...context.messages.value]
-        .reverse()
-        .find(
-          (m) =>
-            m.role === "ai" &&
-            (!targetTurnId || m.turnId === targetTurnId),
-        ) || null;
+      reversed.find((m) => canCarryRoundSwipes(m) && inTurn(m)) ||
+      reversed.find((m) => m.role === "ai" && inTurn(m)) ||
+      null;
 
     if (lastAI) {
       if (roundMessages.length > 0) {
@@ -428,9 +442,18 @@ export function useChatRegeneration(context: {
     if (!roundBounds) return;
     const { startIdx, endIdx } = roundBounds;
 
+    let carrierIdx = -1;
+    for (let i = targetRound.length - 1; i >= 0; i--) {
+      if (canCarryRoundSwipes(targetRound[i])) {
+        carrierIdx = i;
+        break;
+      }
+    }
+    if (carrierIdx === -1) carrierIdx = targetRound.length - 1;
+
     const newMessages = targetRound.map((m, i) => {
       const clone = { ...m };
-      if (i === targetRound.length - 1) {
+      if (i === carrierIdx) {
         clone.roundSwipes = carrier.roundSwipes;
         clone.roundSwipeId = newIdx;
       }
