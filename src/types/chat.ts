@@ -831,6 +831,10 @@ export interface GroupMember {
   memoryLink?: MemoryLink;
   /** 圓桌模式：這位成員用的主 API 設定（APIProfile id）；未設定跟主 API */
   apiProfileId?: string;
+  /** 圓桌模式：主要 API 失敗時改用這個再試一次 */
+  fallbackApiProfileId?: string;
+  /** 圓桌模式：「模型本人」成員（不演角色，用模型自己的觀點討論） */
+  isModelSelf?: boolean;
 }
 
 /** 群管理動作：改群名、移出、禁言、解禁、拉回被移出的成員 */
@@ -975,6 +979,10 @@ export interface RoundTableSettings {
   order: RoundTableOrder;
   /** 一輪最多幾位發言（被 @ 的不受限）；未設定 = 全部 */
   maxSpeakersPerRound?: number;
+  /** 主持人模式：主持人用的 API 設定；未設定跟主 API */
+  hostApiProfileId?: string;
+  /** chat = 聊天短句（預設）；long = 長篇討論，可以條列、講理由 */
+  discussionStyle?: "chat" | "long";
 }
 
 // ===== 群聊日記條目 =====

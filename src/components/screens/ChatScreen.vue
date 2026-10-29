@@ -154,9 +154,13 @@ import {
   withLiveSubCharSnapshot,
 } from "@/utils/groupMembers";
 import {
+  buildHostMessages,
+  buildHostTranscript,
   buildRoundTableInstruction,
   isRoundTableActive,
+  MODEL_SELF_DESCRIPTION,
   orderRoundTableSpeakers,
+  parseHostDecision,
   pickRoundTableMessages,
   type RoundTableSpeaker,
 } from "@/utils/roundTable";
@@ -264,6 +268,7 @@ import type {
   GenerationDiagnostics,
   GenerationContaminationProbeResult,
   PlurkActivity,
+  RoundTableSettings,
   SubCharSource,
   SubCharUserBinding,
   SubCharAffinitySnapshot,
@@ -705,6 +710,8 @@ const groupMembersForInfo = computed(() => {
     isMuted: member.isMuted,
     isVirtual: !!member.isVirtual,
     apiProfileId: member.apiProfileId,
+    fallbackApiProfileId: member.fallbackApiProfileId,
+    isModelSelf: !!member.isModelSelf,
     subCharSource: member.source,
     isPersonaMember: member.isPersonaMember,
     boundPersonaName:
@@ -3148,6 +3155,9 @@ const detailsRoundTable = computed(() => {
   return {
     enabled: meta.roundTable?.enabled === true,
     maxSpeakersPerRound: meta.roundTable?.maxSpeakersPerRound ?? 0,
+    order: meta.roundTable?.order ?? ("relay" as const),
+    hostApiProfileId: meta.roundTable?.hostApiProfileId ?? "",
+    discussionStyle: meta.roundTable?.discussionStyle ?? ("chat" as const),
   };
 });
 
@@ -3155,24 +3165,52 @@ const detailsApiProfileOptions = computed(() =>
   settingsStore.profiles.map((p) => ({ id: p.id, name: p.name, model: p.api?.model || "" })),
 );
 
-async function handleDetailsUpdateRoundTable(patch: { enabled?: boolean; maxSpeakersPerRound?: number }) {
+async function handleDetailsUpdateRoundTable(patch: Partial<RoundTableSettings>) {
   const meta = groupMetadata.value;
   if (!meta) return;
-  const prev = meta.roundTable ?? { enabled: false, order: "relay" as const };
-  meta.roundTable = {
-    ...prev,
-    ...(patch.enabled !== undefined ? { enabled: patch.enabled } : {}),
-    ...(patch.maxSpeakersPerRound !== undefined
-      ? { maxSpeakersPerRound: Math.max(0, Math.floor(patch.maxSpeakersPerRound)) || undefined }
-      : {}),
-  };
+  const next: RoundTableSettings = { enabled: false, order: "relay", ...meta.roundTable, ...patch };
+  if (patch.maxSpeakersPerRound !== undefined) {
+    next.maxSpeakersPerRound = Math.max(0, Math.floor(patch.maxSpeakersPerRound)) || undefined;
+  }
+  if (patch.hostApiProfileId !== undefined) next.hostApiProfileId = patch.hostApiProfileId || undefined;
+  meta.roundTable = next;
   await saveChatImmediate();
 }
 
-async function handleDetailsUpdateMemberApi(characterId: string, profileId: string) {
+async function handleDetailsUpdateMemberApi(
+  characterId: string,
+  profileId: string,
+  kind: "main" | "fallback" = "main",
+) {
   const member = groupMetadata.value?.members.find((m) => m.characterId === characterId);
   if (!member) return;
-  member.apiProfileId = profileId || undefined;
+  if (kind === "fallback") member.fallbackApiProfileId = profileId || undefined;
+  else member.apiProfileId = profileId || undefined;
+  await saveChatImmediate();
+}
+
+/** 圓桌：加入「模型本人」成員（虛擬成員，不演角色，綁指定的 API） */
+async function handleDetailsAddModelSelfMember(profileId: string, rawName: string) {
+  const meta = groupMetadata.value;
+  if (!meta || meta.isMultiCharCard) return;
+  const profile = settingsStore.profiles.find((p) => p.id === profileId);
+  const baseName = rawName.trim() || profile?.api?.model || profile?.name || "模型";
+  const taken = new Set(meta.members.map((m) => getGroupMemberDisplayName(m, charactersStore.characters)));
+  let name = baseName;
+  for (let n = 2; taken.has(name); n++) name = `${baseName} ${n}`;
+  meta.members.push({
+    characterId: `gm_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+    isAdmin: false,
+    isMuted: false,
+    joinedAt: Date.now(),
+    isVirtual: true,
+    name,
+    avatar: "",
+    source: "inline",
+    personaSnapshot: { description: MODEL_SELF_DESCRIPTION },
+    isModelSelf: true,
+    apiProfileId: profileId || undefined,
+  });
   await saveChatImmediate();
 }
 
@@ -5161,6 +5199,9 @@ interface RoundTableTurn {
   speaker: RoundTableSpeaker;
   /** 這一輪前面成員剛發的訊息 */
   sameRoundIds: ReadonlySet<string>;
+  /** 各自作答：這一輪前面成員的發言不給他看 */
+  hideSameRound: boolean;
+  style?: "chat" | "long";
   /** 群裡其他能發言的成員（提示詞裡叫模型別替他們講） */
   otherNames: string[];
   taskConfig: ReturnType<typeof settingsStore.getAPIForTask>;
@@ -5191,8 +5232,13 @@ function getRoundTableSpeakers(): RoundTableSpeaker[] {
       name: getGroupMemberDisplayName(m, charactersStore.characters),
       avatar: getGroupMemberAvatarUrl(m, charactersStore.characters),
       apiProfileId: m.apiProfileId,
+      fallbackApiProfileId: m.fallbackApiProfileId,
     }))
     .filter((s) => !!s.name);
+}
+
+function resolveRoundTableTaskConfig(profileId: string | undefined) {
+  return settingsStore.getAPIForProfile(profileId) ?? settingsStore.getAPIForTask("chat");
 }
 
 /** 上一則 AI 回覆之後，使用者 @ 了誰 */
@@ -5206,50 +5252,130 @@ function getTurnMentionedNames(speakers: readonly RoundTableSpeaker[]): string[]
   return findMentionedNames(turnTexts.join("\n"), speakers.map((s) => s.name));
 }
 
+/** 主持人點下一位；說結束、對不到人或呼叫失敗 → null（這一輪結束） */
+async function askRoundTableHost(
+  speakers: readonly RoundTableSpeaker[],
+  spoken: readonly string[],
+): Promise<RoundTableSpeaker | null> {
+  const config = resolveRoundTableTaskConfig(groupMetadata.value?.roundTable?.hostApiProfileId);
+  const userName = effectivePersona.value?.name || "User";
+  const transcript = buildHostTranscript(
+    getMessageHistory()
+      .filter((m) => (m.role === "user" || m.role === "ai") && !isGenerationErrorMessage(m) && !!m.content)
+      .map((m) => ({
+        speaker: m.role === "user" ? userName : m.senderCharacterName || "成員",
+        content: m.content,
+      })),
+  );
+  const names = speakers.map((s) => s.name);
+  try {
+    const client = new OpenAICompatibleClient(config.api);
+    const result = await client.generate({
+      messages: buildHostMessages(transcript, names, spoken) as APIMessage[],
+      settings: {
+        maxContextLength: config.generation.maxContextLength || 128000,
+        maxResponseLength: 2000,
+        temperature: 0.3,
+        topP: config.generation.topP,
+        ...pickGenerationToggles(config.generation),
+        frequencyPenalty: 0,
+        presencePenalty: 0,
+        repetitionPenalty: 1,
+        stopSequences: [],
+        streaming: false,
+        useStreamingWindow: false,
+      },
+      apiSettings: config.api,
+    });
+    const name = parseHostDecision(result.content, names);
+    return speakers.find((s) => s.name === name) ?? null;
+  } catch (error) {
+    console.warn("[ChatScreen] 圓桌主持人呼叫失敗，這一輪結束", error);
+    return null;
+  }
+}
+
+/** 一位成員發言；主要 API 失敗、有備用的就換備用再試一次 */
+async function runRoundTableSpeaker(
+  speaker: RoundTableSpeaker,
+  allSpeakers: readonly RoundTableSpeaker[],
+  idsAtRoundStart: ReadonlySet<string>,
+  options: ChatTriggerAIResponseOptions | undefined,
+) {
+  const meta = groupMetadata.value;
+  const independent = meta?.roundTable?.order === "parallel";
+  const profileIds = [speaker.apiProfileId, speaker.fallbackApiProfileId];
+  for (let attempt = 0; attempt < profileIds.length; attempt++) {
+    if (attempt > 0 && !profileIds[attempt]) break;
+    const taskConfig = resolveRoundTableTaskConfig(profileIds[attempt]);
+    const turn: RoundTableTurn = {
+      speaker,
+      sameRoundIds: new Set(
+        messages.value.filter((m) => !idsAtRoundStart.has(m.id)).map((m) => m.id),
+      ),
+      hideSameRound: independent,
+      style: meta?.roundTable?.discussionStyle,
+      otherNames: allSpeakers.filter((s) => s !== speaker).map((s) => s.name),
+      taskConfig,
+      modelLabel: taskConfig.api.model,
+    };
+    const idsBefore = new Set(messages.value.map((m) => m.id));
+    await runAIResponseOnce(options, turn);
+    const added = messages.value.filter(
+      (m) => !idsBefore.has(m.id) && m.senderCharacterId === speaker.characterId,
+    );
+    for (const m of added) {
+      if (!m.roundTableModel) m.roundTableModel = turn.modelLabel;
+    }
+    const failed = added.filter((m) => isGenerationErrorMessage(m));
+    if (failed.length === 0 || roundTableStopRequested || attempt + 1 >= profileIds.length || !profileIds[attempt + 1]) {
+      if (added.length) saveChat();
+      return;
+    }
+    // 換備用 API：主要那次的錯誤泡泡拿掉
+    messages.value = messages.value.filter((m) => !failed.includes(m));
+  }
+}
+
 async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
-  if (!isGroupChat.value || !isRoundTableActive(groupMetadata.value)) {
+  const meta = groupMetadata.value;
+  if (!isGroupChat.value || !isRoundTableActive(meta)) {
     return runAIResponseOnce(options);
   }
   // 接力中間使用者又送訊息：後面的人本來就看得到，不另開一輪
   if (roundTableRunning || isGenerating.value) return;
 
+  const order = meta?.roundTable?.order ?? "relay";
+  const maxSpeakers = meta?.roundTable?.maxSpeakersPerRound;
   const chatIdAtStart = currentChatId.value;
   const allSpeakers = getRoundTableSpeakers();
-  const speakers = orderRoundTableSpeakers(
-    allSpeakers,
-    getTurnMentionedNames(allSpeakers),
-    groupMetadata.value?.roundTable?.maxSpeakersPerRound,
-  );
+  const mentioned = getTurnMentionedNames(allSpeakers);
+  // 主持人模式：被 @ 的先講，之後每一位都問主持人
+  const planned =
+    order === "host"
+      ? orderRoundTableSpeakers(allSpeakers, mentioned, undefined, true).filter((s) =>
+          mentioned.includes(s.name),
+        )
+      : orderRoundTableSpeakers(allSpeakers, mentioned, maxSpeakers, order === "mention");
+  const hostLimit = maxSpeakers || allSpeakers.length;
+
   roundTableRunning = true;
   roundTableStopRequested = false;
   const idsAtRoundStart = new Set(messages.value.map((m) => m.id));
+  const spoken: string[] = [];
   try {
-    for (let i = 0; i < speakers.length; i++) {
+    for (let i = 0; ; i++) {
       if (roundTableStopRequested || currentChatId.value !== chatIdAtStart) break;
-      const speaker = speakers[i];
-      const taskConfig =
-        settingsStore.getAPIForProfile(speaker.apiProfileId) ?? settingsStore.getAPIForTask("chat");
-      const turn: RoundTableTurn = {
-        speaker,
-        sameRoundIds: new Set(
-          messages.value.filter((m) => !idsAtRoundStart.has(m.id)).map((m) => m.id),
-        ),
-        otherNames: allSpeakers.filter((s) => s !== speaker).map((s) => s.name),
-        taskConfig,
-        modelLabel: taskConfig.api.model,
-      };
-      const idsBefore = new Set(messages.value.map((m) => m.id));
-      // 總結／日記這類收尾只在最後一位講完才跑
-      const isLast = i === speakers.length - 1;
-      await runAIResponseOnce(isLast ? options : { ...options, skipAutoTrigger: true }, turn);
-      let tagged = false;
-      for (const m of messages.value) {
-        if (!idsBefore.has(m.id) && m.senderCharacterId === speaker.characterId && !m.roundTableModel) {
-          m.roundTableModel = turn.modelLabel;
-          tagged = true;
-        }
+      let speaker: RoundTableSpeaker | null = planned[i] ?? null;
+      if (!speaker && order === "host" && spoken.length < Math.max(hostLimit, planned.length)) {
+        speaker = await askRoundTableHost(allSpeakers, spoken);
+        // 同一個人不連續講
+        if (speaker && speaker.name === spoken[spoken.length - 1]) speaker = null;
       }
-      if (tagged) saveChat();
+      if (!speaker || roundTableStopRequested || currentChatId.value !== chatIdAtStart) break;
+      // 總結／日記這類收尾等整輪講完才跑
+      await runRoundTableSpeaker(speaker, allSpeakers, idsAtRoundStart, { ...options, skipAutoTrigger: true });
+      spoken.push(speaker.name);
     }
   } finally {
     attachPendingRoundSwipes(currentTurnId.value || undefined);
@@ -5257,6 +5383,7 @@ async function triggerAIResponse(options?: ChatTriggerAIResponseOptions) {
     roundTableRunning = false;
     roundTableStopRequested = false;
   }
+  if (spoken.length > 0 && !options?.skipAutoTrigger) checkAndTriggerSummaryOrDiary();
 }
 
 async function runAIResponseOnce(
@@ -5491,7 +5618,11 @@ async function runAIResponseOnce(
     const now = Date.now();
     const eligibleMessages = getMessageHistory().filter(
       (m) =>
-        !(m.isWaimaiProgress && m.timestamp > now) && !isGenerationErrorMessage(m) && !m.diaryNoticeId,
+        !(m.isWaimaiProgress && m.timestamp > now) &&
+        !isGenerationErrorMessage(m) &&
+        !m.diaryNoticeId &&
+        // 圓桌各自作答：這一輪別人的回答不給看
+        !(roundTableTurn?.hideSameRound && roundTableTurn.sameRoundIds.has(m.id)),
     );
 
     let messagesToUse: Message[];
@@ -6396,6 +6527,7 @@ async function runAIResponseOnce(
           roundTableTurn.speaker.name,
           roundTableTurn.otherNames,
           activeUserName,
+          { style: roundTableTurn.style, independent: roundTableTurn.hideSameRound },
         ),
       );
     }
@@ -11411,6 +11543,7 @@ useChatCleanup({
           :api-profile-options="detailsApiProfileOptions"
           @update-round-table="handleDetailsUpdateRoundTable"
           @update-member-api="handleDetailsUpdateMemberApi"
+          @add-model-self-member="handleDetailsAddModelSelfMember"
           :removed-members="detailsRemovedMembers"
           @restore-member="restoreRemovedMemberByUser"
           @forget-removed-member="handleForgetRemovedMember"

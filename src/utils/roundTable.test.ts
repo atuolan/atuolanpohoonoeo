@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   ROUND_TABLE_PASS,
+  buildHostMessages,
+  buildHostTranscript,
   buildRoundTableInstruction,
+  parseHostDecision,
   isRoundTableActive,
   orderRoundTableSpeakers,
   pickRoundTableMessages,
@@ -30,6 +33,10 @@ describe("isRoundTableActive", () => {
 describe("orderRoundTableSpeakers", () => {
   it("被 @ 的先講，其餘照順序", () => {
     expect(orderRoundTableSpeakers(speakers, ["丙"]).map((s) => s.name)).toEqual(["丙", "甲", "乙"]);
+  });
+  it("只有被 @ 的講；沒人被 @ 就全部", () => {
+    expect(orderRoundTableSpeakers(speakers, ["乙"], undefined, true).map((s) => s.name)).toEqual(["乙"]);
+    expect(orderRoundTableSpeakers(speakers, [], undefined, true)).toHaveLength(3);
   });
   it("有上限時截掉，但被 @ 的都留著", () => {
     expect(orderRoundTableSpeakers(speakers, [], 2).map((s) => s.name)).toEqual(["甲", "乙"]);
@@ -75,5 +82,43 @@ describe("buildRoundTableInstruction", () => {
     expect(text).toContain("只由「甲」發言");
     expect(text).toContain("「乙」、「我」");
     expect(text).toContain(ROUND_TABLE_PASS);
+  });
+});
+
+describe("圓桌指令選項", () => {
+  it("各自作答、長篇討論", () => {
+    const text = buildRoundTableInstruction("甲", [], "我", { style: "long", independent: true });
+    expect(text).toContain("各自作答");
+    expect(text).toContain("條列");
+    expect(buildRoundTableInstruction("甲", [], "我")).not.toContain("條列");
+  });
+});
+
+describe("主持人", () => {
+  const names = ["小明", "小明明", "阿花"];
+  it("對到名字，長的名字優先", () => {
+    expect(parseHostDecision("小明明", names)).toBe("小明明");
+    expect(parseHostDecision("下一位：阿花", names)).toBe("阿花");
+    expect(parseHostDecision("<think>小明</think>阿花", names)).toBe("阿花");
+  });
+  it("說結束或對不到人 → null", () => {
+    expect(parseHostDecision("結束", names)).toBeNull();
+    expect(parseHostDecision("", names)).toBeNull();
+  });
+  it("對話截短、只留最後幾則", () => {
+    const t = buildHostTranscript(
+      [
+        { speaker: "甲", content: "一" },
+        { speaker: "乙", content: "二三四五" },
+      ],
+      1,
+      2,
+    );
+    expect(t).toBe("乙：二三…");
+  });
+  it("提示詞列出成員和這輪講過的人", () => {
+    const [, user] = buildHostMessages("甲：嗨", ["甲", "乙"], ["甲"]);
+    expect(user.content).toContain("成員：甲、乙");
+    expect(user.content).toContain("這一輪已經發言：甲");
   });
 });
