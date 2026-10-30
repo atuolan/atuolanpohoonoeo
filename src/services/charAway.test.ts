@@ -4,7 +4,9 @@ import {
   buildCharBusySpareNote,
   canBusyPeek,
   isBusySpare,
+  recordBusyHangUp,
   scheduleBusyPeek,
+  shouldHangUpBusy,
   startBusyPeek,
   awayUrgeLabel,
   buildAwayHintText,
@@ -774,6 +776,37 @@ describe("scheduleBusyPeek", () => {
   it("沒有 check 就原樣回傳", () => {
     const away = makeBusy();
     expect(scheduleBusyPeek(away, NOW)).toBe(away);
+  });
+});
+
+describe("忙碌時掛電話", () => {
+  const busy = (overrides: Partial<CharAway> = {}) =>
+    makeBusy({ startedAt: NOW, returnAt: NOW + 300 * MINUTE, checkMinutes: 40, ...overrides });
+
+  it("只有能看手機的忙碌會掛電話，5 分鐘內不重複", () => {
+    expect(shouldHangUpBusy(busy(), NOW)).toBe(true);
+    expect(shouldHangUpBusy(makeBusy(), NOW)).toBe(false);
+    expect(shouldHangUpBusy(makeSleep({ checkMinutes: 40 }), NOW)).toBe(false);
+    expect(shouldHangUpBusy(busy({ lastHangUpAt: NOW - 4 * MINUTE }), NOW)).toBe(false);
+    expect(shouldHangUpBusy(busy({ lastHangUpAt: NOW - 5 * MINUTE }), NOW)).toBe(true);
+  });
+
+  it("掛電話後 15～30 秒看手機", () => {
+    expect(recordBusyHangUp(busy(), NOW, () => 0).peekAt).toBe(NOW + 15_000);
+    expect(recordBusyHangUp(busy(), NOW, () => 1).peekAt).toBe(NOW + 30_000);
+    const away = recordBusyHangUp(busy(), NOW, () => 0);
+    expect(away.hangUpPeek).toBe(true);
+    expect(away.lastHangUpAt).toBe(NOW);
+  });
+
+  it("不會把更早的看手機往後延", () => {
+    expect(recordBusyHangUp(busy({ peekAt: NOW + 1000 }), NOW, () => 1).peekAt).toBe(NOW + 1000);
+  });
+
+  it("快忙完時不排，等忙完一起回", () => {
+    const away = recordBusyHangUp(busy({ returnAt: NOW + 10_000 }), NOW, () => 0);
+    expect(away.peekAt).toBeUndefined();
+    expect(away.hangUpPeek).toBe(false);
   });
 });
 

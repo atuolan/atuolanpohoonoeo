@@ -503,6 +503,25 @@ describe("忙碌看手機", () => {
 });
 
 describe("recordCharAwayCall", () => {
+  it("掛電話：卡片寫被掛斷，並排看手機", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+    seedChat({
+      charAway: makeAway({ kind: "busy", returnAt: NOW + 300 * MINUTE, checkMinutes: 40 }),
+    });
+
+    await recordCharAwayCall("chat1", "阿明", true);
+
+    const messages = store.messages.get("chat1")!;
+    expect(messages[0].content).toBe("📞 阿明掛斷了你的電話");
+    expect(messages[0].callNotificationType).toBe("unanswered");
+    const away = store.chats.get("chat1")!.charAway!;
+    expect(away.callCount).toBe(1);
+    expect(away.hangUpPeek).toBe(true);
+    expect(away.peekAt).toBeGreaterThanOrEqual(NOW + 15_000);
+    vi.useRealTimers();
+  });
+
   it("留一則未接來電並記次數", async () => {
     const away = makeAway();
     seedChat({ charAway: away });

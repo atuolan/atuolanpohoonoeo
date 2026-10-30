@@ -34,6 +34,7 @@ import {
   pauseCharAway,
   resumeCharAway,
   recordAwayCall,
+  recordBusyHangUp,
   scheduleBusyPeek,
   startBusyPeek,
   recordSneakWin,
@@ -448,10 +449,11 @@ export async function wakeCharAwayNow(
   return next;
 }
 
-/** 暫離期間 user 打了一通電話（沒接）：聊天裡留一則系統訊息並記次數 */
+/** 暫離期間 user 打了一通電話（沒接或被掛斷）：聊天裡留一則系統訊息並記次數 */
 export async function recordCharAwayCall(
   chatId: string,
   characterName: string,
+  hangUp = false,
 ): Promise<void> {
   const chat = await loadChatById(chatId);
   const away = chat?.charAway;
@@ -463,7 +465,9 @@ export async function recordCharAwayCall(
       id: `msg_away_call_${now}`,
       sender: "system",
       name: "system",
-      content: `📞 你撥給${characterName}的電話沒有接通`,
+      content: hangUp
+        ? `📞 ${characterName}掛斷了你的電話`
+        : `📞 你撥給${characterName}的電話沒有接通`,
       is_user: false,
       status: "sent",
       createdAt: now,
@@ -473,7 +477,10 @@ export async function recordCharAwayCall(
       sentWhileAway: away.id,
     },
   ], chat);
-  await saveCharAway(chatId, recordAwayCall(away, now));
+  const called = recordAwayCall(away, now);
+  const next = hangUp ? recordBusyHangUp(called, now) : called;
+  await saveCharAway(chatId, next);
+  if (hangUp) scheduleBusyTimer(chatId, next);
 }
 
 /** 忙碌時 user 留了一則：排先回的話和看手機 */

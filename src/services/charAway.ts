@@ -44,6 +44,13 @@ export const CHAR_BUSY_PEEK_MIN_MS = 3 * 60_000;
 export const CHAR_BUSY_EARLY_END_CHANCE = 0.2;
 /** 看手機之後的空檔，這段時間 user 回他會即時接話 */
 export const CHAR_BUSY_SPARE_MS = 5 * 60_000;
+/** 忙碌時打電話：響多久被掛斷 */
+export const CHAR_BUSY_HANG_UP_RING_MS = 3000;
+/** 掛過一次電話後，這段時間內再打就只是沒接（避免每通都花一次 API） */
+export const CHAR_BUSY_HANG_UP_COOLDOWN_MS = 5 * 60_000;
+/** 掛電話後多久傳訊息 */
+const CHAR_BUSY_HANG_UP_PEEK_MIN_MS = 15_000;
+const CHAR_BUSY_HANG_UP_PEEK_MAX_MS = 30_000;
 /** 先回一句：留言後多久送出 */
 const CHAR_BUSY_AUTO_REPLY_MIN_MS = 20_000;
 const CHAR_BUSY_AUTO_REPLY_MAX_MS = 60_000;
@@ -365,6 +372,34 @@ export function scheduleBusyPeek(
 /** 忙碌的空檔中（看完手機、還能接話） */
 export function isBusySpare(away: CharAway | null | undefined, now: number): boolean {
   return canBusyPeek(away) && (away.spareUntil ?? 0) > now;
+}
+
+/** 這通電話會不會被掛斷（能看手機的忙碌，5 分鐘內掛過就不再掛） */
+export function shouldHangUpBusy(away: CharAway | null | undefined, now: number): boolean {
+  return (
+    canBusyPeek(away) &&
+    now - (away.lastHangUpAt ?? Number.NEGATIVE_INFINITY) >= CHAR_BUSY_HANG_UP_COOLDOWN_MS
+  );
+}
+
+/** 掛了電話：排看手機傳訊息；快忙完就不排，等忙完一起回 */
+export function recordBusyHangUp(
+  away: CharAway,
+  now: number,
+  random: () => number = Math.random,
+): CharAway {
+  const candidate =
+    now +
+    CHAR_BUSY_HANG_UP_PEEK_MIN_MS +
+    random() * (CHAR_BUSY_HANG_UP_PEEK_MAX_MS - CHAR_BUSY_HANG_UP_PEEK_MIN_MS);
+  const inTime = candidate < away.returnAt;
+  return {
+    ...away,
+    lastHangUpAt: now,
+    hangUpPeek: inTime,
+    peekAt: inTime ? Math.min(away.peekAt ?? candidate, candidate) : away.peekAt,
+    updatedAt: now,
+  };
 }
 
 /** 擲骰：這次看手機會不會提早忙完 */

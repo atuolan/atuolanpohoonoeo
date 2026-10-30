@@ -8,7 +8,12 @@ import { useStreamingWindow } from "@/composables/useStreamingWindow";
 import { db, DB_STORES } from "@/db/database";
 import { PromptBuilder } from "@/engine/prompt/PromptBuilder";
 import { parseAffinityUpdateTags } from "@/services/ResponseParser";
-import { isCharAwayActive, shouldWakeByCall } from "@/services/charAway";
+import {
+  CHAR_BUSY_HANG_UP_RING_MS,
+  isCharAwayActive,
+  shouldHangUpBusy,
+  shouldWakeByCall,
+} from "@/services/charAway";
 import {
   applyPromptRegexToHistory,
   applyWorldInfoRegexToLorebooks,
@@ -582,8 +587,8 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
 
   // ===== 開始視訊通話（靜態模式 MVP） =====
   /**
-   * 角色暫時離開時撥過去：不問接不接，響一陣子後無人接聽；
-   * 聊天裡留一張未接通卡片，他回來時會知道打過幾通。不動原本的未接計數。
+   * 角色暫時離開時撥過去：不問接不接，響一陣子後無人接聽；能看手機的忙碌響幾秒就掛斷，
+   * 接著傳訊息問怎麼了。聊天裡留一張未接通卡片，他回來時會知道打過幾通。不動原本的未接計數。
    * 睡覺中被 10 分鐘內第 3 通吵醒時改成直接接起來（回 "wake"，不記未接通卡片）。
    */
   async function ringUnansweredIfAway(
@@ -606,17 +611,18 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
       return "wake";
     }
 
+    const hangUp = shouldHangUpBusy(away, Date.now());
     callState.value = "ringing";
     callStartedAt.value = null;
     import("@/services/charAwayRuntime")
-      .then(({ recordCharAwayCall }) => recordCharAwayCall(chatId, info.characterName))
+      .then(({ recordCharAwayCall }) => recordCharAwayCall(chatId, info.characterName, hangUp))
       .catch((err) => console.warn("[PhoneCall] 記錄暫離時的未接通電話失敗:", err));
     autoAnswerTimer = setTimeout(() => {
       if (callState.value !== "ringing") return;
       callState.value = "rejected";
-      rejectReason.value = "無人接聽";
+      rejectReason.value = hangUp ? "對方已掛斷" : "無人接聽";
       setTimeout(() => endCall(), 3000);
-    }, AWAY_UNANSWERED_RING_MS);
+    }, hangUp ? CHAR_BUSY_HANG_UP_RING_MS : AWAY_UNANSWERED_RING_MS);
     return "ring";
   }
 
