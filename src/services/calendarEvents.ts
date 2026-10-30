@@ -36,7 +36,7 @@ async function eventsVisibleTo(scope: CalendarEventScope): Promise<CalendarEvent
 
 /** 寫入一筆行事曆事件；寫不進去會丟錯。id 只有加回收回過的事件時才指定 */
 export async function saveCalendarEvent(
-  data: CalendarEventData,
+  data: CalendarEventData & Pick<CalendarEvent, "visibleCharacterIds">,
   source: CalendarEventScope = {},
   id?: string,
 ): Promise<CalendarEvent> {
@@ -54,6 +54,7 @@ export async function saveCalendarEvent(
     sourceCharacterId: source.characterId,
     sourceChatId: source.chatId,
     personaId,
+    visibleCharacterIds: data.visibleCharacterIds,
     createdAt: now,
     updatedAt: now,
   };

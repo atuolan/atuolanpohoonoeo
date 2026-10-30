@@ -38,6 +38,8 @@ export interface CalendarEvent extends CalendarEventTime {
   sourceChatId?: string;
   /** 屬於哪個 user（Persona ID）；沒有就是所有 user 都算，舊資料照來源聊天綁定的 user 算 */
   personaId?: string;
+  /** 使用者自己記的只給這些角色讀；沒有就是所有角色，空陣列是只有使用者自己看 */
+  visibleCharacterIds?: string[];
   /** 使用者在行事曆 App 改過的時間；改過的不會因為重新生成被收回 */
   editedAt?: number;
   /** 建立時間 */
