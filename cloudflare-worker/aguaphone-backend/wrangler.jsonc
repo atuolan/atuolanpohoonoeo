@@ -1,0 +1,23 @@
+{
+  "name": "aguaphone-backend",
+  "main": "src/index.js",
+  "compatibility_date": "2026-02-24",
+  "durable_objects": {
+    "bindings": [
+      { "name": "ACCOUNT", "class_name": "AccountDO" },
+      { "name": "REGISTRY", "class_name": "RegistryDO" }
+    ]
+  },
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["AccountDO", "RegistryDO"] }
+  ],
+  "vars": {
+    // 第一個帳號註冊後就關閉註冊；要開給朋友用改成 "true"
+    "ALLOW_MORE_ACCOUNTS": "false",
+    // 後台生成完成時發推播用；設成空字串就不發
+    "CLOUD_PUSH_NOTIFY_URL": "https://push.aguacloud.uk/push/notify"
+  },
+  "observability": {
+    "enabled": true
+  }
+}

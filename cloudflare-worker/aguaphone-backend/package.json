@@ -1,0 +1,13 @@
+{
+  "name": "aguaphone-backend",
+  "private": true,
+  "type": "module",
+  "description": "小手機的私人後台（同步＋後台生成），部署在自己的 Cloudflare 免費帳號",
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "dev": "wrangler dev"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}
