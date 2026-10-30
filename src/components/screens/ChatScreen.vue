@@ -170,6 +170,7 @@ import {
   orderRoundTableSpeakers,
   parseHostDecision,
   pickRoundTableMessages,
+  sortByRoundTableOrder,
   type RoundTableSpeaker,
 } from "@/utils/roundTable";
 import { useChatSearch } from "@/composables/useChatSearch";
@@ -3209,6 +3210,7 @@ const detailsRoundTable = computed(() => {
     order: meta.roundTable?.order ?? ("relay" as const),
     hostApiProfileId: meta.roundTable?.hostApiProfileId ?? "",
     discussionStyle: meta.roundTable?.discussionStyle ?? ("chat" as const),
+    speakerOrder: meta.roundTable?.speakerOrder ?? [],
   };
 });
 
@@ -5293,7 +5295,7 @@ function roundTableSenderFields(turn: RoundTableTurn | undefined): Partial<Messa
 function getRoundTableSpeakers(): RoundTableSpeaker[] {
   const meta = groupMetadata.value;
   if (!meta) return [];
-  return meta.members
+  return sortByRoundTableOrder(meta.members, meta.roundTable?.speakerOrder)
     .filter((m) => !m.isMuted)
     .map((m) => ({
       characterId: m.characterId,

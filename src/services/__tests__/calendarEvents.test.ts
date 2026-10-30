@@ -120,6 +120,28 @@ describe("行程綁定角色和 user", () => {
     expect(await titlesFor({ characterId: "a", chatId: "a-q" })).toEqual(["看牙醫"]);
   });
 
+  it("自己記的可以只給指定角色，同一個 user 的其他角色讀不到", async () => {
+    await saveCalendarEvent({ ...data, visibleCharacterIds: ["a"] }, { personaId: "persona-p" });
+
+    expect(await titlesFor({ characterId: "a", chatId: "a-p" })).toEqual(["看牙醫"]);
+    expect(await titlesFor({ characterId: "b", chatId: "b-p" })).toEqual([]);
+  });
+
+  it("自己記的可以只有自己看，哪個角色都讀不到", async () => {
+    await saveCalendarEvent({ ...data, visibleCharacterIds: [] });
+
+    expect(await titlesFor({ characterId: "a", chatId: "a-p" })).toEqual([]);
+    expect(await titlesFor({ characterId: "b", chatId: "b-p" })).toEqual([]);
+  });
+
+  it("讀不到的自記行程，角色記同名的不會被併進去", async () => {
+    await saveCalendarEvent({ ...data, visibleCharacterIds: ["a"] }, { personaId: "persona-p" });
+    const { created } = await saveCalendarEventOnce(data, { characterId: "b", chatId: "b-p" });
+
+    expect(created).toBe(true);
+    expect(await all()).toHaveLength(2);
+  });
+
   it("不同角色記同名行程各自一筆，同角色、同 user 才算重複", async () => {
     const first = await saveCalendarEventOnce(data, { characterId: "a", chatId: "a-p" });
     const other = await saveCalendarEventOnce(data, { characterId: "b", chatId: "b-p" });

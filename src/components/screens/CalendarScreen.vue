@@ -63,6 +63,9 @@ interface EventForm {
   type: "user" | "period";
   /** 屬於哪個 user；空字串是所有 user */
   personaId: string;
+  /** 哪些角色讀得到：所有角色、勾選的角色、只有自己 */
+  charAccess: "all" | "some" | "none";
+  visibleCharacterIds: string[];
 }
 
 const hasManyPersonas = computed(() => userStore.personas.length > 1);
@@ -70,7 +73,18 @@ const hasManyPersonas = computed(() => userStore.personas.length > 1);
 function emptyForm(date = ""): EventForm {
   // 只有一個 user 時不綁，之後多開 user 也讀得到以前記的
   const personaId = hasManyPersonas.value ? (userStore.currentPersonaId ?? "") : "";
-  return { title: "", date, startTime: "", endTime: "", endDate: "", description: "", type: "user", personaId };
+  return {
+    title: "",
+    date,
+    startTime: "",
+    endTime: "",
+    endDate: "",
+    description: "",
+    type: "user",
+    personaId,
+    charAccess: "all",
+    visibleCharacterIds: [],
+  };
 }
 
 const form = ref<EventForm>(emptyForm());
@@ -270,6 +284,8 @@ function openEdit(e: CalendarEvent) {
     description: eventNotes(e),
     type: e.type === "period" ? "period" : "user",
     personaId: e.personaId ?? "",
+    charAccess: !e.visibleCharacterIds ? "all" : e.visibleCharacterIds.length > 0 ? "some" : "none",
+    visibleCharacterIds: e.visibleCharacterIds ?? [],
   };
   saveError.value = "";
   showAddModal.value = true;
@@ -289,9 +305,13 @@ function personaName(id: string | undefined) {
   return userStore.personas.find((p) => p.id === id)?.name;
 }
 
+function characterName(char: { nickname?: string; data: { name: string } }) {
+  return char.nickname || char.data.name;
+}
+
 function charEventAuthor(e: CalendarEvent) {
   const char = charactersStore.characters.find((c) => c.id === e.sourceCharacterId);
-  return char ? char.nickname || char.data.name : undefined;
+  return char ? characterName(char) : undefined;
 }
 
 function charEventHint(e: CalendarEvent) {
@@ -299,16 +319,35 @@ function charEventHint(e: CalendarEvent) {
   return author ? `${author}記的，只有${author}讀得到` : "聊天裡記的，只有那個聊天讀得到";
 }
 
+function selfEventUser(e: CalendarEvent) {
+  if (!hasManyPersonas.value) return "";
+  if (personaName(e.personaId)) return `${personaName(e.personaId)}自己記的`;
+  return e.personaId ? "已刪除的 user" : "所有 user";
+}
+
+function selfEventAccess(e: CalendarEvent) {
+  const ids = e.visibleCharacterIds;
+  if (!ids) return "";
+  if (ids.length === 0) return "只有我看得到";
+  const names = charactersStore.characters.filter((c) => ids.includes(c.id)).map(characterName);
+  return `只給${names.join("、")}`;
+}
+
 /** 這筆是誰的：行事曆 App 看得到全部，要分得出來 */
 function eventOwner(e: CalendarEvent) {
-  const persona = personaName(e.personaId);
   if (isCharEvent(e)) {
     const author = `${charEventAuthor(e) ?? "聊天裡"}記的`;
+    const persona = personaName(e.personaId);
     return hasManyPersonas.value && persona ? `${author}（${persona}）` : author;
   }
-  if (!hasManyPersonas.value) return "";
-  if (persona) return `${persona}自己記的`;
-  return e.personaId ? "已刪除的 user" : "所有 user";
+  return [selfEventUser(e), selfEventAccess(e)].filter(Boolean).join("・");
+}
+
+/** 改成勾選時先全勾，只想瞞一個角色就取消那一個 */
+function onCharAccessChange() {
+  if (form.value.charAccess === "some" && form.value.visibleCharacterIds.length === 0) {
+    form.value.visibleCharacterIds = charactersStore.characters.map((c) => c.id);
+  }
 }
 
 function getEventColor(type: string) {
@@ -340,13 +379,14 @@ async function saveEvent() {
     endDate: f.endDate && f.endDate > f.date ? f.endDate : undefined,
   };
   const personaId = f.personaId || undefined;
+  const visibleCharacterIds = f.charAccess === "all" ? undefined : f.charAccess === "some" ? f.visibleCharacterIds : [];
   try {
     if (editingEvent.value) {
-      const owner = isCharEvent(editingEvent.value) ? {} : { personaId };
+      const owner = isCharEvent(editingEvent.value) ? {} : { personaId, visibleCharacterIds };
       const updated = await updateCalendarEvent({ ...editingEvent.value, ...fields, ...owner }, { byUser: true });
       events.value = events.value.map((e) => (e.id === updated.id ? updated : e)).sort(compareCalendarEvents);
     } else {
-      const created = await saveCalendarEvent(fields, { personaId });
+      const created = await saveCalendarEvent({ ...fields, visibleCharacterIds }, { personaId });
       events.value = [...events.value, created].sort(compareCalendarEvents);
     }
     closeForm();
@@ -623,6 +663,20 @@ onMounted(async () => {
             <p class="form-hint">
               {{ form.personaId ? `只有 ${personaName(form.personaId)} 的角色讀得到` : "每個 user 的角色都讀得到" }}
             </p>
+          </div>
+          <div v-if="!isCharEvent(editingEvent)" class="form-group">
+            <label>哪些角色讀得到</label>
+            <select v-model="form.charAccess" class="form-control" @change="onCharAccessChange">
+              <option value="all">所有角色</option>
+              <option value="some">只有勾選的角色</option>
+              <option value="none">只有我自己</option>
+            </select>
+            <div v-if="form.charAccess === 'some'" class="char-checks">
+              <label v-for="c in charactersStore.characters" :key="c.id" class="char-check">
+                <input v-model="form.visibleCharacterIds" type="checkbox" :value="c.id" />
+                <span>{{ characterName(c) }}</span>
+              </label>
+            </div>
           </div>
           <p v-if="saveError" class="form-error" role="alert">{{ saveError }}</p>
         </div>
@@ -1085,6 +1139,19 @@ textarea.form-control {
     flex: 1;
     min-width: 0;
   }
+}
+.form-group .char-checks {
+  margin-top: 8px;
+  max-height: 160px;
+  overflow-y: auto;
+}
+.form-group .char-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 6px 2px;
+  font-weight: 400;
 }
 .form-hint {
   margin: 6px 0 0;

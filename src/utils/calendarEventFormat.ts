@@ -8,14 +8,19 @@ export function eventLastDate(event: { date: string; endDate?: string }): string
   return event.endDate && event.endDate > event.date ? event.endDate : event.date;
 }
 
-/** 這個角色、這個 user 讀不讀得到：角色記的只有自己（群聊記的沒有角色，看聊天），使用者自己記的同一個 user 都讀得到 */
+/**
+ * 這個角色、這個 user 讀不讀得到：角色記的只有自己（群聊記的沒有角色，看聊天），
+ * 使用者自己記的同一個 user 都讀得到，有指定角色就只有那些角色
+ */
 export function isEventVisibleTo(
-  event: Pick<CalendarEvent, "personaId" | "sourceCharacterId" | "sourceChatId">,
+  event: Pick<CalendarEvent, "personaId" | "sourceCharacterId" | "sourceChatId" | "visibleCharacterIds">,
   scope: CalendarEventScope,
 ): boolean {
   if (event.personaId && scope.personaId && event.personaId !== scope.personaId) return false;
   const { sourceCharacterId, sourceChatId } = event;
-  if (!sourceCharacterId && !sourceChatId) return true;
+  if (!sourceCharacterId && !sourceChatId) {
+    return !event.visibleCharacterIds || (!!scope.characterId && event.visibleCharacterIds.includes(scope.characterId));
+  }
   return (!!sourceCharacterId && sourceCharacterId === scope.characterId) || (!!sourceChatId && sourceChatId === scope.chatId);
 }
 
