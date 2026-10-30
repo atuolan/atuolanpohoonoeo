@@ -1164,10 +1164,14 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
       }
 
       // 「僅提示詞」正則腳本：通話內容、通話前的聊天紀錄、世界書都跟聊天一樣套用
-      const regexContext = await loadPromptRegexContext([char], {
-        characterName: char.data.name,
-        userName: userStore.currentPersona?.name || "User",
-      });
+      const regexContext = await loadPromptRegexContext(
+        [char],
+        {
+          characterName: char.data.name,
+          userName: userStore.currentPersona?.name || "User",
+        },
+        chatRecord?.disabledRegexIds,
+      );
 
       const builder = new PromptBuilder({
         character: char,

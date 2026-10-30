@@ -251,6 +251,7 @@ import { useMcpChatTools } from "@/composables/useMcpChatTools";
 import ToolActivityRow from "@/components/common/ToolActivityRow.vue";
 import PeekNoteNotice from "@/components/common/PeekNoteNotice.vue";
 import { parsePeekNote } from "@/utils/peekLinks";
+import type { RegexScript } from "@/types/character";
 import type { LiveToolActivity } from "@/types/toolActivity";
 import { finalizeLiveActivity, summarizeToolResult, upsertLiveActivity } from "@/utils/toolActivity";
 import type { PendingToolConfirmation } from "@/services/toolCalling/types";
@@ -2075,6 +2076,10 @@ const {
 });
 
 // ===== Regex 腳本套用 composable =====
+// 這個聊天停用的正則（聊天詳情「本聊天的正則」）
+const chatDisabledRegexIds = computed<readonly string[]>(
+  () => currentChatData.value?.disabledRegexIds ?? [],
+);
 const {
   getActiveRegexScripts,
   applyAIOutputRegex,
@@ -2090,6 +2095,7 @@ const {
   messages,
   _affinityConfig,
   _affinityState,
+  disabledRegexIds: chatDisabledRegexIds,
 });
 
 // ===== 媒體發送抽屜 =====
@@ -3154,6 +3160,31 @@ async function handleDetailsToggleLorebook(lorebookId: string) {
   } else {
     groupMetadata.value.lorebookIds = ids.filter((id) => id !== lorebookId);
   }
+  await saveChatImmediate();
+}
+
+// 本聊天的正則：列出全域有開的腳本＋角色卡腳本，讓這個聊天各自停用
+const detailsRegexScripts = computed(() => {
+  const charScripts = currentCharacter.value?.data?.extensions?.regex_scripts ?? [];
+  return [
+    ...regexScriptsStore.allScripts.map((s) => ({
+      id: s.id,
+      name: s.scriptName,
+      source: s.id.startsWith("__builtin_") ? ("builtin" as const) : ("global" as const),
+      disabled: !!s.disabled,
+    })),
+    ...charScripts.map((s: RegexScript) => ({
+      id: s.id,
+      name: s.scriptName,
+      source: "character" as const,
+      disabled: !!s.disabled,
+    })),
+  ].filter((s) => s.id && !s.disabled);
+});
+
+async function handleDetailsUpdateDisabledRegex(ids: string[]) {
+  if (!currentChatData.value) return;
+  currentChatData.value.disabledRegexIds = ids.length ? ids : undefined;
   await saveChatImmediate();
 }
 
@@ -11934,6 +11965,9 @@ useChatCleanup({
           :round-table="detailsRoundTable"
           :api-profile-options="detailsApiProfileOptions"
           @update-round-table="handleDetailsUpdateRoundTable"
+          :regex-scripts="detailsRegexScripts"
+          :disabled-regex-ids="chatDisabledRegexIds"
+          @update-disabled-regex="handleDetailsUpdateDisabledRegex"
           @update-member-api="handleDetailsUpdateMemberApi"
           @add-model-self-member="handleDetailsAddModelSelfMember"
           :removed-members="detailsRemovedMembers"
@@ -12504,6 +12538,7 @@ useChatCleanup({
             :character-regex-scripts="
               currentCharacter?.data?.extensions?.regex_scripts ?? []
             "
+            :disabled-regex-ids="chatDisabledRegexIds"
             :tts-audio-url="message.ttsAudioUrl"
             :tts-segments="message.ttsSegments"
             :audio-blob="message._audioBlob || null"

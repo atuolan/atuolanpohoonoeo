@@ -85,6 +85,9 @@ export function buildChatMetadataFromState(options: BuildChatMetadataOptions): C
     messageCount: options.storableMessages.length,
     isBranch: options.currentChatData?.isBranch,
     pinnedToList: options.currentChatData?.pinnedToList,
+    disabledRegexIds: options.currentChatData?.disabledRegexIds?.length
+      ? [...options.currentChatData.disabledRegexIds]
+      : undefined,
     archivedAt: options.currentChatData?.archivedAt,
     skins: options.currentChatData?.skins
       ? JSON.parse(JSON.stringify(options.currentChatData.skins))

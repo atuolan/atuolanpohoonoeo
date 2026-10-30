@@ -18,10 +18,21 @@ export interface PromptRegexContext {
 
 type PromptRole = "user" | "assistant";
 
-/** 全域腳本（含內置）＋角色卡腳本；全域腳本還沒從資料庫載入就先載入（主動訊息可能在背景跑） */
+/** 拿掉這個聊天停用的腳本（Chat.disabledRegexIds） */
+export function filterChatDisabledScripts(
+  scripts: RegexScript[],
+  disabledIds: readonly string[] | undefined,
+): RegexScript[] {
+  if (!disabledIds?.length) return scripts;
+  const off = new Set(disabledIds);
+  return scripts.filter((s) => !off.has(s.id));
+}
+
+/** 全域腳本（含內置）＋角色卡腳本，扣掉這個聊天停用的；全域腳本還沒從資料庫載入就先載入（主動訊息可能在背景跑） */
 export async function loadPromptRegexContext(
   characters: (StoredCharacter | undefined)[],
   names: { characterName?: string; userName?: string },
+  disabledIds?: readonly string[],
 ): Promise<PromptRegexContext> {
   const { useRegexScriptsStore } = await import("@/stores/regexScripts");
   const store = useRegexScriptsStore();
@@ -29,7 +40,13 @@ export async function loadPromptRegexContext(
   const characterScripts = characters.flatMap(
     (c) => c?.data?.extensions?.regex_scripts ?? [],
   );
-  return { scripts: [...store.allScripts, ...characterScripts], ...names };
+  return {
+    scripts: filterChatDisabledScripts(
+      [...store.allScripts, ...characterScripts],
+      disabledIds,
+    ),
+    ...names,
+  };
 }
 
 function hasPromptOnlyScripts(ctx: PromptRegexContext): boolean {

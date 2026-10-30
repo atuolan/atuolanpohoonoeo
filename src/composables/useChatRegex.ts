@@ -7,6 +7,7 @@ import { getRegexedString, regex_placement } from "@/services/RegexEngine";
 import {
   applyPromptRegexToText,
   applyWorldInfoRegexToLorebooks,
+  filterChatDisabledScripts,
   type PromptRegexContext,
 } from "@/services/promptRegex";
 import { createStTemplateContext } from "@/services/StTemplateContextService";
@@ -26,6 +27,8 @@ export function useChatRegex(context: {
   messages: Ref<any[]>;
   _affinityConfig: Ref<CharacterAffinityConfig | null>;
   _affinityState: Ref<ChatAffinityState | null>;
+  /** 這個聊天停用的腳本 id */
+  disabledRegexIds?: Ref<readonly string[]>;
 }) {
   const regexScriptsStore = useRegexScriptsStore();
   const userStore = useUserStore();
@@ -34,7 +37,10 @@ export function useChatRegex(context: {
     const global = regexScriptsStore.allScripts ?? [];
     const charScripts =
       context.currentCharacter.value?.data?.extensions?.regex_scripts ?? [];
-    return [...global, ...charScripts];
+    return filterChatDisabledScripts(
+      [...global, ...charScripts],
+      context.disabledRegexIds?.value,
+    );
   }
 
   function applyAIOutputRegex(content: string): string {

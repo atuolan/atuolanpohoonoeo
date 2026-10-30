@@ -60,6 +60,7 @@ import {
 } from "@/db/operations";
 import { formatTime } from "@/services/AudioRecorder";
 import { getRegexedString, regex_placement } from "@/services/RegexEngine";
+import { filterChatDisabledScripts } from "@/services/promptRegex";
 import { useSettingsStore, useStickerStore } from "@/stores";
 import { useRegexScriptsStore } from "@/stores/regexScripts";
 import type { CalendarCardData } from "@/types/calendar";
@@ -283,6 +284,8 @@ interface MessageBubbleProps {
   avatar?: string;
   /** 角色卡內嵌的正則腳本（由父組件傳入） */
   characterRegexScripts?: import("@/types/character").RegexScript[];
+  /** 這個聊天停用的正則腳本 id */
+  disabledRegexIds?: readonly string[];
   userAvatar?: string; // 用戶頭像
   senderName?: string;
   timestamp?: number;
@@ -1795,10 +1798,10 @@ const renderedContent = computed(() => {
 
     // ★ 套用 markdownOnly regex 腳本（顯示層轉換，不污染原始訊息）
     const beforeRegex = processedContent;
-    const mergedScripts = [
-      ...regexScriptsStore.allScripts,
-      ...(props.characterRegexScripts ?? []),
-    ];
+    const mergedScripts = filterChatDisabledScripts(
+      [...regexScriptsStore.allScripts, ...(props.characterRegexScripts ?? [])],
+      props.disabledRegexIds,
+    );
 
     // 依訊息來源選擇 placement：使用者訊息走 USER_INPUT，AI/系統走 AI_OUTPUT，
     // 避免 AI_OUTPUT 限定的腳本（例如「刪除不是…而是」）誤吃使用者氣泡。

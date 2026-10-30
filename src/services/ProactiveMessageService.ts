@@ -698,10 +698,14 @@ export class ProactiveMessageService {
         lorebookCharacters,
         groupMetadata.lorebookIds ?? [],
       );
-      const regexContext = await loadPromptRegexContext([leadCharacter], {
-        characterName: leadCharacter.data.name,
-        userName: currentPersona?.name || "User",
-      });
+      const regexContext = await loadPromptRegexContext(
+        [leadCharacter],
+        {
+          characterName: leadCharacter.data.name,
+          userName: currentPersona?.name || "User",
+        },
+        groupChat.disabledRegexIds,
+      );
 
       const chatSettings = {
         maxContextLength: taskConfig.generation.maxContextLength,
@@ -1116,10 +1120,14 @@ export class ProactiveMessageService {
 
       // 獲取角色關聯的世界書（綁定＋全域，跟聊天一樣）
       const characterLorebooks = await collectPromptLorebooks([character]);
-      const regexContext = await loadPromptRegexContext([character], {
-        characterName: character.data.name,
-        userName: currentPersona?.name || "User",
-      });
+      const regexContext = await loadPromptRegexContext(
+        [character],
+        {
+          characterName: character.data.name,
+          userName: currentPersona?.name || "User",
+        },
+        chat.disabledRegexIds,
+      );
 
       // ===== 載入 AI 記憶管理設定（總結設定） =====
       const { createDefaultSummarySettings } = await import("@/types/chat");

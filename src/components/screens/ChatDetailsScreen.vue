@@ -174,6 +174,10 @@ const props = defineProps<{
   linkedGroupNames?: string[];
   /** 被 AI 移出群聊的成員（資料保留，可以拉回） */
   removedMembers?: RemovedMemberInfo[];
+  /** 本聊天的正則：全域有開的腳本＋角色卡腳本 */
+  regexScripts?: Array<{ id: string; name: string; source: "builtin" | "global" | "character" }>;
+  /** 這個聊天停用的正則腳本 id */
+  disabledRegexIds?: readonly string[];
 }>();
 
 const emit = defineEmits<{
@@ -228,6 +232,8 @@ const emit = defineEmits<{
   "forget-removed-member": [characterId: string];
   /** 在聊天裡 @ 這位成員（關掉詳情頁、輸入框補上 @名字） */
   "mention-member": [name: string];
+  /** 本聊天的正則：整份停用清單 */
+  "update-disabled-regex": [ids: string[]];
 }>();
 
 const displayName = computed(() => props.isGroupChat ? props.groupDisplayName : props.displayCharacterName);
@@ -733,6 +739,27 @@ const showLorebooks = ref(false);
 const boundLorebookCount = computed(
   () => lorebooks.value.filter((lb) => isLorebookBound(lb.id)).length,
 );
+
+// === 本聊天的正則 ===
+// 預設收起，只顯示停了幾條；勾掉的只在這個聊天停用，全域開關不受影響
+const showRegex = ref(false);
+const regexScripts = computed(() => props.regexScripts || []);
+function isRegexOn(id: string) {
+  return !props.disabledRegexIds?.includes(id);
+}
+const disabledRegexCount = computed(
+  () => regexScripts.value.filter((s) => !isRegexOn(s.id)).length,
+);
+const REGEX_SOURCE_LABEL = { builtin: "內置", global: "全域", character: "角色卡" } as const;
+function toggleChatRegex(id: string) {
+  const current = (props.disabledRegexIds || []).filter((x) =>
+    regexScripts.value.some((s) => s.id === x),
+  );
+  emit(
+    "update-disabled-regex",
+    isRegexOn(id) ? [...current, id] : current.filter((x) => x !== id),
+  );
+}
 
 // ===== 圓桌模式 =====
 function onRoundTableToggle(event: Event) {
@@ -1394,6 +1421,56 @@ function handleAction(action: string) {
           </template>
         </section>
 
+        <!-- 本聊天的正則 -->
+        <section class="panel">
+          <button
+            class="list-item"
+            :aria-expanded="showRegex"
+            @click="showRegex = !showRegex"
+          >
+            <div class="list-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M17 3v10" />
+                <path d="m12.67 5.5 8.66 5" />
+                <path d="m12.67 10.5 8.66-5" />
+                <path d="M9 17a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v2a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2v-2z" />
+              </svg>
+            </div>
+            <span class="list-label">本聊天的正則</span>
+            <span class="list-status" :class="{ 'list-status--muted': !disabledRegexCount }">
+              {{ disabledRegexCount ? `停用 ${disabledRegexCount} 條` : '全部跟著全域' }}
+            </span>
+            <svg class="chevron chevron--toggle" :class="{ open: showRegex }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="m9 18 6-6-6-6" />
+            </svg>
+          </button>
+          <p class="panel-hint">取消勾選的只在這個聊天停用（顯示、送給 AI 的內容都不套用），其他聊天照舊。</p>
+          <template v-if="showRegex">
+          <div v-if="regexScripts.length === 0" class="empty-hint">
+            目前沒有啟用中的正則
+          </div>
+          <div v-else class="lorebook-list">
+            <button
+              v-for="rs in regexScripts"
+              :key="rs.id"
+              class="lorebook-item"
+              :class="{ active: isRegexOn(rs.id) }"
+              @click="toggleChatRegex(rs.id)"
+            >
+              <span class="lorebook-check">
+                <svg v-if="isRegexOn(rs.id)" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M20 6 9 17l-5-5" />
+                </svg>
+              </span>
+              <span class="lorebook-info">
+                <span class="lorebook-name">{{ rs.name || '（未命名）' }}</span>
+                <span class="lorebook-count">{{ REGEX_SOURCE_LABEL[rs.source] }}</span>
+              </span>
+            </button>
+          </div>
+          </template>
+        </section>
+
         <!-- 圓桌模式（多人卡不支援） -->
         <section v-if="!isMultiCharCard && roundTable" class="panel">
           <h3 class="panel-title">圓桌模式</h3>
@@ -1744,6 +1821,56 @@ function handleAction(action: string) {
 
       <!-- 內容流 -->
       <div class="content-flow">
+        <!-- 本聊天的正則 -->
+        <section class="panel">
+          <button
+            class="list-item"
+            :aria-expanded="showRegex"
+            @click="showRegex = !showRegex"
+          >
+            <div class="list-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M17 3v10" />
+                <path d="m12.67 5.5 8.66 5" />
+                <path d="m12.67 10.5 8.66-5" />
+                <path d="M9 17a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v2a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2v-2z" />
+              </svg>
+            </div>
+            <span class="list-label">本聊天的正則</span>
+            <span class="list-status" :class="{ 'list-status--muted': !disabledRegexCount }">
+              {{ disabledRegexCount ? `停用 ${disabledRegexCount} 條` : '全部跟著全域' }}
+            </span>
+            <svg class="chevron chevron--toggle" :class="{ open: showRegex }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="m9 18 6-6-6-6" />
+            </svg>
+          </button>
+          <p class="panel-hint">取消勾選的只在這個聊天停用（顯示、送給 AI 的內容都不套用），其他聊天照舊。</p>
+          <template v-if="showRegex">
+          <div v-if="regexScripts.length === 0" class="empty-hint">
+            目前沒有啟用中的正則
+          </div>
+          <div v-else class="lorebook-list">
+            <button
+              v-for="rs in regexScripts"
+              :key="rs.id"
+              class="lorebook-item"
+              :class="{ active: isRegexOn(rs.id) }"
+              @click="toggleChatRegex(rs.id)"
+            >
+              <span class="lorebook-check">
+                <svg v-if="isRegexOn(rs.id)" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M20 6 9 17l-5-5" />
+                </svg>
+              </span>
+              <span class="lorebook-info">
+                <span class="lorebook-name">{{ rs.name || '（未命名）' }}</span>
+                <span class="lorebook-count">{{ REGEX_SOURCE_LABEL[rs.source] }}</span>
+              </span>
+            </button>
+          </div>
+          </template>
+        </section>
+
         <!-- 聊天管理 -->
         <section class="panel">
           <h3 class="panel-title">聊天管理</h3>

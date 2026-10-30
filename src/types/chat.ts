@@ -1196,6 +1196,8 @@ export interface Chat {
   doNotDisturb?: boolean;
   /** 面對面模式（此聊天使用面對面敘事風格） */
   faceToFaceMode?: boolean;
+  /** 這個聊天停用的正則腳本 id（全域／內置／角色卡腳本都可停；沒列的跟著全域開關） */
+  disabledRegexIds?: string[];
 
   /** 第三人稱模式（面對面模式下使用第三人稱敘事）— 舊欄位，保留相容；由 charNarrativePerson 推導 */
   thirdPersonMode?: boolean;
