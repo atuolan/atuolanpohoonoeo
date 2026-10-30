@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
 import { proxyImageUrl } from "@/composables/useProxyImage";
-import { formatRoundTableUsage } from "@/utils/roundTable";
+import { formatRoundTableUsage, sortByRoundTableOrder } from "@/utils/roundTable";
 
 interface GroupMemberInfo {
   characterId: string;
@@ -47,6 +47,7 @@ interface RoundTableInfo {
   order: RoundTableOrder;
   hostApiProfileId: string;
   discussionStyle: "chat" | "long";
+  speakerOrder: string[];
 }
 
 /** 被移出群聊的成員 */
@@ -789,6 +790,20 @@ function onRoundTableMaxChange(event: Event) {
 
 function onRoundTableSelect(key: "order" | "hostApiProfileId" | "discussionStyle", event: Event) {
   emit("update-round-table", { [key]: (event.target as HTMLSelectElement).value });
+}
+
+const roundTableMembers = computed(() =>
+  sortByRoundTableOrder(allMembers.value, props.roundTable?.speakerOrder),
+);
+/** 主持人模式由主持人點人，排順序沒有意義 */
+const canReorderSpeakers = computed(() => props.roundTable?.order !== "host");
+
+function moveRoundTableMember(index: number, delta: -1 | 1) {
+  const ids = roundTableMembers.value.map((m) => m.characterId);
+  const target = index + delta;
+  if (target < 0 || target >= ids.length) return;
+  [ids[index], ids[target]] = [ids[target], ids[index]];
+  emit("update-round-table", { speakerOrder: ids });
 }
 
 function onMemberApiChange(characterId: string, event: Event, kind: "main" | "fallback" = "main") {
@@ -1550,14 +1565,15 @@ function handleAction(action: string) {
                 <span>位發言</span>
               </label>
               <p class="subchar-hint-mini">
-                0 = 全部。被 @ 的成員先講，禁言的不講。每位成員各呼叫一次 API{{ roundTable.order === 'host' ? '，主持人每點一次也會呼叫一次' : '' }}。
+                0 = 全部。被 @ 的成員先講（@ 好幾位就照 @ 的先後），禁言的不講。每位成員各呼叫一次 API{{ roundTable.order === 'host' ? '，主持人每點一次也會呼叫一次' : '' }}。{{ canReorderSpeakers ? '下面的箭頭可以調整發言順序。' : '' }}
               </p>
               <div class="memory-link-list">
                 <div
-                  v-for="member in allMembers"
+                  v-for="(member, index) in roundTableMembers"
                   :key="member.characterId"
-                  class="memory-link-row"
+                  class="memory-link-row round-table-member-row"
                 >
+                  <span v-if="canReorderSpeakers" class="round-table-rank">{{ index + 1 }}</span>
                   <span class="memory-link-name">{{ member.nickname || member.name }}</span>
                   <select
                     class="subchar-select memory-link-select"
@@ -1567,6 +1583,22 @@ function handleAction(action: string) {
                     <option value="">跟主 API</option>
                     <option v-for="p in apiProfileOptions || []" :key="p.id" :value="p.id">{{ profileLabel(p) }}</option>
                   </select>
+                  <span v-if="canReorderSpeakers" class="round-table-move">
+                    <button
+                      type="button"
+                      class="round-table-move-btn"
+                      :disabled="index === 0"
+                      :aria-label="`${member.nickname || member.name} 往前排`"
+                      @click="moveRoundTableMember(index, -1)"
+                    >↑</button>
+                    <button
+                      type="button"
+                      class="round-table-move-btn"
+                      :disabled="index === roundTableMembers.length - 1"
+                      :aria-label="`${member.nickname || member.name} 往後排`"
+                      @click="moveRoundTableMember(index, 1)"
+                    >↓</button>
+                  </span>
                 </div>
               </div>
               <div class="memory-link-row">
@@ -3655,6 +3687,38 @@ function handleAction(action: string) {
   cursor: pointer;
 }
 
+.round-table-rank {
+  flex: 0 0 auto;
+  min-width: 12px;
+  font-size: 12px;
+  text-align: center;
+  color: var(--color-text-secondary);
+}
+
+.round-table-move {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 4px;
+}
+
+.round-table-move-btn {
+  width: 30px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-background);
+  color: var(--color-text);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.round-table-move-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
 .memory-link-row {
   display: flex;
   align-items: center;
@@ -3687,6 +3751,15 @@ function handleAction(action: string) {
 .memory-link-select {
   flex: 1 1 auto;
   min-width: 0;
+}
+
+.round-table-member-row {
+  gap: 8px;
+
+  .memory-link-name {
+    flex: 0 0 26%;
+    max-width: 26%;
+  }
 }
 
 .memory-linked-groups {

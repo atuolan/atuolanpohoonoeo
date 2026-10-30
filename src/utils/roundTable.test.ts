@@ -14,6 +14,7 @@ import {
   isRoundTableActive,
   orderRoundTableSpeakers,
   pickRoundTableMessages,
+  sortByRoundTableOrder,
 } from "./roundTable";
 
 const speakers = [{ name: "甲" }, { name: "乙" }, { name: "丙" }];
@@ -33,6 +34,26 @@ describe("isRoundTableActive", () => {
         roundTable: { enabled: true, order: "relay" },
       }),
     ).toBe(false);
+  });
+});
+
+describe("sortByRoundTableOrder", () => {
+  const members = [{ characterId: "a" }, { characterId: "b" }, { characterId: "c" }];
+  const ids = (list: readonly { characterId: string }[]) => list.map((m) => m.characterId);
+
+  it("沒設定就照原本順序", () => {
+    expect(ids(sortByRoundTableOrder(members, undefined))).toEqual(["a", "b", "c"]);
+    expect(ids(sortByRoundTableOrder(members, []))).toEqual(["a", "b", "c"]);
+  });
+  it("照自訂順序排", () => {
+    expect(ids(sortByRoundTableOrder(members, ["c", "a", "b"]))).toEqual(["c", "a", "b"]);
+  });
+  it("後來加入的排在最後，已移出的不算", () => {
+    expect(ids(sortByRoundTableOrder(members, ["gone", "b"]))).toEqual(["b", "a", "c"]);
+  });
+  it("不動到傳進來的陣列", () => {
+    sortByRoundTableOrder(members, ["c", "b", "a"]);
+    expect(ids(members)).toEqual(["a", "b", "c"]);
   });
 });
 

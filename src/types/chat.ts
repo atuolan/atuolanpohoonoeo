@@ -1006,6 +1006,8 @@ export interface RoundTableSettings {
   hostApiProfileId?: string;
   /** chat = 聊天短句（預設）；long = 長篇討論，可以條列、講理由 */
   discussionStyle?: "chat" | "long";
+  /** 自訂發言順序（characterId）；沒排過的成員接在後面 */
+  speakerOrder?: string[];
 }
 
 // ===== 群聊日記條目 =====

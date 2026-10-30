@@ -47,6 +47,19 @@ export function isRoundTableActive(meta: GroupChatMetadata | null | undefined): 
   return !!meta && !meta.isMultiCharCard && meta.roundTable?.enabled === true;
 }
 
+/** 照自訂的發言順序排；沒排過的（後來加入的）照原本順序接在後面 */
+export function sortByRoundTableOrder<T extends { characterId: string }>(
+  members: readonly T[],
+  speakerOrder: readonly string[] | undefined,
+): T[] {
+  if (!speakerOrder?.length) return [...members];
+  const rank = (m: T) => {
+    const at = speakerOrder.indexOf(m.characterId);
+    return at === -1 ? speakerOrder.length : at;
+  };
+  return [...members].sort((a, b) => rank(a) - rank(b));
+}
+
 /**
  * 這一輪誰講、照什麼順序：被 @ 的先講，其餘照成員順序；有上限就截掉（被 @ 的不受限）。
  * mentionOnly：只有被 @ 的講；沒人被 @ 就全部照順序。
