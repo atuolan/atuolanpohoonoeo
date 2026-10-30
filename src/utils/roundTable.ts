@@ -79,8 +79,6 @@ export function buildRoundTableInstruction(
     stance?: string;
     /** 這位成員的身份與工作 */
     assignment?: string;
-    /** 其他成員（只用他們填的身份與工作） */
-    teammates?: readonly { name: string; assignment?: string }[];
     /** 接力：這一輪前面成員說的話（照順序） */
     earlierReplies?: readonly { speaker: string; content: string }[];
   } = {},
@@ -107,10 +105,6 @@ export function buildRoundTableInstruction(
       `${speakerName} 在這場討論的身份與工作：${options.assignment.trim()}`,
       `照這個身份發言，專心做好自己負責的部分。`,
     );
-  }
-  const teamAssignments = formatRoundTableAssignments(options.teammates || []);
-  if (teamAssignments) {
-    lines.push(`其他成員的分工：${teamAssignments}。不要搶別人的工作，該別人接手的就交給他們。`);
   }
   if (options.stance?.trim()) {
     lines.push(
