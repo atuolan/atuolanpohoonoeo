@@ -35,6 +35,8 @@ interface GroupMemberInfo {
   roundTableUsage?: { calls: number; promptTokens: number; completionTokens: number };
   /** 圓桌模式：辯論立場 */
   stance?: string;
+  /** 圓桌模式：身份與工作 */
+  assignment?: string;
 }
 
 type RoundTableOrder = "relay" | "parallel" | "host" | "mention";
@@ -230,6 +232,8 @@ const emit = defineEmits<{
   "round-table-tool": [kind: "summary" | "verdict" | "vote"];
   /** 圓桌模式：改辯論立場 */
   "update-member-stance": [characterId: string, stance: string];
+  /** 圓桌模式：改身份與工作 */
+  "update-member-assignment": [characterId: string, assignment: string];
   /** 記憶互通：修改成員連結 */
   "update-member-memory-link": [characterId: string, link: MemoryLinkInfo];
   /** 把被移出的成員拉回群裡 */
@@ -1109,6 +1113,7 @@ function handleAction(action: string) {
                   </span>
                   <span v-if="member.affinityEnabled" class="badge badge--affinity">好感度</span>
                 </div>
+                <span v-if="roundTable?.enabled && member.assignment" class="member-row-assignment">{{ member.assignment }}</span>
               </div>
               <!-- 用戶本人不能點；其他人右邊一個箭頭，點整列打開成員卡片 -->
               <svg
@@ -1587,7 +1592,7 @@ function handleAction(action: string) {
                 <button type="button" class="round-table-tool-btn" @click="emit('round-table-tool', 'verdict')">請裁判結論</button>
               </div>
               <p class="subchar-hint-mini">
-                整理和裁判用主持人 API；投票是每位成員用自己的 API，選出這一輪最好的回答（不能投自己）。成員面板可以填辯論立場。
+                整理和裁判用主持人 API；投票是每位成員用自己的 API，選出這一輪最好的回答（不能投自己）。成員面板可以填身份與工作、辯論立場。
               </p>
             </template>
           </div>
@@ -2203,6 +2208,18 @@ function handleAction(action: string) {
                   <option value="">不用備用</option>
                   <option v-for="p in apiProfileOptions || []" :key="p.id" :value="p.id">{{ profileLabel(p) }}</option>
                 </select>
+              </label>
+              <label class="member-assignment">
+                <span class="memory-link-name">身份與工作</span>
+                <textarea
+                  :key="sheetMember.characterId"
+                  class="subchar-input member-assignment-input"
+                  rows="3"
+                  maxlength="300"
+                  placeholder="例如：測試員，負責做壓力測試、找出漏洞，不重寫內容"
+                  :value="sheetMember.assignment || ''"
+                  @change="emit('update-member-assignment', sheetMember.characterId, ($event.target as HTMLTextAreaElement).value)"
+                ></textarea>
               </label>
               <label class="memory-link-row">
                 <span class="memory-link-name">辯論立場</span>
@@ -2932,6 +2949,14 @@ function handleAction(action: string) {
   gap: 4px;
 }
 
+.member-row-assignment {
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .badge {
   --badge-c: var(--color-text-secondary);
   padding: 1px 7px;
@@ -3635,6 +3660,19 @@ function handleAction(action: string) {
   display: flex;
   align-items: center;
   gap: 10px;
+}
+
+.member-assignment {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.member-assignment-input {
+  display: block;
+  font-family: inherit;
+  line-height: 1.5;
+  resize: vertical;
 }
 
 .memory-link-name {

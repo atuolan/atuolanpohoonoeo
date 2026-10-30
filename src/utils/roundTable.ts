@@ -29,6 +29,18 @@ export interface RoundTableSpeaker {
   apiProfileId?: string;
   fallbackApiProfileId?: string;
   stance?: string;
+  assignment?: string;
+}
+
+/** 有填身份與工作的成員整理成一行（給提示詞用）；都沒填回空字串 */
+export function formatRoundTableAssignments(
+  speakers: readonly { name: string; assignment?: string }[],
+): string {
+  return speakers
+    .map((s) => ({ name: s.name, assignment: (s.assignment || "").replace(/\s+/g, " ").trim() }))
+    .filter((s) => s.assignment)
+    .map((s) => `${s.name}＝${s.assignment}`)
+    .join("；");
 }
 
 export function isRoundTableActive(meta: GroupChatMetadata | null | undefined): boolean {
@@ -65,6 +77,10 @@ export function buildRoundTableInstruction(
     whisper?: boolean;
     /** 辯論立場 */
     stance?: string;
+    /** 這位成員的身份與工作 */
+    assignment?: string;
+    /** 其他成員（只用他們填的身份與工作） */
+    teammates?: readonly { name: string; assignment?: string }[];
     /** 接力：這一輪前面成員說的話（照順序） */
     earlierReplies?: readonly { speaker: string; content: string }[];
   } = {},
@@ -86,6 +102,16 @@ export function buildRoundTableInstruction(
       ? `這一輪大家各自作答，你看不到其他成員這一輪的回答，請直接講你自己的看法。`
       : `可以回應、補充或反駁前面其他人說的話。`,
   );
+  if (options.assignment?.trim()) {
+    lines.push(
+      `${speakerName} 在這場討論的身份與工作：${options.assignment.trim()}`,
+      `照這個身份發言，專心做好自己負責的部分。`,
+    );
+  }
+  const teamAssignments = formatRoundTableAssignments(options.teammates || []);
+  if (teamAssignments) {
+    lines.push(`其他成員的分工：${teamAssignments}。不要搶別人的工作，該別人接手的就交給他們。`);
+  }
   if (options.stance?.trim()) {
     lines.push(
       `這是一場辯論，${speakerName} 的立場是「${options.stance.trim()}」：堅持這個立場、提出論據，並回應對方的論點。`,
@@ -158,6 +184,7 @@ export function buildHostMessages(
   transcript: string,
   memberNames: readonly string[],
   spokenThisRound: readonly string[],
+  assignments = "",
 ): { role: "system" | "user"; content: string }[] {
   return [
     {
@@ -172,6 +199,7 @@ export function buildHostMessages(
       role: "user",
       content: [
         `成員：${memberNames.join("、")}`,
+        ...(assignments ? [`分工：${assignments}（照討論進度點該接手工作的成員）`] : []),
         `這一輪已經發言：${spokenThisRound.length ? spokenThisRound.join("、") : "（還沒有）"}`,
         "最近對話：",
         transcript || "（沒有）",
@@ -205,10 +233,11 @@ function stripThink(text: string): string {
 
 export function buildSummaryMessages(
   transcript: string,
-  speakers: readonly { name: string; stance?: string }[],
+  speakers: readonly { name: string; stance?: string; assignment?: string }[],
   verdict: boolean,
 ): { role: "system" | "user"; content: string }[] {
   const stances = speakers.filter((s) => s.stance?.trim());
+  const assignments = formatRoundTableAssignments(speakers);
   const system = verdict
     ? [
         "你是這場群組討論的裁判，立場中立。看完討論，判定哪一方（或哪一位）的論證比較有說服力，理由要具體，指出關鍵論點和漏洞。",
@@ -228,6 +257,7 @@ export function buildSummaryMessages(
   const user = [
     `成員：${speakers.map((s) => s.name).join("、")}`,
     ...(stances.length ? [`立場：${stances.map((s) => `${s.name}＝${s.stance!.trim()}`).join("；")}`] : []),
+    ...(assignments ? [`分工：${assignments}`] : []),
     "討論內容：",
     transcript || "（沒有）",
   ];

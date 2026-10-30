@@ -839,6 +839,8 @@ export interface GroupMember {
   isModelSelf?: boolean;
   /** 圓桌模式：辯論立場（有填就照這個立場論證） */
   stance?: string;
+  /** 圓桌模式：這位成員的身份與工作（工作分派，每位成員都看得到） */
+  assignment?: string;
 }
 
 /** 群管理動作：改群名、移出、禁言、解禁、拉回被移出的成員 */

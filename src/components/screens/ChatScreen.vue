@@ -161,6 +161,7 @@ import {
   buildHostTranscript,
   buildRoundTableInstruction,
   buildSummaryMessages,
+  formatRoundTableAssignments,
   buildVoteMessages,
   parseVote,
   tallyVotes,
@@ -723,6 +724,7 @@ const groupMembersForInfo = computed(() => {
     isModelSelf: !!member.isModelSelf,
     roundTableUsage: groupMetadata.value?.roundTableUsage?.[member.characterId],
     stance: member.stance,
+    assignment: member.assignment,
     subCharSource: member.source,
     isPersonaMember: member.isPersonaMember,
     boundPersonaName:
@@ -5299,6 +5301,7 @@ function getRoundTableSpeakers(): RoundTableSpeaker[] {
       apiProfileId: m.apiProfileId,
       fallbackApiProfileId: m.fallbackApiProfileId,
       stance: m.stance,
+      assignment: m.assignment,
     }))
     .filter((s) => !!s.name);
 }
@@ -5350,21 +5353,37 @@ const roundTableRetellSpeaker = computed(() => {
   const msg = messages.value.find((m) => m.id === roundTableRetellTargetId.value);
   const speaker = getRoundTableSpeakers().find((s) => s.characterId === msg?.senderCharacterId);
   if (!speaker) return null;
-  return { name: speaker.name, model: resolveRoundTableTaskConfig(speaker.apiProfileId).api.model };
+  return {
+    characterId: speaker.characterId,
+    name: speaker.name,
+    model: resolveRoundTableTaskConfig(speaker.apiProfileId).api.model,
+    assignment: speaker.assignment,
+  };
 });
+
+/** 重說選單裡改身份與工作：不是 null 就是正在編輯 */
+const roundTableAssignmentDraft = ref<string | null>(null);
 
 let roundTableRetellOpenedAt = 0;
 
 function openRoundTableRetell(messageId: string) {
   if (isGenerating.value || roundTableRunning) return;
   roundTableRetellOpenedAt = Date.now();
+  roundTableAssignmentDraft.value = null;
   roundTableRetellTargetId.value = messageId;
 }
 
-/** 點遮罩關掉；剛打開的那一下（長按放開補發的 click）不算 */
+/** 點遮罩關掉；剛打開的那一下（長按放開補發的 click）不算，打字打到一半也不關 */
 function closeRoundTableRetellFromOverlay() {
-  if (Date.now() - roundTableRetellOpenedAt < 600) return;
+  if (Date.now() - roundTableRetellOpenedAt < 600 || roundTableAssignmentDraft.value !== null) return;
   roundTableRetellTargetId.value = null;
+}
+
+async function saveRoundTableAssignmentDraft() {
+  const speaker = roundTableRetellSpeaker.value;
+  const draft = roundTableAssignmentDraft.value;
+  roundTableAssignmentDraft.value = null;
+  if (speaker && draft !== null) await handleDetailsUpdateMemberAssignment(speaker.characterId, draft);
 }
 
 async function retellRoundTableMessage(profileId: string) {
@@ -5635,6 +5654,13 @@ async function handleDetailsUpdateMemberStance(characterId: string, stance: stri
   await saveChatImmediate();
 }
 
+async function handleDetailsUpdateMemberAssignment(characterId: string, assignment: string) {
+  const member = groupMetadata.value?.members.find((m) => m.characterId === characterId);
+  if (!member) return;
+  member.assignment = assignment.trim() || undefined;
+  await saveChatImmediate();
+}
+
 /** 主持人點下一位；說結束、對不到人或呼叫失敗 → null（這一輪結束） */
 async function askRoundTableHost(
   speakers: readonly RoundTableSpeaker[],
@@ -5643,8 +5669,9 @@ async function askRoundTableHost(
   const config = resolveRoundTableTaskConfig(groupMetadata.value?.roundTable?.hostApiProfileId);
   const transcript = buildHostTranscript(getRoundTableTranscriptItems());
   const names = speakers.map((s) => s.name);
+  const assignments = formatRoundTableAssignments(speakers);
   try {
-    const result = await callRoundTableApi(config, buildHostMessages(transcript, names, spoken), 2000, 0.3);
+    const result = await callRoundTableApi(config, buildHostMessages(transcript, names, spoken, assignments), 2000, 0.3);
     const name = parseHostDecision(result.content, names);
     return speakers.find((s) => s.name === name) ?? null;
   } catch (error) {
@@ -6909,6 +6936,8 @@ async function runAIResponseOnce(
             independent: roundTableTurn.hideSameRound,
             whisper: roundTableTurn.whisper,
             stance: roundTableTurn.speaker.stance,
+            assignment: roundTableTurn.speaker.assignment,
+            teammates: getRoundTableSpeakers().filter((s) => s.characterId !== roundTableTurn.speaker.characterId),
             earlierReplies: roundTableTurn.hideSameRound
               ? []
               : messages.value
@@ -11985,6 +12014,7 @@ useChatCleanup({
           @whisper-member="startWhisperFromDetails"
           @round-table-tool="runRoundTableTool"
           @update-member-stance="handleDetailsUpdateMemberStance"
+          @update-member-assignment="handleDetailsUpdateMemberAssignment"
         />
       </Transition>
     </Teleport>
@@ -12723,11 +12753,42 @@ useChatCleanup({
       <div
         v-if="roundTableRetellTargetId"
         class="rt-retell-overlay"
+        :class="{ 'rt-retell-overlay--top': roundTableAssignmentDraft !== null }"
         @click.self="closeRoundTableRetellFromOverlay"
       >
-        <div class="rt-retell-sheet" role="dialog" aria-label="換個模型重講">
+        <!-- 改身份與工作：貼上方，手機鍵盤彈出來才不會蓋住 -->
+        <div
+          v-if="roundTableAssignmentDraft !== null"
+          class="rt-retell-sheet"
+          role="dialog"
+          aria-label="身份與工作"
+        >
+          <div class="rt-retell-title">{{ roundTableRetellSpeaker?.name || "他" }}的身份與工作</div>
+          <p class="rt-retell-hint">每位成員都看得到，主持人和整理討論也會參考。</p>
+          <textarea
+            v-model="roundTableAssignmentDraft"
+            class="rt-assignment-input"
+            rows="4"
+            maxlength="300"
+            placeholder="例如：測試員，負責做壓力測試、找出漏洞，不重寫內容"
+          ></textarea>
+          <div class="rt-assignment-actions">
+            <button type="button" class="rt-retell-cancel" @click="roundTableAssignmentDraft = null">取消</button>
+            <button type="button" class="rt-assignment-save" @click="saveRoundTableAssignmentDraft">儲存</button>
+          </div>
+        </div>
+        <div v-else class="rt-retell-sheet" role="dialog" aria-label="換個模型重講">
           <div class="rt-retell-title">讓{{ roundTableRetellSpeaker?.name || "他" }}重說</div>
           <p class="rt-retell-hint">同樣的前文再講一次，原本那段留著比較。</p>
+          <button
+            v-if="roundTableRetellSpeaker"
+            type="button"
+            class="rt-retell-item"
+            @click="roundTableAssignmentDraft = roundTableRetellSpeaker?.assignment || ''"
+          >
+            <span class="rt-retell-label">身份與工作</span>
+            <span class="rt-retell-model rt-retell-assignment">{{ roundTableRetellSpeaker.assignment || "未設定" }}</span>
+          </button>
           <button type="button" class="rt-retell-item" @click="retellRoundTableMessage(ROUND_TABLE_RETELL_SAME)">
             用原本的模型重說<span class="rt-retell-model">{{ roundTableRetellSpeaker?.model }}</span>
           </button>
@@ -15550,6 +15611,70 @@ useChatCleanup({
   justify-content: center;
   margin-top: 4px;
   color: var(--color-text-secondary);
+}
+
+.rt-retell-label {
+  flex: none;
+}
+
+.rt-retell-assignment {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rt-retell-overlay--top {
+  align-items: flex-start;
+  padding: calc(48px + var(--safe-area-inset-top, env(safe-area-inset-top))) 12px 0;
+
+  .rt-retell-sheet {
+    padding-bottom: 16px;
+    border-radius: 16px;
+  }
+}
+
+.rt-assignment-input {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  outline: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.5;
+  resize: vertical;
+
+  &:focus {
+    border-color: var(--color-primary);
+  }
+}
+
+.rt-assignment-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+
+  .rt-retell-cancel {
+    flex: 1;
+    margin-top: 0;
+  }
+}
+
+.rt-assignment-save {
+  flex: 1;
+  padding: 12px;
+  border: none;
+  border-radius: 10px;
+  background: var(--color-primary);
+  color: var(--color-on-primary-contrast, #fff);
+  font-size: 15px;
+  cursor: pointer;
 }
 
 .chat-screen {
