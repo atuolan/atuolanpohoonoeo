@@ -1,5 +1,5 @@
 // 一個帳號一個 Durable Object：使用者資料、token、同步資料、裝置狀態、WebSocket 都在這裡。
-// 對外回應的格式照 self-hosted-sync-server/src/server.js，App 不用分辨是哪一種後台。
+// 對外回應的格式跟 HF／Docker 版同步伺服器一樣，App 不用分辨是哪一種後台。
 import { DurableObject } from "cloudflare:workers";
 import {
   API_VERSION,

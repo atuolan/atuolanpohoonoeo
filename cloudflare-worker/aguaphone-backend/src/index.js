@@ -1,7 +1,7 @@
 /**
  * 小手機私人後台 — Cloudflare Worker
  *
- * 跟 self-hosted-sync-server（HF／Docker）是同一套 API，App 只要換網址。
+ * 跟 HF／Docker 版同步伺服器是同一套 API，App 只要換網址。
  * Worker 只負責分流：每個帳號一個 AccountDO，資料、token、WebSocket 都在裡面。
  */
 

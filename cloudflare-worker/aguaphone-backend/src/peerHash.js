@@ -1,4 +1,4 @@
-// 與 client 的 src/services/peerHash.ts、self-hosted-sync-server 的 server.js 保持完全相同的算法
+// 與 App 端、HF／Docker 版同步伺服器的 peer hash 保持完全相同的算法
 const PEER_HASH_FNV_OFFSET = 0xcbf29ce484222325n;
 const PEER_HASH_FNV_PRIME = 0x100000001b3n;
 const PEER_HASH_FNV_MASK = 0xffffffffffffffffn;
