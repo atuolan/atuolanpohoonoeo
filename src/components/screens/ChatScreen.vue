@@ -12769,7 +12769,6 @@ useChatCleanup({
             v-model="roundTableAssignmentDraft"
             class="rt-assignment-input"
             rows="4"
-            maxlength="300"
             placeholder="例如：測試員，負責做壓力測試、找出漏洞，不重寫內容"
           ></textarea>
           <div class="rt-assignment-actions">

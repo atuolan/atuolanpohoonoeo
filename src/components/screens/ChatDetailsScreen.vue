@@ -2215,7 +2215,6 @@ function handleAction(action: string) {
                   :key="sheetMember.characterId"
                   class="subchar-input member-assignment-input"
                   rows="3"
-                  maxlength="300"
                   placeholder="例如：測試員，負責做壓力測試、找出漏洞，不重寫內容"
                   :value="sheetMember.assignment || ''"
                   @change="emit('update-member-assignment', sheetMember.characterId, ($event.target as HTMLTextAreaElement).value)"
