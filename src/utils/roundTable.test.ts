@@ -172,20 +172,15 @@ describe("身份與工作", () => {
     ).toBe("甲＝測試員 做壓力測試");
   });
 
-  it("自己的工作和別人的分工都寫進指令", () => {
-    const text = buildRoundTableInstruction("甲", ["乙", "丙"], "我", {
-      assignment: "測試員",
-      teammates: [{ name: "乙", assignment: "校對" }, { name: "丙" }],
-    });
+  it("自己的工作寫進指令，不帶別人的分工", () => {
+    const text = buildRoundTableInstruction("甲", ["乙", "丙"], "我", { assignment: "測試員" });
     expect(text).toContain("甲 在這場討論的身份與工作：測試員");
-    expect(text).toContain("其他成員的分工：乙＝校對。");
-    expect(text).not.toContain("丙＝");
+    expect(text).not.toContain("分工");
   });
 
   it("沒填就不加", () => {
-    const text = buildRoundTableInstruction("甲", ["乙"], "我", { assignment: " ", teammates: [{ name: "乙" }] });
+    const text = buildRoundTableInstruction("甲", ["乙"], "我", { assignment: " " });
     expect(text).not.toContain("身份與工作");
-    expect(text).not.toContain("分工");
   });
 
   it("主持人和整理都看得到分工", () => {

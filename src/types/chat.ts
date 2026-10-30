@@ -839,7 +839,7 @@ export interface GroupMember {
   isModelSelf?: boolean;
   /** 圓桌模式：辯論立場（有填就照這個立場論證） */
   stance?: string;
-  /** 圓桌模式：這位成員的身份與工作（工作分派，每位成員都看得到） */
+  /** 圓桌模式：這位成員的身份與工作（只進他自己的指令，主持人和整理討論也看得到） */
   assignment?: string;
 }
 

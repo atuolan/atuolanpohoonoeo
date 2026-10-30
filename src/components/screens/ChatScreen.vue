@@ -6937,7 +6937,6 @@ async function runAIResponseOnce(
             whisper: roundTableTurn.whisper,
             stance: roundTableTurn.speaker.stance,
             assignment: roundTableTurn.speaker.assignment,
-            teammates: getRoundTableSpeakers().filter((s) => s.characterId !== roundTableTurn.speaker.characterId),
             earlierReplies: roundTableTurn.hideSameRound
               ? []
               : messages.value
@@ -12764,12 +12763,11 @@ useChatCleanup({
           aria-label="身份與工作"
         >
           <div class="rt-retell-title">{{ roundTableRetellSpeaker?.name || "他" }}的身份與工作</div>
-          <p class="rt-retell-hint">每位成員都看得到，主持人和整理討論也會參考。</p>
+          <p class="rt-retell-hint">只有他自己看得到，主持人和整理討論也會參考。</p>
           <textarea
             v-model="roundTableAssignmentDraft"
             class="rt-assignment-input"
             rows="4"
-            maxlength="300"
             placeholder="例如：測試員，負責做壓力測試、找出漏洞，不重寫內容"
           ></textarea>
           <div class="rt-assignment-actions">
