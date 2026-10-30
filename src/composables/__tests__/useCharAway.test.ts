@@ -225,7 +225,7 @@ describe("useCharAway", () => {
       expect(hint?.action).toBe("locked");
       expect(hint?.lockedText).toBe("4:32 後可以再催");
       expect(api.awayHintKey(first.id)).toBe(
-        `${away.id}|快回來|locked|4:32 後可以再催`,
+        `${away.id}|${hint?.text}|快回來|locked|4:32 後可以再催`,
       );
     });
 

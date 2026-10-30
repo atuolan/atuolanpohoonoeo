@@ -387,9 +387,42 @@ describe("createCharBusy", () => {
     expect(away?.returnAt).toBe(away!.startedAt + 30 * MINUTE);
   });
 
-  it("超過 12 小時就夾到 12 小時", () => {
-    const away = createCharBusy({ ...parsed, end: "04:00" }, BUSY_NOW);
-    expect(away?.returnAt).toBe(away!.startedAt + 12 * 60 * MINUTE);
+  const NIGHT_NOW = new Date(2026, 9, 30, 22, 8).getTime();
+  const nightBusy = (end: string) =>
+    createCharBusy({ end, reason: "補筆錄", backText: "" }, NIGHT_NOW);
+
+  it("end 超過 12 小時的 1～11 點當 12 小時制", () => {
+    expect(nightBusy("10:40")?.returnAt).toBe(new Date(2026, 9, 30, 22, 40).getTime());
+    expect(nightBusy("11:00")?.returnAt).toBe(new Date(2026, 9, 30, 23, 0).getTime());
+  });
+
+  it("end 在 12 小時內就照字面（半夜到早上）", () => {
+    expect(nightBusy("07:00")?.returnAt).toBe(new Date(2026, 9, 31, 7, 0).getTime());
+  });
+
+  it("end 是已經過去的時間就不排，不會消失 12 小時", () => {
+    expect(nightBusy("21:00")).toBeNull();
+    expect(nightBusy("12:30")).toBeNull();
+  });
+
+  it("有 minutes 就照分鐘算，不看 end", () => {
+    const away = createCharBusy({ end: "abc", minutes: 90, reason: "", backText: "" }, BUSY_NOW);
+    expect(away?.startedAt).toBe(BUSY_NOW);
+    expect(away?.returnAt).toBe(BUSY_NOW + 90 * MINUTE);
+  });
+
+  it("minutes 夾在 30 分鐘～12 小時", () => {
+    const short = createCharBusy({ minutes: 5, reason: "", backText: "" }, BUSY_NOW);
+    const long = createCharBusy({ minutes: 2000, reason: "", backText: "" }, BUSY_NOW);
+    expect(short?.returnAt).toBe(BUSY_NOW + 30 * MINUTE);
+    expect(long?.returnAt).toBe(BUSY_NOW + 12 * 60 * MINUTE);
+  });
+
+  it("minutes 配 start 是預約", () => {
+    const away = createCharBusy({ start: "14:00", minutes: 60, reason: "", backText: "" }, BUSY_NOW);
+    const start = new Date(2026, 9, 23, 14, 0).getTime();
+    expect(away?.startedAt).toBe(start);
+    expect(away?.returnAt).toBe(start + 60 * MINUTE);
   });
 
   it("沒寫 start 就現在開始，預設 reason／back", () => {
@@ -692,6 +725,16 @@ describe("buildAwayHintText / awayUrgeLabel / awayHeaderText", () => {
     expect(awayHeaderText(makeAway())).toBe("忙碌中・開會");
     expect(awayHeaderText(makeSleep())).toBe("睡覺中");
     expect(awayHeaderText(makeBusy())).toBe("忙碌中・搭飛機");
+  });
+
+  it("結束時間跨天就寫明天", () => {
+    const nightNow = new Date(2026, 9, 30, 22, 8).getTime();
+    const away = makeBusy({ returnAt: new Date(2026, 9, 31, 10, 8).getTime() });
+    expect(buildAwayHintText("小明", away, 0, nightNow)).toBe(
+      "小明在忙（搭飛機），大約 明天 10:08 忙完",
+    );
+    const sameDay = makeBusy({ returnAt: new Date(2026, 9, 30, 23, 8).getTime() });
+    expect(buildAwayHintText("小明", sameDay, 0, nightNow)).toContain("大約 23:08 忙完");
   });
 });
 

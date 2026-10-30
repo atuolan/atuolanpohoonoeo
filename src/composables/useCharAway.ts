@@ -180,16 +180,21 @@ export function useCharAway(ctx: {
     return { action: "urge" };
   }
 
+  function awayHintTextFor(away: CharAway): string {
+    return buildAwayHintText(
+      ctx.characterName.value,
+      away,
+      ctx.getClockShiftMs?.() ?? 0,
+      Date.now(),
+    );
+  }
+
   function awayHintFor(message: Message): AwayHint | null {
     const away = charAway.value;
     if (!away) return null;
     if (message.id !== firstAwayEntryId.value) return null;
 
-    const text = buildAwayHintText(
-      ctx.characterName.value,
-      away,
-      ctx.getClockShiftMs?.() ?? 0,
-    );
+    const text = awayHintTextFor(away);
     const label = awayUrgeLabel(away);
     const { action, lockedText } = hintAction(away);
     return lockedText ? { text, label, action, lockedText } : { text, label, action };
@@ -201,7 +206,7 @@ export function useCharAway(ctx: {
     if (messageId !== firstAwayEntryId.value) return "";
 
     const { action, lockedText } = hintAction(away);
-    return `${away.id}|${awayUrgeLabel(away)}|${action}|${lockedText ?? ""}`;
+    return `${away.id}|${awayHintTextFor(away)}|${awayUrgeLabel(away)}|${action}|${lockedText ?? ""}`;
   }
 
   // --- 提示詞 ---

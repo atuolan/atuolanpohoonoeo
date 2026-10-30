@@ -122,6 +122,12 @@ describe("parseCharSleepTag", () => {
 });
 
 describe("parseCharBusyTag", () => {
+  it("只寫 minutes 也算", () => {
+    const parsed = parseCharBusyTag('<char-busy minutes="90" reason="補筆錄" back="好了"/>');
+    expect(parsed?.minutes).toBe(90);
+    expect(parsed?.end).toBeUndefined();
+  });
+
   it("解析正常值", () => {
     expect(
       parseCharBusyTag(
@@ -139,6 +145,8 @@ describe("parseCharBusyTag", () => {
   it("沒有 end 就略過那個標籤", () => {
     expect(parseCharBusyTag('<char-busy start="14:00" reason="搭飛機"/>')).toBeNull();
     expect(parseCharBusyTag("<char-busy/>")).toBeNull();
+    expect(parseCharBusyTag('<char-busy minutes="abc" reason="搭飛機"/>')).toBeNull();
+    expect(parseCharBusyTag('<char-busy minutes="0" reason="搭飛機"/>')).toBeNull();
   });
 
   it("reason / back 截斷、空的用預設", () => {

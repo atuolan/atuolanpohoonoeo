@@ -39,10 +39,11 @@ export const CHAR_BUSY_BACK_DEFAULT = "我忙完了";
 /** 由標籤開始時，回來時間至少留這麼久 */
 const CHAR_AWAY_PLAN_MIN_LEAD_MS = 60_000;
 
-/** 解析後的 <char-busy>（時間原樣是 "HH:mm"，不在這裡換算） */
+/** 解析後的 <char-busy>（時間原樣是 "HH:mm"，不在這裡換算）；minutes 和 end 至少一個，有 minutes 就不看 end */
 export interface ParsedCharBusy {
   start?: string;
-  end: string;
+  end?: string;
+  minutes?: number;
   reason: string;
   backText: string;
 }
@@ -238,14 +239,25 @@ export function createCharSleep(
   };
 }
 
-/** 建立一次忙碌（startedAt > now 代表是預約）；end 格式錯回 null */
+/**
+ * end 換成時間戳：超過 12 小時時，1～11 點當成寫了 12 小時制（晚上的 10:30），
+ * 其他當作時間寫錯回 null（例如寫了已經過去的時間），不要讓他消失 12 小時。
+ */
+function busyEndAt(end: string, startedAt: number): number | null {
+  const clock = parseClock(end);
+  const endAt = nextClockAfter(end, startedAt);
+  if (!clock || endAt === null) return null;
+  if (endAt - startedAt <= CHAR_BUSY_MAX_MS) return endAt;
+  return clock.h >= 1 && clock.h <= 11 ? endAt - 12 * 3_600_000 : null;
+}
+
+/** 建立一次忙碌（startedAt > now 代表是預約）；時間不合理回 null */
 export function createCharBusy(
   parsed: ParsedCharBusy,
   now: number,
   startMessageId?: string,
   shiftMs = 0,
 ): CharAway | null {
-  if (!parseClock(parsed.end)) return null;
   const storyNow = now + shiftMs;
 
   let startedAt = storyNow;
@@ -267,7 +279,10 @@ export function createCharBusy(
     }
   }
 
-  const endAt = nextClockAfter(parsed.end, startedAt);
+  const endAt =
+    parsed.minutes !== undefined
+      ? startedAt + parsed.minutes * 60_000
+      : busyEndAt(parsed.end ?? "", startedAt);
   if (endAt === null) return null;
   const returnAt = Math.min(
     startedAt + CHAR_BUSY_MAX_MS,
@@ -489,7 +504,8 @@ export function buildCharBusyGuide(
 ): string {
   if (!available) return "";
   const lines = [
-    `- 忙一段時間：<char-busy start="開始時間 HH:mm" end="結束時間 HH:mm" reason="在忙什麼" back="忙完的第一句話"/>（劇情裡要去做一件會忙上好一陣子、不方便看手機的事時用，例如搭飛機、搭火車、考試、值班；30 分鐘～12 小時，24 小時內開始的才排。現在就開始不用寫 start；reason 8 字內；back 30 字內，忙完時系統替你送出。不到一小時的小事用暫時離開）`,
+    `- 忙一段時間：<char-busy minutes="預計忙幾分鐘" reason="在忙什麼" back="忙完的第一句話"/>（劇情裡要去做一件會忙上好一陣子、不方便看手機的事時用，例如搭飛機、搭火車、考試、值班；minutes 30～720，照這件事實際要花的時間估。reason 8 字內；back 30 字內，忙完時系統替你送出。不到一小時的小事用暫時離開）`,
+    `  之後才開始的行程改寫開始和結束時間，不寫 minutes：<char-busy start="開始時間 HH:mm" end="結束時間 HH:mm" reason="在忙什麼" back="忙完的第一句話"/>（用 24 小時制，晚上十點半寫 22:30；24 小時內開始的才排）`,
   ];
   if (isCharAwayPlanPending(plan) && plan) {
     lines.push(
@@ -654,15 +670,19 @@ export function buildAwayHintText(
   charName: string,
   away: CharAway,
   shiftMs = 0,
+  now?: number,
 ): string {
   const kind = awayKind(away);
+  const returnAt = away.returnAt + shiftMs;
+  const day = now === undefined ? "" : planDayPrefix(returnAt, now + shiftMs);
+  const clock = `${day}${formatClock(returnAt)}`;
   if (kind === "sleep") {
-    return `${charName}睡著了，大約 ${formatClock(away.returnAt + shiftMs)} 起床`;
+    return `${charName}睡著了，大約 ${clock} 起床`;
   }
   if (kind === "busy") {
-    return `${charName}在忙（${away.reason}），大約 ${formatClock(away.returnAt + shiftMs)} 忙完`;
+    return `${charName}在忙（${away.reason}），大約 ${clock} 忙完`;
   }
-  return `${charName}去忙了（${away.reason}），大約 ${formatClock(away.returnAt + shiftMs)} 回來`;
+  return `${charName}去忙了（${away.reason}），大約 ${clock} 回來`;
 }
 
 /** 「催他」小遊戲的按鈕文字 */
