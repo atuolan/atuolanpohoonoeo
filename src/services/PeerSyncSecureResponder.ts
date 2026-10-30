@@ -17,7 +17,7 @@ import {
 } from "@/services/peerSyncSocket";
 import { getSelfHostedSyncService } from "@/services/SelfHostedSyncService";
 import { computeBucketHashes } from "@/services/peerHash";
-import { requestPeerApplyApproval } from "@/composables/usePeerApplyGate";
+import { reportPeerApplyProgress, requestPeerApplyApproval } from "@/composables/usePeerApplyGate";
 import { useSelfHostedSyncStore } from "@/stores/selfHostedSync";
 import { useNotificationStore } from "@/stores";
 import { getPeerSyncCrypto } from "@/services/PeerSyncCrypto";
@@ -487,6 +487,7 @@ async function handleApplyRequest(
       forceOverwrite: true,
     });
     notifyPeerBatchResult(sourceDeviceId, "applied", applied);
+    reportPeerApplyProgress(sourceDeviceId, envelopes.length);
     if (msg.sessionId) {
       const encryptedPayload = await peerCrypto.encrypt(sourceDeviceId, msg.sessionId, {
         applied,
@@ -514,6 +515,7 @@ async function handleApplyRequest(
   } catch (error) {
     warn("處理 apply-request 失敗", error);
     notifyPeerStatus("裝置同步失敗", `${resolveSourceDisplayName(sourceDeviceId)} 的資料套用失敗`);
+    reportPeerApplyProgress(sourceDeviceId, envelopes.length);
     sendPeerFailure(
       sourceDeviceId,
       msg.requestId,

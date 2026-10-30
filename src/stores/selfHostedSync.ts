@@ -696,6 +696,27 @@ export const useSelfHostedSyncStore = defineStore("selfHostedSync", () => {
     rejectedByUser?: boolean;
   };
 
+  /** 傳到／拉取另一台裝置的進度：放在 store 裡，離開設定頁也看得到，也擋住重複開始 */
+  type PeerTransferProgress = {
+    direction: "push" | "pull";
+    targetDeviceId: string;
+    /** comparing 比對差異／waiting 等對方按接受／transferring 傳輸中／applying 寫入本機／reconnecting 斷線重連 */
+    stage: "comparing" | "waiting" | "transferring" | "applying" | "reconnecting";
+    done: number;
+    total: number;
+  };
+  const peerTransfer = ref<PeerTransferProgress | null>(null);
+
+  function setPeerTransferStage(stage: PeerTransferProgress["stage"], done?: number, total?: number): void {
+    if (!peerTransfer.value) return;
+    peerTransfer.value = {
+      ...peerTransfer.value,
+      stage,
+      done: done ?? peerTransfer.value.done,
+      total: total ?? peerTransfer.value.total,
+    };
+  }
+
   function isSocketDisconnectError(error: unknown): boolean {
     return (
       error instanceof Error &&
@@ -730,13 +751,51 @@ export const useSelfHostedSyncStore = defineStore("selfHostedSync", () => {
     if (targetDeviceId === deviceId.value) {
       throw new Error("不能同步到本機裝置，請選擇另一台在線裝置。");
     }
+    if (peerTransfer.value) {
+      throw new Error("已經有一個傳輸在進行中，請等它完成。");
+    }
     const manager = getPeerSyncManager();
+    peerTransfer.value = { direction, targetDeviceId, stage: "comparing", done: 0, total: 0 };
 
+    try {
+      return await peerSyncInner(direction, targetDeviceId, manager);
+    } catch (error) {
+      // WebSocket 斷線時自動重試一次：等重連後重新執行整個 peerSync
+      if (isSocketDisconnectError(error)) {
+        console.warn(LOG_TAG, "WebSocket 斷線，等待重連後重試", error);
+        syncError.value = "連線中斷，正在重連…";
+        setPeerTransferStage("reconnecting");
+        try {
+          await waitForPeerSocketReconnect();
+          console.log(LOG_TAG, "重連成功，開始重試");
+          syncError.value = null;
+          // 只重試一次（第二次斷線就不再重試）
+          setPeerTransferStage("comparing", 0, 0);
+          return await peerSyncInner(direction, targetDeviceId, manager);
+        } catch (retryError) {
+          console.warn(LOG_TAG, "重試失敗", retryError);
+          await markSyncFailed(retryError);
+          throw retryError;
+        }
+      }
+      await markSyncFailed(error);
+      throw error;
+    } finally {
+      peerTransfer.value = null;
+    }
+  }
+
+  /** 一次完整的 peer 同步（開 session → 比對 → 傳輸），重試時整個再跑一次 */
+  async function peerSyncInner(
+    direction: "push" | "pull",
+    targetDeviceId: string,
+    manager: PeerSyncManager,
+  ): Promise<PeerSyncOutcome> {
+    const LOG_TAG = "[peerSync]";
     syncStatus.value = "syncing";
     syncError.value = null;
-    let sessionId: string | null = null;
+    const sessionId = await manager.openSession(targetDeviceId);
     try {
-      sessionId = await manager.openSession(targetDeviceId);
       // ===== Step A：先交換 bucket-level hash，判斷哪些 entityType 需要完整 manifest =====
       console.log(LOG_TAG, "1/4 並行交換 bucket hash");
       const [localHashInfo, remoteHashInfo] = await Promise.all([
@@ -830,7 +889,10 @@ export const useSelfHostedSyncStore = defineStore("selfHostedSync", () => {
           console.log(LOG_TAG, "4/4 推送 envelope", {
             count: envelopes.length,
           });
-          const resp = await manager.requestApply(targetDeviceId, envelopes, sessionId);
+          setPeerTransferStage("waiting", 0, envelopes.length);
+          const resp = await manager.requestApply(targetDeviceId, envelopes, sessionId, (done, total) =>
+            setPeerTransferStage("transferring", done, total),
+          );
           applied = resp.applied ?? 0;
           const rejectedByUser = resp.rejected?.some((r) => r.reason === "rejected-by-user") ?? false;
           console.log(LOG_TAG, "推送完成", { applied, rejected: resp.rejected });
@@ -856,10 +918,14 @@ export const useSelfHostedSyncStore = defineStore("selfHostedSync", () => {
             entityId: e.entityId,
           }));
           console.log(LOG_TAG, "4/4 發送 fetch-request", { refs: refs.length });
-          const envelopes = await manager.requestFetch(targetDeviceId, refs, sessionId);
+          setPeerTransferStage("waiting", 0, refs.length);
+          const envelopes = await manager.requestFetch(targetDeviceId, refs, sessionId, (done, total) =>
+            setPeerTransferStage("transferring", done, total),
+          );
           console.log(LOG_TAG, "fetch 完成，準備寫入本機", {
             envelopeCount: envelopes.length,
           });
+          setPeerTransferStage("applying", envelopes.length, envelopes.length);
           applied = await manager.applyEnvelopesLocally(envelopes);
           console.log(LOG_TAG, "本機寫入完成", { applied });
         } else {
@@ -877,95 +943,6 @@ export const useSelfHostedSyncStore = defineStore("selfHostedSync", () => {
         conflictCount: 0,
         conflictsAborted: false,
       };
-    } catch (error) {
-      // WebSocket 斷線時自動重試一次：等重連後重新執行整個 peerSync
-      if (isSocketDisconnectError(error)) {
-        console.warn(LOG_TAG, "WebSocket 斷線，等待重連後重試", error);
-        syncError.value = "連線中斷，正在重連…";
-        try {
-          await waitForPeerSocketReconnect();
-          console.log(LOG_TAG, "重連成功，開始重試");
-          syncError.value = null;
-          // 遞迴呼叫自己，但只重試一次（第二次斷線就不再重試）
-          const retryResult = await peerSyncInner(direction, targetDeviceId, manager);
-          return retryResult;
-        } catch (retryError) {
-          console.warn(LOG_TAG, "重試失敗", retryError);
-          await markSyncFailed(retryError);
-          throw retryError;
-        }
-      }
-      await markSyncFailed(error);
-      throw error;
-    } finally {
-      if (sessionId) {
-        manager.closeSession(targetDeviceId, sessionId);
-      }
-    }
-  }
-
-  /** peerSync 內部邏輯，抽出來供 retry 使用（不重複 loadSettings / getManager） */
-  async function peerSyncInner(
-    direction: "push" | "pull",
-    targetDeviceId: string,
-    manager: PeerSyncManager,
-  ): Promise<PeerSyncOutcome> {
-    const LOG_TAG = "[peerSync]";
-    syncStatus.value = "syncing";
-    syncError.value = null;
-    const sessionId = await manager.openSession(targetDeviceId);
-
-    try {
-      console.log(LOG_TAG, "1/4 並行交換 bucket hash（重試）");
-      const [localHashInfo, remoteHashInfo] = await Promise.all([
-        manager.collectLocalBucketHashes(),
-        manager.requestRemoteBucketHashes(targetDeviceId, sessionId),
-      ]);
-
-      if (localHashInfo.rootHash === remoteHashInfo.rootHash) {
-        console.log(LOG_TAG, "rootHash 完全一致，兩端已同步，跳過");
-        await markSyncSucceeded(Date.now());
-        return { direction, targetDeviceId, applied: 0, conflictCount: 0, conflictsAborted: false };
-      }
-
-      const { differingTypes } = manager.diffBucketHashes(localHashInfo.buckets, remoteHashInfo.buckets);
-      const differingSet = new Set(differingTypes);
-      const localManifest = localHashInfo.entries.filter((e) => differingSet.has(e.entityType));
-      const remoteManifest = await manager.requestRemoteManifest(targetDeviceId, differingTypes, sessionId);
-      const diff = manager.computeDiff(localManifest, remoteManifest);
-
-      if (diff.conflicts.length > 0) {
-        syncStatus.value = "idle";
-        return { direction, targetDeviceId, applied: 0, conflictCount: diff.conflicts.length, conflictsAborted: true };
-      }
-
-      let applied = 0;
-      if (direction === "push") {
-        if (diff.onlyLocal.length > 0) {
-          const wantRefs = diff.onlyLocal.map((e) => ({ entityType: e.entityType, entityId: e.entityId }));
-          const allLocal = await getSelfHostedSyncService().collectAllEnvelopesForManifest();
-          const byKey = new Map(allLocal.map((env) => [`${env.entityType}::${env.entityId}`, env]));
-          const envelopes = wantRefs
-            .map((r) => byKey.get(`${r.entityType}::${r.entityId}`))
-            .filter((e): e is NonNullable<typeof e> => e !== undefined);
-          const resp = await manager.requestApply(targetDeviceId, envelopes, sessionId);
-          applied = resp.applied ?? 0;
-          const rejectedByUser = resp.rejected?.some((r) => r.reason === "rejected-by-user") ?? false;
-          if (rejectedByUser) {
-            await markSyncSucceeded(Date.now());
-            return { direction, targetDeviceId, applied: 0, conflictCount: 0, conflictsAborted: false, rejectedByUser: true };
-          }
-        }
-      } else {
-        if (diff.onlyRemote.length > 0) {
-          const refs = diff.onlyRemote.map((e) => ({ entityType: e.entityType, entityId: e.entityId }));
-          const envelopes = await manager.requestFetch(targetDeviceId, refs, sessionId);
-          applied = await manager.applyEnvelopesLocally(envelopes);
-        }
-      }
-
-      await markSyncSucceeded(Date.now());
-      return { direction, targetDeviceId, applied, conflictCount: 0, conflictsAborted: false };
     } finally {
       manager.closeSession(targetDeviceId, sessionId);
     }
@@ -1057,6 +1034,7 @@ export const useSelfHostedSyncStore = defineStore("selfHostedSync", () => {
     markPushCompleted,
     resetPushCutoff,
     peerSync,
+    peerTransfer,
     loadSettings,
     saveSettings,
     ensureDeviceId,

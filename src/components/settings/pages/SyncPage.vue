@@ -8,6 +8,7 @@ import { isDebugOverlayActive } from "@/utils/debugOverlay";
 import { ArrowLeft, ArrowRight, Pencil, RefreshCw } from "lucide-vue-next";
 import { computed, onActivated, ref } from "vue";
 import { useSyncAccount } from "../composables/useSyncAccount";
+import { usePeerTransferStatus } from "@/composables/usePeerTransferStatus";
 import { formatDateTime } from "../settingsHelpers";
 import SettingsGroup from "../ui/SettingsGroup.vue";
 import SettingsRow from "../ui/SettingsRow.vue";
@@ -161,6 +162,10 @@ async function submitRename() {
 }
 
 // ===== 直連傳輸 =====
+const { sending: peerSending } = usePeerTransferStatus();
+// 傳輸狀態放在 store：離開設定頁再回來，按鈕照樣鎖住，不會重複開始
+const peerBusy = computed(() => busy.value || !!syncStore.peerTransfer);
+
 async function peerSync(direction: "push" | "pull", targetDeviceId: string) {
   actionStatus.value = "running";
   try {
@@ -378,11 +383,22 @@ async function peerSync(direction: "push" | "pull", targetDeviceId: string) {
               </button>
             </div>
           </div>
+          <div v-if="peerSending && peerSending.peerDeviceId === device.deviceId" class="sync-progress" role="status">
+            <div class="sync-progress__track">
+              <div
+                v-if="peerSending.percent !== null"
+                class="sync-progress__fill"
+                :style="{ width: peerSending.percent + '%' }"
+              />
+              <div v-else class="sync-progress__fill sync-progress__fill--indeterminate" />
+            </div>
+            <span class="sync-progress__text">{{ peerSending.text }}</span>
+          </div>
           <div v-if="device.canPeerSync" class="st-btn-grid sync-actions">
-            <button type="button" class="st-btn st-btn--soft st-btn--sm" :disabled="busy" @click="peerSync('push', device.deviceId)">
+            <button type="button" class="st-btn st-btn--soft st-btn--sm" :disabled="peerBusy" @click="peerSync('push', device.deviceId)">
               <ArrowRight aria-hidden="true" />傳到這台
             </button>
-            <button type="button" class="st-btn st-btn--sm" :disabled="busy" @click="peerSync('pull', device.deviceId)">
+            <button type="button" class="st-btn st-btn--sm" :disabled="peerBusy" @click="peerSync('pull', device.deviceId)">
               <ArrowLeft aria-hidden="true" />從這台下載
             </button>
           </div>
@@ -468,6 +484,7 @@ async function peerSync(direction: "push" | "pull", targetDeviceId: string) {
 
 .sync-rename,
 .sync-actions,
+.sync-progress,
 .sync-offline {
   margin-left: 18px;
   margin-right: 8px;
@@ -477,6 +494,57 @@ async function peerSync(direction: "push" | "pull", targetDeviceId: string) {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+.sync-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 8px;
+
+  &__track {
+    position: relative;
+    height: 6px;
+    overflow: hidden;
+    border-radius: 3px;
+    background: var(--st-line, rgba(127, 127, 127, 0.2));
+  }
+
+  &__fill {
+    height: 100%;
+    border-radius: 3px;
+    background: var(--st-accent-strong);
+    transition: width 0.3s ease;
+
+    &--indeterminate {
+      position: absolute;
+      width: 30%;
+      animation: sync-progress-slide 1.2s ease-in-out infinite;
+    }
+  }
+
+  &__text {
+    font-size: 13px;
+    color: var(--st-sub);
+  }
+}
+
+@keyframes sync-progress-slide {
+  from {
+    left: -30%;
+  }
+  to {
+    left: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sync-progress__fill--indeterminate {
+    left: 0;
+    width: 100%;
+    opacity: 0.5;
+    animation: none;
+  }
 }
 
 .sync-info span {

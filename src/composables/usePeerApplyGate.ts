@@ -39,6 +39,57 @@ let _resolve: GateResolve | null = null;
 /** 目前視窗等的那個決定：同一次傳輸的後續批次共用 */
 let _decision: Promise<boolean> | null = null;
 
+/** 接受之後的套用進度（只追「推送給本機」），確認視窗顯示「套用中 x／y」 */
+export interface PeerReceiveProgress {
+  sourceDeviceId: string;
+  sourceDisplayName: string;
+  done: number;
+  total: number;
+  /** 使用者點旁邊收起確認視窗；進度仍在最上方的進度條顯示 */
+  dialogHidden: boolean;
+}
+const _receiveProgress = ref<PeerReceiveProgress | null>(null);
+let _receiveProgressTimer: ReturnType<typeof setTimeout> | null = null;
+/** 套完後留一下讓人看到「完成」；太久沒更新（對方斷線）就自己收掉 */
+const RECEIVE_DONE_LINGER_MS = 1500;
+const RECEIVE_STALL_MS = 45_000;
+
+function scheduleReceiveProgressClear(ms: number): void {
+  if (_receiveProgressTimer) clearTimeout(_receiveProgressTimer);
+  _receiveProgressTimer = setTimeout(() => {
+    _receiveProgressTimer = null;
+    _receiveProgress.value = null;
+  }, ms);
+}
+
+function startReceiveProgress(request: PeerApplyRequest): void {
+  if (request.operation !== "push") return;
+  _receiveProgress.value = {
+    sourceDeviceId: request.sourceDeviceId,
+    sourceDisplayName: request.sourceDisplayName,
+    done: 0,
+    total: request.totalEnvelopes,
+    dialogHidden: false,
+  };
+  scheduleReceiveProgressClear(RECEIVE_STALL_MS);
+}
+
+/** 由 Responder 呼叫：一批套用完（或失敗）就回報筆數 */
+export function reportPeerApplyProgress(sourceDeviceId: string, count: number): void {
+  const current = _receiveProgress.value;
+  if (!current || current.sourceDeviceId !== sourceDeviceId) return;
+  const done = Math.min(current.total, current.done + count);
+  _receiveProgress.value = { ...current, done };
+  scheduleReceiveProgressClear(done >= current.total ? RECEIVE_DONE_LINGER_MS : RECEIVE_STALL_MS);
+}
+
+/** 使用者點遮罩可以先收起視窗（套用在背景繼續，進度條照樣顯示） */
+export function hidePeerReceiveDialog(): void {
+  if (_receiveProgress.value) _receiveProgress.value = { ..._receiveProgress.value, dialogHidden: true };
+}
+
+export const peerReceiveProgress = readonly(_receiveProgress);
+
 /** 已通過確認的 sender session：deviceId -> expiresAt（ms） */
 const _trustedSenders = new Map<string, number>();
 const TRUST_SESSION_MS = 10 * 60 * 1000; // 10 分鐘
@@ -93,6 +144,12 @@ export async function requestPeerApplyApproval(
       operation,
       trustedForMs: trustedUntil - Date.now(),
     });
+    // 接受之後才到的批次也算進進度總數
+    const progress = _receiveProgress.value;
+    if (operation === "push" && progress && progress.sourceDeviceId === sourceDeviceId) {
+      _receiveProgress.value = { ...progress, total: progress.total + request.totalEnvelopes };
+      scheduleReceiveProgressClear(RECEIVE_STALL_MS);
+    }
     return true;
   }
   _trustedSenders.delete(key);
@@ -156,6 +213,7 @@ export function approvePeerApply(): void {
   const r = _resolve;
   _resolve = null;
   _decision = null;
+  startReceiveProgress(_pending.value);
   _pending.value = null;
   _trustedSenders.set(key, Date.now() + TRUST_SESSION_MS);
   _rejectedSenders.delete(key);
