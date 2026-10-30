@@ -369,10 +369,7 @@ const server = http.createServer(async (req, res) => {
       const limitRaw = url.searchParams.get("limit");
       const limit = limitRaw ? Math.min(Math.max(1, Number(limitRaw)), 1000) : 300;
 
-      const rows = entityStore.pull(auth.userId, since, limit + 1);
-      const hasMore = rows.length > limit;
-      const items = rows.slice(0, limit);
-      const nextSince = hasMore ? items[items.length - 1].updatedAt : null;
+      const { items, hasMore, nextSince } = entityStore.pull(auth.userId, since, limit);
 
       return sendJson(res, 200, {
         serverTime: Date.now(),

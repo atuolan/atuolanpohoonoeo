@@ -18,7 +18,7 @@ export function openEntityStore(dbPath) {
       entity_type TEXT    NOT NULL,
       entity_id   TEXT    NOT NULL,
       updated_at  INTEGER NOT NULL,
-      deleted     INTEGER NOT NULL DEFAULT 0,
+      deleted_at  INTEGER,
       data        TEXT    NOT NULL,
       PRIMARY KEY (user_id, entity_type, entity_id)
     ) WITHOUT ROWID;
@@ -28,29 +28,33 @@ export function openEntityStore(dbPath) {
 
   // 以後寫的為準：updatedAt 比較新（或一樣）才覆蓋
   const upsertStmt = db.prepare(`
-    INSERT INTO entities (user_id, entity_type, entity_id, updated_at, deleted, data)
+    INSERT INTO entities (user_id, entity_type, entity_id, updated_at, deleted_at, data)
     VALUES (?, ?, ?, ?, ?, ?)
     ON CONFLICT (user_id, entity_type, entity_id) DO UPDATE SET
       updated_at = excluded.updated_at,
-      deleted = excluded.deleted,
+      deleted_at = excluded.deleted_at,
       data = excluded.data
     WHERE excluded.updated_at >= entities.updated_at
   `);
-  const pullSinceStmt = db.prepare(
-    "SELECT data FROM entities WHERE user_id = ? AND updated_at > ? ORDER BY updated_at LIMIT ?",
+  const pullBoundaryStmt = db.prepare(
+    "SELECT updated_at FROM entities WHERE user_id = ? AND updated_at > ? ORDER BY updated_at LIMIT 1 OFFSET ?",
   );
-  const pullAllStmt = db.prepare(
-    "SELECT data FROM entities WHERE user_id = ? ORDER BY updated_at LIMIT ?",
+  const pullRangeStmt = db.prepare(
+    "SELECT data FROM entities WHERE user_id = ? AND updated_at > ? AND updated_at <= ? ORDER BY updated_at",
   );
+  const pullRestStmt = db.prepare(
+    "SELECT data FROM entities WHERE user_id = ? AND updated_at > ? ORDER BY updated_at",
+  );
+  const hasNewerStmt = db.prepare("SELECT 1 AS x FROM entities WHERE user_id = ? AND updated_at > ? LIMIT 1");
   const refsStmt = db.prepare(
-    "SELECT entity_type, entity_id, updated_at, data FROM entities WHERE user_id = ?",
+    "SELECT entity_type, entity_id, updated_at, deleted_at FROM entities WHERE user_id = ?",
   );
   const getStmt = db.prepare(
     "SELECT data FROM entities WHERE user_id = ? AND entity_type = ? AND entity_id = ?",
   );
   const deleteUserStmt = db.prepare("DELETE FROM entities WHERE user_id = ?");
   const countsByTypeStmt = db.prepare(
-    "SELECT entity_type, deleted, COUNT(*) AS n FROM entities WHERE user_id = ? GROUP BY entity_type, deleted",
+    "SELECT entity_type, deleted_at IS NOT NULL AS deleted, COUNT(*) AS n FROM entities WHERE user_id = ? GROUP BY entity_type, deleted",
   );
   const countsByUserStmt = db.prepare("SELECT user_id, COUNT(*) AS n FROM entities GROUP BY user_id");
   const countAllStmt = db.prepare("SELECT COUNT(*) AS n FROM entities");
@@ -60,13 +64,13 @@ export function openEntityStore(dbPath) {
 
   function upsert(userId, entity) {
     const { userId: _ignored, ...rest } = entity;
-    const deleted = rest.deletedAt !== null && rest.deletedAt !== undefined ? 1 : 0;
+    const deletedAt = rest.deletedAt === null || rest.deletedAt === undefined ? null : Number(rest.deletedAt);
     upsertStmt.run(
       userId,
       rest.entityType,
       rest.entityId,
       Number(rest.updatedAt) || 0,
-      deleted,
+      deletedAt,
       JSON.stringify(rest),
     );
   }
@@ -87,13 +91,22 @@ export function openEntityStore(dbPath) {
     upsert,
     transaction,
 
-    /** 照 updatedAt 由舊到新，最多 limit 筆 */
+    /**
+     * 照 updatedAt 由舊到新，大約 limit 筆一頁。
+     * 同一個 updatedAt 的資料一定整批放進同一頁，不然下一頁用 updated_at > since 會漏掉。
+     */
     pull(userId, since, limit) {
-      const rows =
-        typeof since === "number"
-          ? pullSinceStmt.all(userId, since, limit)
-          : pullAllStmt.all(userId, limit);
-      return rows.map((row) => toClientEntity(row.data));
+      const from = typeof since === "number" ? since : Number.MIN_SAFE_INTEGER;
+      const boundary = pullBoundaryStmt.get(userId, from, limit - 1);
+      const rows = boundary
+        ? pullRangeStmt.all(userId, from, boundary.updated_at)
+        : pullRestStmt.all(userId, from);
+      const hasMore = !!boundary && !!hasNewerStmt.get(userId, boundary.updated_at);
+      return {
+        items: rows.map((row) => toClientEntity(row.data)),
+        hasMore,
+        nextSince: hasMore ? boundary.updated_at : null,
+      };
     },
 
     /** peer manifest／hash 用的清單（不含 payload） */
@@ -101,12 +114,11 @@ export function openEntityStore(dbPath) {
       const refs = [];
       for (const row of refsStmt.all(userId)) {
         if (typeFilter && !typeFilter.has(row.entity_type)) continue;
-        const { deletedAt } = JSON.parse(row.data);
         refs.push({
           entityType: row.entity_type,
           entityId: row.entity_id,
           updatedAt: Number(row.updated_at) || 0,
-          deletedAt: deletedAt ?? null,
+          deletedAt: row.deleted_at ?? null,
         });
       }
       return refs;
