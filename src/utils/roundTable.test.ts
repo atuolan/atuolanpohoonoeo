@@ -6,6 +6,7 @@ import {
   buildRoundTableInstruction,
   buildSummaryMessages,
   buildVoteMessages,
+  formatRoundTableAssignments,
   formatRoundTableUsage,
   parseVote,
   tallyVotes,
@@ -157,6 +158,41 @@ describe("辯論立場", () => {
   it("有立場才加辯論指令", () => {
     expect(buildRoundTableInstruction("甲", [], "我", { stance: "支持" })).toContain("立場是「支持」");
     expect(buildRoundTableInstruction("甲", [], "我", { stance: " " })).not.toContain("辯論");
+  });
+});
+
+describe("身份與工作", () => {
+  it("整理成一行，沒填的跳過、換行變空格", () => {
+    expect(
+      formatRoundTableAssignments([
+        { name: "甲", assignment: "測試員\n做壓力測試" },
+        { name: "乙", assignment: "  " },
+        { name: "丙" },
+      ]),
+    ).toBe("甲＝測試員 做壓力測試");
+  });
+
+  it("自己的工作和別人的分工都寫進指令", () => {
+    const text = buildRoundTableInstruction("甲", ["乙", "丙"], "我", {
+      assignment: "測試員",
+      teammates: [{ name: "乙", assignment: "校對" }, { name: "丙" }],
+    });
+    expect(text).toContain("甲 在這場討論的身份與工作：測試員");
+    expect(text).toContain("其他成員的分工：乙＝校對。");
+    expect(text).not.toContain("丙＝");
+  });
+
+  it("沒填就不加", () => {
+    const text = buildRoundTableInstruction("甲", ["乙"], "我", { assignment: " ", teammates: [{ name: "乙" }] });
+    expect(text).not.toContain("身份與工作");
+    expect(text).not.toContain("分工");
+  });
+
+  it("主持人和整理都看得到分工", () => {
+    expect(buildHostMessages("", ["甲"], [], "甲＝測試員")[1].content).toContain("分工：甲＝測試員");
+    expect(buildHostMessages("", ["甲"], [])[1].content).not.toContain("分工");
+    const [, user] = buildSummaryMessages("", [{ name: "甲", assignment: "測試員" }], false);
+    expect(user.content).toContain("分工：甲＝測試員");
   });
 });
 
