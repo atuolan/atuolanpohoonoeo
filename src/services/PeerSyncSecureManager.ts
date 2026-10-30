@@ -40,7 +40,11 @@ type PendingRequest<T> = {
 
 type FetchAccumulator = {
   envelopes: SelfHostedSyncEntityEnvelope[];
+  onProgress?: (received: number) => void;
 };
+
+/** 傳輸進度：done＝對方已回覆（或已收到）的筆數 */
+export type PeerTransferProgressCallback = (done: number, total: number) => void;
 
 class PeerSyncSecureManager {
   private pending = new Map<string, PendingRequest<unknown>>();
@@ -139,6 +143,7 @@ class PeerSyncSecureManager {
       const acc = pending.accumulator as FetchAccumulator;
       const payload = await this.decodeFetchResponse(fetchMsg);
       acc.envelopes.push(...payload.envelopes);
+      acc.onProgress?.(acc.envelopes.length);
       this.log("收到 fetch-response 批次", {
         requestId: message.requestId,
         batchCount: payload.envelopes.length,
@@ -407,12 +412,16 @@ class PeerSyncSecureManager {
     targetDeviceId: string,
     entityRefs: PeerEntityRef[],
     sessionId: string,
+    onProgress?: PeerTransferProgressCallback,
   ): Promise<SelfHostedSyncEntityEnvelope[]> {
     if (entityRefs.length === 0) return [];
     if (!isPeerSyncSocketOpen()) {
       throw new Error("WebSocket 未連線，無法進行同步");
     }
-    const accumulator: FetchAccumulator = { envelopes: [] };
+    const accumulator: FetchAccumulator = {
+      envelopes: [],
+      onProgress: onProgress ? (received) => onProgress(received, entityRefs.length) : undefined,
+    };
     const requestId = this.nextRequestId("fetch");
     const promise = this.registerPending<SelfHostedSyncEntityEnvelope[]>(
       requestId,
@@ -438,6 +447,7 @@ class PeerSyncSecureManager {
     targetDeviceId: string,
     envelopes: SelfHostedSyncEntityEnvelope[],
     sessionId: string,
+    onProgress?: PeerTransferProgressCallback,
   ): Promise<PeerApplyResponse> {
     if (!isPeerSyncSocketOpen()) {
       throw new Error("WebSocket 未連線，無法進行同步");
@@ -470,6 +480,7 @@ class PeerSyncSecureManager {
     };
 
     const batches = buildBatches();
+    let done = 0;
     const batchPromises = batches.map(async (batch) => {
       const requestId = this.nextRequestId("apply");
       const promise = this.registerPending<PeerApplyResponse>(
@@ -489,6 +500,8 @@ class PeerSyncSecureManager {
         encryptedPayload,
       });
       const response = await promise;
+      done += batch.length;
+      onProgress?.(done, envelopes.length);
       return this.decodeApplyResponse(targetDeviceId, response);
     });
 

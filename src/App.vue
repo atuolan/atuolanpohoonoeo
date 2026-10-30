@@ -40,10 +40,13 @@ import { startPeerSyncResponder } from "@/services/PeerSyncSecureResponder";
 import type { PeerMessage } from "@/types/selfHostedSync";
 import {
   pendingPeerApply,
+  peerReceiveProgress,
   approvePeerApply,
   rejectPeerApply,
+  hidePeerReceiveDialog,
   formatEntityTypeLabel,
 } from "@/composables/usePeerApplyGate";
+import PeerTransferBar from "@/components/common/PeerTransferBar.vue";
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 // 頁面組件
 import {
@@ -3822,7 +3825,7 @@ useSwipeBack(handleGlobalSwipeBack, swipeBackEnabled);
     <!-- P2P 推送接收確認 dialog -->
     <Teleport to="body">
       <Transition name="fade">
-        <div v-if="pendingPeerApply" class="peer-apply-overlay" @click.self="rejectPeerApply">
+        <div v-if="pendingPeerApply" key="ask" class="peer-apply-overlay" @click.self="rejectPeerApply">
           <div class="peer-apply-dialog" role="dialog" aria-modal="true">
             <div class="peer-apply-icon">📥</div>
             <div class="peer-apply-title">收到裝置同步請求</div>
@@ -3851,8 +3854,35 @@ useSwipeBack(handleGlobalSwipeBack, swipeBackEnabled);
             </div>
           </div>
         </div>
+        <div
+          v-else-if="peerReceiveProgress && !peerReceiveProgress.dialogHidden"
+          key="progress"
+          class="peer-apply-overlay"
+          @click.self="hidePeerReceiveDialog"
+        >
+          <div class="peer-apply-dialog" role="dialog" aria-modal="true">
+            <div class="peer-apply-icon">📥</div>
+            <div class="peer-apply-title">
+              {{ peerReceiveProgress.done >= peerReceiveProgress.total ? "同步完成" : "正在套用資料" }}
+            </div>
+            <div class="peer-apply-source">
+              來自：<strong>{{ peerReceiveProgress.sourceDisplayName }}</strong>
+            </div>
+            <div class="peer-apply-progress" role="progressbar" :aria-valuenow="peerReceiveProgress.done" :aria-valuemax="peerReceiveProgress.total">
+              <div
+                class="peer-apply-progress-fill"
+                :style="{ width: (peerReceiveProgress.total ? (peerReceiveProgress.done / peerReceiveProgress.total) * 100 : 0) + '%' }"
+              />
+            </div>
+            <div class="peer-apply-total">{{ peerReceiveProgress.done }}／{{ peerReceiveProgress.total }} 筆</div>
+            <div class="peer-apply-hint">套用完會自動關閉；點旁邊可以先收起來，會在背景繼續</div>
+          </div>
+        </div>
       </Transition>
     </Teleport>
+
+    <!-- 裝置互傳全域進度條 -->
+    <PeerTransferBar />
 
     <!-- GitHub 雲端備份全局進度條 -->
     <Teleport to="body">
@@ -4452,6 +4482,22 @@ useSwipeBack(handleGlobalSwipeBack, swipeBackEnabled);
   align-items: center;
   gap: 8px;
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+}
+
+.peer-apply-progress {
+  width: 100%;
+  height: 6px;
+  margin-top: 6px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+}
+
+.peer-apply-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #22c55e, #4ade80);
+  border-radius: 3px;
+  transition: width 0.3s ease;
 }
 
 .peer-apply-icon {

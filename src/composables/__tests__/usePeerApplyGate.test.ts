@@ -61,4 +61,37 @@ describe("usePeerApplyGate", () => {
     gate.approvePeerApply();
     await expect(fromB).resolves.toBe(true);
   });
+
+  it("接受後顯示套用進度：之後才到的批次也算進總數，全部套用完就清掉", async () => {
+    vi.useFakeTimers();
+    const gate = await loadGate();
+    const first = gate.requestPeerApplyApproval(batch("r1", 20));
+    const second = gate.requestPeerApplyApproval(batch("r2", 20));
+    gate.approvePeerApply();
+    await Promise.all([first, second]);
+    expect(gate.peerReceiveProgress.value).toMatchObject({ sourceDeviceId: "devA", done: 0, total: 40 });
+
+    await gate.requestPeerApplyApproval(batch("r3", 10));
+    expect(gate.peerReceiveProgress.value?.total).toBe(50);
+
+    gate.reportPeerApplyProgress("devA", 20);
+    gate.reportPeerApplyProgress("devA", 20);
+    expect(gate.peerReceiveProgress.value?.done).toBe(40);
+    gate.reportPeerApplyProgress("devA", 10);
+    expect(gate.peerReceiveProgress.value?.done).toBe(50);
+    vi.advanceTimersByTime(2000);
+    expect(gate.peerReceiveProgress.value).toBeNull();
+  });
+
+  it("套用進度卡住時（對方斷線）一段時間沒更新就自己清掉", async () => {
+    vi.useFakeTimers();
+    const gate = await loadGate();
+    const first = gate.requestPeerApplyApproval(batch("r1", 40));
+    gate.approvePeerApply();
+    await first;
+    gate.reportPeerApplyProgress("devA", 20);
+    vi.advanceTimersByTime(60_000);
+    expect(gate.peerReceiveProgress.value).toBeNull();
+  });
 });
+
