@@ -2431,9 +2431,10 @@ async function openPlannerSheet() {
   closeRail();
   showPlannerSheet.value = true;
   const today = chatToday();
-  plannerHelpedEvents.value = (await listCalendarEvents({ from: today, to: shiftDate(today, 13) }).catch(() => [])).filter(
-    (e) => e.sourceChatId && e.sourceChatId === currentChatId.value,
-  );
+  const calendarScope = { characterId: currentCharacter.value?.id, chatId: currentChatId.value || undefined };
+  plannerHelpedEvents.value = (
+    await listCalendarEvents({ from: today, to: shiftDate(today, 13) }, calendarScope).catch(() => [])
+  ).filter((e) => e.sourceChatId && e.sourceChatId === currentChatId.value);
   const chatId = currentChatId.value;
   if (!chatId || !charPlanner.value) return;
   charPlanner.value = { ...charPlanner.value, seenAt: Date.now() };
@@ -6511,13 +6512,13 @@ async function runAIResponseOnce(
     let userCalendarText: string | undefined;
     if (!isGroupChat.value && currentChatId.value) {
       const calendarToday = chatToday();
-      const upcoming = await listCalendarEvents({ from: calendarToday, to: shiftDate(calendarToday, 6) }).catch(
-        () => [] as CalendarEvent[],
-      );
+      const upcoming = await listCalendarEvents(
+        { from: calendarToday, to: shiftDate(calendarToday, 6) },
+        { characterId: char.id, chatId: currentChatId.value },
+      ).catch(() => [] as CalendarEvent[]);
       userCalendarText =
         buildUserCalendarPromptText(upcoming, {
           today: calendarToday,
-          chatId: currentChatId.value,
           charName: char.data?.name || props.characterName || "角色",
         }) || undefined;
     }

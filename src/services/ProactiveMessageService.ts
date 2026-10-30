@@ -1326,8 +1326,11 @@ export class ProactiveMessageService {
       const { shiftDate } = await import("@/utils/charPlanner");
       const userCalendarText =
         buildUserCalendarPromptText(
-          await listCalendarEvents({ from: proactiveToday, to: shiftDate(proactiveToday, 6) }).catch(() => []),
-          { today: proactiveToday, chatId: chat.id, charName: character.data?.name || character.nickname || "角色" },
+          await listCalendarEvents(
+            { from: proactiveToday, to: shiftDate(proactiveToday, 6) },
+            { characterId: character.id, chatId: chat.id },
+          ).catch(() => []),
+          { today: proactiveToday, charName: character.data?.name || character.nickname || "角色" },
         ) || undefined;
       // 暫離／睡覺／忙碌期間 user 留了幾則訊息（回來後要他接著回，只算最後一次偷回之後的）
       const awayLeftMessageCount = chat.charAway

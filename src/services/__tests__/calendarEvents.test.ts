@@ -3,6 +3,9 @@ import { deleteDB } from "idb";
 import { beforeEach, describe, expect, it } from "vitest";
 import { closeDatabase, db, DB_STORES } from "@/db/database";
 import {
+  findSameCalendarEvent,
+  listCalendarEvents,
+  loadCalendarEvents,
   saveCalendarEvent,
   saveCalendarEventOnce,
   updateCalendarEvent,
@@ -72,5 +75,107 @@ describe("收回角色加的行程", () => {
     await withdrawCalendarEvent(event.id);
 
     expect(await all()).toHaveLength(1);
+  });
+});
+
+describe("行程綁定角色和 user", () => {
+  const data = { type: "user" as const, title: "看牙醫", date: "2026-10-24" };
+  const range = { from: "2026-10-24", to: "2026-10-24" };
+
+  const bindChat = (id: string, personaId: string) =>
+    db.put(DB_STORES.CHATS, JSON.parse(JSON.stringify({ id, metadata: { personaOverride: { personaId } } })));
+
+  const titlesFor = async (scope: { characterId: string; chatId: string }) =>
+    (await listCalendarEvents(range, scope)).map((e) => e.title);
+
+  beforeEach(async () => {
+    await bindChat("a-p", "persona-p");
+    await bindChat("a-q", "persona-q");
+    await bindChat("b-p", "persona-p");
+    await bindChat("a-p-2", "persona-p");
+  });
+
+  it("角色記的只有同角色、同 user 讀得到，換聊天也算", async () => {
+    const { event } = await saveCalendarEventOnce(data, { characterId: "a", chatId: "a-p" });
+    expect(event.personaId).toBe("persona-p");
+
+    expect(await titlesFor({ characterId: "a", chatId: "a-p" })).toEqual(["看牙醫"]);
+    expect(await titlesFor({ characterId: "a", chatId: "a-p-2" })).toEqual(["看牙醫"]);
+    expect(await titlesFor({ characterId: "b", chatId: "b-p" })).toEqual([]);
+    expect(await titlesFor({ characterId: "a", chatId: "a-q" })).toEqual([]);
+  });
+
+  it("使用者自己記給某個 user 的，那個 user 的角色都讀得到，別的 user 讀不到", async () => {
+    await saveCalendarEvent(data, { personaId: "persona-p" });
+
+    expect(await titlesFor({ characterId: "a", chatId: "a-p" })).toEqual(["看牙醫"]);
+    expect(await titlesFor({ characterId: "b", chatId: "b-p" })).toEqual(["看牙醫"]);
+    expect(await titlesFor({ characterId: "a", chatId: "a-q" })).toEqual([]);
+  });
+
+  it("沒綁 user 的自記行程所有 user 都讀得到", async () => {
+    await saveCalendarEvent(data);
+
+    expect(await titlesFor({ characterId: "a", chatId: "a-p" })).toEqual(["看牙醫"]);
+    expect(await titlesFor({ characterId: "a", chatId: "a-q" })).toEqual(["看牙醫"]);
+  });
+
+  it("不同角色記同名行程各自一筆，同角色、同 user 才算重複", async () => {
+    const first = await saveCalendarEventOnce(data, { characterId: "a", chatId: "a-p" });
+    const other = await saveCalendarEventOnce(data, { characterId: "b", chatId: "b-p" });
+    const again = await saveCalendarEventOnce(data, { characterId: "a", chatId: "a-p-2" });
+
+    expect(other.created).toBe(true);
+    expect(other.event.id).not.toBe(first.event.id);
+    expect(again.created).toBe(false);
+    expect(await all()).toHaveLength(2);
+  });
+
+  it("使用者自己記了的，角色再記不重複", async () => {
+    await saveCalendarEvent(data, { personaId: "persona-p" });
+    const { created } = await saveCalendarEventOnce(data, { characterId: "a", chatId: "a-p" });
+    expect(created).toBe(false);
+  });
+
+  it("別的角色記的不算「已經在行事曆裡」", async () => {
+    await saveCalendarEventOnce(data, { characterId: "a", chatId: "a-p" });
+    expect(await findSameCalendarEvent(data, { characterId: "b", chatId: "b-p" })).toBeUndefined();
+  });
+
+  it("舊資料沒記 user：照來源聊天綁定的 user 算", async () => {
+    await db.put(DB_STORES.CALENDAR_EVENTS, {
+      ...data,
+      id: "old",
+      sourceCharacterId: "a",
+      sourceChatId: "a-p",
+      createdAt: 1,
+      updatedAt: 1,
+    });
+
+    expect(await titlesFor({ characterId: "a", chatId: "a-p" })).toEqual(["看牙醫"]);
+    expect(await titlesFor({ characterId: "a", chatId: "a-q" })).toEqual([]);
+    expect((await loadCalendarEvents())[0].personaId).toBe("persona-p");
+  });
+
+  it("舊資料的來源聊天刪了：還是只有那個角色讀得到", async () => {
+    await db.put(DB_STORES.CALENDAR_EVENTS, {
+      ...data,
+      id: "old",
+      sourceCharacterId: "a",
+      sourceChatId: "deleted",
+      createdAt: 1,
+      updatedAt: 1,
+    });
+
+    expect(await titlesFor({ characterId: "a", chatId: "a-q" })).toEqual(["看牙醫"]);
+    expect(await titlesFor({ characterId: "b", chatId: "b-p" })).toEqual([]);
+  });
+
+  it("群聊裡記的沒有角色：只有那個群聊讀得到", async () => {
+    await bindChat("group", "persona-p");
+    await saveCalendarEventOnce(data, { chatId: "group" });
+
+    expect(await titlesFor({ characterId: "a", chatId: "group" })).toEqual(["看牙醫"]);
+    expect(await titlesFor({ characterId: "a", chatId: "a-p" })).toEqual([]);
   });
 });

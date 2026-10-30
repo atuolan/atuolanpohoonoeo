@@ -5,6 +5,8 @@ import {
   saveCalendarEvent,
   updateCalendarEvent,
 } from "@/services/calendarEvents";
+import { useCharactersStore } from "@/stores";
+import { useUserStore } from "@/stores/user";
 import type { CalendarEvent } from "@/types/calendar";
 import type { Holiday } from "@/types/holiday";
 import {
@@ -34,6 +36,9 @@ import { computed, onMounted, ref } from "vue";
 
 const emit = defineEmits<{ back: [] }>();
 
+const userStore = useUserStore();
+const charactersStore = useCharactersStore();
+
 // 狀態
 const currentDate = ref(new Date());
 const weekdays = ["日", "一", "二", "三", "四", "五", "六"];
@@ -56,10 +61,16 @@ interface EventForm {
   endDate: string;
   description: string;
   type: "user" | "period";
+  /** 屬於哪個 user；空字串是所有 user */
+  personaId: string;
 }
 
+const hasManyPersonas = computed(() => userStore.personas.length > 1);
+
 function emptyForm(date = ""): EventForm {
-  return { title: "", date, startTime: "", endTime: "", endDate: "", description: "", type: "user" };
+  // 只有一個 user 時不綁，之後多開 user 也讀得到以前記的
+  const personaId = hasManyPersonas.value ? (userStore.currentPersonaId ?? "") : "";
+  return { title: "", date, startTime: "", endTime: "", endDate: "", description: "", type: "user", personaId };
 }
 
 const form = ref<EventForm>(emptyForm());
@@ -258,6 +269,7 @@ function openEdit(e: CalendarEvent) {
     // 時間有自己的欄位了，說明裡重複的那段拿掉
     description: eventNotes(e),
     type: e.type === "period" ? "period" : "user",
+    personaId: e.personaId ?? "",
   };
   saveError.value = "";
   showAddModal.value = true;
@@ -266,6 +278,37 @@ function openEdit(e: CalendarEvent) {
 function closeForm() {
   showAddModal.value = false;
   editingEvent.value = null;
+}
+
+/** 角色（或群聊）記的；這種只有那個角色讀得到，不能改給別的 user */
+function isCharEvent(e: CalendarEvent | null) {
+  return !!(e?.sourceCharacterId || e?.sourceChatId);
+}
+
+function personaName(id: string | undefined) {
+  return userStore.personas.find((p) => p.id === id)?.name;
+}
+
+function charEventAuthor(e: CalendarEvent) {
+  const char = charactersStore.characters.find((c) => c.id === e.sourceCharacterId);
+  return char ? char.nickname || char.data.name : undefined;
+}
+
+function charEventHint(e: CalendarEvent) {
+  const author = charEventAuthor(e);
+  return author ? `${author}記的，只有${author}讀得到` : "聊天裡記的，只有那個聊天讀得到";
+}
+
+/** 這筆是誰的：行事曆 App 看得到全部，要分得出來 */
+function eventOwner(e: CalendarEvent) {
+  const persona = personaName(e.personaId);
+  if (isCharEvent(e)) {
+    const author = `${charEventAuthor(e) ?? "聊天裡"}記的`;
+    return hasManyPersonas.value && persona ? `${author}（${persona}）` : author;
+  }
+  if (!hasManyPersonas.value) return "";
+  if (persona) return `${persona}自己記的`;
+  return e.personaId ? "已刪除的 user" : "所有 user";
 }
 
 function getEventColor(type: string) {
@@ -296,12 +339,14 @@ async function saveEvent() {
     endTime: !isPeriod && f.endTime ? f.endTime : undefined,
     endDate: f.endDate && f.endDate > f.date ? f.endDate : undefined,
   };
+  const personaId = f.personaId || undefined;
   try {
     if (editingEvent.value) {
-      const updated = await updateCalendarEvent({ ...editingEvent.value, ...fields }, { byUser: true });
+      const owner = isCharEvent(editingEvent.value) ? {} : { personaId };
+      const updated = await updateCalendarEvent({ ...editingEvent.value, ...fields, ...owner }, { byUser: true });
       events.value = events.value.map((e) => (e.id === updated.id ? updated : e)).sort(compareCalendarEvents);
     } else {
-      const created = await saveCalendarEvent(fields);
+      const created = await saveCalendarEvent(fields, { personaId });
       events.value = [...events.value, created].sort(compareCalendarEvents);
     }
     closeForm();
@@ -325,7 +370,11 @@ onMounted(async () => {
   todayHoliday.value = detectTodayHoliday();
   upcomingHolidays.value = detectUpcomingHolidays(7);
   lunarDate.value = getLunarDateString(new Date());
-  await loadEvents();
+  await Promise.all([
+    loadEvents(),
+    userStore.isLoaded ? undefined : userStore.loadUserData(),
+    charactersStore.characters.length > 0 ? undefined : charactersStore.loadCharacters(),
+  ]);
 });
 </script>
 
@@ -459,6 +508,7 @@ onMounted(async () => {
               <div v-if="eventNotes(e)" class="event-desc">
                 {{ eventNotes(e) }}
               </div>
+              <div v-if="eventOwner(e)" class="event-desc">{{ eventOwner(e) }}</div>
             </div>
             <button class="delete-btn" aria-label="刪除" @click.stop="deleteEvent(e.id)">
               <Trash2 :size="16" />
@@ -493,6 +543,7 @@ onMounted(async () => {
               <div class="event-title">{{ e.title }}</div>
               <div class="event-date">{{ eventWhen(e) }}</div>
               <div v-if="eventNotes(e)" class="event-desc">{{ eventNotes(e) }}</div>
+              <div v-if="eventOwner(e)" class="event-desc">{{ eventOwner(e) }}</div>
             </div>
             <button class="delete-btn" aria-label="刪除" @click.stop="deleteEvent(e.id)">
               <Trash2 :size="16" />
@@ -561,6 +612,17 @@ onMounted(async () => {
               rows="3"
               placeholder="事件描述..."
             />
+          </div>
+          <p v-if="isCharEvent(editingEvent)" class="form-hint">{{ charEventHint(editingEvent!) }}</p>
+          <div v-else-if="hasManyPersonas" class="form-group">
+            <label>這是誰的行程</label>
+            <select v-model="form.personaId" class="form-control">
+              <option value="">所有 user</option>
+              <option v-for="p in userStore.personas" :key="p.id" :value="p.id">{{ p.name }}</option>
+            </select>
+            <p class="form-hint">
+              {{ form.personaId ? `只有 ${personaName(form.personaId)} 的角色讀得到` : "每個 user 的角色都讀得到" }}
+            </p>
           </div>
           <p v-if="saveError" class="form-error" role="alert">{{ saveError }}</p>
         </div>
@@ -1023,6 +1085,11 @@ textarea.form-control {
     flex: 1;
     min-width: 0;
   }
+}
+.form-hint {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: #9ca3af;
 }
 .form-error {
   margin: 0;

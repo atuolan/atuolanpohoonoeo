@@ -1,11 +1,22 @@
 /**
  * 行事曆事件的日期、時間、說明怎麼算和怎麼顯示（純函式，行事曆 App、聊天卡片、角色工具、解析器共用）
  */
-import type { CalendarEvent, CalendarEventTime } from "@/types/calendar";
+import type { CalendarEvent, CalendarEventScope, CalendarEventTime } from "@/types/calendar";
 
 /** 行程的最後一天：跨天的是結束日期，其他就是當天 */
 export function eventLastDate(event: { date: string; endDate?: string }): string {
   return event.endDate && event.endDate > event.date ? event.endDate : event.date;
+}
+
+/** 這個角色、這個 user 讀不讀得到：角色記的只有自己（群聊記的沒有角色，看聊天），使用者自己記的同一個 user 都讀得到 */
+export function isEventVisibleTo(
+  event: Pick<CalendarEvent, "personaId" | "sourceCharacterId" | "sourceChatId">,
+  scope: CalendarEventScope,
+): boolean {
+  if (event.personaId && scope.personaId && event.personaId !== scope.personaId) return false;
+  const { sourceCharacterId, sourceChatId } = event;
+  if (!sourceCharacterId && !sourceChatId) return true;
+  return (!!sourceCharacterId && sourceCharacterId === scope.characterId) || (!!sourceChatId && sourceChatId === scope.chatId);
 }
 
 /** 這一天有沒有這個行程（跨天的每一天都算） */
@@ -76,11 +87,11 @@ function addDays(date: string, days: number): string {
 
 /**
  * 給 AI 看的使用者行事曆（{{userCalendar}}）：today 起 7 天內的行程和經期紀錄，最多 10 筆；
- * 角色在這個聊天幫忙記的標出來。沒有行程回傳空字串（條目就不輸出）
+ * 角色幫忙記的標出來（events 要先用 isEventVisibleTo 過濾過）。沒有行程回傳空字串（條目就不輸出）
  */
 export function buildUserCalendarPromptText(
   events: CalendarEvent[],
-  options: { today: string; chatId: string; charName: string },
+  options: { today: string; charName: string },
 ): string {
   const last = addDays(options.today, 6);
   const lines = events
@@ -93,7 +104,7 @@ export function buildUserCalendarPromptText(
       const time = formatEventTime(e);
       const notes = eventNotes(e);
       const kind = e.type === "period" ? "經期：" : "";
-      const helped = e.sourceChatId === options.chatId ? `（${options.charName}幫忙記的）` : "";
+      const helped = e.sourceCharacterId || e.sourceChatId ? `（${options.charName}幫忙記的）` : "";
       return `- ${days}${time ? ` ${time}` : ""} ${kind}${e.title}${notes ? `（${notes}）` : ""}${helped}`;
     });
   return lines.join("\n");

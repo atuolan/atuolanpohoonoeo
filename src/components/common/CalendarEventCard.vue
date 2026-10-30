@@ -34,8 +34,11 @@ function eventData(): CalendarEventData {
 }
 
 onMounted(async () => {
-  if (!props.data.plan) return;
-  inCalendar.value = !!(await findSameCalendarEvent(props.data).catch(() => undefined));
+  const plan = props.data.plan;
+  if (!plan) return;
+  inCalendar.value = !!(await findSameCalendarEvent(props.data, { characterId: plan.characterId, chatId: plan.chatId }).catch(
+    () => undefined,
+  ));
 });
 
 async function addToMyCalendar() {

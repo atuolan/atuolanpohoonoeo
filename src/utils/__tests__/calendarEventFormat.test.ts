@@ -93,20 +93,20 @@ describe("給角色看的使用者行事曆", () => {
         ev({ title: "下個月的事", date: "2026-11-02" }),
         ev({ title: "上週的事", date: "2026-10-10" }),
         ev({ type: "holiday", title: "重陽節", date: "2026-10-18" }),
-        ev({ title: "別的聊天記的", date: "2026-10-21", sourceChatId: "chat-2" }),
+        ev({ title: "換個聊天記的", date: "2026-10-21", sourceCharacterId: "char-1", sourceChatId: "chat-2" }),
       ],
-      { today: "2026-10-18", chatId: "chat-1", charName: "沈既白" },
+      { today: "2026-10-18", charName: "沈既白" },
     );
     expect(text.split("\n")).toEqual([
       "- 10/16（五）–10/19（一） 出差",
       "- 10/20（二） 15:00–16:00 看牙醫（帶健保卡）（沈既白幫忙記的）",
-      "- 10/21（三） 別的聊天記的",
+      "- 10/21（三） 換個聊天記的（沈既白幫忙記的）",
       "- 10/23（五）–10/27（二） 經期：經期",
     ]);
   });
 
   it("沒有行程時是空字串（條目不輸出）", async () => {
     const { buildUserCalendarPromptText } = await import("@/utils/calendarEventFormat");
-    expect(buildUserCalendarPromptText([], { today: "2026-10-18", chatId: "c", charName: "x" })).toBe("");
+    expect(buildUserCalendarPromptText([], { today: "2026-10-18", charName: "x" })).toBe("");
   });
 });
