@@ -103,3 +103,4 @@ vite.config.ts.timestamp-*.mjs
 docs/chat-skins-tools/huninn.ttf
 docs/chat-skins-tools/sheet.png
 aguaphone-sync-hf-space-root/data/
+.wrangler/
