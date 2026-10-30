@@ -28,6 +28,8 @@ import {
   CHAR_AWAY_MIN_MINUTES,
   CHAR_AWAY_REASON_MAX,
   CHAR_BUSY_BACK_DEFAULT,
+  CHAR_BUSY_CHECK_MAX_MINUTES,
+  CHAR_BUSY_CHECK_MIN_MINUTES,
   CHAR_SLEEP_BACK_DEFAULT,
   type ParsedCharAway,
   type ParsedCharBusy,
@@ -2273,7 +2275,17 @@ export function parseCharBusyTag(
         .trim()
         .slice(0, CHAR_AWAY_BACK_MAX) || CHAR_BUSY_BACK_DEFAULT;
 
-    latest = { start: start || undefined, end: end || undefined, minutes, reason, backText };
+    const checkValue = parseFloat(extractAttr(attrs, "check") ?? "");
+    const check = Number.isFinite(checkValue)
+      ? Math.min(CHAR_BUSY_CHECK_MAX_MINUTES, Math.max(CHAR_BUSY_CHECK_MIN_MINUTES, Math.round(checkValue)))
+      : undefined;
+    const auto =
+      (extractAttr(attrs, "auto") ?? "")
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(0, CHAR_AWAY_BACK_MAX) || undefined;
+
+    latest = { start: start || undefined, end: end || undefined, minutes, check, auto, reason, backText };
   }
   return latest;
 }

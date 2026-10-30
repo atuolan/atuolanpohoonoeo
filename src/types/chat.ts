@@ -1359,6 +1359,16 @@ export interface CharAway {
   lastSneakAt?: number;     // 最後一次偷回的時間；之後留的才算「還沒回」
   callAts?: number[];       // 睡覺時每通沒接的電話時間（只留 10 分鐘內的）
   pausedAt?: number;        // 面對面期間暫停（現實時間）；回線上時倒數從剩下的時間繼續
+  checkMinutes?: number;    // 忙碌：大約幾分鐘能看一次手機；沒有代表走不開
+  autoReply?: string;       // 忙碌：第一次留言時先回的話，送出後清掉
+  autoReplyAt?: number;     // 先回那句要送出的時間
+  peekAt?: number;          // 忙碌：下次看手機的時間
+  peekLeftCount?: number;   // 上次看手機後留了幾則（連傳會提早看）
+  spareUntil?: number;      // 忙碌：這段空檔到什麼時候
+  lastHangUpAt?: number;    // 忙碌：上次掛電話的時間
+  hangUpPeek?: boolean;     // 下次看手機是掛電話後傳訊息
+  earlyEndPending?: boolean; // 這一輪擲骰成功：回覆成功後就忙完
+  sneakReason?: "urge" | "peek" | "hangUp"; // 這次為什麼回（面板上的催促／定時看手機／掛電話）
 }
 
 /** 劇情時鐘的狀態：offset 是線上的偏移量，pausedAt 有值代表面對面暫停中 */

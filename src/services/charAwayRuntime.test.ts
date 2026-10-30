@@ -5,7 +5,9 @@ import {
   activatePlanIfDue,
   cancelCharAway,
   fastForwardCharAway,
+  noteCharBusyMessage,
   recordCharAwayCall,
+  runBusyDue,
   returnCharAwayIfDue,
   setCharAwayViewingChat,
   startCharAway,
@@ -348,6 +350,67 @@ describe("wakeCharAwayNow", () => {
     expect(woken!.endedBy).toBe("wake");
     expect(store.chats.get("chat1")!.charAway!.endedBy).toBe("wake");
     expect(store.messages.get("chat1")).toHaveLength(0);
+  });
+});
+
+describe("忙碌先回一句", () => {
+  const busy = (overrides: Partial<CharAway> = {}) =>
+    makeAway({
+      kind: "busy",
+      returnAt: NOW + 300 * MINUTE,
+      checkMinutes: 40,
+      autoReply: "開會中，晚點回你",
+      ...overrides,
+    });
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("留言後排好先回和看手機", async () => {
+    seedChat({ charAway: busy() });
+    await noteCharBusyMessage("chat1", NOW);
+    const away = store.chats.get("chat1").charAway as CharAway;
+    expect(away.autoReplyAt).toBeGreaterThanOrEqual(NOW + 20_000);
+    expect(away.autoReplyAt).toBeLessThanOrEqual(NOW + 60_000);
+    expect(away.peekAt).toBeGreaterThan(NOW);
+    expect(away.peekLeftCount).toBe(1);
+  });
+
+  it("到時間送出一次，之後不再送", async () => {
+    seedChat({ charAway: busy({ autoReplyAt: NOW }) });
+    await runBusyDue("chat1", NOW);
+    await runBusyDue("chat1", NOW + MINUTE);
+    const sent = store.messages.get("chat1") ?? [];
+    expect(sent).toHaveLength(1);
+    expect(sent[0].content).toBe("開會中，晚點回你");
+    expect(sent[0].sender).toBe("assistant");
+    expect(store.chats.get("chat1").charAway.autoReply).toBeUndefined();
+  });
+
+  it("還沒到時間不送", async () => {
+    seedChat({ charAway: busy({ autoReplyAt: NOW + MINUTE }) });
+    await runBusyDue("chat1", NOW);
+    expect(store.messages.get("chat1")).toHaveLength(0);
+  });
+
+  it("沒看著這個聊天時也發通知", async () => {
+    setCharAwayViewingChat(null);
+    seedChat({ charAway: busy({ autoReplyAt: NOW }) });
+    await runBusyDue("chat1", NOW);
+    expect(store.incrementUnread).toHaveBeenCalled();
+    expect(store.pushSend).toHaveBeenCalled();
+  });
+
+  it("沒有 check 的忙碌什麼都不做", async () => {
+    seedChat({ charAway: makeAway({ kind: "busy", returnAt: NOW + 300 * MINUTE }) });
+    await noteCharBusyMessage("chat1", NOW);
+    expect(store.saves).toHaveLength(0);
   });
 });
 

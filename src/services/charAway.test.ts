@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   awayHeaderText,
+  canBusyPeek,
+  scheduleBusyPeek,
   awayUrgeLabel,
   buildAwayHintText,
   buildCharAwayGuide,
@@ -418,6 +420,15 @@ describe("createCharBusy", () => {
     expect(long?.returnAt).toBe(BUSY_NOW + 12 * 60 * MINUTE);
   });
 
+  it("check、auto 帶進忙碌", () => {
+    const away = createCharBusy(
+      { minutes: 60, check: 40, auto: "開會中", reason: "開會", backText: "" },
+      BUSY_NOW,
+    );
+    expect(away?.checkMinutes).toBe(40);
+    expect(away?.autoReply).toBe("開會中");
+  });
+
   it("minutes 配 start 是預約", () => {
     const away = createCharBusy({ start: "14:00", minutes: 60, reason: "", backText: "" }, BUSY_NOW);
     const start = new Date(2026, 9, 23, 14, 0).getTime();
@@ -564,6 +575,8 @@ describe("buildCharSleepGuide / buildCharBusyGuide", () => {
     expect(buildCharSleepGuide(true)).toContain("<char-sleep wake=");
     expect(buildCharSleepGuide(false)).toBe("");
     expect(buildCharBusyGuide(true, undefined, NOW)).toContain("<char-busy start=");
+    expect(buildCharBusyGuide(true, undefined, NOW)).toContain('check="');
+    expect(buildCharBusyGuide(true, undefined, NOW)).toContain("走不開就兩個都不寫");
     expect(buildCharBusyGuide(false, undefined, NOW)).toBe("");
   });
 
@@ -703,6 +716,61 @@ describe("buildCharAwayReturnNote 的睡覺／忙碌", () => {
       replyPending: true,
     });
     expect(buildCharAwayReturnNote(away, 0)?.split("\n")).toHaveLength(3);
+  });
+});
+
+describe("scheduleBusyPeek", () => {
+  const busy = (overrides: Partial<CharAway> = {}) =>
+    makeBusy({ startedAt: NOW, returnAt: NOW + 300 * MINUTE, checkMinutes: 40, ...overrides });
+
+  it("有 check 的進行中忙碌才能看手機", () => {
+    expect(canBusyPeek(busy())).toBe(true);
+    expect(canBusyPeek(makeBusy())).toBe(false);
+    expect(canBusyPeek(makeSleep({ checkMinutes: 40 }))).toBe(false);
+    expect(canBusyPeek(busy({ endedAt: NOW }))).toBe(false);
+    expect(canBusyPeek(busy({ pausedAt: NOW }))).toBe(false);
+    expect(canBusyPeek(undefined)).toBe(false);
+  });
+
+  it("第一則留言照 check 排，上下浮動 30%", () => {
+    expect(scheduleBusyPeek(busy(), NOW, () => 0).peekAt).toBe(NOW + 28 * MINUTE);
+    expect(scheduleBusyPeek(busy(), NOW, () => 0.5).peekAt).toBe(NOW + 40 * MINUTE);
+    expect(scheduleBusyPeek(busy(), NOW, () => 1).peekAt).toBe(NOW + 52 * MINUTE);
+  });
+
+  it("連傳每多一則就提早，最短 3 分鐘", () => {
+    const first = scheduleBusyPeek(busy(), NOW, () => 0.5);
+    const second = scheduleBusyPeek(first, NOW, () => 0.5);
+    const third = scheduleBusyPeek(second, NOW, () => 0.5);
+    expect(second.peekAt).toBe(NOW + 20 * MINUTE);
+    expect(third.peekAt).toBe(NOW + 10 * MINUTE);
+    let later = third;
+    for (let i = 0; i < 5; i++) later = scheduleBusyPeek(later, NOW, () => 0.5);
+    expect(later.peekAt).toBe(NOW + 3 * MINUTE);
+    expect(later.peekLeftCount).toBe(8);
+  });
+
+  it("不會把已經排好的時間往後延", () => {
+    const away = busy({ peekAt: NOW + MINUTE, peekLeftCount: 1 });
+    expect(scheduleBusyPeek(away, NOW, () => 1).peekAt).toBe(NOW + MINUTE);
+  });
+
+  it("排到忙完之後就不排", () => {
+    const away = busy({ returnAt: NOW + 30 * MINUTE });
+    expect(scheduleBusyPeek(away, NOW, () => 0.5).peekAt).toBeUndefined();
+  });
+
+  it("有 auto 時排 20～60 秒後先回，只排一次", () => {
+    const first = scheduleBusyPeek(busy({ autoReply: "開會中" }), NOW, () => 0);
+    expect(first.autoReplyAt).toBe(NOW + 20_000);
+    const second = scheduleBusyPeek(first, NOW + MINUTE, () => 1);
+    expect(second.autoReplyAt).toBe(NOW + 20_000);
+    expect(scheduleBusyPeek(busy({ autoReply: "開會中" }), NOW, () => 1).autoReplyAt).toBe(NOW + 60_000);
+  });
+
+  it("沒有 check 就原樣回傳", () => {
+    const away = makeBusy();
+    expect(scheduleBusyPeek(away, NOW)).toBe(away);
   });
 });
 

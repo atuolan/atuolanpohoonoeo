@@ -16,6 +16,7 @@ import {
 import { appendMessages, loadMessages } from "@/storage/chatMessageStorage";
 import {
   awayKind,
+  canBusyPeek,
   canUseCharAway,
   canUseCharBusy,
   canUseCharSleep,
@@ -33,6 +34,7 @@ import {
   pauseCharAway,
   resumeCharAway,
   recordAwayCall,
+  scheduleBusyPeek,
   recordSneakWin,
   recordUrgeAttempt,
   wakeCharAway,
@@ -55,6 +57,12 @@ const returnTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 /** 每個聊天排好的「預約開始」計時器 */
 const planTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+/** 每個聊天排好的「忙碌中該做的事」計時器（先回一句、看手機） */
+const busyTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+/** 正在處理忙碌到期事項的聊天，避免計時器與 visibilitychange 同時跑兩次 */
+const runningBusy = new Set<string>();
 
 /** 正在處理回來的聊天，避免計時器與 visibilitychange 同時跑兩次 */
 const returning = new Set<string>();
@@ -460,6 +468,78 @@ export async function recordCharAwayCall(
   await saveCharAway(chatId, recordAwayCall(away, now));
 }
 
+/** 忙碌時 user 留了一則：排先回的話和看手機 */
+export async function noteCharBusyMessage(
+  chatId: string,
+  now = Date.now(),
+): Promise<void> {
+  const chat = await loadChatById(chatId);
+  const away = chat?.charAway;
+  if (!canBusyPeek(away)) return;
+
+  const next = scheduleBusyPeek(away, now);
+  await saveCharAway(chatId, next);
+  scheduleBusyTimer(chatId, next);
+}
+
+/** 忙碌時第一次留言：送出事先寫好的話 */
+async function sendBusyAutoReply(
+  chat: Chat,
+  away: CharAway,
+  now: number,
+): Promise<CharAway> {
+  const text = away.autoReply ?? "";
+  const next: CharAway = {
+    ...away,
+    autoReply: undefined,
+    autoReplyAt: undefined,
+    updatedAt: now,
+  };
+  // 先存再加訊息：聊天頁收到新訊息會重新讀聊天
+  await saveCharAway(chat.id, next);
+
+  const messages = await loadMessages(chat.id);
+  const lastTs = messages.reduce((max, m) => Math.max(max, m.createdAt || 0), 0);
+  const ts = Math.max(now, lastTs + 1);
+  const name = await characterName(chat);
+  await appendToChat(chat.id, [
+    {
+      id: `msg_busy_auto_${ts}`,
+      sender: "assistant",
+      name,
+      content: text,
+      is_user: false,
+      status: "sent",
+      createdAt: ts,
+      updatedAt: ts,
+    },
+  ], chat);
+  await notifyCharMessage(chat, name, text, `char-busy-auto-${chat.id}-${ts}`);
+  return next;
+}
+
+/** 處理忙碌中到期的事（計時器、開 App 補跑都走這裡） */
+export async function runBusyDue(
+  chatId: string,
+  now = Date.now(),
+): Promise<void> {
+  if (runningBusy.has(chatId)) return;
+  runningBusy.add(chatId);
+
+  try {
+    const chat = await loadChatById(chatId);
+    let away = chat?.charAway;
+    if (!chat || !canBusyPeek(away)) return;
+
+    if (away.autoReply && away.autoReplyAt && now >= away.autoReplyAt - RETURN_GRACE_MS) {
+      away = await sendBusyAutoReply(chat, away, now);
+    }
+    scheduleBusyTimer(chatId, away);
+  } finally {
+    runningBusy.delete(chatId);
+  }
+}
+
 /** 回來後已經把 user 留的話回完了 */
 export async function markCharAwayReplied(chatId: string): Promise<void> {
   const chat = await loadChatById(chatId);
@@ -537,32 +617,7 @@ export async function returnCharAwayIfDue(
       }
     }
 
-    // 使用者不是正看著這個聊天：未讀 +1 並發通知
-    if (viewingChatId !== chatId) {
-      await incrementLocalChatUnreadCount(chatId, 1);
-
-      try {
-        const { pushNotificationService } = await import(
-          "@/services/PushNotificationService"
-        );
-        const notificationItem = {
-          id: `char-away-back-${chatId}-${ts}`,
-          type: "chat_message" as const,
-          title: name,
-          message: away.backText,
-          timestamp: Date.now(),
-          createdAt: Date.now(),
-          characterId: chat.characterId,
-          characterName: name,
-          chatId,
-          priority: "normal" as const,
-          read: false,
-        };
-        pushNotificationService.send(notificationItem);
-      } catch (err) {
-        console.warn("[CharAway] 發通知失敗:", err);
-      }
-    }
+    await notifyCharMessage(chat, name, away.backText, `char-away-back-${chatId}-${ts}`);
 
     // 有留話或未接來電：讓他接著回（聊天頁開著時聊天頁自己會處理）
     // 睡覺／忙碌不呼叫背景回覆，replyPending 留著等使用者打開聊天時生成
@@ -632,6 +687,7 @@ async function scanAll(): Promise<void> {
           await returnCharAwayIfDue(chat.id, now);
         } else {
           scheduleReturn(chat.id, away);
+          await runBusyDue(chat.id, now);
         }
       }
 
@@ -665,6 +721,29 @@ function clearReturnTimer(chatId: string): void {
   if (timer === undefined) return;
   clearTimeout(timer);
   returnTimers.delete(chatId);
+}
+
+/** 排下一件忙碌中要做的事（同一個聊天只留一個） */
+function scheduleBusyTimer(chatId: string, away: CharAway): void {
+  clearBusyTimer(chatId);
+  const due = [away.autoReplyAt, away.peekAt].filter(
+    (t): t is number => typeof t === "number",
+  );
+  if (due.length === 0) return;
+
+  const delay = Math.max(0, Math.min(...due) - Date.now() - RETURN_GRACE_MS);
+  const timer = setTimeout(() => {
+    busyTimers.delete(chatId);
+    void runBusyDue(chatId);
+  }, delay);
+  busyTimers.set(chatId, timer);
+}
+
+function clearBusyTimer(chatId: string): void {
+  const timer = busyTimers.get(chatId);
+  if (timer === undefined) return;
+  clearTimeout(timer);
+  busyTimers.delete(chatId);
 }
 
 /** 排「預約開始」的計時器（同一個聊天只留一個） */
@@ -731,6 +810,39 @@ async function cancelScheduledNotification(tag: string): Promise<void> {
     await cancelNativeNotification(tag);
   } catch (err) {
     console.warn("[CharAway] 取消原生通知失敗:", err);
+  }
+}
+
+/** 使用者不是正看著這個聊天：未讀 +1 並發通知 */
+async function notifyCharMessage(
+  chat: Chat,
+  name: string,
+  text: string,
+  notificationId: string,
+): Promise<void> {
+  if (viewingChatId === chat.id) return;
+
+  await incrementLocalChatUnreadCount(chat.id, 1);
+  try {
+    const { pushNotificationService } = await import(
+      "@/services/PushNotificationService"
+    );
+    const notificationItem = {
+      id: notificationId,
+      type: "chat_message" as const,
+      title: name,
+      message: text,
+      timestamp: Date.now(),
+      createdAt: Date.now(),
+      characterId: chat.characterId,
+      characterName: name,
+      chatId: chat.id,
+      priority: "normal" as const,
+      read: false,
+    };
+    pushNotificationService.send(notificationItem);
+  } catch (err) {
+    console.warn("[CharAway] 發通知失敗:", err);
   }
 }
 

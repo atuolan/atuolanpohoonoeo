@@ -8,6 +8,7 @@ import {
   cancelCharAwayPlan,
   finishCharAwaySneak,
   markCharAwayReplied,
+  noteCharBusyMessage,
   startCharAway,
   startCharBusy,
   startCharSleep,
@@ -27,6 +28,7 @@ vi.mock("@/services/charAwayRuntime", () => ({
   wakeCharAwayNow: vi.fn(),
   urgeCharAway: vi.fn(),
   markCharAwayReplied: vi.fn(),
+  noteCharBusyMessage: vi.fn(),
   setCharAwayViewingChat: vi.fn(),
 }));
 

@@ -33,6 +33,7 @@ import {
   buildCharAwaySneakNote,
   buildCharBusyGuide,
   buildCharSleepGuide,
+  canBusyPeek,
   canUseCharAway,
   canUseCharBusy,
   canUseCharSleep,
@@ -49,6 +50,7 @@ import {
   cancelCharAwayPlan,
   finishCharAwaySneak,
   markCharAwayReplied,
+  noteCharBusyMessage,
   setCharAwayViewingChat,
   startCharAway,
   startCharBusy,
@@ -67,6 +69,12 @@ export interface AwayHint {
 
 /** 已經替這個 away 試過自動回覆（模組層級，跨元件共用） */
 const autoReplyAttempted = new Set<string>();
+
+/** 已經排過看手機的留言（模組層級，重新掛載也不重排） */
+const notedBusyMessages = new Set<string>();
+
+/** 剛送出的留言才排，載入舊訊息時不算 */
+const BUSY_MESSAGE_FRESH_MS = 30_000;
 
 export function useCharAway(ctx: {
   currentChatId: Ref<string | null | undefined>;
@@ -430,11 +438,29 @@ export function useCharAway(ctx: {
     void ctx.triggerAIResponse();
   }
 
+  // --- 忙碌時留言：排先回的話和看手機 ---
+  function maybeNoteBusyMessage(): void {
+    const away = charAway.value;
+    const chatId = ctx.currentChatId.value;
+    if (!chatId || !canBusyPeek(away)) return;
+
+    const last = ctx.messages.value[ctx.messages.value.length - 1];
+    if (!last || last.role !== "user" || last.sentWhileAway !== away.id) return;
+    if (Date.now() - last.timestamp > BUSY_MESSAGE_FRESH_MS) return;
+    if (notedBusyMessages.has(last.id)) return;
+
+    notedBusyMessages.add(last.id);
+    void noteCharBusyMessage(chatId);
+  }
+
   // --- 訊息變動 / 事件 ---
   watch(
     () => ctx.messages.value.length,
     () => {
-      void nextTick(() => maybeAutoReply());
+      void nextTick(() => {
+        maybeAutoReply();
+        maybeNoteBusyMessage();
+      });
     },
   );
 

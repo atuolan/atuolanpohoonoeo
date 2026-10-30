@@ -35,6 +35,14 @@ export const CHAR_WAKE_CALL_COUNT = 3;
 export const CHAR_SLEEP_BACK_DEFAULT = "早安";
 /** 忙碌 back 空白的預設 */
 export const CHAR_BUSY_BACK_DEFAULT = "我忙完了";
+/** 忙碌時看手機的間隔（分鐘） */
+export const CHAR_BUSY_CHECK_MIN_MINUTES = 10;
+export const CHAR_BUSY_CHECK_MAX_MINUTES = 120;
+/** 連傳時最快幾分鐘後看手機 */
+export const CHAR_BUSY_PEEK_MIN_MS = 3 * 60_000;
+/** 先回一句：留言後多久送出 */
+const CHAR_BUSY_AUTO_REPLY_MIN_MS = 20_000;
+const CHAR_BUSY_AUTO_REPLY_MAX_MS = 60_000;
 
 /** 由標籤開始時，回來時間至少留這麼久 */
 const CHAR_AWAY_PLAN_MIN_LEAD_MS = 60_000;
@@ -44,6 +52,10 @@ export interface ParsedCharBusy {
   start?: string;
   end?: string;
   minutes?: number;
+  /** 大約幾分鐘能看一次手機；沒有代表走不開 */
+  check?: number;
+  /** 第一次收到留言時先回的話 */
+  auto?: string;
   reason: string;
   backText: string;
 }
@@ -305,6 +317,44 @@ export function createCharBusy(
     callCount: 0,
     sneakCount: 0,
     updatedAt: now,
+    ...(parsed.check !== undefined ? { checkMinutes: parsed.check } : {}),
+    ...(parsed.auto ? { autoReply: parsed.auto } : {}),
+  };
+}
+
+/** 忙碌中而且能抽空看手機（有 check） */
+export function canBusyPeek(away: CharAway | null | undefined): away is CharAway {
+  return !!away && isCharAwayActive(away) && awayKind(away) === "busy" && !!away.checkMinutes;
+}
+
+/**
+ * 忙碌時留了一則：排下次看手機，連傳每多一則間隔減半（最短 3 分鐘），只提早不延後；
+ * 排到忙完之後就不排，等忙完一起回。有 auto 時第一則順便排先回的話。
+ */
+export function scheduleBusyPeek(
+  away: CharAway,
+  now: number,
+  random: () => number = Math.random,
+): CharAway {
+  if (!canBusyPeek(away)) return away;
+
+  const leftCount = (away.peekLeftCount ?? 0) + 1;
+  const gapMs = (away.checkMinutes ?? 0) * 60_000 * (0.7 + random() * 0.6);
+  const candidate = now + Math.max(CHAR_BUSY_PEEK_MIN_MS, gapMs / 2 ** (leftCount - 1));
+  const peekAt = Math.min(away.peekAt ?? Number.POSITIVE_INFINITY, candidate);
+  const autoReplyAt =
+    away.autoReply && !away.autoReplyAt
+      ? now +
+        CHAR_BUSY_AUTO_REPLY_MIN_MS +
+        random() * (CHAR_BUSY_AUTO_REPLY_MAX_MS - CHAR_BUSY_AUTO_REPLY_MIN_MS)
+      : away.autoReplyAt;
+
+  return {
+    ...away,
+    peekLeftCount: leftCount,
+    peekAt: peekAt < away.returnAt ? peekAt : undefined,
+    autoReplyAt,
+    updatedAt: now,
   };
 }
 
@@ -504,8 +554,8 @@ export function buildCharBusyGuide(
 ): string {
   if (!available) return "";
   const lines = [
-    `- 忙一段時間：<char-busy minutes="預計忙幾分鐘" reason="在忙什麼" back="忙完的第一句話"/>（劇情裡要去做一件會忙上好一陣子、不方便看手機的事時用，例如搭飛機、搭火車、考試、值班；minutes 30～720，照這件事實際要花的時間估。reason 8 字內；back 30 字內，忙完時系統替你送出。不到一小時的小事用暫時離開）`,
-    `  之後才開始的行程改寫開始和結束時間，不寫 minutes：<char-busy start="開始時間 HH:mm" end="結束時間 HH:mm" reason="在忙什麼" back="忙完的第一句話"/>（用 24 小時制，晚上十點半寫 22:30；24 小時內開始的才排）`,
+    `- 忙一段時間：<char-busy minutes="預計忙幾分鐘" check="大約幾分鐘能看一次手機" auto="第一次收到訊息時先回的話" reason="在忙什麼" back="忙完的第一句話"/>（劇情裡要去做一件會忙上好一陣子、不方便看手機的事時用，例如搭飛機、搭火車、考試、值班；minutes 30～720，照這件事實際要花的時間估。上班、開會、值班這類能偷看手機的才寫 check（10～120）和 auto（30 字內）；搭飛機、考試等走不開就兩個都不寫。reason 8 字內；back 30 字內，忙完時系統替你送出。不到一小時的小事用暫時離開）`,
+    `  之後才開始的行程改寫開始和結束時間，不寫 minutes：<char-busy start="開始時間 HH:mm" end="結束時間 HH:mm" check="同上" auto="同上" reason="在忙什麼" back="忙完的第一句話"/>（用 24 小時制，晚上十點半寫 22:30；24 小時內開始的才排）`,
   ];
   if (isCharAwayPlanPending(plan) && plan) {
     lines.push(
