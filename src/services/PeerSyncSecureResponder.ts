@@ -44,6 +44,27 @@ function notifyPeerStatus(title: string, message: string): void {
   }
 }
 
+// 對方一次傳輸會切成好幾批：同一台裝置的結果等批次都到齊（安靜一陣子）才合成一則通知
+const BATCH_NOTICE_QUIET_MS = 3000;
+const batchNotices = new Map<string, { applied: number; timer: ReturnType<typeof setTimeout> }>();
+
+function notifyPeerBatchResult(sourceDeviceId: string, result: "applied" | "rejected", applied = 0): void {
+  const key = `${sourceDeviceId}::${result}`;
+  const pending = batchNotices.get(key);
+  if (pending) clearTimeout(pending.timer);
+  const total = (pending?.applied ?? 0) + applied;
+  const timer = setTimeout(() => {
+    batchNotices.delete(key);
+    const name = resolveSourceDisplayName(sourceDeviceId);
+    if (result === "applied") {
+      notifyPeerStatus("裝置同步完成", `已從 ${name} 套用 ${total} 筆資料`);
+    } else {
+      notifyPeerStatus("已拒絕裝置同步", `你已拒絕 ${name} 傳來的同步資料`);
+    }
+  }, BATCH_NOTICE_QUIET_MS);
+  batchNotices.set(key, { applied: total, timer });
+}
+
 function sendPeerFailure(
   sourceDeviceId: string,
   requestId: string,
@@ -421,7 +442,7 @@ async function handleApplyRequest(
   });
 
   if (!accepted) {
-    notifyPeerStatus("已拒絕裝置同步", `你已拒絕 ${resolveSourceDisplayName(sourceDeviceId)} 傳來的同步資料`);
+    notifyPeerBatchResult(sourceDeviceId, "rejected");
     const rejected = envelopes.map((env) => ({
       entityType: env.entityType,
       entityId: env.entityId,
@@ -465,7 +486,7 @@ async function handleApplyRequest(
     const applied = await service.applyPullResponsePublic(pseudoResponse, {
       forceOverwrite: true,
     });
-    notifyPeerStatus("裝置同步完成", `已從 ${resolveSourceDisplayName(sourceDeviceId)} 套用 ${applied} 筆資料`);
+    notifyPeerBatchResult(sourceDeviceId, "applied", applied);
     if (msg.sessionId) {
       const encryptedPayload = await peerCrypto.encrypt(sourceDeviceId, msg.sessionId, {
         applied,

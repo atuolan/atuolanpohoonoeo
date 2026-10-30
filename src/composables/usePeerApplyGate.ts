@@ -36,6 +36,8 @@ type GateResolve = (accepted: boolean) => void;
 
 const _pending = ref<PeerApplyRequest | null>(null);
 let _resolve: GateResolve | null = null;
+/** 目前視窗等的那個決定：同一次傳輸的後續批次共用 */
+let _decision: Promise<boolean> | null = null;
 
 /** 已通過確認的 sender session：deviceId -> expiresAt（ms） */
 const _trustedSenders = new Map<string, number>();
@@ -95,6 +97,21 @@ export async function requestPeerApplyApproval(
   }
   _trustedSenders.delete(key);
 
+  // 對方一次傳輸會切成好幾批同時送來：同一個 sender 的後續批次併進同一個視窗，等同一個決定
+  const current = _pending.value;
+  if (_resolve && _decision && current && sessionKey(current.sourceDeviceId, current.operation) === key) {
+    _pending.value = {
+      ...current,
+      totalEnvelopes: current.totalEnvelopes + request.totalEnvelopes,
+      summary: mergeSummary(current.summary, request.summary),
+    };
+    log("併入目前的同意 dialog", {
+      requestId: request.requestId,
+      totalEnvelopes: _pending.value.totalEnvelopes,
+    });
+    return _decision;
+  }
+
   // 如果已有 dialog 在等另一個 sender 的決定，先拒絕舊的
   if (_resolve) {
     log("已有待決 dialog，先拒絕上一個請求");
@@ -112,9 +129,18 @@ export async function requestPeerApplyApproval(
     expiresInMs: expiresAt - receivedAt,
   });
 
-  return new Promise<boolean>((resolve) => {
+  _decision = new Promise<boolean>((resolve) => {
     _resolve = resolve;
   });
+  return _decision;
+}
+
+function mergeSummary(a: PeerApplySummaryEntry[], b: PeerApplySummaryEntry[]): PeerApplySummaryEntry[] {
+  const merged = new Map<string, number>();
+  for (const entry of [...a, ...b]) {
+    merged.set(entry.entityType, (merged.get(entry.entityType) ?? 0) + entry.count);
+  }
+  return [...merged].map(([entityType, count]) => ({ entityType, count }));
 }
 
 /** 使用者點擊「接受」 */
@@ -129,6 +155,7 @@ export function approvePeerApply(): void {
   });
   const r = _resolve;
   _resolve = null;
+  _decision = null;
   _pending.value = null;
   _trustedSenders.set(key, Date.now() + TRUST_SESSION_MS);
   _rejectedSenders.delete(key);
@@ -147,6 +174,7 @@ export function rejectPeerApply(): void {
   });
   const r = _resolve;
   _resolve = null;
+  _decision = null;
   _pending.value = null;
   _rejectedSenders.add(key);
   // 拒絕 session 在 5 分鐘後自動清除（避免永遠鎖死）

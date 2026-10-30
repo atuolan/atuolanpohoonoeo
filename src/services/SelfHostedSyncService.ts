@@ -82,6 +82,8 @@ export class SelfHostedSyncService {
   private static readonly GUARD_MIN_TOTAL_ITEMS = 20;
   private static readonly GUARD_RATIO_THRESHOLD = 0.4;
   private static readonly COOPERATIVE_YIELD_EVERY = 25;
+  /** 套用一次排一個：同一個聊天的好幾批同時「讀出→合併→存回」會互相蓋掉 */
+  private applyQueue: Promise<unknown> = Promise.resolve();
 
   /**
    * 供 PeerSyncManager 使用：收集本機所有同步實體的 envelope。
@@ -550,7 +552,16 @@ export class SelfHostedSyncService {
     return items;
   }
 
-  private async applyPullResponse(
+  private applyPullResponse(
+    response: SelfHostedSyncPullResponse,
+    options?: SelfHostedPullOptions,
+  ): Promise<number> {
+    const run = this.applyQueue.then(() => this.applyPullResponseNow(response, options));
+    this.applyQueue = run.catch(() => undefined);
+    return run;
+  }
+
+  private async applyPullResponseNow(
     response: SelfHostedSyncPullResponse,
     options?: SelfHostedPullOptions,
   ): Promise<number> {
