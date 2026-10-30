@@ -40,6 +40,10 @@ export const CHAR_BUSY_CHECK_MIN_MINUTES = 10;
 export const CHAR_BUSY_CHECK_MAX_MINUTES = 120;
 /** 連傳時最快幾分鐘後看手機 */
 export const CHAR_BUSY_PEEK_MIN_MS = 3 * 60_000;
+/** 每次看手機擲骰，這個機率提早忙完 */
+export const CHAR_BUSY_EARLY_END_CHANCE = 0.2;
+/** 看手機之後的空檔，這段時間 user 回他會即時接話 */
+export const CHAR_BUSY_SPARE_MS = 5 * 60_000;
 /** 先回一句：留言後多久送出 */
 const CHAR_BUSY_AUTO_REPLY_MIN_MS = 20_000;
 const CHAR_BUSY_AUTO_REPLY_MAX_MS = 60_000;
@@ -358,6 +362,35 @@ export function scheduleBusyPeek(
   };
 }
 
+/** 忙碌的空檔中（看完手機、還能接話） */
+export function isBusySpare(away: CharAway | null | undefined, now: number): boolean {
+  return canBusyPeek(away) && (away.spareUntil ?? 0) > now;
+}
+
+/** 擲骰：這次看手機會不會提早忙完 */
+function rollEarlyEnd(random: () => number): boolean {
+  return random() < CHAR_BUSY_EARLY_END_CHANCE;
+}
+
+/** 到時間看手機：擲骰並標記要生成，排程清掉 */
+export function startBusyPeek(
+  away: CharAway,
+  now: number,
+  random: () => number = Math.random,
+): CharAway {
+  return {
+    ...away,
+    sneakCount: (away.sneakCount ?? 0) + 1,
+    sneakPending: true,
+    sneakReason: away.hangUpPeek ? "hangUp" : "peek",
+    hangUpPeek: false,
+    earlyEndPending: rollEarlyEnd(random),
+    peekAt: undefined,
+    peekLeftCount: 0,
+    updatedAt: now,
+  };
+}
+
 /** 結束一次暫時離開，回傳新物件 */
 export function endCharAway(
   away: CharAway,
@@ -405,9 +438,13 @@ export function recordAwayCall(away: CharAway, now: number): CharAway {
   return next;
 }
 
-/** 小遊戲贏了：記一次偷回，狀態不結束 */
-export function recordSneakWin(away: CharAway, now: number): CharAway {
-  return {
+/** 小遊戲贏了：記一次偷回，狀態不結束；能看手機的忙碌也算看一次手機 */
+export function recordSneakWin(
+  away: CharAway,
+  now: number,
+  random: () => number = Math.random,
+): CharAway {
+  const next: CharAway = {
     ...away,
     urgeCount: away.urgeCount + 1,
     sneakCount: (away.sneakCount ?? 0) + 1,
@@ -415,9 +452,17 @@ export function recordSneakWin(away: CharAway, now: number): CharAway {
     urgeLockedUntil: now + CHAR_AWAY_URGE_LOCK_MS,
     updatedAt: now,
   };
+  if (!canBusyPeek(away)) return next;
+  return {
+    ...next,
+    sneakReason: "urge",
+    earlyEndPending: rollEarlyEnd(random),
+    peekAt: undefined,
+    peekLeftCount: 0,
+  };
 }
 
-/** 偷回那一輪生成完了（ok 才記 lastSneakAt） */
+/** 偷回那一輪生成完了（ok 才記 lastSneakAt，能看手機的忙碌接著開空檔） */
 export function finishSneak(
   away: CharAway,
   now: number,
@@ -426,7 +471,10 @@ export function finishSneak(
   return {
     ...away,
     sneakPending: false,
+    sneakReason: undefined,
+    earlyEndPending: false,
     lastSneakAt: ok ? now : away.lastSneakAt,
+    ...(ok && canBusyPeek(away) ? { spareUntil: now + CHAR_BUSY_SPARE_MS } : {}),
     updatedAt: now,
   };
 }
@@ -439,6 +487,8 @@ export function wakeCharAway(away: CharAway, now: number): CharAway {
     endedBy: "wake",
     replyPending: false,
     sneakPending: false,
+    sneakReason: undefined,
+    earlyEndPending: false,
     updatedAt: now,
   };
 }
@@ -446,7 +496,15 @@ export function wakeCharAway(away: CharAway, now: number): CharAway {
 /** 面對面開始：暫停（已結束或已暫停的原樣回傳） */
 export function pauseCharAway(away: CharAway, now: number): CharAway {
   if (away.endedAt || away.pausedAt) return away;
-  return { ...away, pausedAt: now, updatedAt: now };
+  return {
+    ...away,
+    pausedAt: now,
+    peekAt: undefined,
+    peekLeftCount: undefined,
+    spareUntil: undefined,
+    autoReplyAt: undefined,
+    updatedAt: now,
+  };
 }
 
 /** 回到線上：從剩下的時間繼續（沒暫停的原樣回傳） */
@@ -505,6 +563,20 @@ export function shouldWakeByCall(
     (t) => t >= now - CHAR_WAKE_CALL_WINDOW_MS,
   ).length;
   return recent + 1 >= CHAR_WAKE_CALL_COUNT;
+}
+
+/** 空檔中給 AI 的提示；沒有空檔或這一輪正在看手機就回 null */
+export function buildCharBusySpareNote(
+  away: CharAway | undefined,
+  now: number,
+): string | null {
+  if (!away || away.sneakPending || !isBusySpare(away, now)) return null;
+
+  const left = Math.max(1, Math.ceil(((away.spareUntil ?? now) - now) / 60_000));
+  return [
+    "[空檔中]",
+    `{{char}} 還在「${away.reason}」，趁空檔跟 {{user}} 聊幾句，訊息要短。這段空檔大約還剩 ${left} 分鐘，${left <= 2 ? "這次就說要回去忙了" : "快結束時自己說要回去忙"}。`,
+  ].join("\n");
 }
 
 /** 從上次偷回之後 user 留了幾則（entries 由呼叫端先筛成這段期間的） */
@@ -593,6 +665,7 @@ export function buildCharAwayPlanNote(
 export function buildCharAwaySneakNote(
   away: CharAway | undefined,
   leftCount: number,
+  opts: { background?: boolean } = {},
 ): string | null {
   if (!away || !isCharAwayActive(away)) return null;
   if (!away.sneakPending) return null;
@@ -609,6 +682,37 @@ export function buildCharAwaySneakNote(
   }
 
   if (kind === "busy") {
+    const leftText = left > 0 ? `回應 {{user}} 留的 ${left} 則訊息` : "";
+    // 背景回覆不解析 <char-wake/>
+    const wakeLine = opts.background
+      ? []
+      : [
+          `如果 {{user}} 有急事、很難過，而你正在做的事走得開，可以在 </content> 之後放 <char-wake/> 先不忙了；走不開（例如在飛機上）就不要放。`,
+        ];
+
+    if (away.earlyEndPending) {
+      return [
+        "[提早忙完]",
+        `{{char}} 原本要「${away.reason}」到 ${formatClock(away.returnAt)}，比預計早結束了，現在有空。自然地跟 {{user}} 說一聲${leftText ? `，${leftText}` : ""}，之後就正常聊天。`,
+      ].join("\n");
+    }
+
+    if (away.sneakReason === "hangUp") {
+      return [
+        "[掛電話]",
+        `{{char}} 正在「${away.reason}」（到 ${formatClock(away.returnAt)}），{{user}} 打電話來，{{char}} 不方便接就掛掉了，現在傳訊息問 {{user}} 怎麼了${leftText ? `，順便${leftText}` : ""}。訊息要短，回完還是在忙。`,
+        ...wakeLine,
+      ].join("\n");
+    }
+
+    if (away.sneakReason === "peek") {
+      return [
+        "[看手機]",
+        `{{char}} 正在「${away.reason}」（到 ${formatClock(away.returnAt)}），趁空檔看了手機。簡短${leftText || "回一句"}，語氣像抽空回覆，回完還是在忙。`,
+        ...wakeLine,
+      ].join("\n");
+    }
+
     return [
       "[偷偷回]",
       `{{char}} 正在「${away.reason}」（到 ${formatClock(away.returnAt)}），{{user}} 一直催，{{char}} 偷偷拿手機回一下。簡短回${left > 0 ? ` {{user}} 留的 ${left} 則訊息` : "一句"}，語氣像在偷用手機，回完還是在忙。`,

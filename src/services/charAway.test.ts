@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   awayHeaderText,
+  buildCharBusySpareNote,
   canBusyPeek,
+  isBusySpare,
   scheduleBusyPeek,
+  startBusyPeek,
   awayUrgeLabel,
   buildAwayHintText,
   buildCharAwayGuide,
@@ -771,6 +774,90 @@ describe("scheduleBusyPeek", () => {
   it("沒有 check 就原樣回傳", () => {
     const away = makeBusy();
     expect(scheduleBusyPeek(away, NOW)).toBe(away);
+  });
+});
+
+describe("看手機與擲骰", () => {
+  const busy = (overrides: Partial<CharAway> = {}) =>
+    makeBusy({ startedAt: NOW, returnAt: NOW + 300 * MINUTE, checkMinutes: 40, ...overrides });
+
+  it("startBusyPeek：骰到 20% 內就提早結束", () => {
+    expect(startBusyPeek(busy(), NOW, () => 0.19).earlyEndPending).toBe(true);
+    expect(startBusyPeek(busy(), NOW, () => 0.2).earlyEndPending).toBe(false);
+  });
+
+  it("startBusyPeek：清掉排程並標記原因", () => {
+    const away = startBusyPeek(busy({ peekAt: NOW, peekLeftCount: 3 }), NOW, () => 1);
+    expect(away.sneakPending).toBe(true);
+    expect(away.sneakReason).toBe("peek");
+    expect(away.peekAt).toBeUndefined();
+    expect(away.peekLeftCount).toBe(0);
+    expect(away.sneakCount).toBe(1);
+  });
+
+  it("startBusyPeek：掛電話後的看手機", () => {
+    const away = startBusyPeek(busy({ hangUpPeek: true }), NOW, () => 1);
+    expect(away.sneakReason).toBe("hangUp");
+    expect(away.hangUpPeek).toBe(false);
+  });
+
+  it("偷偷回我：有 check 才擲骰", () => {
+    const withCheck = recordSneakWin(busy(), NOW, () => 0);
+    expect(withCheck.earlyEndPending).toBe(true);
+    expect(withCheck.sneakReason).toBe("urge");
+    const noCheck = recordSneakWin(makeBusy(), NOW, () => 0);
+    expect(noCheck.earlyEndPending).toBeUndefined();
+    expect(noCheck.sneakReason).toBeUndefined();
+  });
+
+  it("finishSneak：成功才開 5 分鐘空檔，沒有 check 不開", () => {
+    const pending = busy({ sneakPending: true, sneakReason: "peek", earlyEndPending: true });
+    const ok = finishSneak(pending, NOW, true);
+    expect(ok.spareUntil).toBe(NOW + 5 * MINUTE);
+    expect(ok.sneakReason).toBeUndefined();
+    expect(ok.earlyEndPending).toBe(false);
+    expect(finishSneak(pending, NOW, false).spareUntil).toBeUndefined();
+    expect(finishSneak(makeBusy({ sneakPending: true }), NOW, true).spareUntil).toBeUndefined();
+  });
+
+  it("isBusySpare 看空檔結束時間", () => {
+    const away = busy({ spareUntil: NOW + MINUTE });
+    expect(isBusySpare(away, NOW)).toBe(true);
+    expect(isBusySpare(away, NOW + MINUTE)).toBe(false);
+    expect(isBusySpare(busy(), NOW)).toBe(false);
+  });
+
+  it("面對面暫停時清掉排程與空檔", () => {
+    const paused = pauseCharAway(
+      busy({ peekAt: NOW + MINUTE, spareUntil: NOW + MINUTE, autoReplyAt: NOW + MINUTE, autoReply: "開會中", peekLeftCount: 2 }),
+      NOW,
+    );
+    expect(paused.peekAt).toBeUndefined();
+    expect(paused.spareUntil).toBeUndefined();
+    expect(paused.autoReplyAt).toBeUndefined();
+    expect(paused.peekLeftCount).toBeUndefined();
+    expect(paused.autoReply).toBe("開會中");
+  });
+
+  it("各情境的提示", () => {
+    const note = (overrides: Partial<CharAway>, background = false) =>
+      buildCharAwaySneakNote(busy({ sneakPending: true, ...overrides }), 2, { background })!;
+
+    expect(note({ sneakReason: "peek" })).toContain("[看手機]");
+    expect(note({ sneakReason: "peek" })).toContain("<char-wake/>");
+    expect(note({ sneakReason: "peek" }, true)).not.toContain("<char-wake/>");
+    expect(note({ sneakReason: "hangUp" })).toContain("[掛電話]");
+    expect(note({ sneakReason: "hangUp" }, true)).not.toContain("<char-wake/>");
+    expect(note({ sneakReason: "urge", earlyEndPending: true })).toContain("[提早忙完]");
+    expect(note({ sneakReason: "peek", earlyEndPending: true })).toContain("2 則");
+  });
+
+  it("空檔提示：快結束時要他說要去忙", () => {
+    const away = busy({ spareUntil: NOW + 4 * MINUTE });
+    expect(buildCharBusySpareNote(away, NOW)).toContain("大約還剩 4 分鐘");
+    expect(buildCharBusySpareNote(away, NOW + 3 * MINUTE)).toContain("這次就說要回去忙了");
+    expect(buildCharBusySpareNote(busy(), NOW)).toBeNull();
+    expect(buildCharBusySpareNote({ ...away, sneakPending: true }, NOW)).toBeNull();
   });
 });
 

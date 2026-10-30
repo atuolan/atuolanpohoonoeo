@@ -32,6 +32,7 @@ import {
   buildCharAwayReturnNote,
   buildCharAwaySneakNote,
   buildCharBusyGuide,
+  buildCharBusySpareNote,
   buildCharSleepGuide,
   canBusyPeek,
   canUseCharAway,
@@ -39,6 +40,7 @@ import {
   canUseCharSleep,
   clearReplyPending,
   countLeftSinceSneak,
+  isBusySpare,
   isCharAwayActive,
   isCharAwayPlanPending,
   pickQuickBackGame,
@@ -49,6 +51,7 @@ import {
   cancelCharAway,
   cancelCharAwayPlan,
   finishCharAwaySneak,
+  isCharBusyPeekRunning,
   markCharAwayReplied,
   noteCharBusyMessage,
   setCharAwayViewingChat,
@@ -106,8 +109,13 @@ export function useCharAway(ctx: {
       !ctx.isGroupChat.value,
   );
 
+  /** 這時候不該生成回覆（忙碌的空檔內可以） */
+  const blocksReply = computed(
+    () => isAwayActive.value && !isBusySpare(charAway.value, now.value),
+  );
+
   const activeAwayId = computed<string | null>(() =>
-    isAwayActive.value ? charAway.value?.id ?? null : null,
+    blocksReply.value ? charAway.value?.id ?? null : null,
   );
 
   const headerStatusText = computed(() =>
@@ -161,7 +169,10 @@ export function useCharAway(ctx: {
     charSleepEnabled.value = chat.charSleepEnabled !== false;
     charBusyEnabled.value = chat.charBusyEnabled !== false;
     if (!isCharAwayActive(charAway.value ?? undefined)) quickBackGame.value = null;
-    void nextTick(() => maybeAutoReply());
+    void nextTick(() => {
+      maybeAutoReply();
+      void maybeRunPeekReply();
+    });
   }
 
   const firstAwayEntryId = computed<string | null>(() => {
@@ -265,6 +276,7 @@ export function useCharAway(ctx: {
     const notes = [
       buildCharAwayReturnNote(away, leftCount),
       buildCharAwaySneakNote(away, leftCount),
+      buildCharBusySpareNote(away, nowTs),
       buildCharAwayPlanNote(plan, nowTs, shiftMs),
     ].filter((note): note is string => !!note);
     const charAwayReturnNote = notes.length > 0 ? notes.join("\n\n") : undefined;
@@ -307,7 +319,7 @@ export function useCharAway(ctx: {
       !!away.startMessageId &&
       !ctx.messages.value.some((m) => m.id === away.startMessageId);
 
-    if (!gone) return true;
+    if (!gone) return !isBusySpare(away, Date.now());
 
     const chatId = ctx.currentChatId.value;
     if (chatId) await cancelCharAway(chatId);
@@ -438,6 +450,29 @@ export function useCharAway(ctx: {
     void ctx.triggerAIResponse();
   }
 
+  // --- 忙碌時看手機：看著聊天就在這裡生成 ---
+  let peekReplyRunning = false;
+
+  async function maybeRunPeekReply(): Promise<void> {
+    const away = charAway.value;
+    const chatId = ctx.currentChatId.value;
+    if (!chatId || !away || !isCharAwayActive(away) || !away.sneakPending) return;
+    if (away.sneakReason !== "peek" && away.sneakReason !== "hangUp") return;
+    if (peekReplyRunning || ctx.isGenerating() || isCharBusyPeekRunning(chatId)) return;
+
+    peekReplyRunning = true;
+    try {
+      await ctx.triggerAIResponse();
+      const current = charAway.value;
+      if (current && current.id === away.id && current.sneakPending) {
+        const finished = await finishCharAwaySneak(chatId, false);
+        if (finished) charAway.value = finished;
+      }
+    } finally {
+      peekReplyRunning = false;
+    }
+  }
+
   // --- 忙碌時留言：排先回的話和看手機 ---
   function maybeNoteBusyMessage(): void {
     const away = charAway.value;
@@ -460,6 +495,7 @@ export function useCharAway(ctx: {
       void nextTick(() => {
         maybeAutoReply();
         maybeNoteBusyMessage();
+        void maybeRunPeekReply();
       });
     },
   );
@@ -481,7 +517,10 @@ export function useCharAway(ctx: {
     if (!isCharAwayActive(charAway.value ?? undefined)) {
       quickBackGame.value = null;
     }
-    void nextTick(() => maybeAutoReply());
+    void nextTick(() => {
+      maybeAutoReply();
+      void maybeRunPeekReply();
+    });
   }
 
   if (typeof window !== "undefined") {
@@ -527,6 +566,7 @@ export function useCharAway(ctx: {
     charSleepEnabled,
     charBusyEnabled,
     isAwayActive,
+    blocksReply,
     activeAwayId,
     headerStatusText,
     quickBackGame,

@@ -35,6 +35,7 @@ import {
   resumeCharAway,
   recordAwayCall,
   scheduleBusyPeek,
+  startBusyPeek,
   recordSneakWin,
   recordUrgeAttempt,
   wakeCharAway,
@@ -63,6 +64,9 @@ const busyTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 /** 正在處理忙碌到期事項的聊天，避免計時器與 visibilitychange 同時跑兩次 */
 const runningBusy = new Set<string>();
+
+/** 正在背景回覆看手機的聊天，聊天頁打開時不要重複生成 */
+const runningPeeks = new Set<string>();
 
 /** 正在處理回來的聊天，避免計時器與 visibilitychange 同時跑兩次 */
 const returning = new Set<string>();
@@ -420,8 +424,12 @@ export async function finishCharAwaySneak(
     return null;
   }
 
+  // 擲骰成功：回覆送出去才算提早忙完
+  if (ok && away.earlyEndPending) return wakeCharAwayNow(chatId);
+
   const next = finishSneak(away, Date.now(), ok);
   await saveCharAway(chatId, next);
+  scheduleBusyTimer(chatId, next);
   return next;
 }
 
@@ -518,6 +526,28 @@ async function sendBusyAutoReply(
   return next;
 }
 
+/** 背景回覆正在跑這個聊天的看手機 */
+export function isCharBusyPeekRunning(chatId: string): boolean {
+  return runningPeeks.has(chatId);
+}
+
+/** 沒看著這個聊天時：背景生成看手機那則 */
+async function runBackgroundPeek(chatId: string): Promise<void> {
+  runningPeeks.add(chatId);
+  let ok = false;
+  try {
+    const { proactiveMessageService } = await import(
+      "@/services/ProactiveMessageService"
+    );
+    ok = await proactiveMessageService.sendCharAwayPeekReply(chatId);
+  } catch (err) {
+    console.warn("[CharAway] 看手機回覆失敗:", err);
+  } finally {
+    runningPeeks.delete(chatId);
+  }
+  await finishCharAwaySneak(chatId, ok);
+}
+
 /** 處理忙碌中到期的事（計時器、開 App 補跑都走這裡） */
 export async function runBusyDue(
   chatId: string,
@@ -531,9 +561,23 @@ export async function runBusyDue(
     let away = chat?.charAway;
     if (!chat || !canBusyPeek(away)) return;
 
+    // 上次看手機做到一半 App 被關掉：沒看著就清掉（看著時聊天頁會接手）
+    if (away.sneakPending && away.sneakReason !== "urge" && viewingChatId !== chatId) {
+      const cleared = await finishCharAwaySneak(chatId, false);
+      if (cleared) away = cleared;
+    }
+
     if (away.autoReply && away.autoReplyAt && now >= away.autoReplyAt - RETURN_GRACE_MS) {
       away = await sendBusyAutoReply(chat, away, now);
     }
+
+    if (!away.sneakPending && away.peekAt && now >= away.peekAt - RETURN_GRACE_MS) {
+      await saveCharAway(chatId, startBusyPeek(away, now));
+      // 看著聊天：聊天頁收到事件後自己生成，生成完再排下一次
+      if (viewingChatId !== chatId) await runBackgroundPeek(chatId);
+      return;
+    }
+
     scheduleBusyTimer(chatId, away);
   } finally {
     runningBusy.delete(chatId);

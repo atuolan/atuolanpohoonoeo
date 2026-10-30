@@ -4277,7 +4277,7 @@ async function sendAndTriggerAI() {
   // 被角色封鎖期間，不觸發 AI 回覆（訊息已標記 sentWhileBlocked，角色看不到）
   if (isBlockedByChar.value) return;
   // 角色暫時離開中：訊息照存，不呼叫 AI（時間到或催回來後一起回）
-  if (charAwayCtl.isAwayActive.value) return;
+  if (charAwayCtl.blocksReply.value) return;
 
   // 空輸入 + 最後一條是 AI 訊息 → 視為「繼續」（讓 AI 接著說）
   // 但 char / system 發言模式下不觸發繼續，避免誤觸
@@ -4949,7 +4949,7 @@ async function handleDollSend() {
     currentTurnId.value = crypto.randomUUID();
     scrollToBottom();
     await saveChatImmediate();
-    if (isBlockedByChar.value || charAwayCtl.isAwayActive.value) return;
+    if (isBlockedByChar.value || charAwayCtl.blocksReply.value) return;
     await triggerAIResponse();
   } finally {
     dollSending.value = false;

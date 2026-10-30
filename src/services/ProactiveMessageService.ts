@@ -20,7 +20,7 @@ import {
 } from "./PlurkPostService";
 import { applyCharPlurkComment, buildPlurkShareGuideForChat } from "./plurkShareRuntime";
 import { pickGenerationToggles } from "@/utils/generationToggles";
-import { buildCharAwayPlanNote, buildCharAwayReturnNote, countLeftSinceSneak, isCharAwayActive } from "./charAway";
+import { buildCharAwayPlanNote, buildCharAwayReturnNote, buildCharAwaySneakNote, countLeftSinceSneak, isCharAwayActive } from "./charAway";
 import { formatEventTime } from "@/utils/calendarEventFormat";
 import { computeChatNow } from "@/utils/fakeTime";
 import { toPromptGroupMember, withLiveSubCharSnapshot } from "@/utils/groupMembers";
@@ -397,6 +397,25 @@ export class ProactiveMessageService {
    * 回傳 true 表示確實有追加訊息。
    */
   async sendCharAwayReturnReply(chatId: string): Promise<boolean> {
+    return this.sendCharAwayFollowUp(
+      chatId,
+      '你剛忙完回來，看到對方在你忙的時候留的訊息或未接來電，現在回應對方。',
+    )
+  }
+
+  /**
+   * 角色忙碌時抽空看手機：回 user 留下的訊息 / 未接來電
+   *
+   * 回傳 true 表示確實有追加訊息。
+   */
+  async sendCharAwayPeekReply(chatId: string): Promise<boolean> {
+    return this.sendCharAwayFollowUp(
+      chatId,
+      '你還在忙，趁空檔看了手機，看到對方的訊息或未接來電，現在簡短回應對方。',
+    )
+  }
+
+  private async sendCharAwayFollowUp(chatId: string, instruction: string): Promise<boolean> {
     // 使用臨時 settings，不影響正常排程
     const tempSettings: ProactiveMessageSettings = {
       enabled: true,
@@ -417,7 +436,7 @@ export class ProactiveMessageService {
       characterId = chat.characterId
       beforeCount = await getMessageCount(chatId).catch(() => 0)
     } catch (lookupErr) {
-      console.warn('[ProactiveMessage] sendCharAwayReturnReply: 讀取聊天失敗', lookupErr)
+      console.warn('[ProactiveMessage] sendCharAwayFollowUp: 讀取聊天失敗', lookupErr)
       return false
     }
 
@@ -425,11 +444,10 @@ export class ProactiveMessageService {
       await this.sendProactiveMessage(characterId, tempSettings, {
         skipScheduleUpdate: true,
         targetChatId: chatId,
-        customTopicInstruction:
-          '你剛忙完回來，看到對方在你忙的時候留的訊息或未接來電，現在回應對方。',
+        customTopicInstruction: instruction,
       })
     } catch (err) {
-      console.warn('[ProactiveMessage] sendCharAwayReturnReply: 發送失敗', err)
+      console.warn('[ProactiveMessage] sendCharAwayFollowUp: 發送失敗', err)
       return false
     }
 
@@ -438,7 +456,7 @@ export class ProactiveMessageService {
       const afterCount = await getMessageCount(chatId).catch(() => beforeCount)
       return afterCount > beforeCount
     } catch (postErr) {
-      console.warn('[ProactiveMessage] sendCharAwayReturnReply: 對照訊息數失敗', postErr)
+      console.warn('[ProactiveMessage] sendCharAwayFollowUp: 對照訊息數失敗', postErr)
       return false
     }
   }
@@ -1359,6 +1377,7 @@ export class ProactiveMessageService {
         charAwayReturnNote:
           [
             buildCharAwayReturnNote(chat.charAway, awayLeftMessageCount),
+            buildCharAwaySneakNote(chat.charAway, awayLeftMessageCount, { background: true }),
             buildCharAwayPlanNote(chat.charAwayPlan, Date.now()),
           ]
             .filter((note): note is string => !!note)
