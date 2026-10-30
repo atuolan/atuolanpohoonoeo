@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   awayHeaderText,
+  buildCharBusySpareNote,
+  canBusyPeek,
+  isBusySpare,
+  recordBusyHangUp,
+  scheduleBusyPeek,
+  shouldHangUpBusy,
+  startBusyPeek,
   awayUrgeLabel,
   buildAwayHintText,
   buildCharAwayGuide,
@@ -387,9 +394,51 @@ describe("createCharBusy", () => {
     expect(away?.returnAt).toBe(away!.startedAt + 30 * MINUTE);
   });
 
-  it("超過 12 小時就夾到 12 小時", () => {
-    const away = createCharBusy({ ...parsed, end: "04:00" }, BUSY_NOW);
-    expect(away?.returnAt).toBe(away!.startedAt + 12 * 60 * MINUTE);
+  const NIGHT_NOW = new Date(2026, 9, 30, 22, 8).getTime();
+  const nightBusy = (end: string) =>
+    createCharBusy({ end, reason: "補筆錄", backText: "" }, NIGHT_NOW);
+
+  it("end 超過 12 小時的 1～11 點當 12 小時制", () => {
+    expect(nightBusy("10:40")?.returnAt).toBe(new Date(2026, 9, 30, 22, 40).getTime());
+    expect(nightBusy("11:00")?.returnAt).toBe(new Date(2026, 9, 30, 23, 0).getTime());
+  });
+
+  it("end 在 12 小時內就照字面（半夜到早上）", () => {
+    expect(nightBusy("07:00")?.returnAt).toBe(new Date(2026, 9, 31, 7, 0).getTime());
+  });
+
+  it("end 是已經過去的時間就不排，不會消失 12 小時", () => {
+    expect(nightBusy("21:00")).toBeNull();
+    expect(nightBusy("12:30")).toBeNull();
+  });
+
+  it("有 minutes 就照分鐘算，不看 end", () => {
+    const away = createCharBusy({ end: "abc", minutes: 90, reason: "", backText: "" }, BUSY_NOW);
+    expect(away?.startedAt).toBe(BUSY_NOW);
+    expect(away?.returnAt).toBe(BUSY_NOW + 90 * MINUTE);
+  });
+
+  it("minutes 夾在 30 分鐘～12 小時", () => {
+    const short = createCharBusy({ minutes: 5, reason: "", backText: "" }, BUSY_NOW);
+    const long = createCharBusy({ minutes: 2000, reason: "", backText: "" }, BUSY_NOW);
+    expect(short?.returnAt).toBe(BUSY_NOW + 30 * MINUTE);
+    expect(long?.returnAt).toBe(BUSY_NOW + 12 * 60 * MINUTE);
+  });
+
+  it("check、auto 帶進忙碌", () => {
+    const away = createCharBusy(
+      { minutes: 60, check: 40, auto: "開會中", reason: "開會", backText: "" },
+      BUSY_NOW,
+    );
+    expect(away?.checkMinutes).toBe(40);
+    expect(away?.autoReply).toBe("開會中");
+  });
+
+  it("minutes 配 start 是預約", () => {
+    const away = createCharBusy({ start: "14:00", minutes: 60, reason: "", backText: "" }, BUSY_NOW);
+    const start = new Date(2026, 9, 23, 14, 0).getTime();
+    expect(away?.startedAt).toBe(start);
+    expect(away?.returnAt).toBe(start + 60 * MINUTE);
   });
 
   it("沒寫 start 就現在開始，預設 reason／back", () => {
@@ -531,6 +580,8 @@ describe("buildCharSleepGuide / buildCharBusyGuide", () => {
     expect(buildCharSleepGuide(true)).toContain("<char-sleep wake=");
     expect(buildCharSleepGuide(false)).toBe("");
     expect(buildCharBusyGuide(true, undefined, NOW)).toContain("<char-busy start=");
+    expect(buildCharBusyGuide(true, undefined, NOW)).toContain('check="');
+    expect(buildCharBusyGuide(true, undefined, NOW)).toContain("走不開就兩個都不寫");
     expect(buildCharBusyGuide(false, undefined, NOW)).toBe("");
   });
 
@@ -673,6 +724,176 @@ describe("buildCharAwayReturnNote 的睡覺／忙碌", () => {
   });
 });
 
+describe("scheduleBusyPeek", () => {
+  const busy = (overrides: Partial<CharAway> = {}) =>
+    makeBusy({ startedAt: NOW, returnAt: NOW + 300 * MINUTE, checkMinutes: 40, ...overrides });
+
+  it("有 check 的進行中忙碌才能看手機", () => {
+    expect(canBusyPeek(busy())).toBe(true);
+    expect(canBusyPeek(makeBusy())).toBe(false);
+    expect(canBusyPeek(makeSleep({ checkMinutes: 40 }))).toBe(false);
+    expect(canBusyPeek(busy({ endedAt: NOW }))).toBe(false);
+    expect(canBusyPeek(busy({ pausedAt: NOW }))).toBe(false);
+    expect(canBusyPeek(undefined)).toBe(false);
+  });
+
+  it("第一則留言照 check 排，上下浮動 30%", () => {
+    expect(scheduleBusyPeek(busy(), NOW, () => 0).peekAt).toBe(NOW + 28 * MINUTE);
+    expect(scheduleBusyPeek(busy(), NOW, () => 0.5).peekAt).toBe(NOW + 40 * MINUTE);
+    expect(scheduleBusyPeek(busy(), NOW, () => 1).peekAt).toBe(NOW + 52 * MINUTE);
+  });
+
+  it("連傳每多一則就提早，最短 3 分鐘", () => {
+    const first = scheduleBusyPeek(busy(), NOW, () => 0.5);
+    const second = scheduleBusyPeek(first, NOW, () => 0.5);
+    const third = scheduleBusyPeek(second, NOW, () => 0.5);
+    expect(second.peekAt).toBe(NOW + 20 * MINUTE);
+    expect(third.peekAt).toBe(NOW + 10 * MINUTE);
+    let later = third;
+    for (let i = 0; i < 5; i++) later = scheduleBusyPeek(later, NOW, () => 0.5);
+    expect(later.peekAt).toBe(NOW + 3 * MINUTE);
+    expect(later.peekLeftCount).toBe(8);
+  });
+
+  it("不會把已經排好的時間往後延", () => {
+    const away = busy({ peekAt: NOW + MINUTE, peekLeftCount: 1 });
+    expect(scheduleBusyPeek(away, NOW, () => 1).peekAt).toBe(NOW + MINUTE);
+  });
+
+  it("排到忙完之後就不排", () => {
+    const away = busy({ returnAt: NOW + 30 * MINUTE });
+    expect(scheduleBusyPeek(away, NOW, () => 0.5).peekAt).toBeUndefined();
+  });
+
+  it("有 auto 時排 20～60 秒後先回，只排一次", () => {
+    const first = scheduleBusyPeek(busy({ autoReply: "開會中" }), NOW, () => 0);
+    expect(first.autoReplyAt).toBe(NOW + 20_000);
+    const second = scheduleBusyPeek(first, NOW + MINUTE, () => 1);
+    expect(second.autoReplyAt).toBe(NOW + 20_000);
+    expect(scheduleBusyPeek(busy({ autoReply: "開會中" }), NOW, () => 1).autoReplyAt).toBe(NOW + 60_000);
+  });
+
+  it("沒有 check 就原樣回傳", () => {
+    const away = makeBusy();
+    expect(scheduleBusyPeek(away, NOW)).toBe(away);
+  });
+});
+
+describe("忙碌時掛電話", () => {
+  const busy = (overrides: Partial<CharAway> = {}) =>
+    makeBusy({ startedAt: NOW, returnAt: NOW + 300 * MINUTE, checkMinutes: 40, ...overrides });
+
+  it("只有能看手機的忙碌會掛電話，5 分鐘內不重複", () => {
+    expect(shouldHangUpBusy(busy(), NOW)).toBe(true);
+    expect(shouldHangUpBusy(makeBusy(), NOW)).toBe(false);
+    expect(shouldHangUpBusy(makeSleep({ checkMinutes: 40 }), NOW)).toBe(false);
+    expect(shouldHangUpBusy(busy({ lastHangUpAt: NOW - 4 * MINUTE }), NOW)).toBe(false);
+    expect(shouldHangUpBusy(busy({ lastHangUpAt: NOW - 5 * MINUTE }), NOW)).toBe(true);
+  });
+
+  it("掛電話後 15～30 秒看手機", () => {
+    expect(recordBusyHangUp(busy(), NOW, () => 0).peekAt).toBe(NOW + 15_000);
+    expect(recordBusyHangUp(busy(), NOW, () => 1).peekAt).toBe(NOW + 30_000);
+    const away = recordBusyHangUp(busy(), NOW, () => 0);
+    expect(away.hangUpPeek).toBe(true);
+    expect(away.lastHangUpAt).toBe(NOW);
+  });
+
+  it("不會把更早的看手機往後延", () => {
+    expect(recordBusyHangUp(busy({ peekAt: NOW + 1000 }), NOW, () => 1).peekAt).toBe(NOW + 1000);
+  });
+
+  it("快忙完時不排，等忙完一起回", () => {
+    const away = recordBusyHangUp(busy({ returnAt: NOW + 10_000 }), NOW, () => 0);
+    expect(away.peekAt).toBeUndefined();
+    expect(away.hangUpPeek).toBe(false);
+  });
+});
+
+describe("看手機與擲骰", () => {
+  const busy = (overrides: Partial<CharAway> = {}) =>
+    makeBusy({ startedAt: NOW, returnAt: NOW + 300 * MINUTE, checkMinutes: 40, ...overrides });
+
+  it("startBusyPeek：骰到 20% 內就提早結束", () => {
+    expect(startBusyPeek(busy(), NOW, () => 0.19).earlyEndPending).toBe(true);
+    expect(startBusyPeek(busy(), NOW, () => 0.2).earlyEndPending).toBe(false);
+  });
+
+  it("startBusyPeek：清掉排程並標記原因", () => {
+    const away = startBusyPeek(busy({ peekAt: NOW, peekLeftCount: 3 }), NOW, () => 1);
+    expect(away.sneakPending).toBe(true);
+    expect(away.sneakReason).toBe("peek");
+    expect(away.peekAt).toBeUndefined();
+    expect(away.peekLeftCount).toBe(0);
+    expect(away.sneakCount).toBe(1);
+  });
+
+  it("startBusyPeek：掛電話後的看手機", () => {
+    const away = startBusyPeek(busy({ hangUpPeek: true }), NOW, () => 1);
+    expect(away.sneakReason).toBe("hangUp");
+    expect(away.hangUpPeek).toBe(false);
+  });
+
+  it("偷偷回我：有 check 才擲骰", () => {
+    const withCheck = recordSneakWin(busy(), NOW, () => 0);
+    expect(withCheck.earlyEndPending).toBe(true);
+    expect(withCheck.sneakReason).toBe("urge");
+    const noCheck = recordSneakWin(makeBusy(), NOW, () => 0);
+    expect(noCheck.earlyEndPending).toBeUndefined();
+    expect(noCheck.sneakReason).toBeUndefined();
+  });
+
+  it("finishSneak：成功才開 5 分鐘空檔，沒有 check 不開", () => {
+    const pending = busy({ sneakPending: true, sneakReason: "peek", earlyEndPending: true });
+    const ok = finishSneak(pending, NOW, true);
+    expect(ok.spareUntil).toBe(NOW + 5 * MINUTE);
+    expect(ok.sneakReason).toBeUndefined();
+    expect(ok.earlyEndPending).toBe(false);
+    expect(finishSneak(pending, NOW, false).spareUntil).toBeUndefined();
+    expect(finishSneak(makeBusy({ sneakPending: true }), NOW, true).spareUntil).toBeUndefined();
+  });
+
+  it("isBusySpare 看空檔結束時間", () => {
+    const away = busy({ spareUntil: NOW + MINUTE });
+    expect(isBusySpare(away, NOW)).toBe(true);
+    expect(isBusySpare(away, NOW + MINUTE)).toBe(false);
+    expect(isBusySpare(busy(), NOW)).toBe(false);
+  });
+
+  it("面對面暫停時清掉排程與空檔", () => {
+    const paused = pauseCharAway(
+      busy({ peekAt: NOW + MINUTE, spareUntil: NOW + MINUTE, autoReplyAt: NOW + MINUTE, autoReply: "開會中", peekLeftCount: 2 }),
+      NOW,
+    );
+    expect(paused.peekAt).toBeUndefined();
+    expect(paused.spareUntil).toBeUndefined();
+    expect(paused.autoReplyAt).toBeUndefined();
+    expect(paused.peekLeftCount).toBeUndefined();
+    expect(paused.autoReply).toBe("開會中");
+  });
+
+  it("各情境的提示", () => {
+    const note = (overrides: Partial<CharAway>, background = false) =>
+      buildCharAwaySneakNote(busy({ sneakPending: true, ...overrides }), 2, { background })!;
+
+    expect(note({ sneakReason: "peek" })).toContain("[看手機]");
+    expect(note({ sneakReason: "peek" })).toContain("<char-wake/>");
+    expect(note({ sneakReason: "peek" }, true)).not.toContain("<char-wake/>");
+    expect(note({ sneakReason: "hangUp" })).toContain("[掛電話]");
+    expect(note({ sneakReason: "hangUp" }, true)).not.toContain("<char-wake/>");
+    expect(note({ sneakReason: "urge", earlyEndPending: true })).toContain("[提早忙完]");
+    expect(note({ sneakReason: "peek", earlyEndPending: true })).toContain("2 則");
+  });
+
+  it("空檔提示：快結束時要他說要去忙", () => {
+    const away = busy({ spareUntil: NOW + 4 * MINUTE });
+    expect(buildCharBusySpareNote(away, NOW)).toContain("大約還剩 4 分鐘");
+    expect(buildCharBusySpareNote(away, NOW + 3 * MINUTE)).toContain("這次就說要回去忙了");
+    expect(buildCharBusySpareNote(busy(), NOW)).toBeNull();
+    expect(buildCharBusySpareNote({ ...away, sneakPending: true }, NOW)).toBeNull();
+  });
+});
+
 describe("buildAwayHintText / awayUrgeLabel / awayHeaderText", () => {
   it("三種狀態各自的文字", () => {
     expect(buildAwayHintText("小明", makeAway())).toBe(
@@ -692,6 +913,16 @@ describe("buildAwayHintText / awayUrgeLabel / awayHeaderText", () => {
     expect(awayHeaderText(makeAway())).toBe("忙碌中・開會");
     expect(awayHeaderText(makeSleep())).toBe("睡覺中");
     expect(awayHeaderText(makeBusy())).toBe("忙碌中・搭飛機");
+  });
+
+  it("結束時間跨天就寫明天", () => {
+    const nightNow = new Date(2026, 9, 30, 22, 8).getTime();
+    const away = makeBusy({ returnAt: new Date(2026, 9, 31, 10, 8).getTime() });
+    expect(buildAwayHintText("小明", away, 0, nightNow)).toBe(
+      "小明在忙（搭飛機），大約 明天 10:08 忙完",
+    );
+    const sameDay = makeBusy({ returnAt: new Date(2026, 9, 30, 23, 8).getTime() });
+    expect(buildAwayHintText("小明", sameDay, 0, nightNow)).toContain("大約 23:08 忙完");
   });
 });
 

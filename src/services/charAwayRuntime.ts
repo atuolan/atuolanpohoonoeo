@@ -16,6 +16,7 @@ import {
 import { appendMessages, loadMessages } from "@/storage/chatMessageStorage";
 import {
   awayKind,
+  canBusyPeek,
   canUseCharAway,
   canUseCharBusy,
   canUseCharSleep,
@@ -33,6 +34,9 @@ import {
   pauseCharAway,
   resumeCharAway,
   recordAwayCall,
+  recordBusyHangUp,
+  scheduleBusyPeek,
+  startBusyPeek,
   recordSneakWin,
   recordUrgeAttempt,
   wakeCharAway,
@@ -56,6 +60,15 @@ const returnTimers = new Map<string, ReturnType<typeof setTimeout>>();
 /** 每個聊天排好的「預約開始」計時器 */
 const planTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
+/** 每個聊天排好的「忙碌中該做的事」計時器（先回一句、看手機） */
+const busyTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+/** 正在處理忙碌到期事項的聊天，避免計時器與 visibilitychange 同時跑兩次 */
+const runningBusy = new Set<string>();
+
+/** 正在背景回覆看手機的聊天，聊天頁打開時不要重複生成 */
+const runningPeeks = new Set<string>();
+
 /** 正在處理回來的聊天，避免計時器與 visibilitychange 同時跑兩次 */
 const returning = new Set<string>();
 
@@ -72,13 +85,25 @@ export function setCharAwayViewingChat(chatId: string | null): void {
   viewingChatId = chatId;
 }
 
+/** 使用者正看著這個聊天 */
+export function isCharAwayViewing(chatId: string): boolean {
+  return viewingChatId === chatId;
+}
+
 /** 把暫離狀態寫進聊天記錄並通知畫面 */
 export async function saveCharAway(
   chatId: string,
-  away: CharAway,
+  next: CharAway,
 ): Promise<void> {
   const chat = await loadChatById(chatId);
   if (!chat) return;
+
+  // 同一毫秒連存兩次時，聊天頁要分得出哪筆比較新，不然重新讀聊天會蓋回舊的
+  const stored = chat.charAway;
+  const away =
+    stored?.id === next.id && next.updatedAt <= stored.updatedAt
+      ? { ...next, updatedAt: stored.updatedAt + 1 }
+      : next;
 
   // 訊息另外存在 chatMessages 表，這裡只寫聊天本身的資料
   await saveChatMetadata({ ...chat, messages: [], charAway: away });
@@ -412,8 +437,12 @@ export async function finishCharAwaySneak(
     return null;
   }
 
+  // 擲骰成功：回覆送出去才算提早忙完
+  if (ok && away.earlyEndPending) return wakeCharAwayNow(chatId);
+
   const next = finishSneak(away, Date.now(), ok);
   await saveCharAway(chatId, next);
+  scheduleBusyTimer(chatId, next);
   return next;
 }
 
@@ -432,10 +461,11 @@ export async function wakeCharAwayNow(
   return next;
 }
 
-/** 暫離期間 user 打了一通電話（沒接）：聊天裡留一則系統訊息並記次數 */
+/** 暫離期間 user 打了一通電話（沒接或被掛斷）：聊天裡留一則系統訊息並記次數 */
 export async function recordCharAwayCall(
   chatId: string,
   characterName: string,
+  hangUp = false,
 ): Promise<void> {
   const chat = await loadChatById(chatId);
   const away = chat?.charAway;
@@ -447,7 +477,9 @@ export async function recordCharAwayCall(
       id: `msg_away_call_${now}`,
       sender: "system",
       name: "system",
-      content: `📞 你撥給${characterName}的電話沒有接通`,
+      content: hangUp
+        ? `📞 ${characterName}掛斷了你的電話`
+        : `📞 你撥給${characterName}的電話沒有接通`,
       is_user: false,
       status: "sent",
       createdAt: now,
@@ -457,7 +489,119 @@ export async function recordCharAwayCall(
       sentWhileAway: away.id,
     },
   ], chat);
-  await saveCharAway(chatId, recordAwayCall(away, now));
+  const called = recordAwayCall(away, now);
+  const next = hangUp ? recordBusyHangUp(called, now) : called;
+  await saveCharAway(chatId, next);
+  if (hangUp) scheduleBusyTimer(chatId, next);
+}
+
+/** 忙碌時 user 留了一則：排先回的話和看手機 */
+export async function noteCharBusyMessage(
+  chatId: string,
+  now = Date.now(),
+): Promise<void> {
+  const chat = await loadChatById(chatId);
+  const away = chat?.charAway;
+  if (!canBusyPeek(away)) return;
+
+  const next = scheduleBusyPeek(away, now);
+  await saveCharAway(chatId, next);
+  scheduleBusyTimer(chatId, next);
+}
+
+/** 忙碌時第一次留言：送出事先寫好的話 */
+async function sendBusyAutoReply(
+  chat: Chat,
+  away: CharAway,
+  now: number,
+): Promise<CharAway> {
+  const text = away.autoReply ?? "";
+  const next: CharAway = {
+    ...away,
+    autoReply: undefined,
+    autoReplyAt: undefined,
+    updatedAt: now,
+  };
+  // 先存再加訊息：聊天頁收到新訊息會重新讀聊天
+  await saveCharAway(chat.id, next);
+
+  const messages = await loadMessages(chat.id);
+  const lastTs = messages.reduce((max, m) => Math.max(max, m.createdAt || 0), 0);
+  const ts = Math.max(now, lastTs + 1);
+  const name = await characterName(chat);
+  await appendToChat(chat.id, [
+    {
+      id: `msg_busy_auto_${ts}`,
+      sender: "assistant",
+      name,
+      content: text,
+      is_user: false,
+      status: "sent",
+      createdAt: ts,
+      updatedAt: ts,
+    },
+  ], chat);
+  await notifyCharMessage(chat, name, text, `char-busy-auto-${chat.id}-${ts}`);
+  return next;
+}
+
+/** 背景回覆正在跑這個聊天的看手機 */
+export function isCharBusyPeekRunning(chatId: string): boolean {
+  return runningPeeks.has(chatId);
+}
+
+/** 沒看著這個聊天時：背景生成看手機那則 */
+async function runBackgroundPeek(chatId: string): Promise<void> {
+  let ok = false;
+  try {
+    const { proactiveMessageService } = await import(
+      "@/services/ProactiveMessageService"
+    );
+    ok = await proactiveMessageService.sendCharAwayPeekReply(chatId);
+  } catch (err) {
+    console.warn("[CharAway] 看手機回覆失敗:", err);
+  } finally {
+    runningPeeks.delete(chatId);
+  }
+  await finishCharAwaySneak(chatId, ok);
+}
+
+/** 處理忙碌中到期的事（計時器、開 App 補跑都走這裡） */
+export async function runBusyDue(
+  chatId: string,
+  now = Date.now(),
+): Promise<void> {
+  if (runningBusy.has(chatId)) return;
+  runningBusy.add(chatId);
+
+  try {
+    const chat = await loadChatById(chatId);
+    let away = chat?.charAway;
+    if (!chat || !canBusyPeek(away)) return;
+
+    // 上次看手機做到一半 App 被關掉：沒看著就清掉（看著時聊天頁會接手）
+    if (away.sneakPending && away.sneakReason !== "urge" && viewingChatId !== chatId) {
+      const cleared = await finishCharAwaySneak(chatId, false);
+      if (cleared) away = cleared;
+    }
+
+    if (away.autoReply && away.autoReplyAt && now >= away.autoReplyAt - RETURN_GRACE_MS) {
+      away = await sendBusyAutoReply(chat, away, now);
+    }
+
+    if (!away.sneakPending && away.peekAt && now >= away.peekAt - RETURN_GRACE_MS) {
+      // 看著聊天：聊天頁收到事件後自己生成，生成完再排下一次
+      const background = viewingChatId !== chatId;
+      if (background) runningPeeks.add(chatId);
+      await saveCharAway(chatId, startBusyPeek(away, now));
+      if (background) await runBackgroundPeek(chatId);
+      return;
+    }
+
+    scheduleBusyTimer(chatId, away);
+  } finally {
+    runningBusy.delete(chatId);
+  }
 }
 
 /** 回來後已經把 user 留的話回完了 */
@@ -537,32 +681,7 @@ export async function returnCharAwayIfDue(
       }
     }
 
-    // 使用者不是正看著這個聊天：未讀 +1 並發通知
-    if (viewingChatId !== chatId) {
-      await incrementLocalChatUnreadCount(chatId, 1);
-
-      try {
-        const { pushNotificationService } = await import(
-          "@/services/PushNotificationService"
-        );
-        const notificationItem = {
-          id: `char-away-back-${chatId}-${ts}`,
-          type: "chat_message" as const,
-          title: name,
-          message: away.backText,
-          timestamp: Date.now(),
-          createdAt: Date.now(),
-          characterId: chat.characterId,
-          characterName: name,
-          chatId,
-          priority: "normal" as const,
-          read: false,
-        };
-        pushNotificationService.send(notificationItem);
-      } catch (err) {
-        console.warn("[CharAway] 發通知失敗:", err);
-      }
-    }
+    await notifyCharMessage(chat, name, away.backText, `char-away-back-${chatId}-${ts}`);
 
     // 有留話或未接來電：讓他接著回（聊天頁開著時聊天頁自己會處理）
     // 睡覺／忙碌不呼叫背景回覆，replyPending 留著等使用者打開聊天時生成
@@ -632,6 +751,7 @@ async function scanAll(): Promise<void> {
           await returnCharAwayIfDue(chat.id, now);
         } else {
           scheduleReturn(chat.id, away);
+          await runBusyDue(chat.id, now);
         }
       }
 
@@ -665,6 +785,29 @@ function clearReturnTimer(chatId: string): void {
   if (timer === undefined) return;
   clearTimeout(timer);
   returnTimers.delete(chatId);
+}
+
+/** 排下一件忙碌中要做的事（同一個聊天只留一個） */
+function scheduleBusyTimer(chatId: string, away: CharAway): void {
+  clearBusyTimer(chatId);
+  const due = [away.autoReplyAt, away.peekAt].filter(
+    (t): t is number => typeof t === "number",
+  );
+  if (due.length === 0) return;
+
+  const delay = Math.max(0, Math.min(...due) - Date.now() - RETURN_GRACE_MS);
+  const timer = setTimeout(() => {
+    busyTimers.delete(chatId);
+    void runBusyDue(chatId);
+  }, delay);
+  busyTimers.set(chatId, timer);
+}
+
+function clearBusyTimer(chatId: string): void {
+  const timer = busyTimers.get(chatId);
+  if (timer === undefined) return;
+  clearTimeout(timer);
+  busyTimers.delete(chatId);
 }
 
 /** 排「預約開始」的計時器（同一個聊天只留一個） */
@@ -731,6 +874,39 @@ async function cancelScheduledNotification(tag: string): Promise<void> {
     await cancelNativeNotification(tag);
   } catch (err) {
     console.warn("[CharAway] 取消原生通知失敗:", err);
+  }
+}
+
+/** 使用者不是正看著這個聊天：未讀 +1 並發通知 */
+async function notifyCharMessage(
+  chat: Chat,
+  name: string,
+  text: string,
+  notificationId: string,
+): Promise<void> {
+  if (viewingChatId === chat.id) return;
+
+  await incrementLocalChatUnreadCount(chat.id, 1);
+  try {
+    const { pushNotificationService } = await import(
+      "@/services/PushNotificationService"
+    );
+    const notificationItem = {
+      id: notificationId,
+      type: "chat_message" as const,
+      title: name,
+      message: text,
+      timestamp: Date.now(),
+      createdAt: Date.now(),
+      characterId: chat.characterId,
+      characterName: name,
+      chatId: chat.id,
+      priority: "normal" as const,
+      read: false,
+    };
+    pushNotificationService.send(notificationItem);
+  } catch (err) {
+    console.warn("[CharAway] 發通知失敗:", err);
   }
 }
 

@@ -5,7 +5,10 @@ import {
   activatePlanIfDue,
   cancelCharAway,
   fastForwardCharAway,
+  finishCharAwaySneak,
+  noteCharBusyMessage,
   recordCharAwayCall,
+  runBusyDue,
   returnCharAwayIfDue,
   setCharAwayViewingChat,
   startCharAway,
@@ -28,6 +31,7 @@ const store = vi.hoisted(() => ({
   incrementUnread: vi.fn(async () => undefined),
   pushSend: vi.fn(),
   sendReply: vi.fn(async () => true),
+  sendPeek: vi.fn(async () => true),
 }));
 
 vi.mock("@/storage/chatStorage", () => ({
@@ -65,7 +69,10 @@ vi.mock("@/services/PushNotificationService", () => ({
 }));
 
 vi.mock("@/services/ProactiveMessageService", () => ({
-  proactiveMessageService: { sendCharAwayReturnReply: store.sendReply },
+  proactiveMessageService: {
+    sendCharAwayReturnReply: store.sendReply,
+    sendCharAwayPeekReply: store.sendPeek,
+  },
 }));
 
 vi.mock("@/stores", () => ({
@@ -351,7 +358,181 @@ describe("wakeCharAwayNow", () => {
   });
 });
 
+describe("忙碌先回一句", () => {
+  const busy = (overrides: Partial<CharAway> = {}) =>
+    makeAway({
+      kind: "busy",
+      returnAt: NOW + 300 * MINUTE,
+      checkMinutes: 40,
+      autoReply: "開會中，晚點回你",
+      ...overrides,
+    });
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("留言後排好先回和看手機", async () => {
+    seedChat({ charAway: busy() });
+    await noteCharBusyMessage("chat1", NOW);
+    const away = store.chats.get("chat1").charAway as CharAway;
+    expect(away.autoReplyAt).toBeGreaterThanOrEqual(NOW + 20_000);
+    expect(away.autoReplyAt).toBeLessThanOrEqual(NOW + 60_000);
+    expect(away.peekAt).toBeGreaterThan(NOW);
+    expect(away.peekLeftCount).toBe(1);
+  });
+
+  it("到時間送出一次，之後不再送", async () => {
+    seedChat({ charAway: busy({ autoReplyAt: NOW }) });
+    await runBusyDue("chat1", NOW);
+    await runBusyDue("chat1", NOW + MINUTE);
+    const sent = store.messages.get("chat1") ?? [];
+    expect(sent).toHaveLength(1);
+    expect(sent[0].content).toBe("開會中，晚點回你");
+    expect(sent[0].sender).toBe("assistant");
+    expect(store.chats.get("chat1").charAway.autoReply).toBeUndefined();
+  });
+
+  it("還沒到時間不送", async () => {
+    seedChat({ charAway: busy({ autoReplyAt: NOW + MINUTE }) });
+    await runBusyDue("chat1", NOW);
+    expect(store.messages.get("chat1")).toHaveLength(0);
+  });
+
+  it("沒看著這個聊天時也發通知", async () => {
+    setCharAwayViewingChat(null);
+    seedChat({ charAway: busy({ autoReplyAt: NOW }) });
+    await runBusyDue("chat1", NOW);
+    expect(store.incrementUnread).toHaveBeenCalled();
+    expect(store.pushSend).toHaveBeenCalled();
+  });
+
+  it("沒有 check 的忙碌什麼都不做", async () => {
+    seedChat({ charAway: makeAway({ kind: "busy", returnAt: NOW + 300 * MINUTE }) });
+    await noteCharBusyMessage("chat1", NOW);
+    expect(store.saves).toHaveLength(0);
+  });
+});
+
+describe("忙碌看手機", () => {
+  const busy = (overrides: Partial<CharAway> = {}) =>
+    makeAway({ kind: "busy", returnAt: NOW + 300 * MINUTE, checkMinutes: 40, ...overrides });
+  const saved = () => store.chats.get("chat1").charAway as CharAway;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+    store.sendPeek.mockReset();
+    store.sendPeek.mockResolvedValue(true);
+    vi.spyOn(Math, "random").mockReturnValue(0.99);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+    setCharAwayViewingChat(null);
+  });
+
+  it("看著聊天時只標記，交給聊天頁生成", async () => {
+    setCharAwayViewingChat("chat1");
+    seedChat({ charAway: busy({ peekAt: NOW }) });
+    await runBusyDue("chat1", NOW);
+    expect(saved().sneakPending).toBe(true);
+    expect(saved().sneakReason).toBe("peek");
+    expect(store.sendPeek).not.toHaveBeenCalled();
+  });
+
+  it("沒看著聊天時走背景回覆，成功就開空檔", async () => {
+    setCharAwayViewingChat(null);
+    seedChat({ charAway: busy({ peekAt: NOW }) });
+    await runBusyDue("chat1", NOW);
+    expect(store.sendPeek).toHaveBeenCalledWith("chat1");
+    expect(saved().sneakPending).toBe(false);
+    expect(saved().spareUntil).toBe(NOW + 5 * MINUTE);
+  });
+
+  it("背景回覆失敗：忙碌不變、不開空檔", async () => {
+    store.sendPeek.mockResolvedValue(false);
+    seedChat({ charAway: busy({ peekAt: NOW }) });
+    await runBusyDue("chat1", NOW);
+    expect(saved().sneakPending).toBe(false);
+    expect(saved().spareUntil).toBeUndefined();
+    expect(saved().endedAt).toBeUndefined();
+  });
+
+  it("擲骰成功：回覆成功後就結束忙碌", async () => {
+    vi.spyOn(Math, "random").mockReturnValue(0.01);
+    seedChat({ charAway: busy({ peekAt: NOW }) });
+    await runBusyDue("chat1", NOW);
+    expect(saved().endedBy).toBe("wake");
+    expect(store.messages.get("chat1")).toHaveLength(0);
+  });
+
+  it("擲骰成功但回覆失敗：不結束", async () => {
+    vi.spyOn(Math, "random").mockReturnValue(0.01);
+    store.sendPeek.mockResolvedValue(false);
+    seedChat({ charAway: busy({ peekAt: NOW }) });
+    await runBusyDue("chat1", NOW);
+    expect(saved().endedAt).toBeUndefined();
+    expect(saved().earlyEndPending).toBe(false);
+  });
+
+  it("先回一句和看手機同時到期：看手機那筆的 updatedAt 比較新", async () => {
+    setCharAwayViewingChat("chat1");
+    seedChat({ charAway: busy({ autoReply: "開會中", autoReplyAt: NOW, peekAt: NOW }) });
+    await runBusyDue("chat1", NOW);
+    const away = saved();
+    expect(away.autoReply).toBeUndefined();
+    expect(away.sneakPending).toBe(true);
+    const autoSave = store.saves.find((s) => s.charAway && !s.charAway.autoReply && !s.charAway.sneakPending);
+    expect(away.updatedAt).toBeGreaterThan(autoSave.charAway.updatedAt);
+  });
+
+  it("還沒到時間不看手機", async () => {
+    seedChat({ charAway: busy({ peekAt: NOW + MINUTE }) });
+    await runBusyDue("chat1", NOW);
+    expect(saved().sneakPending).toBeUndefined();
+  });
+
+  it("上次中斷留下的看手機：沒看著聊天就清掉", async () => {
+    seedChat({ charAway: busy({ sneakPending: true, sneakReason: "peek" }) });
+    await runBusyDue("chat1", NOW);
+    expect(saved().sneakPending).toBe(false);
+    expect(store.sendPeek).not.toHaveBeenCalled();
+  });
+
+  it("聊天頁的偷回成功也會處理擲骰結果", async () => {
+    seedChat({ charAway: busy({ sneakPending: true, sneakReason: "urge", earlyEndPending: true }) });
+    const next = await finishCharAwaySneak("chat1", true);
+    expect(next?.endedBy).toBe("wake");
+  });
+});
+
 describe("recordCharAwayCall", () => {
+  it("掛電話：卡片寫被掛斷，並排看手機", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+    seedChat({
+      charAway: makeAway({ kind: "busy", returnAt: NOW + 300 * MINUTE, checkMinutes: 40 }),
+    });
+
+    await recordCharAwayCall("chat1", "阿明", true);
+
+    const messages = store.messages.get("chat1")!;
+    expect(messages[0].content).toBe("📞 阿明掛斷了你的電話");
+    expect(messages[0].callNotificationType).toBe("unanswered");
+    const away = store.chats.get("chat1")!.charAway!;
+    expect(away.callCount).toBe(1);
+    expect(away.hangUpPeek).toBe(true);
+    expect(away.peekAt).toBeGreaterThanOrEqual(NOW + 15_000);
+    vi.useRealTimers();
+  });
+
   it("留一則未接來電並記次數", async () => {
     const away = makeAway();
     seedChat({ charAway: away });

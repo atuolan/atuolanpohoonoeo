@@ -35,14 +35,38 @@ export const CHAR_WAKE_CALL_COUNT = 3;
 export const CHAR_SLEEP_BACK_DEFAULT = "早安";
 /** 忙碌 back 空白的預設 */
 export const CHAR_BUSY_BACK_DEFAULT = "我忙完了";
+/** 忙碌時看手機的間隔（分鐘） */
+export const CHAR_BUSY_CHECK_MIN_MINUTES = 10;
+export const CHAR_BUSY_CHECK_MAX_MINUTES = 120;
+/** 連傳時最快幾分鐘後看手機 */
+export const CHAR_BUSY_PEEK_MIN_MS = 3 * 60_000;
+/** 每次看手機擲骰，這個機率提早忙完 */
+export const CHAR_BUSY_EARLY_END_CHANCE = 0.2;
+/** 看手機之後的空檔，這段時間 user 回他會即時接話 */
+export const CHAR_BUSY_SPARE_MS = 5 * 60_000;
+/** 忙碌時打電話：響多久被掛斷 */
+export const CHAR_BUSY_HANG_UP_RING_MS = 3000;
+/** 掛過一次電話後，這段時間內再打就只是沒接（避免每通都花一次 API） */
+export const CHAR_BUSY_HANG_UP_COOLDOWN_MS = 5 * 60_000;
+/** 掛電話後多久傳訊息 */
+const CHAR_BUSY_HANG_UP_PEEK_MIN_MS = 15_000;
+const CHAR_BUSY_HANG_UP_PEEK_MAX_MS = 30_000;
+/** 先回一句：留言後多久送出 */
+const CHAR_BUSY_AUTO_REPLY_MIN_MS = 20_000;
+const CHAR_BUSY_AUTO_REPLY_MAX_MS = 60_000;
 
 /** 由標籤開始時，回來時間至少留這麼久 */
 const CHAR_AWAY_PLAN_MIN_LEAD_MS = 60_000;
 
-/** 解析後的 <char-busy>（時間原樣是 "HH:mm"，不在這裡換算） */
+/** 解析後的 <char-busy>（時間原樣是 "HH:mm"，不在這裡換算）；minutes 和 end 至少一個，有 minutes 就不看 end */
 export interface ParsedCharBusy {
   start?: string;
-  end: string;
+  end?: string;
+  minutes?: number;
+  /** 大約幾分鐘能看一次手機；沒有代表走不開 */
+  check?: number;
+  /** 第一次收到留言時先回的話 */
+  auto?: string;
   reason: string;
   backText: string;
 }
@@ -238,14 +262,25 @@ export function createCharSleep(
   };
 }
 
-/** 建立一次忙碌（startedAt > now 代表是預約）；end 格式錯回 null */
+/**
+ * end 換成時間戳：超過 12 小時時，1～11 點當成寫了 12 小時制（晚上的 10:30），
+ * 其他當作時間寫錯回 null（例如寫了已經過去的時間），不要讓他消失 12 小時。
+ */
+function busyEndAt(end: string, startedAt: number): number | null {
+  const clock = parseClock(end);
+  const endAt = nextClockAfter(end, startedAt);
+  if (!clock || endAt === null) return null;
+  if (endAt - startedAt <= CHAR_BUSY_MAX_MS) return endAt;
+  return clock.h >= 1 && clock.h <= 11 ? endAt - 12 * 3_600_000 : null;
+}
+
+/** 建立一次忙碌（startedAt > now 代表是預約）；時間不合理回 null */
 export function createCharBusy(
   parsed: ParsedCharBusy,
   now: number,
   startMessageId?: string,
   shiftMs = 0,
 ): CharAway | null {
-  if (!parseClock(parsed.end)) return null;
   const storyNow = now + shiftMs;
 
   let startedAt = storyNow;
@@ -267,7 +302,10 @@ export function createCharBusy(
     }
   }
 
-  const endAt = nextClockAfter(parsed.end, startedAt);
+  const endAt =
+    parsed.minutes !== undefined
+      ? startedAt + parsed.minutes * 60_000
+      : busyEndAt(parsed.end ?? "", startedAt);
   if (endAt === null) return null;
   const returnAt = Math.min(
     startedAt + CHAR_BUSY_MAX_MS,
@@ -289,6 +327,101 @@ export function createCharBusy(
     urgeCount: 0,
     callCount: 0,
     sneakCount: 0,
+    updatedAt: now,
+    ...(parsed.check !== undefined ? { checkMinutes: parsed.check } : {}),
+    ...(parsed.auto ? { autoReply: parsed.auto } : {}),
+  };
+}
+
+/** 忙碌中而且能抽空看手機（有 check） */
+export function canBusyPeek(away: CharAway | null | undefined): away is CharAway {
+  return !!away && isCharAwayActive(away) && awayKind(away) === "busy" && !!away.checkMinutes;
+}
+
+/**
+ * 忙碌時留了一則：排下次看手機，連傳每多一則間隔減半（最短 3 分鐘），只提早不延後；
+ * 排到忙完之後就不排，等忙完一起回。有 auto 時第一則順便排先回的話。
+ */
+export function scheduleBusyPeek(
+  away: CharAway,
+  now: number,
+  random: () => number = Math.random,
+): CharAway {
+  if (!canBusyPeek(away)) return away;
+
+  const leftCount = (away.peekLeftCount ?? 0) + 1;
+  const gapMs = (away.checkMinutes ?? 0) * 60_000 * (0.7 + random() * 0.6);
+  const candidate = now + Math.max(CHAR_BUSY_PEEK_MIN_MS, gapMs / 2 ** (leftCount - 1));
+  const peekAt = Math.min(away.peekAt ?? Number.POSITIVE_INFINITY, candidate);
+  const autoReplyAt =
+    away.autoReply && !away.autoReplyAt
+      ? now +
+        CHAR_BUSY_AUTO_REPLY_MIN_MS +
+        random() * (CHAR_BUSY_AUTO_REPLY_MAX_MS - CHAR_BUSY_AUTO_REPLY_MIN_MS)
+      : away.autoReplyAt;
+
+  return {
+    ...away,
+    peekLeftCount: leftCount,
+    peekAt: peekAt < away.returnAt ? peekAt : undefined,
+    autoReplyAt,
+    updatedAt: now,
+  };
+}
+
+/** 忙碌的空檔中（看完手機、還能接話） */
+export function isBusySpare(away: CharAway | null | undefined, now: number): boolean {
+  return canBusyPeek(away) && (away.spareUntil ?? 0) > now;
+}
+
+/** 這通電話會不會被掛斷（能看手機的忙碌，5 分鐘內掛過就不再掛） */
+export function shouldHangUpBusy(away: CharAway | null | undefined, now: number): boolean {
+  return (
+    canBusyPeek(away) &&
+    now - (away.lastHangUpAt ?? Number.NEGATIVE_INFINITY) >= CHAR_BUSY_HANG_UP_COOLDOWN_MS
+  );
+}
+
+/** 掛了電話：排看手機傳訊息；快忙完就不排，等忙完一起回 */
+export function recordBusyHangUp(
+  away: CharAway,
+  now: number,
+  random: () => number = Math.random,
+): CharAway {
+  const candidate =
+    now +
+    CHAR_BUSY_HANG_UP_PEEK_MIN_MS +
+    random() * (CHAR_BUSY_HANG_UP_PEEK_MAX_MS - CHAR_BUSY_HANG_UP_PEEK_MIN_MS);
+  const inTime = candidate < away.returnAt;
+  return {
+    ...away,
+    lastHangUpAt: now,
+    hangUpPeek: inTime,
+    peekAt: inTime ? Math.min(away.peekAt ?? candidate, candidate) : away.peekAt,
+    updatedAt: now,
+  };
+}
+
+/** 擲骰：這次看手機會不會提早忙完 */
+function rollEarlyEnd(random: () => number): boolean {
+  return random() < CHAR_BUSY_EARLY_END_CHANCE;
+}
+
+/** 到時間看手機：擲骰並標記要生成，排程清掉 */
+export function startBusyPeek(
+  away: CharAway,
+  now: number,
+  random: () => number = Math.random,
+): CharAway {
+  return {
+    ...away,
+    sneakCount: (away.sneakCount ?? 0) + 1,
+    sneakPending: true,
+    sneakReason: away.hangUpPeek ? "hangUp" : "peek",
+    hangUpPeek: false,
+    earlyEndPending: rollEarlyEnd(random),
+    peekAt: undefined,
+    peekLeftCount: 0,
     updatedAt: now,
   };
 }
@@ -340,9 +473,13 @@ export function recordAwayCall(away: CharAway, now: number): CharAway {
   return next;
 }
 
-/** 小遊戲贏了：記一次偷回，狀態不結束 */
-export function recordSneakWin(away: CharAway, now: number): CharAway {
-  return {
+/** 小遊戲贏了：記一次偷回，狀態不結束；能看手機的忙碌也算看一次手機 */
+export function recordSneakWin(
+  away: CharAway,
+  now: number,
+  random: () => number = Math.random,
+): CharAway {
+  const next: CharAway = {
     ...away,
     urgeCount: away.urgeCount + 1,
     sneakCount: (away.sneakCount ?? 0) + 1,
@@ -350,9 +487,17 @@ export function recordSneakWin(away: CharAway, now: number): CharAway {
     urgeLockedUntil: now + CHAR_AWAY_URGE_LOCK_MS,
     updatedAt: now,
   };
+  if (!canBusyPeek(away)) return next;
+  return {
+    ...next,
+    sneakReason: "urge",
+    earlyEndPending: rollEarlyEnd(random),
+    peekAt: undefined,
+    peekLeftCount: 0,
+  };
 }
 
-/** 偷回那一輪生成完了（ok 才記 lastSneakAt） */
+/** 偷回那一輪生成完了（ok 才記 lastSneakAt，能看手機的忙碌接著開空檔） */
 export function finishSneak(
   away: CharAway,
   now: number,
@@ -361,7 +506,10 @@ export function finishSneak(
   return {
     ...away,
     sneakPending: false,
+    sneakReason: undefined,
+    earlyEndPending: false,
     lastSneakAt: ok ? now : away.lastSneakAt,
+    ...(ok && canBusyPeek(away) ? { spareUntil: now + CHAR_BUSY_SPARE_MS } : {}),
     updatedAt: now,
   };
 }
@@ -374,6 +522,8 @@ export function wakeCharAway(away: CharAway, now: number): CharAway {
     endedBy: "wake",
     replyPending: false,
     sneakPending: false,
+    sneakReason: undefined,
+    earlyEndPending: false,
     updatedAt: now,
   };
 }
@@ -381,7 +531,15 @@ export function wakeCharAway(away: CharAway, now: number): CharAway {
 /** 面對面開始：暫停（已結束或已暫停的原樣回傳） */
 export function pauseCharAway(away: CharAway, now: number): CharAway {
   if (away.endedAt || away.pausedAt) return away;
-  return { ...away, pausedAt: now, updatedAt: now };
+  return {
+    ...away,
+    pausedAt: now,
+    peekAt: undefined,
+    peekLeftCount: undefined,
+    spareUntil: undefined,
+    autoReplyAt: undefined,
+    updatedAt: now,
+  };
 }
 
 /** 回到線上：從剩下的時間繼續（沒暫停的原樣回傳） */
@@ -442,6 +600,20 @@ export function shouldWakeByCall(
   return recent + 1 >= CHAR_WAKE_CALL_COUNT;
 }
 
+/** 空檔中給 AI 的提示；沒有空檔或這一輪正在看手機就回 null */
+export function buildCharBusySpareNote(
+  away: CharAway | undefined,
+  now: number,
+): string | null {
+  if (!away || away.sneakPending || !isBusySpare(away, now)) return null;
+
+  const left = Math.max(1, Math.ceil(((away.spareUntil ?? now) - now) / 60_000));
+  return [
+    "[空檔中]",
+    `{{char}} 還在「${away.reason}」，趁空檔跟 {{user}} 聊幾句，訊息要短。這段空檔大約還剩 ${left} 分鐘，${left <= 2 ? "這次就說要回去忙了" : "快結束時自己說要回去忙"}。`,
+  ].join("\n");
+}
+
 /** 從上次偷回之後 user 留了幾則（entries 由呼叫端先筛成這段期間的） */
 export function countLeftSinceSneak(
   away: CharAway,
@@ -489,7 +661,8 @@ export function buildCharBusyGuide(
 ): string {
   if (!available) return "";
   const lines = [
-    `- 忙一段時間：<char-busy start="開始時間 HH:mm" end="結束時間 HH:mm" reason="在忙什麼" back="忙完的第一句話"/>（劇情裡要去做一件會忙上好一陣子、不方便看手機的事時用，例如搭飛機、搭火車、考試、值班；30 分鐘～12 小時，24 小時內開始的才排。現在就開始不用寫 start；reason 8 字內；back 30 字內，忙完時系統替你送出。不到一小時的小事用暫時離開）`,
+    `- 忙一段時間：<char-busy minutes="預計忙幾分鐘" check="大約幾分鐘能看一次手機" auto="第一次收到訊息時先回的話" reason="在忙什麼" back="忙完的第一句話"/>（劇情裡要去做一件會忙上好一陣子、不方便看手機的事時用，例如搭飛機、搭火車、考試、值班；minutes 30～720，照這件事實際要花的時間估。上班、開會、值班這類能偷看手機的才寫 check（10～120）和 auto（30 字內）；搭飛機、考試等走不開就兩個都不寫。reason 8 字內；back 30 字內，忙完時系統替你送出。不到一小時的小事用暫時離開）`,
+    `  之後才開始的行程改寫開始和結束時間，不寫 minutes：<char-busy start="開始時間 HH:mm" end="結束時間 HH:mm" check="同上" auto="同上" reason="在忙什麼" back="忙完的第一句話"/>（用 24 小時制，晚上十點半寫 22:30；24 小時內開始的才排）`,
   ];
   if (isCharAwayPlanPending(plan) && plan) {
     lines.push(
@@ -527,6 +700,7 @@ export function buildCharAwayPlanNote(
 export function buildCharAwaySneakNote(
   away: CharAway | undefined,
   leftCount: number,
+  opts: { background?: boolean } = {},
 ): string | null {
   if (!away || !isCharAwayActive(away)) return null;
   if (!away.sneakPending) return null;
@@ -543,6 +717,37 @@ export function buildCharAwaySneakNote(
   }
 
   if (kind === "busy") {
+    const leftText = left > 0 ? `回應 {{user}} 留的 ${left} 則訊息` : "";
+    // 背景回覆不解析 <char-wake/>
+    const wakeLine = opts.background
+      ? []
+      : [
+          `如果 {{user}} 有急事、很難過，而你正在做的事走得開，可以在 </content> 之後放 <char-wake/> 先不忙了；走不開（例如在飛機上）就不要放。`,
+        ];
+
+    if (away.earlyEndPending) {
+      return [
+        "[提早忙完]",
+        `{{char}} 原本要「${away.reason}」到 ${formatClock(away.returnAt)}，比預計早結束了，現在有空。自然地跟 {{user}} 說一聲${leftText ? `，${leftText}` : ""}，之後就正常聊天。`,
+      ].join("\n");
+    }
+
+    if (away.sneakReason === "hangUp") {
+      return [
+        "[掛電話]",
+        `{{char}} 正在「${away.reason}」（到 ${formatClock(away.returnAt)}），{{user}} 打電話來，{{char}} 不方便接就掛掉了，現在傳訊息問 {{user}} 怎麼了${leftText ? `，順便${leftText}` : ""}。訊息要短，回完還是在忙。`,
+        ...wakeLine,
+      ].join("\n");
+    }
+
+    if (away.sneakReason === "peek") {
+      return [
+        "[看手機]",
+        `{{char}} 正在「${away.reason}」（到 ${formatClock(away.returnAt)}），趁空檔看了手機。簡短${leftText || "回一句"}，語氣像抽空回覆，回完還是在忙。`,
+        ...wakeLine,
+      ].join("\n");
+    }
+
     return [
       "[偷偷回]",
       `{{char}} 正在「${away.reason}」（到 ${formatClock(away.returnAt)}），{{user}} 一直催，{{char}} 偷偷拿手機回一下。簡短回${left > 0 ? ` {{user}} 留的 ${left} 則訊息` : "一句"}，語氣像在偷用手機，回完還是在忙。`,
@@ -654,15 +859,19 @@ export function buildAwayHintText(
   charName: string,
   away: CharAway,
   shiftMs = 0,
+  now?: number,
 ): string {
   const kind = awayKind(away);
+  const returnAt = away.returnAt + shiftMs;
+  const day = now === undefined ? "" : planDayPrefix(returnAt, now + shiftMs);
+  const clock = `${day}${formatClock(returnAt)}`;
   if (kind === "sleep") {
-    return `${charName}睡著了，大約 ${formatClock(away.returnAt + shiftMs)} 起床`;
+    return `${charName}睡著了，大約 ${clock} 起床`;
   }
   if (kind === "busy") {
-    return `${charName}在忙（${away.reason}），大約 ${formatClock(away.returnAt + shiftMs)} 忙完`;
+    return `${charName}在忙（${away.reason}），大約 ${clock} 忙完`;
   }
-  return `${charName}去忙了（${away.reason}），大約 ${formatClock(away.returnAt + shiftMs)} 回來`;
+  return `${charName}去忙了（${away.reason}），大約 ${clock} 回來`;
 }
 
 /** 「催他」小遊戲的按鈕文字 */

@@ -74,6 +74,7 @@ import ProactiveMessageSettingsModal from "@/components/modals/ProactiveMessageS
 import RedPacketVoiceClaimModal from "@/components/modals/RedPacketVoiceClaimModal.vue";
 import GroupPlayTutorialOverlay from "@/components/common/GroupPlayTutorialOverlay.vue";
 import RoundTableTutorialOverlay from "@/components/common/RoundTableTutorialOverlay.vue";
+import CharBusyTutorialOverlay from "@/components/common/CharBusyTutorialOverlay.vue";
 import ScreenshotPreviewModal from "@/components/modals/ScreenshotPreviewModal.vue";
 import StoryClockReturnDialog from "@/components/modals/StoryClockReturnDialog.vue";
 import ForwardTargetPickerModal from "@/components/modals/ForwardTargetPickerModal.vue";
@@ -4277,7 +4278,7 @@ async function sendAndTriggerAI() {
   // 被角色封鎖期間，不觸發 AI 回覆（訊息已標記 sentWhileBlocked，角色看不到）
   if (isBlockedByChar.value) return;
   // 角色暫時離開中：訊息照存，不呼叫 AI（時間到或催回來後一起回）
-  if (charAwayCtl.isAwayActive.value) return;
+  if (charAwayCtl.blocksReply.value) return;
 
   // 空輸入 + 最後一條是 AI 訊息 → 視為「繼續」（讓 AI 接著說）
   // 但 char / system 發言模式下不觸發繼續，避免誤觸
@@ -4949,7 +4950,7 @@ async function handleDollSend() {
     currentTurnId.value = crypto.randomUUID();
     scrollToBottom();
     await saveChatImmediate();
-    if (isBlockedByChar.value || charAwayCtl.isAwayActive.value) return;
+    if (isBlockedByChar.value || charAwayCtl.blocksReply.value) return;
     await triggerAIResponse();
   } finally {
     dollSending.value = false;
@@ -12987,6 +12988,7 @@ useChatCleanup({
       <GroupPlayTutorialOverlay v-if="isGroupChat" :chat-id="currentChatId" />
       <!-- 圓桌教學（長按頭像讓成員重說；第一次有成員講完話時出現一次） -->
       <RoundTableTutorialOverlay v-if="isGroupChat" :ready="roundTableTutorialReady" />
+      <CharBusyTutorialOverlay v-if="!isGroupChat" :ready="charAwayCtl.busyTutorialReady.value" />
 
       <!-- 禮物面板 -->
       <GiftDrawer

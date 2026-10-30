@@ -98,10 +98,49 @@ describe("角色暫時離開時打電話", () => {
     await store.startVideoCall(info);
     expect(store.callState).toBe("ringing");
     await vi.advanceTimersByTimeAsync(0);
-    expect(recordCharAwayCall).toHaveBeenCalledWith("chat-1", "小雪");
+    expect(recordCharAwayCall).toHaveBeenCalledWith("chat-1", "小雪", false);
 
     await vi.advanceTimersByTimeAsync(8000);
     expect(store.callState).toBe("rejected");
+    expect(store.rejectReason).toBe("無人接聽");
+  });
+
+  it("能看手機的忙碌：響 3 秒就被掛斷", async () => {
+    vi.mocked(loadChatById).mockResolvedValue(chatWithAway(undefined, { kind: "busy", checkMinutes: 40 }));
+    const store = usePhoneCallStore();
+
+    await store.startVideoCall(info);
+    expect(store.callState).toBe("ringing");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(recordCharAwayCall).toHaveBeenCalledWith("chat-1", "小雪", true);
+
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(store.callState).toBe("rejected");
+    expect(store.rejectReason).toBe("對方已掛斷");
+  });
+
+  it("5 分鐘內再打就是無人接聽", async () => {
+    vi.mocked(loadChatById).mockResolvedValue(
+      chatWithAway(undefined, { kind: "busy", checkMinutes: 40, lastHangUpAt: Date.now() }),
+    );
+    const store = usePhoneCallStore();
+
+    await store.startVideoCall(info);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(recordCharAwayCall).toHaveBeenCalledWith("chat-1", "小雪", false);
+
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(store.callState).toBe("ringing");
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(store.rejectReason).toBe("無人接聽");
+  });
+
+  it("走不開的忙碌照舊無人接聽", async () => {
+    vi.mocked(loadChatById).mockResolvedValue(chatWithAway(undefined, { kind: "busy" }));
+    const store = usePhoneCallStore();
+
+    await store.startVideoCall(info);
+    await vi.advanceTimersByTimeAsync(8000);
     expect(store.rejectReason).toBe("無人接聽");
   });
 
@@ -158,7 +197,7 @@ describe("角色睡覺時打電話", () => {
     await store.startCall(info);
     await vi.advanceTimersByTimeAsync(0);
     expect(wakeCharAwayNow).not.toHaveBeenCalled();
-    expect(recordCharAwayCall).toHaveBeenCalledWith("chat-1", "小雪");
+    expect(recordCharAwayCall).toHaveBeenCalledWith("chat-1", "小雪", false);
 
     await vi.advanceTimersByTimeAsync(8000);
     expect(store.callState).toBe("rejected");
@@ -179,7 +218,7 @@ describe("角色睡覺時打電話", () => {
     await store.startCall(info);
     await vi.advanceTimersByTimeAsync(0);
     expect(wakeCharAwayNow).not.toHaveBeenCalled();
-    expect(recordCharAwayCall).toHaveBeenCalledWith("chat-1", "小雪");
+    expect(recordCharAwayCall).toHaveBeenCalledWith("chat-1", "小雪", false);
 
     await vi.advanceTimersByTimeAsync(8000);
     expect(store.callState).toBe("rejected");

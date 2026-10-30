@@ -28,6 +28,8 @@ import {
   CHAR_AWAY_MIN_MINUTES,
   CHAR_AWAY_REASON_MAX,
   CHAR_BUSY_BACK_DEFAULT,
+  CHAR_BUSY_CHECK_MAX_MINUTES,
+  CHAR_BUSY_CHECK_MIN_MINUTES,
   CHAR_SLEEP_BACK_DEFAULT,
   type ParsedCharAway,
   type ParsedCharBusy,
@@ -2245,7 +2247,7 @@ export function parseCharSleepTag(
 
 /**
  * 解析 char-busy 標籤（角色去忙一段時間）
- * 同一則回覆有多個時取最後一個；沒有 end 屬性的標籤直接略過
+ * 同一則回覆有多個時取最後一個；end 和 minutes 都沒有的標籤直接略過
  *
  * @param rawResponse - 原始 AI 回覆
  * @returns 解析後的忙碌，沒有有效標籤則返回 null
@@ -2257,7 +2259,9 @@ export function parseCharBusyTag(
   for (const match of rawResponse.matchAll(CHAR_BUSY_TAG_REGEX)) {
     const attrs = match[1] ?? "";
     const end = (extractAttr(attrs, "end") ?? "").trim();
-    if (!end) continue;
+    const minutesValue = parseFloat(extractAttr(attrs, "minutes") ?? "");
+    const minutes = minutesValue > 0 ? minutesValue : undefined;
+    if (!end && minutes === undefined) continue;
 
     const start = (extractAttr(attrs, "start") ?? "").trim();
     const reason =
@@ -2271,7 +2275,17 @@ export function parseCharBusyTag(
         .trim()
         .slice(0, CHAR_AWAY_BACK_MAX) || CHAR_BUSY_BACK_DEFAULT;
 
-    latest = { start: start || undefined, end, reason, backText };
+    const checkValue = parseFloat(extractAttr(attrs, "check") ?? "");
+    const check = Number.isFinite(checkValue)
+      ? Math.min(CHAR_BUSY_CHECK_MAX_MINUTES, Math.max(CHAR_BUSY_CHECK_MIN_MINUTES, Math.round(checkValue)))
+      : undefined;
+    const auto =
+      (extractAttr(attrs, "auto") ?? "")
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(0, CHAR_AWAY_BACK_MAX) || undefined;
+
+    latest = { start: start || undefined, end: end || undefined, minutes, check, auto, reason, backText };
   }
   return latest;
 }

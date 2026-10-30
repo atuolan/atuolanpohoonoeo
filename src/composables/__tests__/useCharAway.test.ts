@@ -7,7 +7,10 @@ import {
   cancelCharAway,
   cancelCharAwayPlan,
   finishCharAwaySneak,
+  isCharAwayViewing,
+  isCharBusyPeekRunning,
   markCharAwayReplied,
+  noteCharBusyMessage,
   startCharAway,
   startCharBusy,
   startCharSleep,
@@ -24,9 +27,12 @@ vi.mock("@/services/charAwayRuntime", () => ({
   cancelCharAway: vi.fn(),
   cancelCharAwayPlan: vi.fn(),
   finishCharAwaySneak: vi.fn(),
+  isCharAwayViewing: vi.fn(() => true),
+  isCharBusyPeekRunning: vi.fn(() => false),
   wakeCharAwayNow: vi.fn(),
   urgeCharAway: vi.fn(),
   markCharAwayReplied: vi.fn(),
+  noteCharBusyMessage: vi.fn(),
   setCharAwayViewingChat: vi.fn(),
 }));
 
@@ -119,6 +125,117 @@ function setup(opts: { faceToFace?: boolean; isGroupChat?: boolean } = {}) {
     triggerAIResponse,
   };
 }
+
+describe("忙碌抽空回覆", () => {
+  const busy = (overrides: Partial<CharAway> = {}) =>
+    makeAway({ kind: "busy", checkMinutes: 40, ...overrides });
+
+  it("空檔內不擋回覆，訊息也不算留言", async () => {
+    const ctx = setup();
+    ctx.loadFromChat(makeChat(busy({ spareUntil: Date.now() + 60_000 })));
+    await settle();
+    expect(ctx.isAwayActive.value).toBe(true);
+    expect(ctx.blocksReply.value).toBe(false);
+    expect(ctx.activeAwayId.value).toBeNull();
+    expect(await ctx.beforeGenerate()).toBe(false);
+  });
+
+  it("空檔結束後恢復阻擋", async () => {
+    const ctx = setup();
+    ctx.loadFromChat(makeChat(busy({ spareUntil: Date.now() + 1000 })));
+    await settle();
+    vi.advanceTimersByTime(2000);
+    await settle();
+    expect(ctx.blocksReply.value).toBe(true);
+    expect(await ctx.beforeGenerate()).toBe(true);
+  });
+
+  it("空檔提示進提示詞", async () => {
+    const ctx = setup();
+    ctx.loadFromChat(makeChat(busy({ spareUntil: Date.now() + 60_000 })));
+    await settle();
+    expect(ctx.promptOptions().charAwayReturnNote).toContain("[空檔中]");
+  });
+
+  it("聊天裡出現忙碌小字才開始教學", async () => {
+    const away = busy();
+    const ctx = setup();
+    ctx.loadFromChat(makeChat(away));
+    await settle();
+    expect(ctx.busyTutorialReady.value).toBe(false);
+    ctx.messages.value.push(makeMessage({ sentWhileAway: away.id }));
+    await settle();
+    expect(ctx.busyTutorialReady.value).toBe(true);
+  });
+
+  it("睡覺不跳忙碌教學", async () => {
+    const away = makeAway({ kind: "sleep" });
+    const ctx = setup();
+    ctx.loadFromChat(makeChat(away));
+    ctx.messages.value.push(makeMessage({ sentWhileAway: away.id }));
+    await settle();
+    expect(ctx.busyTutorialReady.value).toBe(false);
+  });
+
+  it("新留言才排看手機，舊訊息不排", async () => {
+    const away = busy();
+    const ctx = setup();
+    ctx.loadFromChat(makeChat(away));
+    await settle();
+    ctx.messages.value = [
+      makeMessage({ id: "busy_old", sentWhileAway: away.id, timestamp: Date.now() - 60_000 }),
+    ];
+    await settle();
+    expect(noteCharBusyMessage).not.toHaveBeenCalled();
+    ctx.messages.value.push(makeMessage({ id: "busy_new", sentWhileAway: away.id }));
+    await settle();
+    expect(noteCharBusyMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it("收到看手機事件就生成", async () => {
+    const away = busy({ sneakPending: true, sneakReason: "peek" });
+    const ctx = setup();
+    ctx.loadFromChat(makeChat(away));
+    await settle();
+    expect(ctx.triggerAIResponse).toHaveBeenCalledTimes(1);
+  });
+
+  it("偷偷回我的 sneak 不重複生成", async () => {
+    const ctx = setup();
+    ctx.loadFromChat(makeChat(busy({ sneakPending: true, sneakReason: "urge" })));
+    await settle();
+    expect(ctx.triggerAIResponse).not.toHaveBeenCalled();
+  });
+
+  it("正在生成時先等，訊息變動後再試", async () => {
+    const away = busy({ sneakPending: true, sneakReason: "peek" });
+    const ctx = setup();
+    ctx.isGenerating.mockReturnValue(true);
+    ctx.loadFromChat(makeChat(away));
+    await settle();
+    expect(ctx.triggerAIResponse).not.toHaveBeenCalled();
+    ctx.isGenerating.mockReturnValue(false);
+    ctx.messages.value.push(makeMessage({ role: "ai" }));
+    await settle();
+    expect(ctx.triggerAIResponse).toHaveBeenCalledTimes(1);
+  });
+
+  it("聊天頁被快取在背景時不生成", async () => {
+    vi.mocked(isCharAwayViewing).mockReturnValueOnce(false);
+    const ctx = setup();
+    ctx.loadFromChat(makeChat(busy({ sneakPending: true, sneakReason: "peek" })));
+    await settle();
+    expect(ctx.triggerAIResponse).not.toHaveBeenCalled();
+  });
+
+  it("背景正在回就不重複生成", async () => {
+    vi.mocked(isCharBusyPeekRunning).mockReturnValueOnce(true);
+    const ctx = setup();
+    ctx.loadFromChat(makeChat(busy({ sneakPending: true, sneakReason: "peek" })));
+    await settle();
+    expect(ctx.triggerAIResponse).not.toHaveBeenCalled();
+  });
+});
 
 async function settle(): Promise<void> {
   await nextTick();
@@ -225,7 +342,7 @@ describe("useCharAway", () => {
       expect(hint?.action).toBe("locked");
       expect(hint?.lockedText).toBe("4:32 後可以再催");
       expect(api.awayHintKey(first.id)).toBe(
-        `${away.id}|快回來|locked|4:32 後可以再催`,
+        `${away.id}|${hint?.text}|快回來|locked|4:32 後可以再催`,
       );
     });
 

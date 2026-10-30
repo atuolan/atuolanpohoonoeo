@@ -122,6 +122,31 @@ describe("parseCharSleepTag", () => {
 });
 
 describe("parseCharBusyTag", () => {
+  it("check 夾在 10～120，不是數字就當沒填", () => {
+    const parse = (check: string) =>
+      parseCharBusyTag(`<char-busy minutes="60" check="${check}" reason="開會"/>`)?.check;
+    expect(parse("40")).toBe(40);
+    expect(parse("3")).toBe(10);
+    expect(parse("500")).toBe(120);
+    expect(parse("abc")).toBeUndefined();
+  });
+
+  it("auto 整理空白並截到 30 字", () => {
+    const long = "晚".repeat(40);
+    const parsed = parseCharBusyTag(`<char-busy minutes="60" auto="  開會中  晚點回 " reason="開會"/>`);
+    expect(parsed?.auto).toBe("開會中 晚點回");
+    expect(
+      parseCharBusyTag(`<char-busy minutes="60" auto="${long}" reason="開會"/>`)?.auto,
+    ).toHaveLength(30);
+    expect(parseCharBusyTag('<char-busy minutes="60" reason="開會"/>')?.auto).toBeUndefined();
+  });
+
+  it("只寫 minutes 也算", () => {
+    const parsed = parseCharBusyTag('<char-busy minutes="90" reason="補筆錄" back="好了"/>');
+    expect(parsed?.minutes).toBe(90);
+    expect(parsed?.end).toBeUndefined();
+  });
+
   it("解析正常值", () => {
     expect(
       parseCharBusyTag(
@@ -139,6 +164,8 @@ describe("parseCharBusyTag", () => {
   it("沒有 end 就略過那個標籤", () => {
     expect(parseCharBusyTag('<char-busy start="14:00" reason="搭飛機"/>')).toBeNull();
     expect(parseCharBusyTag("<char-busy/>")).toBeNull();
+    expect(parseCharBusyTag('<char-busy minutes="abc" reason="搭飛機"/>')).toBeNull();
+    expect(parseCharBusyTag('<char-busy minutes="0" reason="搭飛機"/>')).toBeNull();
   });
 
   it("reason / back 截斷、空的用預設", () => {
