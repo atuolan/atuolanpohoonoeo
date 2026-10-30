@@ -155,6 +155,26 @@ describe("忙碌抽空回覆", () => {
     expect(ctx.promptOptions().charAwayReturnNote).toContain("[空檔中]");
   });
 
+  it("聊天裡出現忙碌小字才開始教學", async () => {
+    const away = busy();
+    const ctx = setup();
+    ctx.loadFromChat(makeChat(away));
+    await settle();
+    expect(ctx.busyTutorialReady.value).toBe(false);
+    ctx.messages.value.push(makeMessage({ sentWhileAway: away.id }));
+    await settle();
+    expect(ctx.busyTutorialReady.value).toBe(true);
+  });
+
+  it("睡覺不跳忙碌教學", async () => {
+    const away = makeAway({ kind: "sleep" });
+    const ctx = setup();
+    ctx.loadFromChat(makeChat(away));
+    ctx.messages.value.push(makeMessage({ sentWhileAway: away.id }));
+    await settle();
+    expect(ctx.busyTutorialReady.value).toBe(false);
+  });
+
   it("新留言才排看手機，舊訊息不排", async () => {
     const away = busy();
     const ctx = setup();

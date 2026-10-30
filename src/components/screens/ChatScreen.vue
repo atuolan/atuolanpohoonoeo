@@ -74,6 +74,7 @@ import ProactiveMessageSettingsModal from "@/components/modals/ProactiveMessageS
 import RedPacketVoiceClaimModal from "@/components/modals/RedPacketVoiceClaimModal.vue";
 import GroupPlayTutorialOverlay from "@/components/common/GroupPlayTutorialOverlay.vue";
 import RoundTableTutorialOverlay from "@/components/common/RoundTableTutorialOverlay.vue";
+import CharBusyTutorialOverlay from "@/components/common/CharBusyTutorialOverlay.vue";
 import ScreenshotPreviewModal from "@/components/modals/ScreenshotPreviewModal.vue";
 import StoryClockReturnDialog from "@/components/modals/StoryClockReturnDialog.vue";
 import ForwardTargetPickerModal from "@/components/modals/ForwardTargetPickerModal.vue";
@@ -12987,6 +12988,7 @@ useChatCleanup({
       <GroupPlayTutorialOverlay v-if="isGroupChat" :chat-id="currentChatId" />
       <!-- 圓桌教學（長按頭像讓成員重說；第一次有成員講完話時出現一次） -->
       <RoundTableTutorialOverlay v-if="isGroupChat" :ready="roundTableTutorialReady" />
+      <CharBusyTutorialOverlay v-if="!isGroupChat" :ready="charAwayCtl.busyTutorialReady.value" />
 
       <!-- 禮物面板 -->
       <GiftDrawer

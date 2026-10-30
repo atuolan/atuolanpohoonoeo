@@ -185,6 +185,14 @@ export function useCharAway(ctx: {
     return first?.id ?? null;
   });
 
+  /** 聊天裡出現忙碌小字（教學從這裡開始） */
+  const busyTutorialReady = computed(
+    () =>
+      isAwayActive.value &&
+      awayKind(charAway.value ?? undefined) === "busy" &&
+      firstAwayEntryId.value !== null,
+  );
+
   function hintAction(away: CharAway): { action: AwayHint["action"]; lockedText?: string } {
     if (!isCharAwayActive(away)) return { action: "none" };
 
@@ -568,6 +576,7 @@ export function useCharAway(ctx: {
     isAwayActive,
     blocksReply,
     activeAwayId,
+    busyTutorialReady,
     headerStatusText,
     quickBackGame,
     loadFromChat,
