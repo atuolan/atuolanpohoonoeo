@@ -252,6 +252,7 @@ import ToolActivityRow from "@/components/common/ToolActivityRow.vue";
 import PeekNoteNotice from "@/components/common/PeekNoteNotice.vue";
 import { parsePeekNote } from "@/utils/peekLinks";
 import type { RegexScript } from "@/types/character";
+import { BUILTIN_CLEANUP_ITEMS } from "@/utils/builtinCleanup";
 import type { LiveToolActivity } from "@/types/toolActivity";
 import { finalizeLiveActivity, summarizeToolResult, upsertLiveActivity } from "@/utils/toolActivity";
 import type { PendingToolConfirmation } from "@/services/toolCalling/types";
@@ -3181,6 +3182,12 @@ const detailsRegexScripts = computed(() => {
     })),
   ].filter((s) => s.id && !s.disabled);
 });
+
+// 內建清理不是腳本，但停用清單共用同一份，面板也放在一起
+const detailsRegexItems = computed(() => [
+  ...detailsRegexScripts.value,
+  ...BUILTIN_CLEANUP_ITEMS.map((item) => ({ ...item, source: "cleanup" as const })),
+]);
 
 async function handleDetailsUpdateDisabledRegex(ids: string[]) {
   if (!currentChatData.value) return;
@@ -7514,7 +7521,7 @@ async function runAIResponseOnce(
         // 群聊/多人卡模式：使用群聊解析器
         if (useGroupChatParser.value) {
           console.log("[ChatScreen][render] 進入群聊解析器路徑");
-          const parsed = parseGroupChatResponse(finalContent);
+          const parsed = parseGroupChatResponse(finalContent, { disabledRegexIds: chatDisabledRegexIds.value });
           console.log("[ChatScreen][render] parseGroupChatResponse 完成", { count: parsed.messages.length });
           if (roundTableTurn) {
             const speakerId = roundTableTurn.speaker.characterId;
@@ -8011,7 +8018,7 @@ async function runAIResponseOnce(
           let parsed;
           try {
             const _parseStart = Date.now();
-            parsed = parseAIResponse(finalContent);
+            parsed = parseAIResponse(finalContent, { disabledRegexIds: chatDisabledRegexIds.value });
             console.log("[ChatScreen][render] parseAIResponse 完成", {
               elapsedMs: Date.now() - _parseStart,
               messageCount: parsed?.messages?.length ?? 0,
@@ -8865,7 +8872,7 @@ async function handleStreamingClose() {
     if (needsParsing(windowContent)) {
       // 群聊/多人卡模式使用群聊解析器
       if (useGroupChatParser.value) {
-        const parsed = parseGroupChatResponse(windowContent);
+        const parsed = parseGroupChatResponse(windowContent, { disabledRegexIds: chatDisabledRegexIds.value });
         if (lastMsgIndex !== -1) {
           messages.value.splice(lastMsgIndex, 1);
         }
@@ -9188,7 +9195,7 @@ async function handleStreamingClose() {
       } else {
         let parsed;
         try {
-          parsed = parseAIResponse(windowContent);
+          parsed = parseAIResponse(windowContent, { disabledRegexIds: chatDisabledRegexIds.value });
         } catch (parseError) {
           console.warn(
             "[ChatScreen] 關閉窗口時 AI 回覆解析失敗，使用原始內容:",
@@ -11204,7 +11211,7 @@ function buildRemoteParsedMessages(
   }
 
   try {
-    const parsed = parseAIResponse(finalContent);
+    const parsed = parseAIResponse(finalContent, { disabledRegexIds: chatDisabledRegexIds.value });
     const parsedMessages: Message[] = [];
 
     for (let i = 0; i < parsed.messages.length; i++) {
@@ -11965,7 +11972,7 @@ useChatCleanup({
           :round-table="detailsRoundTable"
           :api-profile-options="detailsApiProfileOptions"
           @update-round-table="handleDetailsUpdateRoundTable"
-          :regex-scripts="detailsRegexScripts"
+          :regex-scripts="detailsRegexItems"
           :disabled-regex-ids="chatDisabledRegexIds"
           @update-disabled-regex="handleDetailsUpdateDisabledRegex"
           @update-member-api="handleDetailsUpdateMemberApi"

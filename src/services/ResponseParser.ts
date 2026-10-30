@@ -17,6 +17,11 @@ import { normalizeEventTime } from "@/utils/calendarEventFormat";
 import { CHAR_PLANNER_TAG_REGEX } from "@/utils/charPlanner";
 import { stripPicNote } from "@/utils/picNote";
 import {
+  shieldReply,
+  unshieldDeep,
+  type ParseReplyOptions,
+} from "@/utils/builtinCleanup";
+import {
   CHAR_AWAY_BACK_MAX,
   CHAR_AWAY_MAX_MINUTES,
   CHAR_AWAY_MIN_MINUTES,
@@ -1021,9 +1026,13 @@ function splitHtmlBlocks(content: string): ParsedMessage[] | null {
 /**
  * <|state|>...</|state|> 思考區塊
  * （對應酒館正則「隱藏思考」）
+ * 標籤只認 state 加上 | / 空白；以前放寬成「尖括號裡有 state」，
+ * 「x < 3 且 state > 2」或 <div data-state="open"> 都會被當成思考。
  */
 const STATE_THINKING_REGEX =
-  /<[^<>]*state[^<>]*>([\s\S]*?)<[^<>]*state[^<>]*>/gis;
+  /<[\s|/]*state[\s|/]*>([\s\S]*?)<[\s|/]*state[\s|/]*>/gis;
+/** 串流中還沒收尾：要有 | 才算，<state> 這種可能只是在講話 */
+const STATE_THINKING_UNCLOSED_REGEX = /<[\s/]*\|[\s|/]*state[\s|/]*>[\s\S]*$/i;
 
 /**
  * 移除 <|state|> 思考區塊。
@@ -1032,15 +1041,49 @@ const STATE_THINKING_REGEX =
 export function stripStateThinking(content: string, allowUnclosed = false): string {
   let stripped = content.replace(STATE_THINKING_REGEX, "");
   if (allowUnclosed) {
-    stripped = stripped.replace(/<[^<>]*state[^<>]*>[\s\S]*$/i, "");
+    stripped = stripped.replace(STATE_THINKING_UNCLOSED_REGEX, "");
   }
   return stripped;
 }
 
 /**
+ * 移除 <think>/<thinking> 區塊。
+ * 還沒收尾的只有在開頭才算思考（串流中）；內文中間提到 <thinking> 不能吃到結尾。
+ */
+export function stripThinkBlocks(content: string): string {
+  return content
+    .replace(/<think(?:ing)?>[\s\S]*?<\/think(?:ing)?>/gi, "")
+    .replace(/^(\s*(?:<content>\s*)?)<think(?:ing)?>[\s\S]*$/i, "$1");
+}
+
+/**
+ * 模型漏寫開頭標籤時，</thinking> 之前都是思考。
+ * 但結尾標籤出現在內文（<content>／<msg>）之後，又沒有先開 <thinking>，那只是在提到它。
+ */
+export function stripBeforeThinkClose(content: string): string {
+  const close = /<\/think(?:ing)?>/i.exec(content);
+  if (!close) return content;
+  const body = /<content>|<msg[\s>]/i.exec(content);
+  const open = /<think(?:ing)?>/i.exec(content);
+  if (body && body.index < close.index && !(open && open.index < body.index)) {
+    return content;
+  }
+  return content.slice(close.index + close[0].length).trimStart();
+}
+
+/**
  * 解析 AI 回覆
  */
-export function parseAIResponse(rawResponse: string): ParsedResponse {
+export function parseAIResponse(
+  rawResponse: string,
+  options?: ParseReplyOptions,
+): ParsedResponse {
+  const shielded = shieldReply(rawResponse, options?.disabledRegexIds);
+  if (shielded === rawResponse) return parseShieldedResponse(rawResponse);
+  return unshieldDeep(parseShieldedResponse(shielded));
+}
+
+function parseShieldedResponse(rawResponse: string): ParsedResponse {
   const result: ParsedResponse = {
     thinking: "",
     messages: [],
@@ -1062,8 +1105,7 @@ export function parseAIResponse(rawResponse: string): ParsedResponse {
 
   // 2. 正常聊天訊息只解析 <content>...</content> 內部；content 外的控制標籤會在後續步驟另行處理。
   const contentMatch = rawResponse.match(/<content>([\s\S]*?)<\/content>/i);
-  let outputContent = (contentMatch ? contentMatch[1] : rawResponse)
-    .replace(/^[\s\S]*?<\/think(?:ing)?>\s*/si, "")
+  let outputContent = stripBeforeThinkClose(contentMatch ? contentMatch[1] : rawResponse)
     .replace(/<\/?content>/gi, "")
     .replace(/\[time:[^\]]*\]\s*/g, "")
     .trim();
@@ -2655,7 +2697,7 @@ export function parseAffinityUpdateTags(
  */
 export function needsParsing(content: string): boolean {
   // 檢查是否包含任何需要解析的標籤
-  return /<think>|<[^<>]*state[^<>]*>|<content>|<msg>|<update>|<UpdateVariable>|<timetravel>|<redpacket|<location>|<schedule-call|<calendar-event|<food-record|<time-jump|<time-advance|<送禮物[\s>]|<pay>|<transfer\s|<refund>|<avatar-change|<couple-avatar-|<voice>|<waimai-pay|<waimai-delivery|<face-to-face-request|<online-mode-request|<affinity-update|<char-status|<char-away|<char-sleep|<char-busy|<char-wake|<sticky-note|<mood-reply|<plurk[\s>]|<plurk-comment|<share-plurk|<!DOCTYPE\s|<html[\s>]/i.test(
+  return /<think>|<[\s|/]*state[\s|/]*>|<content>|<msg>|<update>|<UpdateVariable>|<timetravel>|<redpacket|<location>|<schedule-call|<calendar-event|<food-record|<time-jump|<time-advance|<送禮物[\s>]|<pay>|<transfer\s|<refund>|<avatar-change|<couple-avatar-|<voice>|<waimai-pay|<waimai-delivery|<face-to-face-request|<online-mode-request|<affinity-update|<char-status|<char-away|<char-sleep|<char-busy|<char-wake|<sticky-note|<mood-reply|<plurk[\s>]|<plurk-comment|<share-plurk|<!DOCTYPE\s|<html[\s>]/i.test(
     content,
   );
 }
@@ -3084,7 +3126,14 @@ export interface ParsedGroupResponse {
  */
 export function parseGroupChatResponse(
   rawResponse: string,
+  options?: ParseReplyOptions,
 ): ParsedGroupResponse {
+  const shielded = shieldReply(rawResponse, options?.disabledRegexIds);
+  if (shielded === rawResponse) return parseShieldedGroupResponse(rawResponse);
+  return unshieldDeep(parseShieldedGroupResponse(shielded));
+}
+
+function parseShieldedGroupResponse(rawResponse: string): ParsedGroupResponse {
   const result: ParsedGroupResponse = {
     thinking: "",
     messages: [],
@@ -3099,8 +3148,7 @@ export function parseGroupChatResponse(
 
   // 2. 消除 </thinking> 之前的所有內容（含 think 區塊本身）
   let outputContent = stripPromptStatusNotes(
-    rawResponse
-      .replace(/^[\s\S]*?<\/think(?:ing)?>\s*/si, "")
+    stripBeforeThinkClose(rawResponse)
       .replace(/<\/?content>/gi, "")
       .trim(),
   );

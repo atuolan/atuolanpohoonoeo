@@ -784,7 +784,9 @@ export class ProactiveMessageService {
       const { parseGroupChatResponse } = await import(
         "@/services/ResponseParser"
       );
-      const parsed = parseGroupChatResponse(aiContent);
+      const parsed = parseGroupChatResponse(aiContent, {
+        disabledRegexIds: groupChat.disabledRegexIds,
+      });
       if (!parsed.messages.length) {
         console.warn(
           "[ProactiveMessage] _sendGroupChatGamePlayingMessage: 解析後沒有訊息，跳過",
@@ -1480,7 +1482,9 @@ export class ProactiveMessageService {
           // 話題引導訊息只在記憶體中，不需要從 IDB 移除
 
           // 使用 parseAIResponse 解析回應，正確分割 <msg> 標籤
-          const parsedResponse = parseAIResponse(aiContent);
+          const parsedResponse = parseAIResponse(aiContent, {
+            disabledRegexIds: chat.disabledRegexIds,
+          });
           const now = Date.now();
           const newMessages: any[] = [];
 

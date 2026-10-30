@@ -175,7 +175,13 @@ const props = defineProps<{
   /** 被 AI 移出群聊的成員（資料保留，可以拉回） */
   removedMembers?: RemovedMemberInfo[];
   /** 本聊天的正則：全域有開的腳本＋角色卡腳本 */
-  regexScripts?: Array<{ id: string; name: string; source: "builtin" | "global" | "character" }>;
+  regexScripts?: Array<{
+    id: string;
+    name: string;
+    source: "builtin" | "global" | "character" | "cleanup";
+    /** 內建清理：說明它清掉什麼 */
+    hint?: string;
+  }>;
   /** 這個聊天停用的正則腳本 id */
   disabledRegexIds?: readonly string[];
 }>();
@@ -750,7 +756,12 @@ function isRegexOn(id: string) {
 const disabledRegexCount = computed(
   () => regexScripts.value.filter((s) => !isRegexOn(s.id)).length,
 );
-const REGEX_SOURCE_LABEL = { builtin: "內置", global: "全域", character: "角色卡" } as const;
+const REGEX_SOURCE_LABEL = {
+  builtin: "內置",
+  global: "全域",
+  character: "角色卡",
+  cleanup: "內建清理",
+} as const;
 function toggleChatRegex(id: string) {
   const current = (props.disabledRegexIds || []).filter((x) =>
     regexScripts.value.some((s) => s.id === x),
@@ -1444,7 +1455,7 @@ function handleAction(action: string) {
               <path d="m9 18 6-6-6-6" />
             </svg>
           </button>
-          <p class="panel-hint">取消勾選的只在這個聊天停用（顯示、送給 AI 的內容都不套用），其他聊天照舊。</p>
+          <p class="panel-hint">取消勾選的只在這個聊天停用，其他聊天照舊。「內建清理」關掉後，AI 回覆裡的那段會留在訊息裡，只影響新回覆。</p>
           <template v-if="showRegex">
           <div v-if="regexScripts.length === 0" class="empty-hint">
             目前沒有啟用中的正則
@@ -1464,7 +1475,7 @@ function handleAction(action: string) {
               </span>
               <span class="lorebook-info">
                 <span class="lorebook-name">{{ rs.name || '（未命名）' }}</span>
-                <span class="lorebook-count">{{ REGEX_SOURCE_LABEL[rs.source] }}</span>
+                <span class="lorebook-count">{{ rs.hint || REGEX_SOURCE_LABEL[rs.source] }}</span>
               </span>
             </button>
           </div>
@@ -1844,7 +1855,7 @@ function handleAction(action: string) {
               <path d="m9 18 6-6-6-6" />
             </svg>
           </button>
-          <p class="panel-hint">取消勾選的只在這個聊天停用（顯示、送給 AI 的內容都不套用），其他聊天照舊。</p>
+          <p class="panel-hint">取消勾選的只在這個聊天停用，其他聊天照舊。「內建清理」關掉後，AI 回覆裡的那段會留在訊息裡，只影響新回覆。</p>
           <template v-if="showRegex">
           <div v-if="regexScripts.length === 0" class="empty-hint">
             目前沒有啟用中的正則
@@ -1864,7 +1875,7 @@ function handleAction(action: string) {
               </span>
               <span class="lorebook-info">
                 <span class="lorebook-name">{{ rs.name || '（未命名）' }}</span>
-                <span class="lorebook-count">{{ REGEX_SOURCE_LABEL[rs.source] }}</span>
+                <span class="lorebook-count">{{ rs.hint || REGEX_SOURCE_LABEL[rs.source] }}</span>
               </span>
             </button>
           </div>

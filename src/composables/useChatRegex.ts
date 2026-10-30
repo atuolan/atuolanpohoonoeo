@@ -12,6 +12,7 @@ import {
 } from "@/services/promptRegex";
 import { createStTemplateContext } from "@/services/StTemplateContextService";
 import { useRegexScriptsStore } from "@/stores/regexScripts";
+import { CLEANUP_STATUS_NOTES } from "@/utils/builtinCleanup";
 import { useUserStore } from "@/stores/user";
 import type { CharacterAffinityConfig, ChatAffinityState } from "@/schemas/affinity";
 import type { ChatMessage } from "@/types/chat";
@@ -44,9 +45,11 @@ export function useChatRegex(context: {
   }
 
   function applyAIOutputRegex(content: string): string {
-    content = content
-      .replace(/\[time(?:stamp)?\s*[:：][^\]]*\]/gi, "")
-      .trimStart();
+    if (!context.disabledRegexIds?.value.includes(CLEANUP_STATUS_NOTES)) {
+      content = content
+        .replace(/\[time(?:stamp)?\s*[:：][^\]]*\]/gi, "")
+        .trimStart();
+    }
     const scripts = getActiveRegexScripts();
     if (!scripts.length) return content;
     const charName =

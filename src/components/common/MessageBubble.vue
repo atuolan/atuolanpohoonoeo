@@ -90,7 +90,12 @@ import LiuyaoShareCard from "./LiuyaoShareCard.vue";
 import PlurkShareCard from "./PlurkShareCard.vue";
 import PixelGiftChest from "./PixelGiftChest.vue";
 import PixelTransferCard from "./PixelTransferCard.vue";
-import { stripStateThinking } from "@/services/ResponseParser";
+import {
+  stripBeforeThinkClose,
+  stripStateThinking,
+  stripThinkBlocks,
+} from "@/services/ResponseParser";
+import { withReplyShield } from "@/utils/builtinCleanup";
 import { resolveProxyPath } from "@/native/platform";
 import {
   formatRecognitionText,
@@ -1462,6 +1467,13 @@ function replaceDisplayMacros(text: string): string {
 }
 
 // 渲染 Markdown 內容（包含圖片描述和影片描述的特殊處理）
+// 氣泡顯示前藏思考。「</thinking> 之前全刪」只在串流中做：
+// 存好的訊息已經解析過，還留著的 </thinking> 是內文在提到它
+function stripBubbleThinking(text: string): string {
+  const stripped = stripThinkBlocks(stripStateThinking(text, true));
+  return props.isStreaming ? stripBeforeThinkClose(stripped) : stripped;
+}
+
 const renderedContent = computed(() => {
   if (!props.content) return "";
 
@@ -1596,13 +1608,11 @@ const renderedContent = computed(() => {
     // ★ 前置清理：先剝離 <think>/<thinking>，再提取 <content>
     // 必須在所有媒體標籤匹配（showPicMatch 等）之前執行，
     // 否則 showPicMatch 會在含 <content> 包裹的原始文字上匹配並提前 return，丟失前後文字。
-    {
-      html = stripStateThinking(html, true)
-        .replace(/(^|[^`])<think(?:ing)?>[\s\S]*?(?:<\/think(?:ing)?>|$)/gi, "$1")
-        .replace(/^(?:[\s\S]*?[^`])?<\/think(?:ing)?>/is, "");
-      const _cm = html.match(/<content>\s*([\s\S]*?)\s*<\/content>/i);
-      if (_cm) html = _cm[1].trim();
-    }
+    html = withReplyShield(html, props.disabledRegexIds, (text) => {
+      const stripped = stripBubbleThinking(text);
+      const _cm = stripped.match(/<content>\s*([\s\S]*?)\s*<\/content>/i);
+      return _cm ? _cm[1].trim() : stripped;
+    });
 
     // 面對面模式：展示圖片/影片（相機動畫 UI）
     const showPicMatch = html.match(/<show-pic(?:\s[^>]*)?\s*>\s*([\s\S]*?)\s*<\/show-pic>/);
@@ -1767,34 +1777,35 @@ const renderedContent = computed(() => {
     // 串流中佔位氣泡會先拿到原始模型輸出；此處只做顯示層清理，避免把
     // <thinking>/<UpdateVariable>/<horae> 等控制區塊或「結果:」鏡像內容渲染給用戶。
     // 先剝離 <think>/<thinking> 區塊，再提取 <content>，避免 thinking 內的 <content> 被誤捕
-    processedContent = stripPicNote(
-      stripStateThinking(processedContent, true)
-        .replace(/(^|[^`])<think(?:ing)?>[\s\S]*?(?:<\/think(?:ing)?>|$)/gi, "$1")
-        .replace(/^(?:[\s\S]*?[^`])?<\/think(?:ing)?>/is, ""),
-    );
-    const firstContentMatch = processedContent.match(/<content>\s*([\s\S]*?)\s*<\/content>/i);
-    if (firstContentMatch) {
-      processedContent = firstContentMatch[1].trim();
-    } else {
-      processedContent = processedContent
-        .replace(/<\/?content>/gi, "")
-        .replace(/<UpdateVariable>[\s\S]*?<\/UpdateVariable>/gi, "")
-        .replace(/<update>[\s\S]*?<\/update>/gi, "")
-        .replace(/<horae>[\s\S]*?<\/horae>/gi, "")
-        .replace(/<horaeevent>[\s\S]*?<\/horaeevent>/gi, "")
-        .replace(/<StatusPlaceHolderImpl\s*\/?>/gi, "")
-        .replace(/\n?\s*結果\s*[:：]\s*<content>[\s\S]*?<\/content>\s*$/i, "")
-        .trim();
-    }
-    // 清理模型模仿歷史消息時間格式誤輸出的 [time:...] 標記
-    processedContent = stripPromptStatusNotes(
-      processedContent.replace(/\[time:[^\]]*\]\s*/g, ""),
-    ).trim();
+    processedContent = withReplyShield(
+      processedContent,
+      props.disabledRegexIds,
+      (text) => {
+        let cleaned = stripPicNote(stripBubbleThinking(text));
+        const firstContentMatch = cleaned.match(/<content>\s*([\s\S]*?)\s*<\/content>/i);
+        if (firstContentMatch) {
+          cleaned = firstContentMatch[1].trim();
+        } else {
+          cleaned = cleaned
+            .replace(/<\/?content>/gi, "")
+            .replace(/<UpdateVariable>[\s\S]*?<\/UpdateVariable>/gi, "")
+            .replace(/<update>[\s\S]*?<\/update>/gi, "")
+            .replace(/<horae>[\s\S]*?<\/horae>/gi, "")
+            .replace(/<horaeevent>[\s\S]*?<\/horaeevent>/gi, "")
+            .replace(/<StatusPlaceHolderImpl\s*\/?>/gi, "")
+            .replace(/\n?\s*結果\s*[:：]\s*<content>[\s\S]*?<\/content>\s*$/i, "")
+            .trim();
+        }
+        // 清理模型模仿歷史消息時間格式誤輸出的 [time:...] 標記
+        cleaned = stripPromptStatusNotes(
+          cleaned.replace(/\[time:[^\]]*\]\s*/g, ""),
+        ).trim();
 
-    // 移除漏網的 ˇ想法ˇ 和舊格式 ~(想法)~
-    processedContent = processedContent
-      .replace(/\n?ˇ([^]*?)\/~\n?/g, "\n")
-      .trim();
+        // 移除漏網的 ˇ想法ˇ 和舊格式 ~(想法)~
+        return cleaned.replace(/\n?ˇ([^]*?)\/~\n?/g, "\n").trim();
+      },
+      { escapeKept: true },
+    );
 
     // ★ 套用 markdownOnly regex 腳本（顯示層轉換，不污染原始訊息）
     const beforeRegex = processedContent;
