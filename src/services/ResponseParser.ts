@@ -17,6 +17,7 @@ import { normalizeEventTime } from "@/utils/calendarEventFormat";
 import { CHAR_PLANNER_TAG_REGEX } from "@/utils/charPlanner";
 import { stripPicNote } from "@/utils/picNote";
 import {
+  CLEANUP_CONTROL_BLOCKS,
   shieldReply,
   unshieldDeep,
   type ParseReplyOptions,
@@ -1026,11 +1027,11 @@ function splitHtmlBlocks(content: string): ParsedMessage[] | null {
 /**
  * <|state|>...</|state|> 思考區塊
  * （對應酒館正則「隱藏思考」）
- * 標籤只認 state 加上 | / 空白；以前放寬成「尖括號裡有 state」，
+ * 標籤名要含 state、前後成對，只能帶 | / 空白；以前放寬成「尖括號裡有 state」，
  * 「x < 3 且 state > 2」或 <div data-state="open"> 都會被當成思考。
  */
 const STATE_THINKING_REGEX =
-  /<[\s|/]*state[\s|/]*>([\s\S]*?)<[\s|/]*state[\s|/]*>/gis;
+  /<[\s|/]*([\w-]*state[\w-]*)[\s|/]*>([\s\S]*?)<[\s|/]*\1[\s|/]*>/gis;
 /** 串流中還沒收尾：要有 | 才算，<state> 這種可能只是在講話 */
 const STATE_THINKING_UNCLOSED_REGEX = /<[\s/]*\|[\s|/]*state[\s|/]*>[\s\S]*$/i;
 
@@ -1048,25 +1049,32 @@ export function stripStateThinking(content: string, allowUnclosed = false): stri
 
 /**
  * 移除 <think>/<thinking> 區塊。
- * 還沒收尾的只有在開頭才算思考（串流中）；內文中間提到 <thinking> 不能吃到結尾。
+ * 還沒收尾的：串流中不管在哪都藏（思考前面可能有開場白，寫完才知道）；
+ * 寫完的訊息只有開頭才算思考，內文中間提到 <thinking> 不能吃到結尾。
  */
-export function stripThinkBlocks(content: string): string {
-  return content
-    .replace(/<think(?:ing)?>[\s\S]*?<\/think(?:ing)?>/gi, "")
-    .replace(/^(\s*(?:<content>\s*)?)<think(?:ing)?>[\s\S]*$/i, "$1");
+export function stripThinkBlocks(content: string, streaming = false): string {
+  const closed = content.replace(/<think(?:ing)?>[\s\S]*?<\/think(?:ing)?>/gi, "");
+  return streaming
+    ? closed.replace(/<think(?:ing)?>[\s\S]*$/i, "")
+    : closed.replace(/^(\s*(?:<content>\s*)?)<think(?:ing)?>[\s\S]*$/i, "$1");
 }
 
 /**
  * 模型漏寫開頭標籤時，</thinking> 之前都是思考。
- * 但結尾標籤出現在內文（<content>／<msg>）之後，又沒有先開 <thinking>，那只是在提到它。
+ * 但結尾標籤落在還沒結束的 <content>／<msg> 裡，又沒有先開 <thinking>，那只是在提到它。
+ * 思考裡寫完整的 <msg> 草稿不算：草稿已經結束，結尾標籤仍在內文外面。
  */
 export function stripBeforeThinkClose(content: string): string {
   const close = /<\/think(?:ing)?>/i.exec(content);
   if (!close) return content;
-  const body = /<content>|<msg[\s>]/i.exec(content);
-  const open = /<think(?:ing)?>/i.exec(content);
-  if (body && body.index < close.index && !(open && open.index < body.index)) {
-    return content;
+  const before = content.slice(0, close.index);
+  const body = /<content>|<msg[\s>]/i.exec(before);
+  const open = /<think(?:ing)?>/i.exec(before);
+  if (body && !(open && open.index < body.index)) {
+    const count = (regex: RegExp) => (before.match(regex) ?? []).length;
+    const insideMsg = count(/<msg[\s>]/gi) > count(/<\/msg>/gi);
+    const insideContent = /<content>/i.test(before) && !/<\/content>/i.test(before);
+    if (insideMsg || insideContent) return content;
   }
   return content.slice(close.index + close[0].length).trimStart();
 }
@@ -1080,7 +1088,15 @@ export function parseAIResponse(
 ): ParsedResponse {
   const shielded = shieldReply(rawResponse, options?.disabledRegexIds);
   if (shielded === rawResponse) return parseShieldedResponse(rawResponse);
-  return unshieldDeep(parseShieldedResponse(shielded));
+  const parsed = unshieldDeep(parseShieldedResponse(shielded));
+  if (options?.disabledRegexIds?.includes(CLEANUP_CONTROL_BLOCKS)) {
+    // 控制區塊只是不隱藏，變量和好感度照樣要更新
+    const blocks = unshieldDeep(parseShieldedResponse(shieldReply(rawResponse)));
+    parsed.hasAffinityUpdate = blocks.hasAffinityUpdate;
+    parsed.affinityUpdates = blocks.affinityUpdates;
+    parsed.rawUpdateBlock = blocks.rawUpdateBlock;
+  }
+  return parsed;
 }
 
 function parseShieldedResponse(rawResponse: string): ParsedResponse {
@@ -1093,7 +1109,7 @@ function parseShieldedResponse(rawResponse: string): ParsedResponse {
   // 0. 提取並移除 <|state|> 思考區塊
   const stateMatch = [...rawResponse.matchAll(STATE_THINKING_REGEX)];
   if (stateMatch.length > 0) {
-    result.thinking = stateMatch.map((m) => m[1].trim()).join("\n\n");
+    result.thinking = stateMatch.map((m) => m[2].trim()).join("\n\n");
     rawResponse = stripStateThinking(rawResponse);
   }
 
@@ -2697,7 +2713,7 @@ export function parseAffinityUpdateTags(
  */
 export function needsParsing(content: string): boolean {
   // 檢查是否包含任何需要解析的標籤
-  return /<think>|<[\s|/]*state[\s|/]*>|<content>|<msg>|<update>|<UpdateVariable>|<timetravel>|<redpacket|<location>|<schedule-call|<calendar-event|<food-record|<time-jump|<time-advance|<送禮物[\s>]|<pay>|<transfer\s|<refund>|<avatar-change|<couple-avatar-|<voice>|<waimai-pay|<waimai-delivery|<face-to-face-request|<online-mode-request|<affinity-update|<char-status|<char-away|<char-sleep|<char-busy|<char-wake|<sticky-note|<mood-reply|<plurk[\s>]|<plurk-comment|<share-plurk|<!DOCTYPE\s|<html[\s>]/i.test(
+  return /<think>|<[\s|/]*[\w-]*state[\w-]*[\s|/]*>|<content>|<msg>|<update>|<UpdateVariable>|<timetravel>|<redpacket|<location>|<schedule-call|<calendar-event|<food-record|<time-jump|<time-advance|<送禮物[\s>]|<pay>|<transfer\s|<refund>|<avatar-change|<couple-avatar-|<voice>|<waimai-pay|<waimai-delivery|<face-to-face-request|<online-mode-request|<affinity-update|<char-status|<char-away|<char-sleep|<char-busy|<char-wake|<sticky-note|<mood-reply|<plurk[\s>]|<plurk-comment|<share-plurk|<!DOCTYPE\s|<html[\s>]/i.test(
     content,
   );
 }

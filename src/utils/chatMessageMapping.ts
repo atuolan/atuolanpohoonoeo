@@ -275,7 +275,7 @@ export function sanitizeStreamingContentForStorage(content: string): string {
     console.warn("[ChatScreen] 清理流式內容供持久化時解析失敗，改用正則回退:", error);
   }
 
-  return stripThinkBlocks(stripStateThinking(trimmed, true))
+  return stripThinkBlocks(stripStateThinking(trimmed, true), true)
     .replace(/<\/?content>/gi, "")
     .replace(/<\/?msg>/gi, "")
     .trim();

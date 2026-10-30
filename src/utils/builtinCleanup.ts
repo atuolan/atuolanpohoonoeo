@@ -53,7 +53,7 @@ function shieldInlineCode(text: string): string {
   return text.replace(/```[\s\S]*?(?:```|$)|`[^`\n]+`/g, (span) => {
     if (span.startsWith("```")) return span;
     // 反引號落單時，兩則訊息之間可能被配成一段 code；這種不是在談論標籤
-    if (/<\/(?:msg|content|think(?:ing)?)>[\s\S]*<(?:msg|content)[\s>]/i.test(span)) {
+    if (/<\/(?:msg|dm|recall|content|think(?:ing)?)>[\s\S]*<[a-z]/i.test(span)) {
       return span;
     }
     return span.replace(/[<[]/g, `$&${SHIELD}`);

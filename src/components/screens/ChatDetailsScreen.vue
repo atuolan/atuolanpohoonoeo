@@ -1455,7 +1455,7 @@ function handleAction(action: string) {
               <path d="m9 18 6-6-6-6" />
             </svg>
           </button>
-          <p class="panel-hint">取消勾選的只在這個聊天停用，其他聊天照舊。「內建清理」關掉後，AI 回覆裡的那段會留在訊息裡，只影響新回覆。</p>
+          <p class="panel-hint">取消勾選的只在這個聊天停用，其他聊天照舊。「內建清理」關掉後，AI 回覆裡的那段會留在訊息裡，也會跟著歷史送給 AI，AI 可能越寫越多；只影響新回覆。</p>
           <template v-if="showRegex">
           <div v-if="regexScripts.length === 0" class="empty-hint">
             目前沒有啟用中的正則
@@ -1855,7 +1855,7 @@ function handleAction(action: string) {
               <path d="m9 18 6-6-6-6" />
             </svg>
           </button>
-          <p class="panel-hint">取消勾選的只在這個聊天停用，其他聊天照舊。「內建清理」關掉後，AI 回覆裡的那段會留在訊息裡，只影響新回覆。</p>
+          <p class="panel-hint">取消勾選的只在這個聊天停用，其他聊天照舊。「內建清理」關掉後，AI 回覆裡的那段會留在訊息裡，也會跟著歷史送給 AI，AI 可能越寫越多；只影響新回覆。</p>
           <template v-if="showRegex">
           <div v-if="regexScripts.length === 0" class="empty-hint">
             目前沒有啟用中的正則

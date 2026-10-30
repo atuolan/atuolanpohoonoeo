@@ -1470,7 +1470,7 @@ function replaceDisplayMacros(text: string): string {
 // 氣泡顯示前藏思考。「</thinking> 之前全刪」只在串流中做：
 // 存好的訊息已經解析過，還留著的 </thinking> 是內文在提到它
 function stripBubbleThinking(text: string): string {
-  const stripped = stripThinkBlocks(stripStateThinking(text, true));
+  const stripped = stripThinkBlocks(stripStateThinking(text, true), props.isStreaming);
   return props.isStreaming ? stripBeforeThinkClose(stripped) : stripped;
 }
 

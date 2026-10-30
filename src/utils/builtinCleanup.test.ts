@@ -56,6 +56,11 @@ describe("提到標籤不等於標籤", () => {
     ).toEqual(["一個 ` 符號", "又一個 ` 符號"]);
   });
 
+  it("落單的反引號不會把 <dm>、<recall> 吃進上一則", () => {
+    const raw = '<content><msg name="A">一個 ` 符號</msg><recall name="B">x ` y</recall></content>';
+    expect(group(raw)[0]).toBe("一個 ` 符號");
+  });
+
   it("程式碼區塊裡的內容不受影響", () => {
     expect(group('<content><msg name="A">```html\n<b>x</b>\n```</msg></content>')[0]).toContain("<b>x</b>");
   });
@@ -74,6 +79,22 @@ describe("真的思考照樣藏起來", () => {
     expect(
       group('<thinking>寫 <msg name="A">草稿</msg></thinking><content><msg name="A">回覆</msg></content>'),
     ).toEqual(["回覆"]);
+  });
+
+  it("群聊：漏寫開頭標籤、思考裡有完整 <msg> 草稿", () => {
+    expect(
+      group('寫 <msg name="A">草稿</msg> 想想</thinking><content><msg name="A">回覆</msg></content>'),
+    ).toEqual(["回覆"]);
+  });
+
+  it("思考前面有開場白，串流中也藏", () => {
+    expect(stripThinkBlocks("開場白\n<thinking>想到一半", true)).toBe("開場白\n");
+  });
+
+  it("成對的自訂 state 區塊照舊隱藏", () => {
+    const parsed = parseAIResponse("<content><game_state>HP 10</game_state>回覆</content>");
+    expect(parsed.messages[0].content).toBe("回覆");
+    expect(parsed.thinking).toBe("HP 10");
   });
 
   it("<|state|> 串流到一半也藏", () => {
@@ -145,6 +166,17 @@ describe("內建清理開關", () => {
     const off = parseAIResponse("Scene 1.2 — 開場\n她抬頭。", { disabledRegexIds: [CLEANUP_LEAK_LINES] });
     expect(off.messages.map((m) => m.content).join("")).toContain("Scene 1.2 — 開場");
     expect(parseAIResponse("Scene 1.2 — 開場\n她抬頭。").messages.map((m) => m.content).join("")).not.toContain("Scene");
+  });
+
+  it("關掉控制區塊：變量照樣更新", () => {
+    const raw = "<content>回覆<update>_.set('a', 1);</update></content>";
+    const on = parseAIResponse(raw);
+    const off = parseAIResponse(raw, { disabledRegexIds: [CLEANUP_CONTROL_BLOCKS] });
+    expect(on.hasAffinityUpdate).toBe(true);
+    expect(off.hasAffinityUpdate).toBe(true);
+    expect(off.affinityUpdates).toEqual(on.affinityUpdates);
+    expect(off.rawUpdateBlock).toBe(on.rawUpdateBlock);
+    expect(off.messages[0].content).toContain("<update>");
   });
 
   it("關掉控制區塊：氣泡顯示成文字", () => {
