@@ -126,6 +126,19 @@ describe("行事曆", () => {
     expect(listed).not.toContain("早就過了");
   });
 
+  it("看行程讀不到別的角色記的", async () => {
+    await saveCalendarEvent(
+      { type: "user", title: "別人的約", date: "2026-10-20" },
+      { characterId: "char-2", chatId: "chat-2" },
+    );
+    await saveCalendarEvent({ type: "user", title: "自己的事", date: "2026-10-20" });
+
+    const context = makeContext();
+    const listed = await tool("list_calendar_events").execute({ from: "2026-10-19", to: "2026-10-31" }, context);
+    expect(listed).toContain("自己的事");
+    expect(listed).not.toContain("別人的約");
+  });
+
   it("同一個行程再加一次不會重複，也不會再插卡片", async () => {
     const onCalendarEventCreated = vi.fn();
     const context = makeContext({ onCalendarEventCreated });

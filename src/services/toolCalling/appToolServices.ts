@@ -53,7 +53,7 @@ export function createAppToolServices(options: AppToolServiceOptions): Required<
   return {
     calendar: {
       async listEvents(range) {
-        const events = await listCalendarEvents(range);
+        const events = await listCalendarEvents(range, { characterId: options.characterId, chatId: options.chatId });
         return events.map(({ date, title, description, type, startTime, endTime, endDate }) => ({
           date,
           title,

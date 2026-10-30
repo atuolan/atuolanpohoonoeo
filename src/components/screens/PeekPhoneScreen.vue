@@ -246,9 +246,9 @@ async function loadPlanner() {
   try {
     planner.value = await loadCharPlanner(props.chatId);
     const today = phoneToday.value;
-    helpedEvents.value = (await listCalendarEvents({ from: today, to: shiftDate(today, 13) })).filter(
-      (e) => e.sourceChatId === props.chatId,
-    );
+    helpedEvents.value = (
+      await listCalendarEvents({ from: today, to: shiftDate(today, 13) }, { characterId: props.characterId, chatId: props.chatId })
+    ).filter((e) => e.sourceChatId === props.chatId);
   } catch (err) {
     console.warn("[PeekPhoneScreen] 讀取角色待辦與行程失敗:", err);
   }
