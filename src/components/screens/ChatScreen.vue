@@ -5302,7 +5302,7 @@ function recordRoundTableUsage(characterId: string, usage: ChatGenerationTokenUs
 }
 
 // 換個模型重講：長按訊息選 API，以同一位成員、跟原本一樣的脈絡重講；
-// 原本那段留著放在旁邊比較（原本是錯誤泡泡就直接換掉）
+// 原本那段留著放在旁邊比較（原本是錯誤泡泡就一開始先拿掉、新回覆放回原位）
 const roundTableRetellTargetId = ref<string | null>(null);
 const ROUND_TABLE_RETELL_SAME = "__same__";
 
@@ -5348,6 +5348,9 @@ async function retellRoundTableMessage(profileId: string) {
   while (roundStart > 0 && list[roundStart - 1].role !== "user") roundStart--;
   const block = list.slice(start, end + 1);
   const whisper = !!block[0].whisperWith;
+  // 原本是錯誤泡泡：一按就先拿掉，新回覆放回原位；什麼都沒生出來（按停止）就把錯誤放回去
+  const blockFailed = block.every((m) => isGenerationErrorMessage(m));
+  const beforeId = start > 0 ? list[start - 1].id : null;
 
   const taskConfig = resolveRoundTableTaskConfig(
     profileId === ROUND_TABLE_RETELL_SAME ? speaker.apiProfileId : profileId || undefined,
@@ -5366,28 +5369,37 @@ async function retellRoundTableMessage(profileId: string) {
     modelLabel: taskConfig.api.model,
   };
 
-  roundTableRunning = true;
-  roundTableBusy.value = true;
-  try {
-    const idsBefore = new Set(list.map((m) => m.id));
-    await runAIResponseOnce({ skipAutoTrigger: true }, turn);
+  const idsBefore = new Set(list.map((m) => m.id));
+  /** 新回覆搬到原本那段旁邊（錯誤泡泡則是原位）；沒有新回覆時把拿掉的錯誤放回去 */
+  const placeRetell = () => {
     const added = messages.value.filter((m) => !idsBefore.has(m.id));
-    if (added.length === 0) return;
     for (const m of added) {
       if (m.senderCharacterId === speakerId && !m.roundTableModel) m.roundTableModel = turn.modelLabel;
       if (whisper) m.whisperWith = speakerId;
     }
-    // 搬到原本那段旁邊
-    const rest = messages.value.filter((m) => !added.includes(m));
-    const blockFailed = block.every((m) => isGenerationErrorMessage(m));
-    const anchor = rest.indexOf(blockFailed ? block[0] : block[block.length - 1]);
-    if (anchor === -1) return;
-    if (blockFailed) {
-      rest.splice(anchor, block.length, ...added);
-    } else {
-      rest.splice(anchor + 1, 0, ...added);
+    const items = added.length > 0 ? added : blockFailed ? block : [];
+    if (items.length === 0) return;
+    const rest = messages.value.filter((m) => !items.includes(m));
+    const anchorId = blockFailed ? beforeId : block[block.length - 1].id;
+    const at = anchorId === null ? 0 : rest.findIndex((m) => m.id === anchorId) + 1;
+    if (anchorId !== null && at === 0) {
+      // 前面那則不見了：新回覆留在最下面，錯誤補回最後
+      if (added.length === 0) messages.value = [...rest, ...items];
+      return;
     }
+    rest.splice(at, 0, ...items);
     messages.value = rest;
+  };
+
+  roundTableRunning = true;
+  roundTableBusy.value = true;
+  if (blockFailed) messages.value = list.filter((m) => !block.includes(m));
+  try {
+    try {
+      await runAIResponseOnce({ skipAutoTrigger: true }, turn);
+    } finally {
+      placeRetell();
+    }
   } finally {
     roundTableRunning = false;
     roundTableBusy.value = false;
