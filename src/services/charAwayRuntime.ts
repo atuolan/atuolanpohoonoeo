@@ -85,13 +85,25 @@ export function setCharAwayViewingChat(chatId: string | null): void {
   viewingChatId = chatId;
 }
 
+/** 使用者正看著這個聊天 */
+export function isCharAwayViewing(chatId: string): boolean {
+  return viewingChatId === chatId;
+}
+
 /** 把暫離狀態寫進聊天記錄並通知畫面 */
 export async function saveCharAway(
   chatId: string,
-  away: CharAway,
+  next: CharAway,
 ): Promise<void> {
   const chat = await loadChatById(chatId);
   if (!chat) return;
+
+  // 同一毫秒連存兩次時，聊天頁要分得出哪筆比較新，不然重新讀聊天會蓋回舊的
+  const stored = chat.charAway;
+  const away =
+    stored?.id === next.id && next.updatedAt <= stored.updatedAt
+      ? { ...next, updatedAt: stored.updatedAt + 1 }
+      : next;
 
   // 訊息另外存在 chatMessages 表，這裡只寫聊天本身的資料
   await saveChatMetadata({ ...chat, messages: [], charAway: away });
@@ -540,7 +552,6 @@ export function isCharBusyPeekRunning(chatId: string): boolean {
 
 /** 沒看著這個聊天時：背景生成看手機那則 */
 async function runBackgroundPeek(chatId: string): Promise<void> {
-  runningPeeks.add(chatId);
   let ok = false;
   try {
     const { proactiveMessageService } = await import(
@@ -579,9 +590,11 @@ export async function runBusyDue(
     }
 
     if (!away.sneakPending && away.peekAt && now >= away.peekAt - RETURN_GRACE_MS) {
-      await saveCharAway(chatId, startBusyPeek(away, now));
       // 看著聊天：聊天頁收到事件後自己生成，生成完再排下一次
-      if (viewingChatId !== chatId) await runBackgroundPeek(chatId);
+      const background = viewingChatId !== chatId;
+      if (background) runningPeeks.add(chatId);
+      await saveCharAway(chatId, startBusyPeek(away, now));
+      if (background) await runBackgroundPeek(chatId);
       return;
     }
 

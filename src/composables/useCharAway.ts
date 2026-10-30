@@ -51,6 +51,7 @@ import {
   cancelCharAway,
   cancelCharAwayPlan,
   finishCharAwaySneak,
+  isCharAwayViewing,
   isCharBusyPeekRunning,
   markCharAwayReplied,
   noteCharBusyMessage,
@@ -466,7 +467,9 @@ export function useCharAway(ctx: {
     const chatId = ctx.currentChatId.value;
     if (!chatId || !away || !isCharAwayActive(away) || !away.sneakPending) return;
     if (away.sneakReason !== "peek" && away.sneakReason !== "hangUp") return;
-    if (peekReplyRunning || ctx.isGenerating() || isCharBusyPeekRunning(chatId)) return;
+    // 聊天頁被快取在背景時也收得到事件，這時交給背景回覆
+    if (!isCharAwayViewing(chatId) || isCharBusyPeekRunning(chatId)) return;
+    if (peekReplyRunning || ctx.isGenerating()) return;
 
     peekReplyRunning = true;
     try {

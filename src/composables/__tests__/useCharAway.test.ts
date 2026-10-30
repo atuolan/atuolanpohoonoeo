@@ -7,6 +7,7 @@ import {
   cancelCharAway,
   cancelCharAwayPlan,
   finishCharAwaySneak,
+  isCharAwayViewing,
   isCharBusyPeekRunning,
   markCharAwayReplied,
   noteCharBusyMessage,
@@ -26,6 +27,7 @@ vi.mock("@/services/charAwayRuntime", () => ({
   cancelCharAway: vi.fn(),
   cancelCharAwayPlan: vi.fn(),
   finishCharAwaySneak: vi.fn(),
+  isCharAwayViewing: vi.fn(() => true),
   isCharBusyPeekRunning: vi.fn(() => false),
   wakeCharAwayNow: vi.fn(),
   urgeCharAway: vi.fn(),
@@ -216,6 +218,14 @@ describe("忙碌抽空回覆", () => {
     ctx.messages.value.push(makeMessage({ role: "ai" }));
     await settle();
     expect(ctx.triggerAIResponse).toHaveBeenCalledTimes(1);
+  });
+
+  it("聊天頁被快取在背景時不生成", async () => {
+    vi.mocked(isCharAwayViewing).mockReturnValueOnce(false);
+    const ctx = setup();
+    ctx.loadFromChat(makeChat(busy({ sneakPending: true, sneakReason: "peek" })));
+    await settle();
+    expect(ctx.triggerAIResponse).not.toHaveBeenCalled();
   });
 
   it("背景正在回就不重複生成", async () => {

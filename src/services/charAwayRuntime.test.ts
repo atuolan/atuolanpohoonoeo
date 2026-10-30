@@ -482,6 +482,17 @@ describe("忙碌看手機", () => {
     expect(saved().earlyEndPending).toBe(false);
   });
 
+  it("先回一句和看手機同時到期：看手機那筆的 updatedAt 比較新", async () => {
+    setCharAwayViewingChat("chat1");
+    seedChat({ charAway: busy({ autoReply: "開會中", autoReplyAt: NOW, peekAt: NOW }) });
+    await runBusyDue("chat1", NOW);
+    const away = saved();
+    expect(away.autoReply).toBeUndefined();
+    expect(away.sneakPending).toBe(true);
+    const autoSave = store.saves.find((s) => s.charAway && !s.charAway.autoReply && !s.charAway.sneakPending);
+    expect(away.updatedAt).toBeGreaterThan(autoSave.charAway.updatedAt);
+  });
+
   it("還沒到時間不看手機", async () => {
     seedChat({ charAway: busy({ peekAt: NOW + MINUTE }) });
     await runBusyDue("chat1", NOW);
