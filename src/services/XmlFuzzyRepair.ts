@@ -192,6 +192,10 @@ export function repairXmlTags(content: string): RepairResult {
  * 以下一個 <msg>、<recall>、<dm>、<group-action> 或 </content> 作為邊界自動補上 </msg>
  */
 function repairUnclosedMsgTags(content: string, logs: RepairLog[]): string {
+  // 反引號裡的標籤是在「談論」標籤（例如 `<group-action>`），不能當邊界；
+  // 掃描用遮掉內容、長度不變的副本，插入位置仍對應原文
+  const scan = content.replace(/`[^`\n]*`/g, (m) => "`" + " ".repeat(m.length - 2) + "`");
+
   // Match all <msg ...> opening tags (non-self-closing)
   // We need to track positions and check for matching </msg>
   const openTagRegex = /<msg\s[^>]*?[^/]>|<msg>/gi;
@@ -201,13 +205,13 @@ function repairUnclosedMsgTags(content: string, logs: RepairLog[]): string {
   // Collect all opening tag positions (excluding self-closing)
   const selfClosingPositions = new Set<number>();
   let scMatch;
-  while ((scMatch = selfClosingRegex.exec(content)) !== null) {
+  while ((scMatch = selfClosingRegex.exec(scan)) !== null) {
     selfClosingPositions.add(scMatch.index);
   }
 
   const openTags: Array<{ index: number; length: number; tag: string }> = [];
   let otMatch;
-  while ((otMatch = openTagRegex.exec(content)) !== null) {
+  while ((otMatch = openTagRegex.exec(scan)) !== null) {
     if (!selfClosingPositions.has(otMatch.index)) {
       openTags.push({
         index: otMatch.index,
@@ -225,7 +229,7 @@ function repairUnclosedMsgTags(content: string, logs: RepairLog[]): string {
     /<msg[\s>]|<recall[\s>]|<dm[\s>]|<group-action[\s>\/]|<\/content>/gi;
   const boundaries: number[] = [];
   let bMatch;
-  while ((bMatch = boundaryRegex.exec(content)) !== null) {
+  while ((bMatch = boundaryRegex.exec(scan)) !== null) {
     boundaries.push(bMatch.index);
   }
   boundaries.push(content.length);
@@ -247,7 +251,7 @@ function repairUnclosedMsgTags(content: string, logs: RepairLog[]): string {
     }
 
     // Check if there's a </msg> between afterOpen and nextBoundary
-    const segment = content.substring(afterOpen, nextBoundary);
+    const segment = scan.substring(afterOpen, nextBoundary);
     if (!segment.includes(closeTagStr)) {
       // No closing tag found — need to insert one at the boundary
       repairs.push({

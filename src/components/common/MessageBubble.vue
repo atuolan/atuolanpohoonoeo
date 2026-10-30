@@ -1595,8 +1595,8 @@ const renderedContent = computed(() => {
     // 否則 showPicMatch 會在含 <content> 包裹的原始文字上匹配並提前 return，丟失前後文字。
     {
       html = stripStateThinking(html, true)
-        .replace(/<think(?:ing)?>[\s\S]*?(?:<\/think(?:ing)?>|$)/gi, "")
-        .replace(/^[\s\S]*?<\/think(?:ing)?>/gis, "");
+        .replace(/(^|[^`])<think(?:ing)?>[\s\S]*?(?:<\/think(?:ing)?>|$)/gi, "$1")
+        .replace(/^(?:[\s\S]*?[^`])?<\/think(?:ing)?>/is, "");
       const _cm = html.match(/<content>\s*([\s\S]*?)\s*<\/content>/i);
       if (_cm) html = _cm[1].trim();
     }
@@ -1766,8 +1766,8 @@ const renderedContent = computed(() => {
     // 先剝離 <think>/<thinking> 區塊，再提取 <content>，避免 thinking 內的 <content> 被誤捕
     processedContent = stripPicNote(
       stripStateThinking(processedContent, true)
-        .replace(/<think(?:ing)?>[\s\S]*?(?:<\/think(?:ing)?>|$)/gi, "")
-        .replace(/^[\s\S]*?<\/think(?:ing)?>/gis, ""),
+        .replace(/(^|[^`])<think(?:ing)?>[\s\S]*?(?:<\/think(?:ing)?>|$)/gi, "$1")
+        .replace(/^(?:[\s\S]*?[^`])?<\/think(?:ing)?>/is, ""),
     );
     const firstContentMatch = processedContent.match(/<content>\s*([\s\S]*?)\s*<\/content>/i);
     if (firstContentMatch) {
