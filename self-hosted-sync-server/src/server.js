@@ -1,14 +1,16 @@
 import { createHmac, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import http from "node:http";
 import { WebSocketServer } from "ws";
+import { openEntityStore } from "./entityStore.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const rootDir = resolve(__dirname, "..");
 const dataDir = resolve(process.env.SYNC_DATA_DIR || join(rootDir, "data"));
 const storePath = join(dataDir, "store.json");
+const entityDbPath = join(dataDir, "entities.sqlite");
 const port = Number(process.env.PORT || 3004);
 const accessTokenTtlSeconds = Number(process.env.SYNC_ACCESS_TOKEN_TTL_SECONDS || 3600);
 const refreshTokenTtlSeconds = Number(process.env.SYNC_REFRESH_TOKEN_TTL_SECONDS || 60 * 60 * 24 * 30);
@@ -35,6 +37,7 @@ if (adminPassword === "admin") {
 
 mkdirSync(dataDir, { recursive: true });
 
+const entityStore = openEntityStore(entityDbPath);
 const store = loadStore();
 if (!store.meta.tokenSecret) {
   store.meta.tokenSecret = process.env.SYNC_TOKEN_SECRET || randomBytes(32).toString("hex");
@@ -308,31 +311,33 @@ const server = http.createServer(async (req, res) => {
       let accepted = 0;
       const rejected = [];
 
-      for (const item of items) {
-        const validationError = validateSyncEnvelope(item);
-        if (validationError) {
-          rejected.push({
-            entityType: item?.entityType || "unknown",
-            entityId: item?.entityId || "unknown",
-            reason: validationError,
-          });
-          continue;
-        }
+      entityStore.transaction(() => {
+        for (const item of items) {
+          const validationError = validateSyncEnvelope(item);
+          if (validationError) {
+            rejected.push({
+              entityType: item?.entityType || "unknown",
+              entityId: item?.entityId || "unknown",
+              reason: validationError,
+            });
+            continue;
+          }
 
-        upsertEntity({
-          userId: auth.userId,
-          entity: {
-            ...item,
-            updatedAt: Number(item.updatedAt),
-            deletedAt: item.deletedAt === null ? null : Number(item.deletedAt),
-            schemaVersion: Number(item.schemaVersion),
-            payload: item.payload ?? null,
-            receivedAt: serverTime,
-            deviceId,
-          },
-        });
-        accepted += 1;
-      }
+          upsertEntity({
+            userId: auth.userId,
+            entity: {
+              ...item,
+              updatedAt: Number(item.updatedAt),
+              deletedAt: item.deletedAt === null ? null : Number(item.deletedAt),
+              schemaVersion: Number(item.schemaVersion),
+              payload: item.payload ?? null,
+              receivedAt: serverTime,
+              deviceId,
+            },
+          });
+          accepted += 1;
+        }
+      });
 
       if (accepted > 0) {
         markUserSyncUpdated(auth.userId, auth.deviceId, serverTime);
@@ -364,15 +369,10 @@ const server = http.createServer(async (req, res) => {
       const limitRaw = url.searchParams.get("limit");
       const limit = limitRaw ? Math.min(Math.max(1, Number(limitRaw)), 1000) : 300;
 
-      const sorted = store.entities
-        .filter((item) => item.userId === auth.userId)
-        .filter((item) => (typeof since === "number" ? item.updatedAt > since : true))
-        .sort((a, b) => a.updatedAt - b.updatedAt);
-
-      const hasMore = sorted.length > limit;
-      const page = sorted.slice(0, limit);
-      const nextSince = hasMore ? page[page.length - 1].updatedAt : null;
-      const items = page.map(({ userId, receivedAt, deviceId, ...entity }) => entity);
+      const rows = entityStore.pull(auth.userId, since, limit + 1);
+      const hasMore = rows.length > limit;
+      const items = rows.slice(0, limit);
+      const nextSince = hasMore ? items[items.length - 1].updatedAt : null;
 
       return sendJson(res, 200, {
         serverTime: Date.now(),
@@ -605,7 +605,7 @@ const server = http.createServer(async (req, res) => {
       store.refreshTokens = store.refreshTokens.filter(
         (t) => t.userId !== userId,
       );
-      store.entities = store.entities.filter((e) => e.userId !== userId);
+      entityStore.deleteUser(userId);
       saveStore();
       return sendJson(res, 200, { ok: true });
     }
@@ -617,6 +617,7 @@ const server = http.createServer(async (req, res) => {
         (item) => item.expiresAt > now,
       );
       const userById = new Map(store.users.map((u) => [u.id, u]));
+      const entityCountByUser = entityStore.countsByUser();
 
       const users = store.users
         .slice()
@@ -627,13 +628,11 @@ const server = http.createServer(async (req, res) => {
           createdAt: u.createdAt,
           updatedAt: u.updatedAt,
           refreshTokenCount: activeRefreshTokens.filter((t) => t.userId === u.id).length,
-          entityCount: store.entities.filter((e) => e.userId === u.id).length,
+          entityCount: entityCountByUser.get(u.id) || 0,
         }));
 
-      const recentEntities = store.entities
-        .slice()
-        .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))
-        .slice(0, 30)
+      const recentEntities = entityStore
+        .recent(30)
         .map((e) => ({
           entityType: e.entityType,
           entityId: e.entityId,
@@ -647,7 +646,7 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, {
         stats: {
           userCount: store.users.length,
-          entityCount: store.entities.length,
+          entityCount: entityStore.countAll(),
           refreshTokenCount: activeRefreshTokens.length,
           generationTaskCount: store.generationTasks.length,
           activeGenerationTaskCount: store.generationTasks.filter((task) => ["pending", "running"].includes(task.status)).length,
@@ -688,12 +687,9 @@ const server = http.createServer(async (req, res) => {
       const offset = Math.max(0, Number.isFinite(offsetRaw) ? offsetRaw : 0);
       const userById = new Map(store.users.map((u) => [u.id, u]));
 
-      const filtered = store.entities
-        .filter((entity) => (userId ? entity.userId === userId : true))
-        .filter((entity) => (entityType ? entity.entityType === entityType : true))
-        .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+      const { total, items: pageEntities } = entityStore.adminList({ userId, entityType, limit, offset });
 
-      const items = filtered.slice(offset, offset + limit).map((entity) => ({
+      const items = pageEntities.map((entity) => ({
         userId: entity.userId,
         username: userById.get(entity.userId)?.username || null,
         entityType: entity.entityType,
@@ -708,7 +704,7 @@ const server = http.createServer(async (req, res) => {
       }));
 
       return sendJson(res, 200, {
-        total: filtered.length,
+        total,
         limit,
         offset,
         items,
@@ -728,12 +724,9 @@ const server = http.createServer(async (req, res) => {
       const offset = Math.max(0, Number.isFinite(offsetRaw) ? offsetRaw : 0);
       const userById = new Map(store.users.map((u) => [u.id, u]));
 
-      const filtered = store.entities
-        .filter((entity) => (userId ? entity.userId === userId : true))
-        .filter((entity) => (entityType ? entity.entityType === entityType : true))
-        .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+      const { total, items: pageEntities } = entityStore.adminList({ userId, entityType, limit, offset });
 
-      const items = filtered.slice(offset, offset + limit).map((entity) => ({
+      const items = pageEntities.map((entity) => ({
         userId: entity.userId,
         username: userById.get(entity.userId)?.username || null,
         entityType: entity.entityType,
@@ -748,7 +741,7 @@ const server = http.createServer(async (req, res) => {
       }));
 
       return sendJson(res, 200, {
-        total: filtered.length,
+        total,
         limit,
         offset,
         items,
@@ -1060,10 +1053,9 @@ function loadStore() {
       },
       users: [],
       refreshTokens: [],
-      entities: [],
       generationTasks: [],
     };
-    writeFileSync(storePath, JSON.stringify(initial, null, 2), "utf8");
+    writeFileSync(storePath, JSON.stringify(initial), "utf8");
     return initial;
   }
 
@@ -1073,14 +1065,19 @@ function loadStore() {
   parsed.meta.syncUsers ||= {};
   parsed.users ||= [];
   parsed.refreshTokens ||= [];
-  parsed.entities ||= [];
   parsed.generationTasks ||= [];
 
-  const originalEntityCount = parsed.entities.length;
-  parsed.entities = parsed.entities.filter((entity) => entity?.entityType !== "idb_store_snapshot");
-  if (parsed.entities.length !== originalEntityCount) {
+  // 舊版把同步資料整包放在 store.json：搬進 SQLite，原檔留一份備份
+  if (Array.isArray(parsed.entities)) {
+    const legacy = parsed.entities.filter((entity) => entity?.entityType !== "idb_store_snapshot");
+    if (legacy.length > 0) {
+      copyFileSync(storePath, join(dataDir, "store.pre-sqlite.json"));
+      const imported = entityStore.importLegacy(legacy);
+      console.log(`[SelfHostedSyncServer] 已把 ${imported} 筆同步資料從 store.json 搬進 SQLite`);
+    }
+    delete parsed.entities;
     parsed.meta.updatedAt = Date.now();
-    writeFileSync(storePath, JSON.stringify(parsed, null, 2), "utf8");
+    writeFileSync(storePath, JSON.stringify(parsed), "utf8");
   }
 
   return parsed;
@@ -1088,7 +1085,7 @@ function loadStore() {
 
 function saveStore() {
   store.meta.updatedAt = Date.now();
-  writeFileSync(storePath, JSON.stringify(store, null, 2), "utf8");
+  writeFileSync(storePath, JSON.stringify(store), "utf8");
 }
 
 function addCorsHeaders(res) {
@@ -1278,19 +1275,7 @@ function getSyncMetaForUser(userId) {
 }
 
 function computeUserEntityCounts(userId) {
-  const entityCounts = {};
-  let totalActiveItems = 0;
-  let totalDeletedItems = 0;
-  for (const item of store.entities) {
-    if (item.userId !== userId) continue;
-    if (item.deletedAt !== null && item.deletedAt !== undefined) {
-      totalDeletedItems += 1;
-      continue;
-    }
-    totalActiveItems += 1;
-    entityCounts[item.entityType] = (entityCounts[item.entityType] || 0) + 1;
-  }
-  return { entityCounts, totalActiveItems, totalDeletedItems };
+  return entityStore.countsForUser(userId);
 }
 
 // ===== Peer-to-peer sync message handling =====
@@ -1432,16 +1417,7 @@ function peerComputeBucketHashes(entries) {
 }
 
 function handleServerHashRequest(ws, client, payload) {
-  const entries = [];
-  for (const item of store.entities) {
-    if (item.userId !== client.userId) continue;
-    entries.push({
-      entityType: item.entityType,
-      entityId: item.entityId,
-      updatedAt: Number(item.updatedAt) || 0,
-      deletedAt: item.deletedAt ?? null,
-    });
-  }
+  const entries = entityStore.listRefs(client.userId);
   const { buckets, rootHash, totalCount } = peerComputeBucketHashes(entries);
   console.log("[peer@server] 回覆 hash", {
     requestId: payload.requestId,
@@ -1465,17 +1441,7 @@ function handleServerHashRequest(ws, client, payload) {
 function handleServerManifestRequest(ws, client, payload) {
   const filterArr = Array.isArray(payload.entityTypes) ? payload.entityTypes : null;
   const filter = filterArr && filterArr.length > 0 ? new Set(filterArr) : null;
-  const entries = [];
-  for (const item of store.entities) {
-    if (item.userId !== client.userId) continue;
-    if (filter && !filter.has(item.entityType)) continue;
-    entries.push({
-      entityType: item.entityType,
-      entityId: item.entityId,
-      updatedAt: Number(item.updatedAt) || 0,
-      deletedAt: item.deletedAt ?? null,
-    });
-  }
+  const entries = entityStore.listRefs(client.userId, filter);
   console.log("[peer@server] 回覆 manifest", {
     requestId: payload.requestId,
     userId: client.userId,
@@ -1496,20 +1462,14 @@ function handleServerManifestRequest(ws, client, payload) {
 
 function handleServerFetchRequest(ws, client, payload) {
   const refs = Array.isArray(payload.entityRefs) ? payload.entityRefs : [];
-  const refKey = (r) => `${r.entityType}::${r.entityId}`;
-  const wanted = new Set(refs.map(refKey));
-  const startIndex = Number(payload.cursor) > 0 ? Number(payload.cursor) : 0;
-
+  const seen = new Set();
   const envelopes = [];
-  let matched = 0;
-  let lastScannedIndex = startIndex;
-
-  for (let i = startIndex; i < store.entities.length; i++) {
-    lastScannedIndex = i;
-    const item = store.entities[i];
-    if (item.userId !== client.userId) continue;
-    const key = refKey(item);
-    if (!wanted.has(key)) continue;
+  for (const ref of refs) {
+    const key = `${ref?.entityType}::${ref?.entityId}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const item = entityStore.get(client.userId, ref.entityType, ref.entityId);
+    if (!item) continue;
     envelopes.push({
       entityType: item.entityType,
       entityId: item.entityId,
@@ -1519,23 +1479,25 @@ function handleServerFetchRequest(ws, client, payload) {
       deletedAt: item.deletedAt ?? null,
       payload: item.payload,
     });
-    matched += 1;
-    if (envelopes.length >= PEER_FETCH_BATCH_LIMIT) break;
   }
 
-  const hasMore =
-    lastScannedIndex < store.entities.length - 1 && matched < wanted.size;
-
-  ws.send(
-    JSON.stringify({
-      type: "peer:fetch-response",
-      requestId: payload.requestId,
-      sourceDeviceId: SERVER_PEER_ID,
-      envelopes,
-      hasMore,
-      nextCursor: hasMore ? lastScannedIndex + 1 : null,
-    }),
-  );
+  // 跟裝置端回應一樣：同一個 requestId 連續送完所有批次，最後一批 hasMore=false
+  let i = 0;
+  do {
+    const batch = envelopes.slice(i, i + PEER_FETCH_BATCH_LIMIT);
+    i += PEER_FETCH_BATCH_LIMIT;
+    const hasMore = i < envelopes.length;
+    ws.send(
+      JSON.stringify({
+        type: "peer:fetch-response",
+        requestId: payload.requestId,
+        sourceDeviceId: SERVER_PEER_ID,
+        envelopes: batch,
+        hasMore,
+        nextCursor: null,
+      }),
+    );
+  } while (i < envelopes.length);
 }
 
 function handleServerApplyRequest(ws, client, payload) {
@@ -1543,48 +1505,37 @@ function handleServerApplyRequest(ws, client, payload) {
   let applied = 0;
   const rejected = [];
 
-  for (const envelope of envelopes) {
-    if (
-      !envelope ||
-      typeof envelope.entityType !== "string" ||
-      typeof envelope.entityId !== "string" ||
-      typeof envelope.updatedAt !== "number"
-    ) {
-      rejected.push({
-        entityType: envelope?.entityType ?? "?",
-        entityId: envelope?.entityId ?? "?",
-        reason: "invalid-envelope",
-      });
-      continue;
-    }
+  entityStore.transaction(() => {
+    for (const envelope of envelopes) {
+      if (
+        !envelope ||
+        typeof envelope.entityType !== "string" ||
+        typeof envelope.entityId !== "string" ||
+        typeof envelope.updatedAt !== "number"
+      ) {
+        rejected.push({
+          entityType: envelope?.entityType ?? "?",
+          entityId: envelope?.entityId ?? "?",
+          reason: "invalid-envelope",
+        });
+        continue;
+      }
 
-    const before = findEntityIndex(client.userId, envelope.entityType, envelope.entityId);
-    upsertEntity({
-      userId: client.userId,
-      entity: {
-        entityType: envelope.entityType,
-        entityId: envelope.entityId,
-        schemaVersion: envelope.schemaVersion ?? 1,
-        createdAt: envelope.createdAt,
-        updatedAt: envelope.updatedAt,
-        deletedAt: envelope.deletedAt ?? null,
-        payload: envelope.payload,
-      },
-    });
-    // upsertEntity 不回傳結果，簡單檢查：若 updatedAt 被接受就算 applied
-    const after = findEntityIndex(client.userId, envelope.entityType, envelope.entityId);
-    if (after !== -1) {
-      applied += 1;
-    } else {
-      rejected.push({
-        entityType: envelope.entityType,
-        entityId: envelope.entityId,
-        reason: "upsert-failed",
+      upsertEntity({
+        userId: client.userId,
+        entity: {
+          entityType: envelope.entityType,
+          entityId: envelope.entityId,
+          schemaVersion: envelope.schemaVersion ?? 1,
+          createdAt: envelope.createdAt,
+          updatedAt: envelope.updatedAt,
+          deletedAt: envelope.deletedAt ?? null,
+          payload: envelope.payload,
+        },
       });
+      applied += 1;
     }
-    // 避免 linter 警告
-    void before;
-  }
+  });
 
   if (applied > 0) {
     markUserSyncUpdated(client.userId, client.deviceId, Date.now());
@@ -1601,20 +1552,6 @@ function handleServerApplyRequest(ws, client, payload) {
       serverTime: Date.now(),
     }),
   );
-}
-
-function findEntityIndex(userId, entityType, entityId) {
-  for (let i = 0; i < store.entities.length; i++) {
-    const item = store.entities[i];
-    if (
-      item.userId === userId &&
-      item.entityType === entityType &&
-      item.entityId === entityId
-    ) {
-      return i;
-    }
-  }
-  return -1;
 }
 
 function notifySyncUpdate({ userId, sourceDeviceId, serverTime, latestUpdateAt, accepted }) {
@@ -1932,20 +1869,5 @@ function validateSyncEnvelope(item) {
 }
 
 function upsertEntity({ userId, entity }) {
-  const existingIndex = store.entities.findIndex(
-    (item) =>
-      item.userId === userId &&
-      item.entityType === entity.entityType &&
-      item.entityId === entity.entityId,
-  );
-
-  if (existingIndex === -1) {
-    store.entities.push({ userId, ...entity });
-    return;
-  }
-
-  const existing = store.entities[existingIndex];
-  if (Number(entity.updatedAt) >= Number(existing.updatedAt)) {
-    store.entities[existingIndex] = { userId, ...entity };
-  }
+  entityStore.upsert(userId, entity);
 }

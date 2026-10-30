@@ -12,7 +12,7 @@ pinned: false
 
 最小可跑的自架同步後端，對齊前端的 SelfHostedSync API contract。
 
-**需求：Node.js ≥ 18 或 Docker。無需資料庫，資料存在本機 JSON 檔。**
+**需求：Node.js ≥ 22.13 或 Docker。無需另外安裝資料庫，資料存在 `data/` 資料夾（內建 SQLite）。**
 
 ---
 
@@ -45,7 +45,7 @@ docker compose up -d
    - `SYNC_TOKEN_SECRET`：隨機字串，確保重啟後 token 不失效
 5. Space 自動 build 並啟動，取得 `https://你的帳號-aguaphone-sync-server.hf.space` 這樣的公開 URL
 
-> ⚠️ **注意**：免費 HF Spaces 的儲存空間是**暫時性的**，Space 休眠或重啟後 `data/store.json` 會消失（即所有帳號和資料）。請務必設定 `SYNC_TOKEN_SECRET` 讓 secret 固定，並告知用戶資料可能遺失，或升級為 [HF Spaces 持久化儲存](https://huggingface.co/docs/hub/spaces-storage)（付費功能，掛載至 `/data`，此時請另設 `SYNC_DATA_DIR=/data`）。
+> ⚠️ **注意**：免費 HF Spaces 的儲存空間是**暫時性的**，Space 休眠或重啟後 `data/` 裡的檔案會消失（即所有帳號和資料）。請務必設定 `SYNC_TOKEN_SECRET` 讓 secret 固定，並告知用戶資料可能遺失，或升級為 [HF Spaces 持久化儲存](https://huggingface.co/docs/hub/spaces-storage)（付費功能，掛載至 `/data`，此時請另設 `SYNC_DATA_DIR=/data`）。
 
 #### 方式 C：Railway / Render / Fly.io 等雲平台
 
@@ -112,7 +112,10 @@ https://xxx.railway.app
 
 ## 儲存方式
 
-資料寫入 `data/store.json`（純 JSON，無需資料庫）。適合個人使用、小型團體、或先打通流程再遷移到更強壯的後端。
+- `data/store.json`：帳號、登入 token、後台生成任務等小資料
+- `data/entities.sqlite`：同步資料（聊天訊息、角色等），每次只寫有變動的那幾筆
+
+用 Node 內建的 `node:sqlite`，不需要另外安裝資料庫。從舊版升級時，第一次啟動會自動把 `store.json` 裡的同步資料搬進 SQLite，原檔備份成 `data/store.pre-sqlite.json`。
 
 ---
 
