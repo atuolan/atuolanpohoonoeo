@@ -15789,6 +15789,14 @@ useChatCleanup({
       font-family: monospace;
     }
 
+    // 代碼框內的 code 不要套行內代碼的底色／內距，否則每行都會一塊一塊的
+    pre code {
+      color: inherit;
+      background: none;
+      padding: 0;
+      border-radius: 0;
+    }
+
     h1,
     h2,
     h3,
