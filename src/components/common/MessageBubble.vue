@@ -102,6 +102,23 @@ import {
   recognizeUtterance,
 } from "@/services/asr/recognizeUtterance";
 
+// 只對 markdown 代碼框（``` / ~~~，未閉合的視為延伸到結尾）與行內 `code` 以外的文字套用 transform
+function replaceOutsideMarkdownCode(
+  text: string,
+  transform: (segment: string) => string,
+): string {
+  const codePattern =
+    /(^|\n)[ \t]*(`{3,}|~{3,})[^\n]*\n[\s\S]*?(?:\n[ \t]*\2[ \t]*(?=\n|$)|$)|(`+)[^`\n][\s\S]*?\3/g;
+  let result = "";
+  let lastIndex = 0;
+  for (const match of text.matchAll(codePattern)) {
+    const start = match.index! + (match[1]?.length ?? 0);
+    result += transform(text.slice(lastIndex, start)) + text.slice(start, match.index! + match[0].length);
+    lastIndex = match.index! + match[0].length;
+  }
+  return result + transform(text.slice(lastIndex));
+}
+
 // 配置 marked
 marked.setOptions({
   breaks: true, // 支持換行
@@ -1860,25 +1877,22 @@ const renderedContent = computed(() => {
       }
     }
 
-    // 將「內容」轉換為帶有 quote 樣式的 span
-    processedContent = processedContent.replace(
-      /「([^」]+)」/g,
-      '<span class="chinese-quote">「$1」</span>',
-    );
-
-    // 修正 marked v17 對中文標點旁斜體的嚴格解析
-    // 舊版支持 *文字標點：* 新版需要標點後有空格才能閉合
-    // 預處理：將 *...標點* 模式直接轉為 <em> 標籤
-    processedContent = processedContent.replace(
-      /(?<!\*)\*(?!\s)([^*\n]+?[，。：；！？、）」』】…—～·])(?<!\s)\*(?!\*)/g,
-      "<em>$1</em>",
-    );
-
-    // 模型常用 <br> 隔開清單項目（「1. …<br>2. …」），marked 會整串當成同一個項目，
-    // 後面的編號只是內文；<br> 後面接清單符號就改回換行，讓每項都是真的清單項目
-    processedContent = processedContent.replace(
-      /<br\s*\/?>[ \t]*(?=(?:\d+[.)]|[-*+])[ \t])/gi,
-      "\n",
+    // 以下預處理都插入 HTML 標籤，只能套在代碼框／行內代碼以外，
+    // 否則 marked 會把代碼裡的 <span>/<em> 轉義成字面文字顯示出來
+    processedContent = replaceOutsideMarkdownCode(processedContent, (text) =>
+      text
+        // 將「內容」轉換為帶有 quote 樣式的 span
+        .replace(/「([^」]+)」/g, '<span class="chinese-quote">「$1」</span>')
+        // 修正 marked v17 對中文標點旁斜體的嚴格解析
+        // 舊版支持 *文字標點：* 新版需要標點後有空格才能閉合
+        // 預處理：將 *...標點* 模式直接轉為 <em> 標籤
+        .replace(
+          /(?<!\*)\*(?!\s)([^*\n]+?[，。：；！？、）」』】…—～·])(?<!\s)\*(?!\*)/g,
+          "<em>$1</em>",
+        )
+        // 模型常用 <br> 隔開清單項目（「1. …<br>2. …」），marked 會整串當成同一個項目，
+        // 後面的編號只是內文；<br> 後面接清單符號就改回換行，讓每項都是真的清單項目
+        .replace(/<br\s*\/?>[ \t]*(?=(?:\d+[.)]|[-*+])[ \t])/gi, "\n"),
     );
 
     const renderedMarkdown = marked.parse(processedContent) as string;
