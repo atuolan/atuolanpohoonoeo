@@ -45,6 +45,8 @@ import {
   isCharAwayPlanPending,
   pickQuickBackGame,
   quickBackTapTarget,
+  isEasyWakeSleep,
+  CHAR_WAKE_TAP_TARGET_MORNING,
 } from "@/services/charAway";
 import {
   CHAR_AWAY_CHANGED_EVENT,
@@ -284,7 +286,7 @@ export function useCharAway(ctx: {
 
     const notes = [
       buildCharAwayReturnNote(away, leftCount),
-      buildCharAwaySneakNote(away, leftCount),
+      buildCharAwaySneakNote(away, leftCount, { now: nowTs, shiftMs }),
       buildCharBusySpareNote(away, nowTs),
       buildCharAwayPlanNote(plan, nowTs, shiftMs),
     ].filter((note): note is string => !!note);
@@ -408,10 +410,14 @@ export function useCharAway(ctx: {
     const ts = Date.now();
     if (away.urgeLockedUntil && away.urgeLockedUntil > ts) return;
 
+    // 天亮後睡覺比較好叫醒：固定戳一戳、下數也少
+    const easyWake = isEasyWakeSleep(away, ts, ctx.getClockShiftMs?.() ?? 0);
     quickBackGame.value = {
-      kind: pickQuickBackGame(),
+      kind: easyWake ? "tap" : pickQuickBackGame(),
       mode: awayKind(away),
-      tapTarget: quickBackTapTarget(away.returnAt - ts),
+      tapTarget: easyWake
+        ? CHAR_WAKE_TAP_TARGET_MORNING
+        : quickBackTapTarget(away.returnAt - ts),
     };
   }
 

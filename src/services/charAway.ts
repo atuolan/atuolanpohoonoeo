@@ -31,6 +31,10 @@ export const CHAR_BUSY_START_PAST_GRACE_MS = 60 * 60_000;
 export const CHAR_WAKE_CALL_WINDOW_MS = 10 * 60_000;
 /** 幾通電話會把他吵醒 */
 export const CHAR_WAKE_CALL_COUNT = 3;
+/** 天亮後（劇情時間 06:00 起）幾通電話就會把他叫醒 */
+export const CHAR_WAKE_CALL_COUNT_MORNING = 1;
+/** 天亮後「起床重睡」小遊戲要點幾下 */
+export const CHAR_WAKE_TAP_TARGET_MORNING = 12;
 /** 睡覺 back 空白的預設 */
 export const CHAR_SLEEP_BACK_DEFAULT = "早安";
 /** 忙碌 back 空白的預設 */
@@ -124,6 +128,20 @@ export function nextClockAfter(hhmm: string, after: number): number | null {
 export function isNightTime(now: number): boolean {
   const hour = new Date(now).getHours();
   return hour >= CHAR_SLEEP_NIGHT_START_HOUR || hour < CHAR_SLEEP_NIGHT_END_HOUR;
+}
+
+/**
+ * 睡覺中而且劇情時間已經天亮（06:00 以後）：比較好叫醒。
+ * 只能在 20:00～05:59 開始睡、最多 12 小時，所以不是晚上就是早上了。
+ */
+export function isEasyWakeSleep(
+  away: CharAway | undefined,
+  now: number,
+  shiftMs = 0,
+): boolean {
+  if (!away || !isCharAwayActive(away)) return false;
+  if (awayKind(away) !== "sleep") return false;
+  return !isNightTime(now + shiftMs);
 }
 
 /** 是否正在暫時離開（面對面暫停中不算） */
@@ -587,17 +605,21 @@ export function fastForwardPlan(
   return { ...plan, startedAt: now, returnAt: endCrossed ? now : plan.returnAt, updatedAt: now };
 }
 
-/** 這一通電話加上前面 10 分鐘內的，是不是第 3 通（會把他吵醒） */
+/** 這一通電話加上前面 10 分鐘內的，是不是第 3 通（會把他吵醒）；天亮後第 1 通就醒 */
 export function shouldWakeByCall(
   away: CharAway | undefined,
   now: number,
+  shiftMs = 0,
 ): boolean {
   if (!away || !isCharAwayActive(away)) return false;
   if (awayKind(away) !== "sleep") return false;
   const recent = (away.callAts ?? []).filter(
     (t) => t >= now - CHAR_WAKE_CALL_WINDOW_MS,
   ).length;
-  return recent + 1 >= CHAR_WAKE_CALL_COUNT;
+  const need = isEasyWakeSleep(away, now, shiftMs)
+    ? CHAR_WAKE_CALL_COUNT_MORNING
+    : CHAR_WAKE_CALL_COUNT;
+  return recent + 1 >= need;
 }
 
 /** 空檔中給 AI 的提示；沒有空檔或這一輪正在看手機就回 null */
@@ -700,13 +722,25 @@ export function buildCharAwayPlanNote(
 export function buildCharAwaySneakNote(
   away: CharAway | undefined,
   leftCount: number,
-  opts: { background?: boolean } = {},
+  opts: { background?: boolean; now?: number; shiftMs?: number } = {},
 ): string | null {
   if (!away || !isCharAwayActive(away)) return null;
   if (!away.sneakPending) return null;
 
   const kind = awayKind(away);
   const left = Math.max(0, leftCount);
+
+  if (
+    kind === "sleep" &&
+    opts.now !== undefined &&
+    isEasyWakeSleep(away, opts.now, opts.shiftMs)
+  ) {
+    return [
+      "[被叫醒]",
+      `{{char}} ${formatClock(away.startedAt)} 睡著了（原本預計 ${formatClock(away.returnAt)} 起床），現在天已經亮了，{{user}} 想找你聊天把你叫醒${left > 0 ? `，還留了 ${left} 則訊息` : ""}。`,
+      `早上睡得淺、很好叫醒：可以帶點剛睡醒的迷糊感回 {{user}}，然後在 </content> 之後放 <char-wake/> 起床，之後就正常聊天。只有依你的個性真的很會賴床時，才可以撒嬌說再睡一下、不放 <char-wake/>。`,
+    ].join("\n");
+  }
 
   if (kind === "sleep") {
     return [

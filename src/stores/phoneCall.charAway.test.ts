@@ -164,6 +164,25 @@ describe("角色暫時離開時打電話", () => {
 });
 
 describe("角色睡覺時打電話", () => {
+  beforeEach(() => {
+    // 晚上 23:30：要 10 分鐘內第 3 通才會醒
+    vi.setSystemTime(new Date(2026, 9, 23, 23, 30));
+  });
+
+  it("天亮後第 1 通就把他叫醒並接起來", async () => {
+    vi.setSystemTime(new Date(2026, 9, 24, 8, 0));
+    vi.mocked(loadChatById).mockResolvedValue(
+      chatWithAway(undefined, { kind: "sleep", reason: "睡覺", callAts: [] }),
+    );
+    const store = usePhoneCallStore();
+
+    await store.startCall(info);
+
+    expect(wakeCharAwayNow).toHaveBeenCalledWith("chat-1");
+    expect(store.callState).toBe("connected");
+    expect(recordCharAwayCall).not.toHaveBeenCalled();
+  });
+
   it("10 分鐘內第 3 通會把他吵醒並接起來，睡覺結束", async () => {
     const now = Date.now();
     vi.mocked(loadChatById).mockResolvedValue(
