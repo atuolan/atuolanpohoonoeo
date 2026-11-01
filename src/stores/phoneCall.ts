@@ -33,7 +33,7 @@ import {
   toTraditionalCallLines,
   type CallLine,
 } from "@/utils/callLines";
-import { computeChatNow } from "@/utils/fakeTime";
+import { computeChatNow, getChatClockShift } from "@/utils/fakeTime";
 import { pickGenerationToggles } from "@/utils/generationToggles";
 import { defineStore } from "pinia";
 import { useChatVariablesStore } from "./chatVariables";
@@ -589,7 +589,7 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
   /**
    * 角色暫時離開時撥過去：不問接不接，響一陣子後無人接聽；能看手機的忙碌響幾秒就掛斷，
    * 接著傳訊息問怎麼了。聊天裡留一張未接通卡片，他回來時會知道打過幾通。不動原本的未接計數。
-   * 睡覺中被 10 分鐘內第 3 通吵醒時改成直接接起來（回 "wake"，不記未接通卡片）。
+   * 睡覺中被 10 分鐘內第 3 通（劇情時間天亮後第 1 通）吵醒時改成直接接起來（回 "wake"，不記未接通卡片）。
    */
   async function ringUnansweredIfAway(
     info: ActiveCallInfo,
@@ -600,8 +600,9 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
     const away = chat?.charAway;
     if (!isCharAwayActive(away)) return null;
 
-    // 睡覺被連續打來的電話吵醒：直接結束睡覺並接起來
-    if (shouldWakeByCall(away, Date.now())) {
+    // 睡覺被連續打來的電話吵醒（天亮後一通就醒）：直接結束睡覺並接起來
+    const callNow = Date.now();
+    if (shouldWakeByCall(away, callNow, getChatClockShift(chat, callNow))) {
       try {
         const { wakeCharAwayNow } = await import("@/services/charAwayRuntime");
         await wakeCharAwayNow(chatId);
@@ -764,7 +765,7 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
         id: `call_trigger_${Date.now()}`,
         role: "system",
         content: opts?.wokenUp
-          ? `（${info.characterName} 正在睡覺，被 ${userStore.currentPersona?.name || "User"} 連續打來的電話吵醒，迷迷糊糊接起來了……請以角色身份先開口說話）`
+          ? `（${info.characterName} 正在睡覺，被 ${userStore.currentPersona?.name || "User"} 打來的電話吵醒，迷迷糊糊接起來了……請以角色身份先開口說話）`
           : `（${info.characterName} 主動打電話給 ${userStore.currentPersona?.name || "User"}，電話接通了...請以角色身份先開口說話）`,
         timestamp: Date.now(),
       });

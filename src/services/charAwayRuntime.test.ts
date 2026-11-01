@@ -329,7 +329,8 @@ describe("urgeCharAway", () => {
 });
 
 describe("urgeCharAway 睡覺", () => {
-  it("贏了不結束、sneakPending true、鎖 5 分鐘；鎖住中回 null", async () => {
+  it("晚上贏了不結束、sneakPending true、鎖 5 分鐘；鎖住中回 null", async () => {
+    vi.setSystemTime(NIGHT);
     seedChat({
       charAway: makeAway({ kind: "sleep", reason: "睡覺", sneakCount: 0 }),
     });
@@ -339,9 +340,42 @@ describe("urgeCharAway 睡覺", () => {
     expect(won).not.toBeNull();
     expect(won!.endedAt).toBeUndefined();
     expect(won!.sneakPending).toBe(true);
+    expect(won!.earlyEndPending).toBeFalsy();
     expect(won!.sneakCount).toBe(1);
-    expect(won!.urgeLockedUntil).toBe(NOW + 5 * MINUTE);
+    expect(won!.urgeLockedUntil).toBe(NIGHT + 5 * MINUTE);
     expect(await urgeCharAway("chat1", true)).toBeNull();
+
+    // 回完還是在睡
+    const after = await finishCharAwaySneak("chat1", true);
+    expect(after!.endedAt).toBeUndefined();
+  });
+
+  it("天亮後贏了：回完這則就起床（endedBy wake）", async () => {
+    const morning = new Date(2026, 3, 2, 8, 0).getTime();
+    vi.setSystemTime(morning);
+    seedChat({
+      charAway: makeAway({ kind: "sleep", reason: "睡覺", returnAt: morning + 4 * 60 * MINUTE }),
+    });
+
+    const won = await urgeCharAway("chat1", true);
+    expect(won!.endedAt).toBeUndefined();
+    expect(won!.sneakPending).toBe(true);
+    expect(won!.earlyEndPending).toBe(true);
+
+    const after = await finishCharAwaySneak("chat1", true);
+    expect(after!.endedAt).toBe(morning);
+    expect(after!.endedBy).toBe("wake");
+    expect(store.chats.get("chat1")!.charAway!.endedBy).toBe("wake");
+  });
+
+  it("天亮後輸了照常鎖住、不起床", async () => {
+    const morning = new Date(2026, 3, 2, 8, 0).getTime();
+    vi.setSystemTime(morning);
+    seedChat({ charAway: makeAway({ kind: "sleep", reason: "睡覺" }) });
+
+    const lost = await urgeCharAway("chat1", false);
+    expect(lost!.earlyEndPending).toBeFalsy();
+    expect(lost!.sneakPending).toBeFalsy();
   });
 });
 

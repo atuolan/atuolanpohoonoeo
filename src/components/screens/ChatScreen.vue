@@ -13051,6 +13051,7 @@ useChatCleanup({
       <!-- 圓桌教學（長按頭像讓成員重說；第一次有成員講完話時出現一次） -->
       <RoundTableTutorialOverlay v-if="isGroupChat" :ready="roundTableTutorialReady" />
       <CharBusyTutorialOverlay v-if="!isGroupChat" :ready="charAwayCtl.busyTutorialReady.value" />
+      <CharBusyTutorialOverlay v-if="!isGroupChat" kind="sleep" :ready="charAwayCtl.sleepTutorialReady.value" />
 
       <!-- 禮物面板 -->
       <GiftDrawer
@@ -15484,6 +15485,7 @@ useChatCleanup({
         :kind="charAwayGame.kind"
         :mode="charAwayGame.mode"
         :tap-target="charAwayGame.tapTarget"
+        :wake-up="charAwayGame.wakeUp"
         :character-name="characterName"
         :character-avatar="displayAvatar || undefined"
         @finish="charAwayCtl.onQuickBackFinish"

@@ -25,6 +25,7 @@ import {
   createCharAway,
   createCharBusy,
   createCharSleep,
+  isEasyWakeSleep,
   endCharAway,
   fastForwardAway,
   fastForwardPlan,
@@ -408,10 +409,13 @@ export async function urgeCharAway(
 
   const kind = awayKind(away);
   if (kind === "sleep" || kind === "busy") {
-    // 睡覺／忙碌：贏了只是偷回一則，不結束
-    const next = won
+    // 睡覺／忙碌：贏了只是偷回一則，不結束；天亮後的睡覺贏了就回完這則起床
+    let next = won
       ? recordSneakWin(away, now)
       : recordUrgeAttempt(away, false, now);
+    if (won && isEasyWakeSleep(away, now, getChatClockShift(chat, now))) {
+      next = { ...next, earlyEndPending: true };
+    }
     await saveCharAway(chatId, next);
     return next;
   }
