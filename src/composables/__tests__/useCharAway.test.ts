@@ -168,13 +168,25 @@ describe("忙碌抽空回覆", () => {
     expect(ctx.busyTutorialReady.value).toBe(true);
   });
 
-  it("睡覺不跳忙碌教學", async () => {
+  it("睡覺不跳忙碌教學，改跳睡覺教學", async () => {
     const away = makeAway({ kind: "sleep" });
+    const ctx = setup();
+    ctx.loadFromChat(makeChat(away));
+    await settle();
+    expect(ctx.sleepTutorialReady.value).toBe(false);
+    ctx.messages.value.push(makeMessage({ sentWhileAway: away.id }));
+    await settle();
+    expect(ctx.busyTutorialReady.value).toBe(false);
+    expect(ctx.sleepTutorialReady.value).toBe(true);
+  });
+
+  it("忙碌不跳睡覺教學", async () => {
+    const away = busy();
     const ctx = setup();
     ctx.loadFromChat(makeChat(away));
     ctx.messages.value.push(makeMessage({ sentWhileAway: away.id }));
     await settle();
-    expect(ctx.busyTutorialReady.value).toBe(false);
+    expect(ctx.sleepTutorialReady.value).toBe(false);
   });
 
   it("新留言才排看手機，舊訊息不排", async () => {
@@ -347,6 +359,7 @@ describe("useCharAway", () => {
     });
 
     it("偷回之後才顯示提示，按鈕文字依種類", () => {
+      vi.setSystemTime(new Date(2026, 0, 1, 23, 0));
       const api = setup();
       const ts = Date.now();
       const away = makeAway({
@@ -371,6 +384,18 @@ describe("useCharAway", () => {
       const hint = api.awayHintFor(after);
       expect(hint?.label).toBe("起床重睡");
       expect(hint?.text).toContain("睡著了");
+    });
+
+    it("天亮後睡覺的按鈕變成「叫他起床」", () => {
+      vi.setSystemTime(new Date(2026, 0, 2, 7, 0));
+      const api = setup();
+      const away = makeAway({ kind: "sleep", reason: "睡覺" });
+      const first = makeMessage({ id: "msg_user_first", sentWhileAway: away.id });
+      api.messages.value = [first];
+      api.loadFromChat(makeChat(away));
+
+      expect(api.awayHintFor(first)?.label).toBe("叫他起床");
+      expect(api.awayHintKey(first.id)).toContain("叫他起床");
     });
 
     it("已結束 → none，非第一筆的 key 是空字串", () => {

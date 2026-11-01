@@ -905,10 +905,13 @@ export function buildAwayHintText(
   return `${charName}去忙了（${away.reason}），大約 ${clock} 回來`;
 }
 
-/** 「催他」小遊戲的按鈕文字 */
-export function awayUrgeLabel(away: CharAway): string {
+/** 「催他」小遊戲的按鈕文字；wakeUp＝天亮後的睡覺，贏了就起床 */
+export function awayUrgeLabel(
+  away: CharAway,
+  opts: { wakeUp?: boolean } = {},
+): string {
   const kind = awayKind(away);
-  if (kind === "sleep") return "起床重睡";
+  if (kind === "sleep") return opts.wakeUp ? "叫他起床" : "起床重睡";
   if (kind === "busy") return "偷偷回我";
   return "快回來";
 }

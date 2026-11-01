@@ -932,6 +932,8 @@ describe("buildAwayHintText / awayUrgeLabel / awayHeaderText", () => {
 
     expect(awayUrgeLabel(makeAway())).toBe("快回來");
     expect(awayUrgeLabel(makeSleep())).toBe("起床重睡");
+    expect(awayUrgeLabel(makeSleep(), { wakeUp: true })).toBe("叫他起床");
+    expect(awayUrgeLabel(makeBusy(), { wakeUp: true })).toBe("偷偷回我");
     expect(awayUrgeLabel(makeBusy())).toBe("偷偷回我");
 
     expect(awayHeaderText(makeAway())).toBe("忙碌中・開會");

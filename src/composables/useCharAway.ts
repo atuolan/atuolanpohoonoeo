@@ -190,6 +190,23 @@ export function useCharAway(ctx: {
     return first?.id ?? null;
   });
 
+  /** 聊天裡出現睡覺小字（睡覺教學從這裡開始） */
+  const sleepTutorialReady = computed(
+    () =>
+      isAwayActive.value &&
+      awayKind(charAway.value ?? undefined) === "sleep" &&
+      firstAwayEntryId.value !== null,
+  );
+
+  /** 天亮後的睡覺：好叫醒、贏了就起床 */
+  function isEasyWake(away: CharAway, ts: number): boolean {
+    return isEasyWakeSleep(away, ts, ctx.getClockShiftMs?.() ?? 0);
+  }
+
+  function urgeLabelFor(away: CharAway): string {
+    return awayUrgeLabel(away, { wakeUp: isEasyWake(away, now.value) });
+  }
+
   /** 聊天裡出現忙碌小字（教學從這裡開始） */
   const busyTutorialReady = computed(
     () =>
@@ -227,7 +244,7 @@ export function useCharAway(ctx: {
     if (message.id !== firstAwayEntryId.value) return null;
 
     const text = awayHintTextFor(away);
-    const label = awayUrgeLabel(away);
+    const label = urgeLabelFor(away);
     const { action, lockedText } = hintAction(away);
     return lockedText ? { text, label, action, lockedText } : { text, label, action };
   }
@@ -238,7 +255,7 @@ export function useCharAway(ctx: {
     if (messageId !== firstAwayEntryId.value) return "";
 
     const { action, lockedText } = hintAction(away);
-    return `${away.id}|${awayHintTextFor(away)}|${awayUrgeLabel(away)}|${action}|${lockedText ?? ""}`;
+    return `${away.id}|${awayHintTextFor(away)}|${urgeLabelFor(away)}|${action}|${lockedText ?? ""}`;
   }
 
   // --- 提示詞 ---
@@ -413,7 +430,7 @@ export function useCharAway(ctx: {
     if (away.urgeLockedUntil && away.urgeLockedUntil > ts) return;
 
     // 天亮後睡覺比較好叫醒：固定戳一戳、下數也少
-    const easyWake = isEasyWakeSleep(away, ts, ctx.getClockShiftMs?.() ?? 0);
+    const easyWake = isEasyWake(away, ts);
     quickBackGame.value = {
       kind: easyWake ? "tap" : pickQuickBackGame(),
       mode: awayKind(away),
@@ -589,6 +606,7 @@ export function useCharAway(ctx: {
     blocksReply,
     activeAwayId,
     busyTutorialReady,
+    sleepTutorialReady,
     headerStatusText,
     quickBackGame,
     loadFromChat,

@@ -1,22 +1,44 @@
 <script setup lang="ts">
 /**
- * 忙碌教學（只出現一次）
- * 第一次在角色忙碌時留言、聊天裡出現忙碌小字時出現：說明他可能晚點回、可以試什麼、怎麼馬上結束。
- * 版面照抄圓桌模式教學。
+ * 忙碌／睡覺教學（各只出現一次）
+ * 第一次在角色忙碌（或睡覺）時留言、聊天裡出現小字時出現：說明他可能晚點回、可以試什麼、怎麼馬上結束。
+ * 睡覺版多一步說明天亮後比較好叫醒。版面照抄圓桌模式教學。
  */
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
+import { CHAR_SLEEP_NIGHT_END_HOUR, CHAR_WAKE_TAP_TARGET_MORNING } from "@/services/charAway";
 
-const props = defineProps<{
-  /** 聊天裡有忙碌小字可以框 */
-  ready: boolean;
-}>();
+const props = withDefaults(
+  defineProps<{
+    /** 聊天裡有忙碌／睡覺小字可以框 */
+    ready: boolean;
+    kind?: "busy" | "sleep";
+  }>(),
+  { kind: "busy" },
+);
 
-const STORAGE_KEY = "aguaphone-char-busy-tutorial-done";
+const STORAGE_KEY =
+  props.kind === "sleep" ? "aguaphone-char-sleep-tutorial-done" : "aguaphone-char-busy-tutorial-done";
 /** 外觀教學還沒走完時先不出現，免得兩個疊在一起 */
 const THEME_TUTORIAL_KEY = "aguaphone-theme-tutorial-done";
 
-type StepId = "hint" | "try" | "finish";
-const steps: StepId[] = ["hint", "try", "finish"];
+type StepId = "hint" | "try" | "morning" | "finish";
+const steps: StepId[] = props.kind === "sleep" ? ["hint", "try", "morning", "finish"] : ["hint", "try", "finish"];
+
+const MORNING = `${String(CHAR_SLEEP_NIGHT_END_HOUR).padStart(2, "0")}:00`;
+const TEXTS: Record<"busy" | "sleep", Record<StepId, string>> = {
+  busy: {
+    hint: "他在忙的時候不一定馬上回，可能晚點才看手機。有些事走不開，例如搭飛機，就只能等他忙完。",
+    try: "試試看：連傳幾則他會比較快看到，也可以打電話給他，或按這裡的「偷偷回我」。他回你之後的幾分鐘空檔，可以多聊幾句。",
+    morning: "",
+    finish: "想馬上結束他的忙碌：刪掉他說要去忙的那則訊息，或到聊天設定的「時間模式」把時間調到忙完之後。",
+  },
+  sleep: {
+    hint: "他睡著了，看不到你的訊息，會在這個時間起床。你先留言，他起床後會一起回你。",
+    try: "想找他：按這裡玩小遊戲，或 10 分鐘內連打 3 通電話。不過晚上他只會迷迷糊糊回一兩句，回完又睡回去（除非你很難過或有急事）。",
+    morning: `${MORNING} 以後就好叫多了：打 1 通電話他就會醒來接，按鈕會變成「叫他起床」，戳 ${CHAR_WAKE_TAP_TARGET_MORNING} 下就贏，贏了他會真的起床陪你聊天，不會再睡回去。`,
+    finish: "想馬上結束他的睡覺：刪掉他說晚安去睡的那則訊息，或到聊天設定的「時間模式」把時間調到起床之後。",
+  },
+};
 
 const visible = ref(false);
 const stepIndex = ref(0);
@@ -49,22 +71,18 @@ function findHint(): HTMLElement | null {
 function updateSpotlight() {
   if (!visible.value) return;
   const hint = findHint();
-  if (currentStep.value === "hint") {
+  const step = currentStep.value;
+  label.value = TEXTS[props.kind][step];
+  if (step === "hint") {
     spotlightRect.value = isOnScreen(hint) ? hint.getBoundingClientRect() : null;
-    label.value =
-      "他在忙的時候不一定馬上回，可能晚點才看手機。有些事走不開，例如搭飛機，就只能等他忙完。";
     return;
   }
-  if (currentStep.value === "try") {
+  if (step === "try" || step === "morning") {
     const action = hint?.querySelector<HTMLElement>(".away-hint-action") ?? null;
     spotlightRect.value = isOnScreen(action) ? action.getBoundingClientRect() : null;
-    label.value =
-      "試試看：連傳幾則他會比較快看到，也可以打電話給他，或按這裡的「偷偷回我」。他回你之後的幾分鐘空檔，可以多聊幾句。";
     return;
   }
   spotlightRect.value = null;
-  label.value =
-    "想馬上結束他的忙碌：刪掉他說要去忙的那則訊息，或到聊天設定的「時間模式」把時間調到忙完之後。";
 }
 
 let rafId: number | null = null;
@@ -235,6 +253,7 @@ onUnmounted(() => {
 
 .busy-tutorial-card {
   position: absolute;
+  box-sizing: border-box;
   width: 260px;
   max-width: calc(100vw - 24px);
   padding: 12px 14px 10px;
