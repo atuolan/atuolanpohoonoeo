@@ -39,6 +39,48 @@
 -->
 <announcements>
 
+  <announcement id="20261101-morning-wake" level="important" date="2026-11-01">
+    <title>早上叫他起床，變簡單了</title>
+    <summary>早上 6 點以後他睡得比較淺，叫一下就會起床陪你聊天。</summary>
+    <highlight icon="clock" title="打一通電話就醒">早上 6 點後，第 1 通電話他就會醒來接</highlight>
+    <highlight icon="star" title="「叫他起床」小遊戲">戳 12 下就贏，贏了他會真的起床，不會再睡回去</highlight>
+    <highlight icon="sparkle" title="睡覺教學">第一次在他睡覺時留言，會跳出小教學</highlight>
+    <howto>他睡覺時，第一則留言下面的灰色小字 → 叫他起床</howto>
+    <body><![CDATA[
+
+<section class="ann-section update">
+
+### ☀️ 早上比較好叫醒
+
+以前就算已經早上了，他還是跟半夜一樣難叫，要睡到自己定的時間才起床。現在**劇情時間早上 6 點以後**：
+
+- **打電話**：第 1 通就會醒來接（晚上還是要 10 分鐘內連打 3 通）
+- **小遊戲**：灰色小字旁的按鈕會變成「**叫他起床**」，固定是戳一戳，**10 秒戳 12 下**就贏
+- **贏了就真的起床**：他會帶著剛睡醒的語氣跟你說早安、回你的留言，之後正常聊天，不會再睡回去
+
+晚上照舊：玩贏小遊戲他只會迷迷糊糊回一兩句，回完又睡回去。
+
+</section>
+
+<section class="ann-section feature">
+
+### 📖 睡覺教學
+
+第一次在角色睡覺時留言，會跳出一個小教學，說明他睡覺時看不到訊息、怎麼叫他、早上比較好叫醒，還有怎麼馬上結束他的睡覺。每個人只會跳一次。
+
+</section>
+
+<section class="ann-section bug">
+
+### 🔧 修好了
+
+- 忙碌教學的說明卡片在手機上會超出畫面右邊一點，現在不會了
+
+</section>
+
+    ]]></body>
+  </announcement>
+
   <announcement id="20261030-overview" level="important" date="2026-10-30">
     <title>10/12–10/30 更新總整理</title>
     <summary>這三週更新很多，分成七張明信片寄回來了，這張是目錄，其他都在信箱裡。</summary>
