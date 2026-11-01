@@ -15484,6 +15484,7 @@ useChatCleanup({
         :kind="charAwayGame.kind"
         :mode="charAwayGame.mode"
         :tap-target="charAwayGame.tapTarget"
+        :wake-up="charAwayGame.wakeUp"
         :character-name="characterName"
         :character-avatar="displayAvatar || undefined"
         @finish="charAwayCtl.onQuickBackFinish"

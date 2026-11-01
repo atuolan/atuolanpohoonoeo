@@ -103,6 +103,8 @@ export function useCharAway(ctx: {
     kind: "tap" | "rps";
     mode: CharAwayKind;
     tapTarget: number;
+    /** 天亮後的睡覺：贏了就起床 */
+    wakeUp?: boolean;
   }>(null);
 
   const isAwayActive = computed(
@@ -286,7 +288,7 @@ export function useCharAway(ctx: {
 
     const notes = [
       buildCharAwayReturnNote(away, leftCount),
-      buildCharAwaySneakNote(away, leftCount, { now: nowTs, shiftMs }),
+      buildCharAwaySneakNote(away, leftCount),
       buildCharBusySpareNote(away, nowTs),
       buildCharAwayPlanNote(plan, nowTs, shiftMs),
     ].filter((note): note is string => !!note);
@@ -418,6 +420,7 @@ export function useCharAway(ctx: {
       tapTarget: easyWake
         ? CHAR_WAKE_TAP_TARGET_MORNING
         : quickBackTapTarget(away.returnAt - ts),
+      wakeUp: easyWake,
     };
   }
 

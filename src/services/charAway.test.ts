@@ -650,20 +650,16 @@ describe("buildCharAwaySneakNote", () => {
     );
   });
 
-  it("睡覺：天亮後被叫醒，鼓勵直接起床", () => {
-    const away = makeSleep({ sneakPending: true, sneakCount: 1 });
-    const morning = new Date(2026, 9, 24, 8, 0).getTime();
-    const note = buildCharAwaySneakNote(away, 2, { now: morning })!;
+  it("睡覺：天亮後被叫醒（earlyEndPending），告訴他已經起床", () => {
+    const away = makeSleep({ sneakPending: true, sneakCount: 1, earlyEndPending: true });
+    const note = buildCharAwaySneakNote(away, 2)!;
     expect(note.startsWith("[被叫醒]")).toBe(true);
     expect(note).toContain("天已經亮了");
     expect(note).toContain("還留了 2 則訊息");
-    expect(note).toContain("<char-wake/> 起床");
-    // 晚上還是原本的吵醒版
-    expect(buildCharAwaySneakNote(away, 0, { now: NIGHT })).toContain("回完會繼續睡");
-    // 劇情時間換算：現實 04:00 + 3 小時 = 07:00
-    const real4 = new Date(2026, 9, 24, 4, 0).getTime();
-    expect(buildCharAwaySneakNote(away, 0, { now: real4 })).toContain("[被吵醒]");
-    expect(buildCharAwaySneakNote(away, 0, { now: real4, shiftMs: 3 * 60 * MINUTE })).toContain("[被叫醒]");
+    expect(note).toContain("已經起床了，不會再睡回去");
+    expect(note).not.toContain("<char-wake/>");
+    // 沒有 earlyEndPending 還是原本的吵醒版
+    expect(buildCharAwaySneakNote(makeSleep({ sneakPending: true }), 0)).toContain("回完會繼續睡");
   });
 
   it("睡覺：沒留言就省略那句", () => {

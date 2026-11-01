@@ -88,6 +88,8 @@ const props = withDefaults(
     characterName: string
     characterAvatar?: string
     tapTarget?: number
+    /** 天亮後的睡覺：贏了就真的起床 */
+    wakeUp?: boolean
   }>(),
   {
     mode: 'away',
@@ -108,12 +110,14 @@ const won = ref(false)
 
 // ---- 共用 ----
 const title = computed(() =>
-  props.mode === 'sleep' ? '起床重睡！' : props.mode === 'busy' ? '偷偷回我！' : '快回來！',
+  props.mode === 'sleep' ? (props.wakeUp ? '叫他起床！' : '起床重睡！') : props.mode === 'busy' ? '偷偷回我！' : '快回來！',
 )
 
 const wonText = computed(() =>
   props.mode === 'sleep'
-    ? `吵醒${props.characterName}了，他會迷迷糊糊回你一句`
+    ? props.wakeUp
+      ? `叫醒${props.characterName}了，他起床了！`
+      : `吵醒${props.characterName}了，他會迷迷糊糊回你一句`
     : props.mode === 'busy'
       ? `${props.characterName}偷偷拿起手機了`
       : `催成功！${props.characterName} 馬上回來`,

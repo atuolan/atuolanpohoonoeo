@@ -722,7 +722,7 @@ export function buildCharAwayPlanNote(
 export function buildCharAwaySneakNote(
   away: CharAway | undefined,
   leftCount: number,
-  opts: { background?: boolean; now?: number; shiftMs?: number } = {},
+  opts: { background?: boolean } = {},
 ): string | null {
   if (!away || !isCharAwayActive(away)) return null;
   if (!away.sneakPending) return null;
@@ -730,15 +730,12 @@ export function buildCharAwaySneakNote(
   const kind = awayKind(away);
   const left = Math.max(0, leftCount);
 
-  if (
-    kind === "sleep" &&
-    opts.now !== undefined &&
-    isEasyWakeSleep(away, opts.now, opts.shiftMs)
-  ) {
+  // 天亮後被叫醒：這則回完就起床（earlyEndPending 由 urgeCharAway 設好）
+  if (kind === "sleep" && away.earlyEndPending) {
     return [
       "[被叫醒]",
       `{{char}} ${formatClock(away.startedAt)} 睡著了（原本預計 ${formatClock(away.returnAt)} 起床），現在天已經亮了，{{user}} 想找你聊天把你叫醒${left > 0 ? `，還留了 ${left} 則訊息` : ""}。`,
-      `早上睡得淺、很好叫醒：可以帶點剛睡醒的迷糊感回 {{user}}，然後在 </content> 之後放 <char-wake/> 起床，之後就正常聊天。只有依你的個性真的很會賴床時，才可以撒嬌說再睡一下、不放 <char-wake/>。`,
+      `{{char}} 已經起床了，不會再睡回去：可以帶點剛睡醒的迷糊感跟 {{user}} 說早安${left > 0 ? "、回應留言" : ""}，之後就正常聊天。不要說要再睡一下或繼續睡。`,
     ].join("\n");
   }
 
