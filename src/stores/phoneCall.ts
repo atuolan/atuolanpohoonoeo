@@ -23,7 +23,7 @@ import {
 import type { Lorebook } from "@/types/worldinfo";
 import { primeCallAudioContext } from "@/services/voiceInput/audioContextPrimer";
 import { loadChatById, refreshChatDerivedMetadata } from "@/storage/chatStorage";
-import { appendMessages, loadMessages } from "@/storage/chatMessageStorage";
+import { appendMessages } from "@/storage/chatMessageStorage";
 import { convertTTSContentToSimplified } from "@/utils/ttsTextSelector";
 import {
   formatCallLineForRecord,
@@ -38,7 +38,12 @@ import { pickGenerationToggles } from "@/utils/generationToggles";
 import { defineStore } from "pinia";
 import { useChatVariablesStore } from "./chatVariables";
 import { computed, ref } from "vue";
-import { selectSummariesForPrompt } from "@/utils/summarySelection";
+import {
+  loadCallContext,
+  type CallImportantEvent,
+  type CallRecentChatMessage,
+  type CallSummary,
+} from "./phoneCallContext";
 
 export interface CallMessage {
   id: string;
@@ -71,28 +76,6 @@ export type VoiceMessageExtra = {
 };
 
 export type CallState = "ringing" | "connected" | "ended" | "rejected";
-
-interface Summary {
-  id: string;
-  content: string;
-  createdAt: number;
-  coveredUntil?: number;
-  isImportant?: boolean;
-}
-
-interface ImportantEvent {
-  id: string;
-  content: string;
-  category?: string;
-  priority?: number;
-}
-
-interface RecentChatMessage {
-  role: "user" | "assistant";
-  name: string;
-  content: string;
-  createdAt: number;
-}
 
 export interface ActiveCallInfo {
   characterId: string;
@@ -187,9 +170,9 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
   const AWAY_UNANSWERED_RING_MS = 8000;
 
   // 輔助資料
-  const summaries = ref<Summary[]>([]);
-  const importantEvents = ref<ImportantEvent[]>([]);
-  const recentChatHistory = ref<RecentChatMessage[]>([]);
+  const summaries = ref<CallSummary[]>([]);
+  const importantEvents = ref<CallImportantEvent[]>([]);
+  const recentChatHistory = ref<CallRecentChatMessage[]>([]);
 
   // ===== Getters =====
   const isActive = computed(() => activeCall.value !== null && callState.value !== "ended" && callState.value !== "rejected");
@@ -668,6 +651,8 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
         "",
     };
 
+    // 跟語音通話一樣帶上總結、重要事件和通話前的聊天，視訊才接得上剛剛聊的內容
+    await loadSummariesAndEvents(info);
     await loadTTSConfig(info);
 
     if (awayResult === "wake") {
@@ -1487,39 +1472,11 @@ ${importantEvents.value.slice(0, 3).map((e) => `- ${e.content}`).join("\n") || "
 
   // ===== 載入輔助資料 =====
   async function loadSummariesAndEvents(info: ActiveCallInfo) {
-    try {
-      const allSummaries = await db.getAll<any>(DB_STORES.SUMMARIES);
-      summaries.value = selectSummariesForPrompt(
-        allSummaries.filter((s: any) => s.chatId === info.chatId || s.characterId === info.characterId),
-        5,
-      ).map((s: any) => ({ id: s.id, content: s.content, createdAt: s.createdAt, coveredUntil: s.coveredUntil, isImportant: s.isImportant }));
-
-      // 重要事件記錄本以 chatId 為 key，舊資料用 characterId；事件在記錄本的 events 裡，跟聊天一樣依優先級取
-      const eventsLog =
-        (info.chatId ? await db.get<any>(DB_STORES.IMPORTANT_EVENTS, info.chatId) : undefined) ??
-        (await db.get<any>(DB_STORES.IMPORTANT_EVENTS, info.characterId));
-      importantEvents.value = eventsLog?.settings?.enabled
-        ? [...(eventsLog.events ?? [])]
-            .sort((a: any, b: any) => (a.priority || 3) - (b.priority || 3))
-            .slice(0, eventsLog.settings.maxEvents ?? 50)
-            .map((e: any) => ({ id: e.id, content: e.content, category: e.category, priority: e.priority }))
-        : [];
-
-      if (info.chatId) {
-        // 包含普通聊天消息和通話記錄（sender === "system" 且含通話內容）
-        const msgs = (await loadMessages(info.chatId)).filter((m: any) => {
-          if (m.sender === "user" || m.sender === "assistant") return true;
-          if (m.sender === "system" && typeof m.content === "string" && m.content.includes("📞 通話結束")) return true;
-          return false;
-        }).slice(-15);
-        recentChatHistory.value = msgs.map((m: any) => ({
-          role: (m.is_user ? "user" : "assistant") as "user" | "assistant",
-          name: m.name,
-          content: m.content,
-          createdAt: m.createdAt,
-        }));
-      }
-    } catch { /* 忽略 */ }
+    // 每次整份換掉，讀不到的部分是空的，不會留著上一通電話（可能是別的角色）的資料
+    const context = await loadCallContext(info);
+    summaries.value = context.summaries;
+    importantEvents.value = context.importantEvents;
+    recentChatHistory.value = context.recentChatHistory;
   }
 
   // ===== 工具函數 =====
