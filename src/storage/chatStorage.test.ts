@@ -22,7 +22,13 @@ vi.mock("@/services/selfHostedSyncState", () => ({
   scheduleSelfHostedAutoSync,
 }));
 
-import { loadChatById, saveChatMetadata } from "@/storage/chatStorage";
+import {
+  CHAT_UNREAD_CHANGED_EVENT,
+  incrementLocalChatUnreadCount,
+  loadChatById,
+  saveChatMetadata,
+  setLocalChatUnreadCount,
+} from "@/storage/chatStorage";
 
 function createChat(appearance?: ChatAppearance): Chat {
   return {
@@ -171,5 +177,44 @@ describe("saveChatMetadata 的角色暫時離開", () => {
 
     await saveChatMetadata({ ...createChat(), charAwayPlan: away(300) });
     expect(dbPut.mock.calls[1][1].charAwayPlan).toEqual(away(300));
+  });
+});
+
+describe("未讀數", () => {
+  beforeEach(() => {
+    dbGet.mockReset();
+    dbPut.mockReset();
+  });
+
+  it("聊天頁存檔沒帶未讀數時，保留背景訊息寫入的未讀數", async () => {
+    dbGet.mockResolvedValue({ ...createChat(), unreadCount: 3 });
+
+    await saveChatMetadata(createChat());
+
+    expect(dbPut.mock.calls[0][1].unreadCount).toBe(3);
+  });
+
+  it("明確寫 0 可以歸零", async () => {
+    dbGet.mockResolvedValue({ ...createChat(), unreadCount: 3 });
+
+    await saveChatMetadata({ ...createChat(), unreadCount: 0 });
+
+    expect(dbPut.mock.calls[0][1].unreadCount).toBe(0);
+  });
+
+  it("加未讀、清未讀都會通知主頁更新紅點", async () => {
+    vi.stubGlobal("window", new EventTarget());
+    const heard: string[] = [];
+    const listener = (e: Event) => heard.push((e as CustomEvent).detail.chatId);
+    window.addEventListener(CHAT_UNREAD_CHANGED_EVENT, listener);
+    dbGet.mockResolvedValue({ ...createChat(), unreadCount: 1 });
+
+    await incrementLocalChatUnreadCount("chat-appearance-race", 2);
+    await setLocalChatUnreadCount("chat-appearance-race", 0);
+
+    window.removeEventListener(CHAT_UNREAD_CHANGED_EVENT, listener);
+    vi.unstubAllGlobals();
+    expect(heard).toEqual(["chat-appearance-race", "chat-appearance-race"]);
+    expect(dbPut.mock.calls[0][1].unreadCount).toBe(3);
   });
 });

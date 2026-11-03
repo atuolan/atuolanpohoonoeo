@@ -112,3 +112,18 @@ describe("噗浪通知合併", () => {
     expect(sent).toHaveLength(0);
   });
 });
+
+describe("打開噗浪就算看過", () => {
+  it("噗浪的通知變已讀，其他通知不動", () => {
+    const store = useNotificationStore();
+    store.notifyQzoneComment("小明", undefined, "a", "早安");
+    store.notifyChatMessage("小雪", "在嗎", "chat-1");
+
+    store.setViewingQzone(true);
+
+    const qzone = store.notifications.filter((n) => n.type === "qzone_comment");
+    const chat = store.notifications.filter((n) => n.type === "chat_message");
+    expect(qzone.every((n) => n.read)).toBe(true);
+    expect(chat.every((n) => !n.read)).toBe(true);
+  });
+});

@@ -420,6 +420,12 @@ export const useNotificationStore = defineStore("notification", () => {
   /** 正在看噗浪時呼叫，離開時傳 false */
   function setViewingQzone(viewing: boolean): void {
     viewingQzone.value = viewing;
+    // 打開噗浪就算看過了，主頁「空間」圖示的紅點跟著消失
+    if (viewing) {
+      notifications.value.forEach((n) => {
+        if (n.type === "qzone_post" || n.type === "qzone_comment") n.read = true;
+      });
+    }
   }
 
   /** 噗浪發文通知；短時間內的新噗合成一則 */
