@@ -113,6 +113,8 @@ function setup(
     summaries?: any[];
     /** 傳入真的串流視窗並打開設定裡的串流視窗 */
     streamingWindow?: ReturnType<typeof useStreamingWindow>;
+    chatData?: any;
+    persona?: any;
   } = {},
 ) {
   const lastSummaryTime = ref(0);
@@ -120,9 +122,9 @@ function setup(
   const api = useChatSummaryDiary({
     messages: ref(fullHistory.slice(-windowSize)),
     currentChatId: ref("chat-1"),
-    currentChatData: ref({ isGroupChat: false }),
+    currentChatData: ref(extra.chatData ?? { isGroupChat: false }),
     currentCharacter: computed(() => ({ id: "char-1", data: { name: "角色" } })),
-    effectivePersona: computed(() => ({ name: "用戶" })),
+    effectivePersona: computed(() => extra.persona ?? { name: "用戶" }),
     isGenerating: computed(() => false),
     isGeneratingSummary: ref(false),
     chatSummarySettings: ref(settings),
@@ -529,6 +531,28 @@ describe("合併與恢復", () => {
     expect(sent.indexOf("一")).toBeLessThan(sent.indexOf("二"));
   });
 
+  it("來源裡有釘選的總結，合併出來的元總結也釘選", async () => {
+    const { api, chatSummaries } = setupMerge();
+    chatSummaries.value[0].isImportant = true;
+    streamEvents = [{ type: "done", content: "合併" } as StreamingEvent];
+
+    await api.handleGenerateMetaSummary(["s1", "s2"]);
+
+    expect(chatSummaries.value.find((x) => x.isMeta)!.isImportant).toBe(true);
+  });
+
+  it("元總結的人稱跟一般總結一樣：不用「你」稱呼 user，並要求保留怎麼認識", async () => {
+    const { api } = setupMerge();
+    streamEvents = [{ type: "done", content: "合併" } as StreamingEvent];
+
+    await api.handleGenerateMetaSummary(["s1", "s2"]);
+
+    const system = lastRequestMessages[0].content;
+    expect(system).not.toContain("使用「你」代指");
+    expect(system).toContain("不要用「你」稱呼 用戶");
+    expect(system).toContain("兩人怎麼認識");
+  });
+
   it("刪除元總結時恢復被合併的原總結", async () => {
     const { api, chatSummaries } = setupMerge();
     streamEvents = [{ type: "done", content: "合併" } as StreamingEvent];
@@ -592,5 +616,35 @@ describe("手動總結接續上次", () => {
       from: history[16].timestamp,
       unsummarizedCount: 0,
     });
+  });
+});
+
+describe("群聊總結的成員名單", () => {
+  it("標出代演的使用者角色和真實使用者，主筆只能選 AI 角色", async () => {
+    const { api } = setup(makeTurns(2), 10, {
+      chatData: {
+        isGroupChat: true,
+        groupMetadata: {
+          groupName: "群",
+          members: [
+            { characterId: "c1", isVirtual: true, name: "阿明" },
+            { characterId: "p1", isVirtual: true, name: "小美", isPersonaMember: true },
+          ],
+        },
+      },
+      persona: { name: "我本人" },
+      summaries: [
+        { id: "s1", content: "一", createdAt: 10, messageCount: 2, coveredUntil: 10 },
+        { id: "s2", content: "二", createdAt: 20, messageCount: 2, coveredUntil: 20 },
+      ],
+    });
+    streamEvents = [{ type: "done", content: "阿明：合併" } as StreamingEvent];
+
+    await api.handleGenerateMetaSummary(["s1", "s2"]);
+
+    const [system, user] = lastRequestMessages.map((m) => m.content);
+    expect(user).toContain("阿明、小美（使用者角色，AI 代演）、我本人（真實使用者）");
+    expect(system).toContain("主筆只能從這些 AI 角色裡選：阿明。");
+    expect(system).toContain("怎麼認識");
   });
 });

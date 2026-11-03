@@ -3355,8 +3355,11 @@ const subcharCharacterSources = computed(() =>
 const subcharMultiCharSources = computed(() =>
   allSubcharMultiCharSources.value.filter((s) => !groupSourceIds.value.has(s.member.id)),
 );
+// 你在這個群正在用的人設不能再加成代演成員，不然 AI 會替你本人說話
 const subcharPersonaSources = computed(() =>
-  allSubcharPersonaSources.value.filter((p) => !groupSourceIds.value.has(p.id)),
+  allSubcharPersonaSources.value.filter(
+    (p) => !groupSourceIds.value.has(p.id) && p.id !== effectivePersona.value?.id,
+  ),
 );
 
 // 新增子角色（多人卡，即時儲存，支援多來源 + 關係綁定 + 好感度唯讀引入）
