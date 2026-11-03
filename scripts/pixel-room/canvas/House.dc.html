@@ -1,0 +1,613 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<title>像素小屋三房</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DotGothic16&display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+@keyframes wave-in{0%{transform:translateX(-34px)}22%{transform:translateX(9px)}44%{transform:translateX(-16px)}66%{transform:translateX(5px)}84%{transform:translateX(-3px)}100%{transform:translateX(0)}}
+@keyframes wave-out{0%{transform:translateX(0)}45%{transform:translateX(8px)}100%{transform:translateX(-18px)}}
+</style>
+</helmet>
+<div onPointerDown="{{swipeStart}}" onPointerUp="{{swipeEnd}}" style="position: relative; width: 390px; height: 844px; overflow: hidden; background: #3B2A26; font-family: 'DotGothic16', 'PingFang TC', 'Noto Sans TC', sans-serif; color: #3B2A26; touch-action: pan-y; user-select: none;">
+
+  <!-- 三個房間排成一條，左右滑 -->
+  <div style="position: absolute; left: 0; top: 0; width: 1170px; height: 846px; transform: translateX({{stripX}}px); transition: transform 420ms cubic-bezier(.3,.9,.3,1);">
+    <img src="/_blob/363fac5ff1515ad279bf996a69b78c18" alt="" style="position: absolute; left: 0; top: 0; width: 390px; height: 846px; image-rendering: pixelated;">
+    <img src="/_blob/fc34fb6b8234f317ed137b8b3bc06106" alt="" style="position: absolute; left: 390px; top: 0; width: 390px; height: 846px; image-rendering: pixelated;">
+    <img src="/_blob/1a0d05aadfb8a6412bb763b666a7bbfa" alt="" style="position: absolute; left: 780px; top: 0; width: 390px; height: 846px; image-rendering: pixelated;">
+
+    <sc-for list="{{fxStrip}}" as="f" hint-placeholder-count="3">
+      <div aria-hidden="true" style="position: absolute; left: {{f.x}}px; top: {{f.y}}px; width: {{f.s}}px; height: {{f.s}}px; background: #FFFFFF; opacity: {{f.op}}; pointer-events: none;"></div>
+    </sc-for>
+
+    <sc-if value="{{inStrip}}" hint-placeholder-val="{{ true }}">
+      <div style="position: absolute; left: {{c.left}}px; top: {{c.top}}px; width: 0; height: 0; transition: {{c.tr}};">
+        <div aria-hidden="true" style="position: absolute; left: -36px; top: -6px; width: 72px; height: 10px; background: rgba(59,42,38,0.22); pointer-events: none;"></div>
+        <img src="{{c.src}}" alt="" style="position: absolute; left: {{c.ix}}px; top: {{c.iy}}px; width: {{c.w}}px; height: {{c.h}}px; image-rendering: pixelated; transform: scaleX({{c.flip}}); pointer-events: none;">
+      </div>
+    </sc-if>
+  </div>
+
+  <!-- 浴室：從臥室的門進去，蓋在上面 -->
+  <div style="position: absolute; left: 0; top: 0; width: 390px; height: 846px; opacity: {{bathOp}}; transform: scale({{bathScale}}); transform-origin: 340px 360px; transition: opacity 260ms ease, transform 320ms cubic-bezier(.3,.9,.3,1); pointer-events: none;">
+    <img src="/_blob/cbda30d9f980e1050cb00f6b157a06b7" alt="" style="position: absolute; left: 0; top: 0; width: 390px; height: 846px; image-rendering: pixelated;">
+    <sc-for list="{{fxBath}}" as="f" hint-placeholder-count="3">
+      <div aria-hidden="true" style="position: absolute; left: {{f.x}}px; top: {{f.y}}px; width: {{f.s}}px; height: {{f.s}}px; background: #FFFFFF; opacity: {{f.op}};"></div>
+    </sc-for>
+    <sc-if value="{{inBath}}" hint-placeholder-val="{{ false }}">
+      <div style="position: absolute; left: {{c.left}}px; top: {{c.top}}px; width: 0; height: 0; transition: {{c.tr}};">
+        <img src="{{c.src}}" alt="" style="position: absolute; left: {{c.ix}}px; top: {{c.iy}}px; width: {{c.w}}px; height: {{c.h}}px; image-rendering: pixelated; transform: scaleX({{c.flip}});">
+      </div>
+    </sc-if>
+  </div>
+
+  <!-- 時間的光線 -->
+  <div aria-hidden="true" style="position: absolute; left: 0; top: 0; width: 390px; height: 846px; background: {{tintBg}}; mix-blend-mode: multiply; pointer-events: none;"></div>
+
+  <!-- 可以點的東西（目前看的房間） -->
+  <sc-for list="{{spots}}" as="it" hint-placeholder-count="6">
+    <sc-if value="{{it.selected}}" hint-placeholder-val="{{ false }}">
+      <div aria-hidden="true" style="position: absolute; left: {{it.x}}px; top: {{it.y}}px; width: {{it.w}}px; height: {{it.h}}px; box-sizing: border-box; border: 3px solid #FBF7EE; box-shadow: 0 0 0 3px #3B2A26; pointer-events: none;"></div>
+    </sc-if>
+    <sc-if value="{{showAll}}" hint-placeholder-val="{{ false }}">
+      <div aria-hidden="true" style="position: absolute; left: {{it.x}}px; top: {{it.y}}px; width: {{it.w}}px; height: {{it.h}}px; box-sizing: border-box; border: 2px dashed rgba(255,243,196,0.95); background: rgba(255,243,196,0.12); pointer-events: none;"></div>
+      <div aria-hidden="true" style="position: absolute; left: {{it.labelX}}px; top: {{it.labelY}}px; padding: 2px 6px; background: #3B2A26; color: #FBF7EE; font-size: 12px; line-height: 16px; white-space: nowrap; pointer-events: none;">{{it.name}}</div>
+    </sc-if>
+    <button aria-label="{{it.aria}}" onClick="{{it.pick}}" style="position: absolute; left: {{it.x}}px; top: {{it.y}}px; width: {{it.w}}px; height: {{it.h}}px; padding: 0; border: 0; background: transparent; cursor: pointer;"></button>
+  </sc-for>
+
+  <!-- 他（點他）＋頭上的小牌子 -->
+  <sc-if value="{{showMe}}" hint-placeholder-val="{{ true }}">
+    <button aria-label="{{meAria}}" onClick="{{pickMe}}" style="position: absolute; left: {{c.vx}}px; top: {{c.vy}}px; width: 84px; height: 132px; padding: 0; border: 0; background: transparent; cursor: pointer; transition: {{c.tr2}};"></button>
+    <sc-if value="{{c.bubble}}" hint-placeholder-val="{{ true }}">
+      <div aria-hidden="true" style="position: absolute; left: {{c.bx}}px; top: {{c.by}}px; transform: translateX(-50%); padding: 3px 8px; background: #FBF7EE; border: 3px solid #3B2A26; font-size: 13px; line-height: 16px; white-space: nowrap; pointer-events: none; box-shadow: 3px 3px 0 rgba(59,42,38,0.25);">{{c.label}}</div>
+    </sc-if>
+  </sc-if>
+  <sc-for list="{{zs}}" as="z" hint-placeholder-count="3">
+    <div aria-hidden="true" style="position: absolute; left: {{z.x}}px; top: {{z.y}}px; font-size: {{z.s}}px; line-height: 1; color: #FFF3C4; opacity: {{z.op}}; text-shadow: 2px 2px 0 #3B2A26; pointer-events: none;">Z</div>
+  </sc-for>
+
+  <!-- 左右換房間 -->
+  <sc-if value="{{canLeft}}" hint-placeholder-val="{{ true }}">
+    <button aria-label="{{leftAria}}" onClick="{{goLeft}}" style="position: absolute; left: 6px; top: 420px; width: 32px; height: 52px; padding: 0; border: 3px solid #3B2A26; background: rgba(251,247,238,0.88); color: #3B2A26; font-family: inherit; font-size: 16px; cursor: pointer;">◀</button>
+  </sc-if>
+  <sc-if value="{{canRight}}" hint-placeholder-val="{{ true }}">
+    <button aria-label="{{rightAria}}" onClick="{{goRight}}" style="position: absolute; left: 352px; top: 420px; width: 32px; height: 52px; padding: 0; border: 3px solid #3B2A26; background: rgba(251,247,238,0.88); color: #3B2A26; font-family: inherit; font-size: 16px; cursor: pointer;">▶</button>
+  </sc-if>
+  <sc-if value="{{inBathView}}" hint-placeholder-val="{{ false }}">
+    <button aria-label="回臥室" onClick="{{leaveBath}}" style="position: absolute; left: 12px; top: 116px; height: 40px; padding: 0 12px; border: 3px solid #3B2A26; background: #FBF7EE; color: #3B2A26; font-family: inherit; font-size: 15px; cursor: pointer; box-shadow: 3px 3px 0 rgba(59,42,38,0.3);">◀ 回臥室</button>
+  </sc-if>
+
+  <!-- 上面的房間列：他在哪間有小紅點 -->
+  <div style="position: absolute; left: 12px; top: 60px; display: flex; gap: 4px;">
+    <sc-for list="{{tabs}}" as="t" hint-placeholder-count="3">
+      <button aria-label="{{t.aria}}" aria-current="{{t.cur}}" onClick="{{t.go}}" style="position: relative; height: 40px; min-width: 60px; padding: 0 10px; border: 3px solid #3B2A26; background: {{t.bg}}; color: {{t.fg}}; font-family: inherit; font-size: 15px; cursor: pointer; box-shadow: 3px 3px 0 rgba(59,42,38,0.3);">
+        {{t.name}}
+        <sc-if value="{{t.here}}" hint-placeholder-val="{{ false }}">
+          <span aria-hidden="true" style="position: absolute; right: -7px; top: -9px; padding: 0 3px; height: 18px; box-sizing: border-box; background: #D9453A; border: 2px solid #3B2A26; color: #FBF7EE; font-size: 11px; line-height: 14px; white-space: nowrap;">他</span>
+        </sc-if>
+      </button>
+    </sc-for>
+  </div>
+
+  <button aria-label="{{helpAria}}" onClick="{{toggleAll}}" style="position: absolute; left: 270px; top: 60px; width: 44px; height: 44px; padding: 0; border: 3px solid #3B2A26; background: {{helpBg}}; color: {{helpFg}}; font-family: inherit; font-size: 20px; line-height: 20px; cursor: pointer; box-shadow: 3px 3px 0 rgba(59,42,38,0.3);">?</button>
+
+  <!-- 轉盤選單：暗幕 -->
+  <div aria-hidden="true" onClick="{{closeMenu}}" style="position: absolute; left: 0; top: 0; width: 390px; height: 844px; background: rgba(43,30,27,0.45); opacity: {{menuDim}}; pointer-events: {{menuPe}}; transition: opacity 260ms ease;"></div>
+
+  <!-- 轉盤選單：波浪排列的 App -->
+  <sc-for list="{{apps}}" as="a" hint-placeholder-count="10">
+    <div style="position: absolute; left: {{a.left}}px; top: {{a.top}}px; width: 52px; height: 52px; opacity: {{a.op}}; transform: {{a.tf}}; transition: {{a.tr}}; pointer-events: {{menuPe}};">
+      <div style="position: absolute; left: 0; top: 0; width: 52px; height: 52px; animation: {{a.sway}};">
+        <button aria-label="{{a.aria}}" tabindex="{{menuTab}}" onClick="{{a.pick}}" style="position: absolute; left: 0; top: 0; width: 52px; height: 52px; padding: 0; box-sizing: border-box; border: 3px solid #3B2A26; background: {{a.bg}}; cursor: pointer; display: flex; align-items: center; justify-content: center; box-shadow: inset 3px 3px 0 rgba(255,255,255,0.5), inset -3px -3px 0 rgba(59,42,38,0.18), 3px 3px 0 rgba(43,30,27,0.35);">
+          <img src="{{a.icon}}" alt="" width="36" height="36" style="display: block; width: 36px; height: 36px; image-rendering: pixelated;">
+        </button>
+        <div aria-hidden="true" style="position: absolute; right: 60px; top: 15px; padding: 2px 7px; background: #3B2A26; color: #FBF7EE; font-size: 14px; line-height: 18px; white-space: nowrap; box-shadow: 0 0 0 2px #FBF7EE; pointer-events: none;">{{a.name}}</div>
+        <sc-if value="{{a.hasBadge}}" hint-placeholder-val="{{ false }}">
+          <div aria-hidden="true" style="position: absolute; left: 38px; top: -8px; min-width: 20px; height: 20px; box-sizing: border-box; padding: 0 3px; background: #D9453A; border: 3px solid #3B2A26; color: #FBF7EE; font-size: 11px; line-height: 14px; text-align: center; pointer-events: none;">{{a.badge}}</div>
+        </sc-if>
+      </div>
+    </div>
+  </sc-for>
+
+  <!-- 轉盤按鈕 -->
+  <button aria-label="{{dialAria}}" aria-expanded="{{menuOpenStr}}" onClick="{{toggleMenu}}" style="position: absolute; left: 324px; top: 56px; width: 56px; height: 56px; padding: 0; border: 0; background: transparent; cursor: pointer;">
+    <img src="{{dialImg}}" alt="" width="52" height="52" style="position: absolute; left: 2px; top: 2px; width: 52px; height: 52px; image-rendering: pixelated; transform: rotate({{dialRot}}deg); transition: transform 520ms cubic-bezier(.34,1.56,.64,1); filter: drop-shadow(3px 3px 0 rgba(43,30,27,0.35));">
+    <sc-if value="{{dialBadge}}" hint-placeholder-val="{{ true }}">
+      <span aria-hidden="true" style="position: absolute; left: 38px; top: -4px; min-width: 20px; height: 20px; box-sizing: border-box; padding: 0 3px; background: #D9453A; border: 3px solid #3B2A26; color: #FBF7EE; font-size: 11px; line-height: 14px; text-align: center;">{{dialCount}}</span>
+    </sc-if>
+  </button>
+
+  <button aria-live="polite" onClick="{{hintTap}}" style="position: absolute; left: 46px; top: 790px; width: 298px; height: 40px; box-sizing: border-box; padding: 0 12px; border: 0; background: #3B2A26; color: #FBF7EE; font-family: inherit; font-size: 15px; display: flex; align-items: center; justify-content: center; text-align: center; box-shadow: 0 0 0 3px #FBF7EE; cursor: pointer;">{{hint}}</button>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"scene":{"editor":"enum","options":["day","dusk","night"],"default":"day","section":"時間"},"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  // ===== 房子的資料 =====
+  rooms() {
+    return {
+      living: { name: '客廳', idx: 0, corridor: 92 },
+      bedroom: { name: '臥室', idx: 1, corridor: 72 },
+      kitchen: { name: '廚房', idx: 2, corridor: 124 },
+      bath: { name: '浴室', idx: 1, corridor: 85 },
+    };
+  }
+  // 他會做的事：在哪、站哪（腳的位置，房間格子座標）、用哪張圖
+  acts() {
+    return {
+      tv: { room: 'living', x: 81, y: 158, s: 'back', label: '看電視' },
+      game: { room: 'living', x: 79, y: 162, s: 'back', label: '打電動' },
+      sofa: { room: 'living', x: 47, y: 252, s: 'phone', label: '窩沙發滑手機' },
+      workout: { room: 'living', x: 101, y: 253, s: 'happy', label: '運動中', hop: true },
+      door: { room: 'living', x: 114, y: 160, s: 'back', label: '等外送' },
+      pc: { room: 'bedroom', x: 66, y: 157, s: 'back', label: '打電腦' },
+      read: { room: 'bedroom', x: 20, y: 160, s: 'back', label: '找書看' },
+      bedphone: { room: 'bedroom', x: 66, y: 252, s: 'phone', label: '滑手機' },
+      daze: { room: 'bedroom', x: 92, y: 196, s: 'sad', label: '發呆' },
+      sleep: { room: 'bedroom', x: 72, y: 252, s: 'sleep', label: '睡覺中', pose: { x: 19, y: 227 } },
+      cook: { room: 'kitchen', x: 78, y: 158, s: 'back', label: '煮飯中', steam: [77, 108] },
+      fridge: { room: 'kitchen', x: 113, y: 160, s: 'back', label: '找東西吃' },
+      dishes: { room: 'kitchen', x: 27, y: 158, s: 'back', label: '洗碗中' },
+      eat: { room: 'kitchen', x: 64, y: 253, s: 'back', label: '吃飯中' },
+      brush: { room: 'bath', x: 85, y: 158, s: 'back', label: '刷牙中' },
+      mirror: { room: 'bath', x: 86, y: 162, s: 'happy', label: '照鏡子' },
+      shower: { room: 'bath', x: 31, y: 150, s: 'back', label: '洗澡中', steam: [44, 70] },
+    };
+  }
+  weights(scene) {
+    if (scene === 'night') return { sleep: 10, bedphone: 2, brush: 1, shower: 1, fridge: 1 };
+    if (scene === 'dusk') return { cook: 4, eat: 3, dishes: 2, sofa: 2, tv: 2, shower: 2, pc: 2, fridge: 1, door: 1 };
+    return { tv: 2, game: 2, sofa: 3, workout: 1, door: 1, pc: 3, read: 2, bedphone: 2, daze: 1, fridge: 2, cook: 1, dishes: 1, eat: 1, brush: 1, mirror: 1 };
+  }
+  sprites() {
+    const u = {
+      front: '/_blob/6c00b22c59df445c9d4c92a5a357b12f', back: '/_blob/ccd4c400880c7fe92e59fe56dde31798',
+      walk: '/_blob/206f9f705ea90f31fbe3f62f7bfd0d8c', right: '/_blob/8a07feb60c82056c766554b2cdaa2302',
+      happy: '/_blob/7ecd9df4a18c3b944ee67cec4215e58b', phone: '/_blob/74961a10899b2fe68f0bd9582c5b8e8a',
+      sleep: '/_blob/c20c92bcefa8b3eb406784d8bea3b9fc', sad: '/_blob/aad49447a13619c0e3cccda05989c42a',
+    };
+    const d = { front: [24, 41], back: [22, 41], walk: [25, 44], right: [23, 41], happy: [28, 43], phone: [25, 44], sleep: [30, 32], sad: [23, 38] };
+    const out = {};
+    for (const k in u) out[k] = { src: u[k], w: d[k][0], h: d[k][1] };
+    return out;
+  }
+
+  // ===== 他自己決定下一步 =====
+  pickAct(cur, room) {
+    const A = this.acts();
+    const w = this.weights(this.props.scene ?? 'day');
+    let keys = Object.keys(w).filter((k) => k !== cur);
+    // 一半以上的機會留在同一間，比較像在房間裡晃
+    const same = keys.filter((k) => A[k].room === room);
+    if (room && same.length && Math.random() < 0.55) keys = same;
+    const total = keys.reduce((s, k) => s + w[k], 0);
+    let r = Math.random() * total;
+    for (const k of keys) {
+      r -= w[k];
+      if (r <= 0) return k;
+    }
+    return keys[0];
+  }
+  dwell(key) {
+    return key === 'sleep' ? 20000 : 7000 + Math.random() * 5000;
+  }
+  componentDidMount() {
+    const A = this.acts();
+    const first = this.pickAct(null, null);
+    const a = A[first];
+    this.setState({
+      tick: 0, me: { room: a.room, x: a.x, y: a.y }, act: first, walking: false, dur: 0, facing: 1,
+      view: a.room,
+    });
+    this.timer = setInterval(() => this.setState({ tick: ((this.state && this.state.tick) || 0) + 1 }), 220);
+    this.schedule(this.dwell(first));
+  }
+  componentWillUnmount() {
+    this.dead = true;
+    clearInterval(this.timer);
+    clearTimeout(this.next);
+  }
+  schedule(ms) {
+    clearTimeout(this.next);
+    this.next = setTimeout(() => {
+      if (this.dead) return;
+      const st = this.state;
+      this.goTo(this.pickAct(st.act, st.me.room));
+    }, ms);
+  }
+  // 同一間裡從 p 走到 q：前排和後排之間走「走道」，不會穿過傢俱
+  pathIn(room, p, q) {
+    const front = (y) => y >= 225;
+    if (!front(p.y) && !front(q.y)) return [{ room, x: q.x, y: q.y }];
+    const cx = this.rooms()[room].corridor;
+    return [
+      { room, x: cx, y: p.y },
+      { room, x: cx, y: q.y },
+      { room, x: q.x, y: q.y },
+    ];
+  }
+  // 房間到房間的路線：客廳｜臥室｜廚房 排一排，浴室接在臥室
+  roomChain(from, to) {
+    const R = this.rooms();
+    const line = (a, b) => {
+      const out = [];
+      const s = Math.sign(R[b].idx - R[a].idx);
+      const names = ['living', 'bedroom', 'kitchen'];
+      for (let i = R[a].idx; i !== R[b].idx; i += s) out.push(names[i + s]);
+      return out;
+    };
+    const start = from === 'bath' ? 'bedroom' : from;
+    const end = to === 'bath' ? 'bedroom' : to;
+    const chain = from === 'bath' ? ['bedroom'] : [];
+    chain.push(...line(start, end));
+    if (to === 'bath') chain.push('bath');
+    return chain;
+  }
+  goTo(key) {
+    const A = this.acts();
+    const a = A[key];
+    const st = this.state;
+    let pos = { ...st.me };
+    const legs = [];
+    let room = pos.room;
+    const EDGE_Y = 200;
+    for (const next of this.roomChain(room, a.room)) {
+      // 走出這間
+      let exit;
+      let enter;
+      if (room === 'bath') {
+        exit = { x: 142, y: 176 };
+        enter = { x: 113, y: 158 };
+      } else if (next === 'bath') {
+        exit = { x: 113, y: 158 };
+        enter = { x: 142, y: 176 };
+      } else {
+        const right = this.rooms()[next].idx > this.rooms()[room].idx;
+        exit = { x: right ? 142 : -12, y: EDGE_Y };
+        enter = { x: right ? -12 : 142, y: EDGE_Y };
+      }
+      legs.push(...this.pathIn(room, pos, exit));
+      legs.push({ room: next, x: enter.x, y: enter.y, jump: true });
+      room = next;
+      pos = { room, x: enter.x, y: enter.y };
+    }
+    legs.push(...this.pathIn(room, pos, a));
+    this.setState({ walking: true, act: key });
+    this.runLegs(legs, () => {
+      this.setState({ walking: false, dur: 0 });
+      this.schedule(this.dwell(key));
+    });
+  }
+  runLegs(legs, done) {
+    if (this.dead) return;
+    if (!legs.length) return done();
+    const [leg, ...rest] = legs;
+    const me = this.state.me;
+    if (leg.jump) {
+      this.setState({ me: { room: leg.room, x: leg.x, y: leg.y }, dur: 0 });
+      this.next = setTimeout(() => this.runLegs(rest, done), 80);
+      return;
+    }
+    const dx = leg.x - me.x;
+    const dy = leg.y - me.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist < 1) return this.runLegs(rest, done);
+    const dur = Math.round((dist / 30) * 1000);
+    this.setState({
+      me: { room: leg.room, x: leg.x, y: leg.y }, dur,
+      facing: Math.abs(dx) > 2 ? Math.sign(dx) : this.state.facing,
+    });
+    this.next = setTimeout(() => this.runLegs(rest, done), dur);
+  }
+
+  // ===== 看哪間 =====
+  setView(v) {
+    this.setState({ view: v, sel: null, app: null, menuOpen: false });
+  }
+
+  renderVals() {
+    const scene = this.props.scene ?? 'day';
+    const st = this.state || {};
+    const tick = st.tick || 0;
+    const R = this.rooms();
+    const A = this.acts();
+    const S = this.sprites();
+    const view = st.view || 'living';
+    const me = st.me || { room: 'living', x: 47, y: 252 };
+    const act = A[st.act] || A.sofa;
+    const walking = !!st.walking;
+    const showAll = !!st.showAll;
+    const sel = st.sel;
+    const order = ['living', 'bedroom', 'kitchen'];
+    const stripRoom = view === 'bath' ? 'bedroom' : view;
+
+    // ===== 他的樣子 =====
+    let sk;
+    let flip = 1;
+    if (walking) {
+      sk = tick % 2 ? 'walk' : 'right';
+      flip = (st.facing || 1) < 0 ? -1 : 1;
+    } else sk = act.s;
+    const sp = S[sk];
+    const posed = !walking && act.pose;
+    const fx = posed ? act.pose.x + sp.w / 2 : me.x;
+    const fy = posed ? act.pose.y : me.y;
+    const hop = !walking && act.hop && tick % 2 ? -6 : 0;
+    const ox = me.room === 'bath' ? 0 : R[me.room].idx * 390;
+    const dur = st.dur || 0;
+    const tr = 'left ' + dur + 'ms linear, top ' + dur + 'ms linear';
+    const c = {
+      left: ox + fx * 3, top: fy * 3, tr,
+      src: sp.src, w: sp.w * 3, h: sp.h * 3,
+      ix: -(sp.w * 3) / 2, iy: -(sp.h * 3) + hop + (posed ? 0 : 3),
+      flip,
+      label: act.label,
+      bubble: !walking,
+    };
+    // 在目前畫面上的位置（點他、牌子用）
+    const viewOx = view === 'bath' ? 0 : R[stripRoom].idx * 390;
+    const meVisible = me.room === 'bath' ? view === 'bath' : view !== 'bath' && me.room === view;
+    c.vx = c.left - viewOx - 42;
+    c.vy = c.top - 126;
+    c.tr2 = tr;
+    c.bx = c.left - viewOx;
+    c.by = c.top - sp.h * 3 - 34;
+
+    // 蒸氣
+    const steam = !walking && act.steam
+      ? [0, 1, 2].map((k) => {
+          const ph = (tick + k * 3) % 9;
+          return { x: act.steam[0] * 3 + (k - 1) * 12 + (ph % 2 ? 3 : 0), y: act.steam[1] * 3 - ph * 6, s: 9 - Math.floor(ph / 3) * 2, op: (1 - ph / 9) * 0.85 };
+        })
+      : [];
+    const stripOx = R[me.room === 'bath' ? 'bedroom' : me.room].idx * 390;
+    const fxStrip = me.room !== 'bath' ? steam.map((f) => ({ ...f, x: f.x + stripOx })) : [];
+    const fxBath = me.room === 'bath' ? steam : [];
+
+    // 睡覺的 Z
+    const zs = !walking && st.act === 'sleep' && meVisible
+      ? [0, 1, 2].map((k) => ({ x: 150 + k * 18, y: 570 - k * 32 - (tick % 6) * 2, s: 16 + k * 7, op: (tick + k) % 6 < 4 ? 1 : 0.3 }))
+      : [];
+
+    // ===== 每間可以點的東西（畫面座標）=====
+    const SP = {
+      living: [
+        { key: 'tv', x: 195, y: 330, w: 99, h: 129, name: '電視', to: '遊戲中心' },
+        { key: 'door', x: 297, y: 252, w: 93, h: 222, name: '大門', to: '商店．外送' },
+        { key: 'window', x: 30, y: 105, w: 156, h: 171, name: '窗戶', to: '天氣' },
+        { key: 'sofa', x: 24, y: 642, w: 234, h: 96, name: '沙發', to: '一起看電影' },
+        { key: 'lamp', x: 315, y: 591, w: 51, h: 147, name: '立燈', to: '番茄鐘' },
+        { key: 'dumbbell', x: 264, y: 717, w: 51, h: 27, name: '啞鈴', to: '健身' },
+      ],
+      bedroom: [
+        { key: 'photo', x: 24, y: 117, w: 93, h: 51, name: '相框', to: '日記' },
+        { key: 'calendar', x: 39, y: 174, w: 51, h: 54, name: '月曆', to: '行事曆' },
+        { key: 'window', x: 123, y: 108, w: 156, h: 168, name: '窗戶', to: '天氣' },
+        { key: 'shelf', x: 15, y: 273, w: 90, h: 186, name: '書櫃', to: '書架' },
+        { key: 'board', x: 153, y: 285, w: 87, h: 54, name: '留言板', to: '便利貼' },
+        { key: 'pc', x: 159, y: 354, w: 60, h: 45, name: '電腦', to: '噗浪．QQ空間' },
+        { key: 'door', x: 300, y: 255, w: 81, h: 216, name: '浴室的門', to: '進浴室', enter: 'bath' },
+        { key: 'bed', x: 18, y: 630, w: 180, h: 90, name: '床', to: scene === 'night' ? '叫他起床' : '哄他睡覺' },
+        { key: 'tvb', x: 243, y: 624, w: 126, h: 96, name: '電視', to: '遊戲中心' },
+      ],
+      kitchen: [
+        { key: 'stove', x: 195, y: 324, w: 84, h: 63, name: '爐子', to: '做菜小遊戲' },
+        { key: 'fridge', x: 300, y: 210, w: 84, h: 252, name: '冰箱', to: '外賣．食材' },
+        { key: 'shelf', x: 132, y: 168, w: 66, h: 75, name: '調味料架', to: '購物清單' },
+        { key: 'window', x: 12, y: 138, w: 114, h: 108, name: '窗戶', to: '天氣' },
+        { key: 'table', x: 78, y: 618, w: 234, h: 120, name: '餐桌', to: '記帳' },
+      ],
+      bath: [
+        { key: 'mirror', x: 216, y: 192, w: 78, h: 102, name: '鏡子', to: '換外觀' },
+        { key: 'tub', x: 6, y: 354, w: 198, h: 108, name: '浴缸', to: '泡澡放鬆' },
+        { key: 'bottles', x: 60, y: 264, w: 72, h: 42, name: '保養品', to: '購物' },
+        { key: 'towel', x: 312, y: 264, w: 66, h: 72, name: '毛巾', to: '洗衣．換季' },
+        { key: 'basket', x: 294, y: 657, w: 60, h: 81, name: '洗衣籃', to: '換衣服' },
+      ],
+    };
+    const spots = (SP[view] || []).map((b) => ({
+      ...b,
+      selected: sel === b.key,
+      aria: b.name + '，' + b.to,
+      labelX: b.x + 2,
+      labelY: Math.max(0, b.y - 20),
+      pick: () => (b.enter ? this.setView(b.enter) : this.setState({ sel: b.key, app: null })),
+    }));
+
+    // ===== 轉盤選單 =====
+    const open = !!st.menuOpen;
+    const px = (rows, color) => {
+      // 一行一行把 # 畫成方塊，連在一起的合成一條
+      let r = '';
+      rows.forEach((row, y) => {
+        let x = 0;
+        while (x < row.length) {
+          if (row[x] === '#') {
+            let w = 1;
+            while (row[x + w] === '#') w++;
+            r += '<rect x="' + x + '" y="' + y + '" width="' + w + '" height="1" fill="' + color + '"/>';
+            x += w;
+          } else x++;
+        }
+      });
+      return 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 9 9" shape-rendering="crispEdges">' + r + '</svg>');
+    };
+    const G = {
+      msg: ['.........', '.#######.', '#########', '##.#.#.##', '#########', '.#######.', '..##.....', '..#......', '.........'],
+      char: ['...###...', '..#####..', '..#####..', '..#####..', '...###...', '.........', '.#######.', '#########', '#########'],
+      user: ['.........', '.##...##.', '####.####', '#########', '#########', '.#######.', '..#####..', '...###...', '....#....'],
+      world: ['...###...', '.##.#.##.', '.#..#..#.', '#########', '#...#...#', '#########', '.#..#..#.', '.##.#.##.', '...###...'],
+      prompt: ['.#######.', '.#.....#.', '.#.###.#.', '.#.....#.', '.#.###.#.', '.#.....#.', '.#.##..#.', '.#.....#.', '.#######.'],
+      theater: ['.#######.', '#########', '##.###.##', '#########', '#.#####.#', '##.....##', '.##...##.', '..#####..', '.........'],
+      fate: ['..#####..', '.#.....#.', '#..#....#', '#.......#', '#.......#', '.#.....#.', '..#####..', '.#######.', '#########'],
+      read: ['.........', '.##...##.', '#..#.#..#', '#..#.#..#', '#..#.#..#', '#..#.#..#', '####.####', '...###...', '.........'],
+      wallet: ['..#####..', '.#.....#.', '#...#...#', '#..##...#', '#...#...#', '#...#...#', '#..###..#', '.#.....#.', '..#####..'],
+      all: ['.........', '.###.###.', '.###.###.', '.###.###.', '.........', '.###.###.', '.###.###.', '.###.###.', '.........'],
+    };
+    const appDefs = [
+      { key: 'msg', name: '訊息', bg: '#9ED3A5', badge: 2 },
+      { key: 'char', name: '角色', bg: '#F2B8A0' },
+      { key: 'user', name: '使用者', bg: '#F4A9B8' },
+      { key: 'world', name: '世界書', bg: '#9CC7E6' },
+      { key: 'prompt', name: '提示詞', bg: '#F3D98B' },
+      { key: 'theater', name: '劇場', bg: '#C9A7E0' },
+      { key: 'fate', name: '占卜', bg: '#B7B4EE' },
+      { key: 'read', name: '閱讀', bg: '#E8C79A' },
+      { key: 'wallet', name: '錢包', bg: '#F5D46A' },
+      { key: 'all', name: '全部 App', bg: '#D8CFC0' },
+    ];
+    const n = appDefs.length;
+    const DIAL_CX = 352, DIAL_CY = 84;
+    const apps = appDefs.map((d, i) => {
+      // 最後停成一條直排，對齊轉盤正下方
+      const top = 124 + i * 58;
+      const left = 326;
+      const dx = DIAL_CX - (left + 26);
+      const dy = DIAL_CY - (top + 26);
+      // 打開時從上往下一顆顆彈出；收起時從下往上一顆顆收回
+      const delay = open ? i * 70 : (n - 1 - i) * 22;
+      return {
+        ...d,
+        left,
+        top,
+        icon: px(G[d.key], '#3B2A26'),
+        hasBadge: !!d.badge,
+        badge: d.badge || '',
+        aria: d.name + (d.badge ? '，' + d.badge + ' 則未讀' : ''),
+        op: open ? 1 : 0,
+        tf: open ? 'translate(0px, 0px) scale(1)' : 'translate(' + dx + 'px, ' + dy + 'px) scale(0.2)',
+        tr: open
+          ? 'transform 460ms cubic-bezier(.34,1.4,.64,1) ' + delay + 'ms, opacity 160ms linear ' + delay + 'ms'
+          : 'transform 240ms cubic-bezier(.5,0,.9,.4) ' + delay + 'ms, opacity 200ms linear ' + delay + 'ms',
+        // 彈出時左右甩、一次比一次小；每顆晚一點開始，所以整排看起來是一道波浪慢慢拉直
+        sway: open
+          ? 'wave-in 900ms ease-out ' + (delay + 40) + 'ms both'
+          : 'wave-out 260ms ease-in ' + delay + 'ms both',
+        pick: () => this.setState({ menuOpen: false, sel: null, app: d.name }),
+      };
+    });
+
+    // 轉盤本體：15×15 的像素轉盤，八片顏色跟選單 App 一樣
+    const dialImg = (() => {
+      const seg = ['#9ED3A5', '#F3D98B', '#F4A9B8', '#9CC7E6', '#F2B8A0', '#C9A7E0', '#F5D46A', '#B7B4EE'];
+      let r = '';
+      for (let y = 0; y < 15; y++) for (let x = 0; x < 15; x++) {
+        const ddx = x - 7, ddy = y - 7;
+        const dist = Math.sqrt(ddx * ddx + ddy * ddy);
+        let col = null;
+        if (dist > 7.4) col = null;
+        else if (dist > 6.3) col = '#3B2A26';
+        else if (dist < 1.2) col = '#3B2A26';
+        else if (dist < 2.4) col = '#FBF7EE';
+        else {
+          const ang = (Math.atan2(ddy, ddx) + Math.PI * 2 + Math.PI / 8) % (Math.PI * 2);
+          col = seg[Math.floor(ang / (Math.PI / 4)) % 8];
+          if (dist > 5.3 && ddx + ddy > 2) col = col + 'B0';
+        }
+        if (col) r += '<rect x="' + x + '" y="' + y + '" width="1" height="1" fill="' + col + '"/>';
+      }
+      return 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 15 15" shape-rendering="crispEdges">' + r + '</svg>');
+    })();
+    const menuNews = appDefs.reduce((sum, d) => sum + (d.badge || 0), 0);
+
+
+    // ===== 房間列、左右 =====
+    const vIdx = order.indexOf(stripRoom);
+    const meRoomTab = me.room === 'bath' ? 'bedroom' : me.room;
+    const tabs = order.map((k) => ({
+      name: R[k].name,
+      here: meRoomTab === k,
+      cur: stripRoom === k ? 'page' : 'false',
+      bg: stripRoom === k ? '#3B2A26' : '#FBF7EE',
+      fg: stripRoom === k ? '#FBF7EE' : '#3B2A26',
+      aria: R[k].name + (meRoomTab === k ? '，他在這裡' + (me.room === 'bath' ? '（浴室）' : '') : ''),
+      go: () => this.setView(k),
+    }));
+
+    const roomName = R[me.room].name;
+    const selSpot = spots.find((s) => s.key === sel);
+    const meLine = walking ? '他正在走去' + R[act.room].name : '他在' + roomName + act.label;
+    const hint = open
+      ? '選一個 App'
+      : selSpot
+      ? selSpot.name + ' → ' + selSpot.to
+      : st.app
+      ? '轉盤 → 打開' + st.app
+      : sel === 'me'
+      ? meLine + '｜點他聊天'
+      : showAll
+      ? '虛線框都可以點'
+      : meVisible
+      ? meLine
+      : meLine + '　去看看 ▸';
+
+    // multiply 疊色：白色＝不變
+    const tintBg = scene === 'night' ? '#5C649A' : scene === 'dusk' ? '#F4C4A0' : '#FFFFFF';
+
+    return {
+      stripX: -vIdx * 390,
+      bathOp: view === 'bath' ? 1 : 0,
+      bathScale: view === 'bath' ? 1 : 0.92,
+      inStrip: me.room !== 'bath',
+      inBath: me.room === 'bath',
+      inBathView: view === 'bath',
+      c,
+      fxStrip,
+      fxBath,
+      zs,
+      showMe: meVisible,
+      meAria: '他，' + meLine,
+      pickMe: () => this.setState({ sel: 'me', app: null }),
+      spots,
+      showAll,
+      tabs,
+      canLeft: view !== 'bath' && vIdx > 0,
+      canRight: view !== 'bath' && vIdx < 2,
+      leftAria: vIdx > 0 ? '去' + R[order[vIdx - 1]].name : '',
+      rightAria: vIdx < 2 ? '去' + R[order[vIdx + 1]].name : '',
+      goLeft: () => vIdx > 0 && this.setView(order[vIdx - 1]),
+      goRight: () => vIdx < 2 && this.setView(order[vIdx + 1]),
+      leaveBath: () => this.setView('bedroom'),
+      swipeStart: (e) => { this.sx = e.clientX; },
+      swipeEnd: (e) => {
+        if (this.sx == null || view === 'bath') return;
+        const d = e.clientX - this.sx;
+        this.sx = null;
+        if (d < -50 && vIdx < 2) this.setView(order[vIdx + 1]);
+        if (d > 50 && vIdx > 0) this.setView(order[vIdx - 1]);
+      },
+      hintTap: () => {
+        if (!meVisible && !open) this.setView(me.room);
+      },
+      toggleAll: () => this.setState({ showAll: !showAll }),
+      helpAria: showAll ? '隱藏可以點的地方' : '顯示所有可以點的地方',
+      helpBg: showAll ? '#3B2A26' : '#FBF7EE',
+      helpFg: showAll ? '#FBF7EE' : '#3B2A26',
+      apps,
+      menuDim: open ? 1 : 0,
+      menuPe: open ? 'auto' : 'none',
+      menuTab: open ? 0 : -1,
+      menuOpenStr: open ? 'true' : 'false',
+      toggleMenu: () => this.setState({ menuOpen: !open, sel: null, showAll: false }),
+      closeMenu: () => this.setState({ menuOpen: false }),
+      dialImg,
+      dialRot: open ? 90 : 0,
+      dialBadge: !open && menuNews > 0,
+      dialCount: menuNews,
+      dialAria: open ? '收起 App 選單' : '打開 App 選單' + (menuNews ? '，' + menuNews + ' 則未讀' : ''),
+      tintBg,
+      hint,
+    };
+  }
+}
+</script>
+</body>
+</html>

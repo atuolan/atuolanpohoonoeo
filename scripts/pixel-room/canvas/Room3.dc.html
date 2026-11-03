@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<title>像素小屋第三版</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DotGothic16&display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+@keyframes wave-in{0%{transform:translateX(-34px)}22%{transform:translateX(9px)}44%{transform:translateX(-16px)}66%{transform:translateX(5px)}84%{transform:translateX(-3px)}100%{transform:translateX(0)}}
+@keyframes wave-out{0%{transform:translateX(0)}45%{transform:translateX(8px)}100%{transform:translateX(-18px)}}
+</style>
+</helmet>
+<div style="position: relative; width: 390px; height: 844px; overflow: hidden; background: #3B2A26; font-family: 'DotGothic16', 'PingFang TC', 'Noto Sans TC', sans-serif; color: #3B2A26;">
+
+  <sc-if value="{{s.day}}" hint-placeholder-val="{{ true }}">
+    <img src="/_blob/5512f46bf5d2647ea21e3db25a07effc" alt="" style="position: absolute; left: 0; top: 0; width: 390px; height: 846px; image-rendering: pixelated;">
+  </sc-if>
+  <sc-if value="{{s.dusk}}" hint-placeholder-val="{{ false }}">
+    <img src="/_blob/6d5465ffcdedc8fb972d99d3381a3f2f" alt="" style="position: absolute; left: 0; top: 0; width: 390px; height: 846px; image-rendering: pixelated;">
+  </sc-if>
+  <sc-if value="{{s.night}}" hint-placeholder-val="{{ false }}">
+    <img src="/_blob/6abd4894c12e9892586ef2605e9ecb81" alt="" style="position: absolute; left: 0; top: 0; width: 390px; height: 846px; image-rendering: pixelated;">
+  </sc-if>
+
+  <sc-for list="{{spots}}" as="it" hint-placeholder-count="12">
+    <sc-if value="{{it.news}}" hint-placeholder-val="{{ false }}">
+      <div aria-hidden="true" style="position: absolute; left: {{it.x}}px; top: {{it.y}}px; width: {{it.w}}px; height: {{it.h}}px; box-sizing: border-box; border: 3px solid #FFE07A; box-shadow: 0 0 0 3px rgba(59,42,38,0.55), 0 0 18px 4px rgba(255,224,122,0.55); opacity: {{pulse}}; pointer-events: none;"></div>
+    </sc-if>
+    <sc-if value="{{it.selected}}" hint-placeholder-val="{{ false }}">
+      <div aria-hidden="true" style="position: absolute; left: {{it.x}}px; top: {{it.y}}px; width: {{it.w}}px; height: {{it.h}}px; box-sizing: border-box; border: 3px solid #FBF7EE; box-shadow: 0 0 0 3px #3B2A26; pointer-events: none;"></div>
+    </sc-if>
+    <sc-if value="{{showAll}}" hint-placeholder-val="{{ false }}">
+      <div aria-hidden="true" style="position: absolute; left: {{it.x}}px; top: {{it.y}}px; width: {{it.w}}px; height: {{it.h}}px; box-sizing: border-box; border: 2px dashed rgba(255,243,196,0.95); background: rgba(255,243,196,0.12); pointer-events: none;"></div>
+    </sc-if>
+    <button aria-label="{{it.aria}}" onClick="{{it.pick}}" style="position: absolute; left: {{it.x}}px; top: {{it.y}}px; width: {{it.w}}px; height: {{it.h}}px; padding: 0; border: 0; background: transparent; cursor: pointer;"></button>
+    <sc-if value="{{it.news}}" hint-placeholder-val="{{ false }}">
+      <div aria-hidden="true" style="position: absolute; left: {{it.dotX}}px; top: {{it.dotY}}px; width: 18px; height: 18px; box-sizing: border-box; background: #D9453A; border: 3px solid #3B2A26; color: #FBF7EE; font-size: 11px; line-height: 12px; text-align: center; pointer-events: none;">!</div>
+    </sc-if>
+    <sc-if value="{{showAll}}" hint-placeholder-val="{{ false }}">
+      <div aria-hidden="true" style="position: absolute; left: {{it.labelX}}px; top: {{it.labelY}}px; padding: 2px 6px; background: #3B2A26; color: #FBF7EE; font-size: 12px; line-height: 16px; white-space: nowrap; pointer-events: none;">{{it.name}}</div>
+    </sc-if>
+  </sc-for>
+
+  <div aria-hidden="true" style="position: absolute; left: {{sp.x}}px; top: {{sp.y}}px; width: 21px; height: 21px; opacity: {{sp.op}}; pointer-events: none;">
+    <svg width="21" height="21" viewBox="0 0 7 7" shape-rendering="crispEdges">
+      <rect x="3" y="0" width="1" height="7" fill="#FFF8DC"/>
+      <rect x="0" y="3" width="7" height="1" fill="#FFF8DC"/>
+      <rect x="2" y="2" width="3" height="3" fill="#FFFFFF"/>
+      <rect x="3" y="3" width="1" height="1" fill="#FFE07A"/>
+    </svg>
+  </div>
+
+  <sc-if value="{{s.day}}" hint-placeholder-val="{{ true }}">
+    <button aria-label="他說：你今天要早點睡哦，2 則未讀，打開聊天" onClick="{{pickChat}}" style="position: absolute; left: 132px; top: 562px; height: 44px; padding: 0 12px; border: 3px solid #3B2A26; background: #FBF7EE; color: #3B2A26; font-family: inherit; font-size: 15px; cursor: pointer; display: flex; align-items: center; gap: 8px; white-space: nowrap; box-shadow: 3px 3px 0 rgba(59,42,38,0.25);">
+      <span>你今天要早點睡哦</span>
+      <span style="display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 20px; background: #B2452F; color: #FBF7EE; font-size: 13px;">2</span>
+    </button>
+    <div aria-hidden="true" style="position: absolute; left: 220px; top: 606px; width: 9px; height: 9px; background: #3B2A26;"></div>
+  </sc-if>
+
+  <sc-if value="{{s.dusk}}" hint-placeholder-val="{{ false }}">
+    <button aria-label="他說：開會中，晚點回你，打開聊天" onClick="{{pickChat}}" style="position: absolute; left: 140px; top: 562px; height: 44px; padding: 0 12px; border: 3px solid #3B2A26; background: #FBF7EE; color: #3B2A26; font-family: inherit; font-size: 15px; cursor: pointer; display: flex; align-items: center; white-space: nowrap; box-shadow: 3px 3px 0 rgba(59,42,38,0.25);">開會中，晚點回你…</button>
+    <div aria-hidden="true" style="position: absolute; left: 220px; top: 606px; width: 9px; height: 9px; background: #3B2A26;"></div>
+  </sc-if>
+
+  <sc-if value="{{s.night}}" hint-placeholder-val="{{ false }}">
+    <div aria-hidden="true" style="position: absolute; left: 150px; top: 560px; font-size: 18px; line-height: 22px; color: #FFF3C4;">z</div>
+    <div aria-hidden="true" style="position: absolute; left: 166px; top: 532px; font-size: 24px; line-height: 28px; color: #FFF3C4;">Z</div>
+    <div aria-hidden="true" style="position: absolute; left: 188px; top: 498px; font-size: 30px; line-height: 34px; color: #FFF3C4;">Z</div>
+  </sc-if>
+
+  <button aria-label="{{helpAria}}" onClick="{{toggleAll}}" style="position: absolute; left: 270px; top: 60px; width: 44px; height: 44px; padding: 0; border: 3px solid #3B2A26; background: {{helpBg}}; color: {{helpFg}}; font-family: inherit; font-size: 20px; line-height: 20px; cursor: pointer; box-shadow: 3px 3px 0 rgba(59,42,38,0.3);">?</button>
+
+  <!-- 轉盤選單：暗幕 -->
+  <div aria-hidden="true" onClick="{{closeMenu}}" style="position: absolute; left: 0; top: 0; width: 390px; height: 844px; background: rgba(43,30,27,0.45); opacity: {{menuDim}}; pointer-events: {{menuPe}}; transition: opacity 260ms ease;"></div>
+
+  <!-- 轉盤選單：波浪排列的 App -->
+  <sc-for list="{{apps}}" as="a" hint-placeholder-count="10">
+    <div style="position: absolute; left: {{a.left}}px; top: {{a.top}}px; width: 52px; height: 52px; opacity: {{a.op}}; transform: {{a.tf}}; transition: {{a.tr}}; pointer-events: {{menuPe}};">
+      <div style="position: absolute; left: 0; top: 0; width: 52px; height: 52px; animation: {{a.sway}};">
+        <button aria-label="{{a.aria}}" tabindex="{{menuTab}}" onClick="{{a.pick}}" style="position: absolute; left: 0; top: 0; width: 52px; height: 52px; padding: 0; box-sizing: border-box; border: 3px solid #3B2A26; background: {{a.bg}}; cursor: pointer; display: flex; align-items: center; justify-content: center; box-shadow: inset 3px 3px 0 rgba(255,255,255,0.5), inset -3px -3px 0 rgba(59,42,38,0.18), 3px 3px 0 rgba(43,30,27,0.35);">
+          <img src="{{a.icon}}" alt="" width="36" height="36" style="display: block; width: 36px; height: 36px; image-rendering: pixelated;">
+        </button>
+        <div aria-hidden="true" style="position: absolute; right: 60px; top: 15px; padding: 2px 7px; background: #3B2A26; color: #FBF7EE; font-size: 14px; line-height: 18px; white-space: nowrap; box-shadow: 0 0 0 2px #FBF7EE; pointer-events: none;">{{a.name}}</div>
+        <sc-if value="{{a.hasBadge}}" hint-placeholder-val="{{ false }}">
+          <div aria-hidden="true" style="position: absolute; left: 38px; top: -8px; min-width: 20px; height: 20px; box-sizing: border-box; padding: 0 3px; background: #D9453A; border: 3px solid #3B2A26; color: #FBF7EE; font-size: 11px; line-height: 14px; text-align: center; pointer-events: none;">{{a.badge}}</div>
+        </sc-if>
+      </div>
+    </div>
+  </sc-for>
+
+  <!-- 轉盤按鈕 -->
+  <button aria-label="{{dialAria}}" aria-expanded="{{menuOpenStr}}" onClick="{{toggleMenu}}" style="position: absolute; left: 324px; top: 56px; width: 56px; height: 56px; padding: 0; border: 0; background: transparent; cursor: pointer;">
+    <img src="{{dialImg}}" alt="" width="52" height="52" style="position: absolute; left: 2px; top: 2px; width: 52px; height: 52px; image-rendering: pixelated; transform: rotate({{dialRot}}deg); transition: transform 520ms cubic-bezier(.34,1.56,.64,1); filter: drop-shadow(3px 3px 0 rgba(43,30,27,0.35));">
+    <sc-if value="{{dialBadge}}" hint-placeholder-val="{{ true }}">
+      <span aria-hidden="true" style="position: absolute; left: 38px; top: -4px; min-width: 20px; height: 20px; box-sizing: border-box; padding: 0 3px; background: #D9453A; border: 3px solid #3B2A26; color: #FBF7EE; font-size: 11px; line-height: 14px; text-align: center;">{{dialCount}}</span>
+    </sc-if>
+  </button>
+
+  <div aria-live="polite" style="position: absolute; left: 46px; top: 790px; width: 298px; height: 40px; box-sizing: border-box; padding: 0 12px; background: #3B2A26; color: #FBF7EE; font-size: 15px; display: flex; align-items: center; justify-content: center; text-align: center; box-shadow: 0 0 0 3px #FBF7EE;">{{hint}}</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"scene":{"editor":"enum","options":["day","dusk","night"],"default":"day","section":"房間狀態"},"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  componentDidMount() {
+    this.timer = setInterval(() => {
+      this.setState({ tick: ((this.state && this.state.tick) || 0) + 1 });
+    }, 450);
+  }
+  componentWillUnmount() {
+    clearInterval(this.timer);
+  }
+  renderVals() {
+    const scene = this.props.scene ?? 'day';
+    const st = this.state || {};
+    const tick = st.tick || 0;
+    const sel = st.sel;
+    const showAll = !!st.showAll;
+
+    // 每個可以點的東西：位置、名稱、點了開什麼
+    const base = [
+      { key: 'photo', x: 24, y: 117, w: 93, h: 51, name: '相框', to: '日記' },
+      { key: 'calendar', x: 39, y: 174, w: 51, h: 54, name: '月曆', to: '行事曆' },
+      { key: 'window', x: 123, y: 108, w: 156, h: 168, name: '窗戶', to: '天氣' },
+      { key: 'music', x: 31, y: 229, w: 44, h: 44, name: '收音機', to: '音樂' },
+      { key: 'shelf', x: 15, y: 273, w: 90, h: 186, name: '書櫃', to: '書架' },
+      { key: 'board', x: 153, y: 285, w: 87, h: 54, name: '留言板', to: '便利貼' },
+      { key: 'pc', x: 159, y: 354, w: 60, h: 45, name: '電腦', to: '噗浪．QQ空間' },
+      { key: 'timer', x: 233, y: 339, w: 44, h: 60, name: '檯燈', to: '番茄鐘' },
+      { key: 'door', x: 306, y: 258, w: 75, h: 210, name: '門口', to: '商店．外送' },
+      { key: 'bed', x: 18, y: 630, w: 180, h: 90, name: '床', to: scene === 'night' ? '叫他起床' : '哄他睡覺' },
+      { key: 'phone', x: 142, y: 644, w: 44, h: 44, name: '他的手機', to: '偷看他的手機' },
+      { key: 'tv', x: 243, y: 624, w: 126, h: 96, name: '電視', to: '遊戲中心' },
+      { key: 'tools', x: 10, y: 701, w: 44, h: 44, name: '工具箱', to: '設定' },
+    ];
+    if (scene !== 'night') {
+      base.push({ key: 'chat', x: scene === 'day' ? 186 : 183, y: 624, w: 75, h: 126, name: '他', to: '聊天' });
+    }
+    // 有新東西的物件（示範用，正式版接通知資料）
+    const newsByScene = {
+      day: { pc: '他發了新噗浪', calendar: '今天有行程' },
+      dusk: { door: '外送到了', pc: '他發了新噗浪' },
+      night: { phone: '他的手機亮了一下' },
+    };
+    const news = newsByScene[scene] || {};
+
+    const spots = base.map((b) => ({
+      ...b,
+      news: !!news[b.key],
+      selected: sel === b.key,
+      aria: b.name + '，打開' + b.to + (news[b.key] ? '，' + news[b.key] : ''),
+      dotX: b.x + b.w - 12,
+      dotY: b.y - 6,
+      labelX: b.x + 2,
+      labelY: Math.max(0, b.y - 20),
+      pick: () => this.setState({ sel: b.key, app: null }),
+    }));
+
+    // 閃光：輪流在每個物件右上角閃一下，提示「這裡可以點」
+    const cycle = Math.floor(tick / 4);
+    const target = spots[cycle % spots.length];
+    const phase = tick % 4;
+    const sp = {
+      x: target.x + target.w - 16,
+      y: target.y + 2,
+      op: phase === 1 ? 1 : phase === 2 ? 0.55 : 0,
+    };
+
+    // ===== 轉盤選單 =====
+    const open = !!st.menuOpen;
+    const px = (rows, color) => {
+      // 一行一行把 # 畫成方塊，連在一起的合成一條
+      let r = '';
+      rows.forEach((row, y) => {
+        let x = 0;
+        while (x < row.length) {
+          if (row[x] === '#') {
+            let w = 1;
+            while (row[x + w] === '#') w++;
+            r += '<rect x="' + x + '" y="' + y + '" width="' + w + '" height="1" fill="' + color + '"/>';
+            x += w;
+          } else x++;
+        }
+      });
+      return 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 9 9" shape-rendering="crispEdges">' + r + '</svg>');
+    };
+    const G = {
+      msg: ['.........', '.#######.', '#########', '##.#.#.##', '#########', '.#######.', '..##.....', '..#......', '.........'],
+      char: ['...###...', '..#####..', '..#####..', '..#####..', '...###...', '.........', '.#######.', '#########', '#########'],
+      user: ['.........', '.##...##.', '####.####', '#########', '#########', '.#######.', '..#####..', '...###...', '....#....'],
+      world: ['...###...', '.##.#.##.', '.#..#..#.', '#########', '#...#...#', '#########', '.#..#..#.', '.##.#.##.', '...###...'],
+      prompt: ['.#######.', '.#.....#.', '.#.###.#.', '.#.....#.', '.#.###.#.', '.#.....#.', '.#.##..#.', '.#.....#.', '.#######.'],
+      theater: ['.#######.', '#########', '##.###.##', '#########', '#.#####.#', '##.....##', '.##...##.', '..#####..', '.........'],
+      fate: ['..#####..', '.#.....#.', '#..#....#', '#.......#', '#.......#', '.#.....#.', '..#####..', '.#######.', '#########'],
+      read: ['.........', '.##...##.', '#..#.#..#', '#..#.#..#', '#..#.#..#', '#..#.#..#', '####.####', '...###...', '.........'],
+      wallet: ['..#####..', '.#.....#.', '#...#...#', '#..##...#', '#...#...#', '#...#...#', '#..###..#', '.#.....#.', '..#####..'],
+      all: ['.........', '.###.###.', '.###.###.', '.###.###.', '.........', '.###.###.', '.###.###.', '.###.###.', '.........'],
+    };
+    const appDefs = [
+      { key: 'msg', name: '訊息', bg: '#9ED3A5', badge: scene === 'day' ? 2 : 0 },
+      { key: 'char', name: '角色', bg: '#F2B8A0' },
+      { key: 'user', name: '使用者', bg: '#F4A9B8' },
+      { key: 'world', name: '世界書', bg: '#9CC7E6' },
+      { key: 'prompt', name: '提示詞', bg: '#F3D98B' },
+      { key: 'theater', name: '劇場', bg: '#C9A7E0' },
+      { key: 'fate', name: '占卜', bg: '#B7B4EE' },
+      { key: 'read', name: '閱讀', bg: '#E8C79A' },
+      { key: 'wallet', name: '錢包', bg: '#F5D46A' },
+      { key: 'all', name: '全部 App', bg: '#D8CFC0' },
+    ];
+    const n = appDefs.length;
+    const DIAL_CX = 352, DIAL_CY = 84;
+    const apps = appDefs.map((d, i) => {
+      // 最後停成一條直排，對齊轉盤正下方
+      const top = 124 + i * 58;
+      const left = 326;
+      const dx = DIAL_CX - (left + 26);
+      const dy = DIAL_CY - (top + 26);
+      // 打開時從上往下一顆顆彈出；收起時從下往上一顆顆收回
+      const delay = open ? i * 70 : (n - 1 - i) * 22;
+      return {
+        ...d,
+        left,
+        top,
+        icon: px(G[d.key], '#3B2A26'),
+        hasBadge: !!d.badge,
+        badge: d.badge || '',
+        aria: d.name + (d.badge ? '，' + d.badge + ' 則未讀' : ''),
+        op: open ? 1 : 0,
+        tf: open ? 'translate(0px, 0px) scale(1)' : 'translate(' + dx + 'px, ' + dy + 'px) scale(0.2)',
+        tr: open
+          ? 'transform 460ms cubic-bezier(.34,1.4,.64,1) ' + delay + 'ms, opacity 160ms linear ' + delay + 'ms'
+          : 'transform 240ms cubic-bezier(.5,0,.9,.4) ' + delay + 'ms, opacity 200ms linear ' + delay + 'ms',
+        // 彈出時左右甩、一次比一次小；每顆晚一點開始，所以整排看起來是一道波浪慢慢拉直
+        sway: open
+          ? 'wave-in 900ms ease-out ' + (delay + 40) + 'ms both'
+          : 'wave-out 260ms ease-in ' + delay + 'ms both',
+        pick: () => this.setState({ menuOpen: false, sel: null, app: d.name }),
+      };
+    });
+
+    // 轉盤本體：15×15 的像素轉盤，八片顏色跟選單 App 一樣
+    const dialImg = (() => {
+      const seg = ['#9ED3A5', '#F3D98B', '#F4A9B8', '#9CC7E6', '#F2B8A0', '#C9A7E0', '#F5D46A', '#B7B4EE'];
+      let r = '';
+      for (let y = 0; y < 15; y++) for (let x = 0; x < 15; x++) {
+        const ddx = x - 7, ddy = y - 7;
+        const dist = Math.sqrt(ddx * ddx + ddy * ddy);
+        let col = null;
+        if (dist > 7.4) col = null;
+        else if (dist > 6.3) col = '#3B2A26';
+        else if (dist < 1.2) col = '#3B2A26';
+        else if (dist < 2.4) col = '#FBF7EE';
+        else {
+          const ang = (Math.atan2(ddy, ddx) + Math.PI * 2 + Math.PI / 8) % (Math.PI * 2);
+          col = seg[Math.floor(ang / (Math.PI / 4)) % 8];
+          if (dist > 5.3 && ddx + ddy > 2) col = col + 'B0';
+        }
+        if (col) r += '<rect x="' + x + '" y="' + y + '" width="1" height="1" fill="' + col + '"/>';
+      }
+      return 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 15 15" shape-rendering="crispEdges">' + r + '</svg>');
+    })();
+    const menuNews = appDefs.reduce((sum, d) => sum + (d.badge || 0), 0);
+
+    const selSpot = spots.find((s) => s.key === sel);
+    const hint = open
+      ? '選一個 App'
+      : selSpot
+      ? selSpot.name + ' → ' + selSpot.to + (news[sel] ? '（' + news[sel] + '）' : '')
+      : st.app
+      ? '轉盤 → 打開' + st.app
+      : showAll ? '虛線框都可以點' : '點房間裡的東西看看';
+
+    return {
+      spots,
+      sp,
+      showAll,
+      pulse: tick % 2 ? 1 : 0.45,
+      pickChat: () => this.setState({ sel: 'chat', app: null }),
+      apps,
+      menuDim: open ? 1 : 0,
+      menuPe: open ? 'auto' : 'none',
+      menuTab: open ? 0 : -1,
+      menuOpenStr: open ? 'true' : 'false',
+      toggleMenu: () => this.setState({ menuOpen: !open, sel: null, showAll: false }),
+      closeMenu: () => this.setState({ menuOpen: false }),
+      dialImg,
+      dialRot: open ? 90 : 0,
+      dialBadge: !open && menuNews > 0,
+      dialCount: menuNews,
+      dialAria: open ? '收起 App 選單' : '打開 App 選單' + (menuNews ? '，' + menuNews + ' 則未讀' : ''),
+      toggleAll: () => this.setState({ showAll: !showAll }),
+      helpAria: showAll ? '隱藏可以點的地方' : '顯示所有可以點的地方',
+      helpBg: showAll ? '#3B2A26' : '#FBF7EE',
+      helpFg: showAll ? '#FBF7EE' : '#3B2A26',
+      s: { day: scene === 'day', dusk: scene === 'dusk', night: scene === 'night' },
+      hint,
+    };
+  }
+}
+</script>
+</body>
+</html>
