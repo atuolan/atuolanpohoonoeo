@@ -1,5 +1,6 @@
 import UIKit
 import Capacitor
+import UserNotifications
 
 @UIApplicationMain
 class AppDelegate: UIResponder, UIApplicationDelegate {
@@ -7,7 +8,9 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     var window: UIWindow?
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
-        // Override point for customization after application launch.
+        // 看螢幕模式 第 0 步（只在測試分支）：寫一個值進 App Group，讓擴充元件讀；順便要通知權限
+        ScreenWatchProbe.writeAppValue()
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
         return true
     }
 
@@ -40,5 +43,24 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
                                           sessionRole: connectingSceneSession.role)
         config.delegateClass = SceneDelegate.self
         return config
+    }
+}
+
+/// 看螢幕模式 第 0 步：App 和擴充元件透過 App Group 互相讀寫，測試能不能共用資料
+enum ScreenWatchProbe {
+    static let appGroupId = "group.uk.aguacloud.aguaphone"
+    static let appWroteKey = "screenWatch.appWrote"
+    static let extensionCountKey = "screenWatch.extensionCount"
+
+    static func writeAppValue() {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MM/dd HH:mm:ss"
+        UserDefaults(suiteName: appGroupId)?.set("App 寫入：\(formatter.string(from: Date()))", forKey: appWroteKey)
+    }
+
+    /// 擴充元件寫的次數；App Group 打不開回傳 nil
+    static func readExtensionCount() -> Int? {
+        guard let defaults = UserDefaults(suiteName: appGroupId) else { return nil }
+        return defaults.integer(forKey: extensionCountKey)
     }
 }
