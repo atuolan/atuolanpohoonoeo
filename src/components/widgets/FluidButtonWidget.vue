@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { getIconSource, useWidgetStyle } from "@/composables/useWidgetStyle";
 import { useCanvasStore, useThemeStore } from "@/stores";
+import { formatBadgeCount, useHomeBadgesStore } from "@/stores/homeBadges";
 import { getShapeStyle } from "@/styles/shape-presets";
 import { getSkin } from "@/styles/skin-presets";
 import type { WidgetCustomStyle } from "@/types";
 import { resolveWidgetIcon } from "@/utils/widgetIconMap";
 import { computed } from "vue";
+import { appButtonTarget } from "./appButtonTarget";
 import { themedAppLayouts } from "./themed/registry";
 
 const props = defineProps<{
@@ -25,6 +27,13 @@ const emit = defineEmits<{
 const canvasStore = useCanvasStore();
 const themeStore = useThemeStore();
 
+// 未讀紅點：跟轉盤 Dock 用同一份數字
+const homeBadges = useHomeBadgesStore();
+const badgeCount = computed(() => {
+  const label = props.data?.label;
+  return label ? homeBadges.badges[appButtonTarget(label)] || 0 : 0;
+});
+
 // 處理點擊事件
 function handleClick() {
   // 編輯模式下不觸發導航
@@ -33,27 +42,7 @@ function handleClick() {
   const label = props.data?.label;
   if (!label) return;
 
-  // 根據標籤映射到對應的頁面
-  const pageMap: Record<string, string> = {
-    訊息: "message",
-    設置: "settings",
-    空間: "space",
-    音樂: "music",
-    購物: "shop",
-    外賣: "外賣",
-    世界書: "book",
-    角色: "character",
-    使用者: "user",
-    頭盔TA: "peek-phone",
-    偷窺TA: "peek-phone",
-    閱讀: "media-log",
-    書架: "bookshelf",
-    行事曆: "calendar",
-    占卜: "fate",
-  };
-
-  const page = pageMap[label] || label;
-  emit("navigate", page);
+  emit("navigate", appButtonTarget(label));
 }
 
 // 使用自定義樣式 composable
@@ -215,6 +204,11 @@ const labelStyle = computed(() => {
 
 <template>
   <div class="fluid-button" :class="{ themed: !!themedApp }" @click="handleClick">
+    <span
+      v-if="badgeCount > 0"
+      class="app-badge"
+      :aria-label="`${displayLabel} ${badgeCount} 則未讀`"
+    >{{ formatBadgeCount(badgeCount) }}</span>
     <component
       v-if="themedApp"
       :is="themedApp"
@@ -261,12 +255,34 @@ const labelStyle = computed(() => {
   cursor: pointer;
   padding: 4px;
   box-sizing: border-box;
+  position: relative;
 
   // 主題版型自己決定排版，宿主只提供尺寸與點擊
   &.themed {
     padding: 0;
     gap: 0;
   }
+}
+
+// 未讀紅點：所有主題版型共用，放在圖示格子的右上角
+.app-badge {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 2;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  box-sizing: border-box;
+  border-radius: 9px;
+  border: 2px solid #fff;
+  background: #e5484d;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 14px;
+  text-align: center;
+  pointer-events: none;
 }
 
 .blob-shape {

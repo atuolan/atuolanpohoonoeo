@@ -99,6 +99,11 @@ export async function saveChatMetadata(chat: Chat): Promise<void> {
   if (existing?.archivedAt && nextChat.archivedAt === undefined) {
     nextChat.archivedAt = existing.archivedAt;
   }
+  // 未讀數由背景訊息和聊天列表寫入，聊天頁存檔時沒帶這個欄位不能把它清掉；
+  // 要歸零請用 setLocalChatUnreadCount
+  if (existing?.unreadCount && nextChat.unreadCount === undefined) {
+    nextChat.unreadCount = existing.unreadCount;
+  }
   await db.put(DB_STORES.CHATS, nextChat);
   scheduleSelfHostedAutoSync();
 }
@@ -113,6 +118,17 @@ export async function createChatRecord(
   }
 }
 
+/** 聊天未讀數變了：主頁的 App 圖示聽這個事件更新紅點 */
+export const CHAT_UNREAD_CHANGED_EVENT = "aguaphone:chat-unread-changed";
+
+function emitUnreadChanged(chatId: string): void {
+  try {
+    window.dispatchEvent(new CustomEvent(CHAT_UNREAD_CHANGED_EVENT, { detail: { chatId } }));
+  } catch {
+    // 非瀏覽器環境（測試）
+  }
+}
+
 export async function setLocalChatUnreadCount(
   chatId: string,
   unreadCount: number,
@@ -124,6 +140,7 @@ export async function setLocalChatUnreadCount(
   chat.unreadCount = Math.max(0, unreadCount);
   chat.messages = [];
   await db.put(DB_STORES.CHATS, JSON.parse(JSON.stringify(chat)));
+  emitUnreadChanged(chatId);
   return chat;
 }
 
@@ -138,6 +155,7 @@ export async function incrementLocalChatUnreadCount(
   chat.unreadCount = Math.max(0, (chat.unreadCount || 0) + delta);
   chat.messages = [];
   await db.put(DB_STORES.CHATS, JSON.parse(JSON.stringify(chat)));
+  emitUnreadChanged(chatId);
   return chat;
 }
 

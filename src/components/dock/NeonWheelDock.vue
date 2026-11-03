@@ -1,9 +1,17 @@
 <script setup lang="ts">
 import { LayoutGrid, SlidersHorizontal } from "lucide-vue-next";
 import type { Component, CSSProperties } from "vue";
-import { computed, onUnmounted, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref } from "vue";
+import { formatBadgeCount, useHomeBadgesStore } from "@/stores/homeBadges";
 import DockAppsEditor from "./DockAppsEditor.vue";
 import { loadDockAppIds, resolveDockApps, saveDockAppIds } from "./dockApps";
+
+// ===== 未讀紅點 =====
+const homeBadges = useHomeBadgesStore();
+onMounted(() => homeBadges.start());
+function badgeOf(id: string): number {
+  return homeBadges.badges[id] || 0;
+}
 
 // ===== 轉盤狀態 =====
 const railOffset = ref(0);
@@ -359,6 +367,11 @@ onUnmounted(() => {
         <div class="nav-btn-inner">
           <component :is="item.icon" :size="20" :stroke-width="1.5" />
         </div>
+        <span
+          v-if="badgeOf(item.id) > 0"
+          class="nav-badge"
+          :aria-label="`${item.label} ${badgeOf(item.id)} 則未讀`"
+        >{{ formatBadgeCount(badgeOf(item.id)) }}</span>
         <span class="nav-label">{{ item.label }}</span>
       </div>
     </div>
@@ -379,6 +392,12 @@ onUnmounted(() => {
       @contextmenu.prevent
     >
       <LayoutGrid :size="28" :stroke-width="1.5" color="#1f2937" />
+      <!-- 轉盤收起來時也看得到有新東西 -->
+      <span
+        v-if="!isExpanded && homeBadges.total > 0"
+        class="core-badge"
+        :aria-label="`有 ${homeBadges.total} 則未讀`"
+      >{{ formatBadgeCount(homeBadges.total) }}</span>
     </button>
 
     <DockAppsEditor
@@ -489,6 +508,36 @@ onUnmounted(() => {
       opacity: 1;
     }
   }
+}
+
+// 未讀紅點：放在圖示右上角
+.nav-badge,
+.core-badge {
+  position: absolute;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  box-sizing: border-box;
+  border-radius: 9px;
+  background: #e5484d;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 18px;
+  text-align: center;
+  border: 2px solid rgba(15, 23, 42, 0.9);
+  pointer-events: none;
+}
+
+.nav-badge {
+  top: -6px;
+  right: -6px;
+}
+
+.core-badge {
+  top: -2px;
+  right: -2px;
+  border-color: #fff;
 }
 
 // 滾動提示

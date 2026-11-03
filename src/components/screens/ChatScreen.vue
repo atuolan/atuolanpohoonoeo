@@ -179,6 +179,7 @@ import {
   resolveSummaryReadCount,
   selectSummariesForPrompt,
 } from "@/utils/summarySelection";
+import { countTurnAiMessages } from "@/utils/unreadCount";
 import { useChatTheater } from "@/composables/useChatTheater";
 import { useHolidayTrigger } from "@/composables/useHolidayTrigger";
 import {
@@ -190,6 +191,7 @@ import { readImageNote, resolveImageBase64 } from "@/services/imageNoteReader";
 import {
   createChatRecord,
   deleteChatCascade,
+  incrementLocalChatUnreadCount,
   loadChatById,
   loadChatsByCharacter,
   refreshChatDerivedMetadata,
@@ -8730,6 +8732,16 @@ async function runAIResponseOnce(
           charId,
           charAvatar,
         );
+        // 回覆完成前就離開聊天頁：這一輪的訊息算未讀，主頁圖示和聊天列表才會有紅點
+        const replyChatId = currentChatId.value;
+        if (!notificationStore.isInChat(replyChatId)) {
+          const newCount = countTurnAiMessages(messages.value, generationTurnId || undefined);
+          if (newCount > 0) {
+            incrementLocalChatUnreadCount(replyChatId, newCount).catch((err) =>
+              console.warn("[ChatScreen] 加未讀數失敗", err),
+            );
+          }
+        }
       }
     }
 
