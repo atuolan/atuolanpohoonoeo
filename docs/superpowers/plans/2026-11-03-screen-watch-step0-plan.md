@@ -1,7 +1,8 @@
 # 實作計畫：看螢幕模式 第 0 步（iOS 可行性測試）
 
 > 設計文件：`docs/superpowers/specs/2026-11-03-screen-watch-design.md`
-> 狀態：計畫，還沒開工。
+> 狀態（11/3 更新）：程式寫好了，在測試分支 `claude/screen-watch-step0`（不合併）。等 GitHub Actions 編譯，然後等你在 iPhone 上測。
+> 跟計畫不一樣的地方：workflow 多一步 ad-hoc 簽名（`codesign -s -`），因為沒簽名的 IPA 不帶 entitlements，Sideloadly 重簽時會不知道要加 App Group；框架不手動連結（Swift import 會自動連結，xcodeproj 加的路徑會寫死 SDK 版本）。
 
 ## 目的
 
