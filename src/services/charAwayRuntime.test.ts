@@ -1,8 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CharAway, Chat, ChatMessage } from "@/types/chat";
 import { canUseCharAway } from "./charAway";
+import { getShopItemById } from "@/data/shopItems";
 import {
   activatePlanIfDue,
+  applyCareItemOnAway,
   cancelCharAway,
   fastForwardCharAway,
   finishCharAwaySneak,
@@ -389,6 +391,31 @@ describe("wakeCharAwayNow", () => {
     expect(woken!.endedBy).toBe("wake");
     expect(store.chats.get("chat1")!.charAway!.endedBy).toBe("wake");
     expect(store.messages.get("chat1")).toHaveLength(0);
+  });
+});
+
+describe("applyCareItemOnAway", () => {
+  const busy = () =>
+    makeAway({ kind: "busy", reason: "上班", returnAt: NOW + 240 * MINUTE, checkMinutes: 30, sneakCount: 0 });
+
+  it("忙碌時用能量飲料：存成正在回、回完就忙完", async () => {
+    seedChat({ charAway: busy() });
+
+    const next = await applyCareItemOnAway("chat1", getShopItemById("care_energy")!);
+
+    expect(next).toMatchObject({ sneakPending: true, sneakReason: "item", earlyEndPending: true });
+    expect(store.chats.get("chat1")!.charAway!.careItemId).toBe("care_energy");
+
+    const done = await finishCharAwaySneak("chat1", true);
+    expect(done!.endedBy).toBe("wake");
+  });
+
+  it("沒在忙、或正在回的時候不改", async () => {
+    seedChat();
+    expect(await applyCareItemOnAway("chat1", getShopItemById("care_coffee")!)).toBeNull();
+
+    seedChat({ charAway: { ...busy(), sneakPending: true } });
+    expect(await applyCareItemOnAway("chat1", getShopItemById("care_coffee")!)).toBeNull();
   });
 });
 

@@ -954,6 +954,7 @@ export const useGameEconomyStore = defineStore("gameEconomy", () => {
         return purchaseRod(chatId, item, quantity);
       case "gift":
       case "consumable":
+      case "care":
         return purchaseInventoryItem(chatId, item);
       default:
         return { success: false, error: "invalid_item" };
@@ -2067,6 +2068,20 @@ export const useGameEconomyStore = defineStore("gameEconomy", () => {
    * @returns 送禮結果
    * @requirements 6.2
    */
+  /** 用掉背包裡的一個道具（照顧他的道具用）；沒有就回 false */
+  function consumeInventoryItem(chatId: string, itemId: string): boolean {
+    const state = getState(chatId);
+    const index = state.inventory.findIndex(
+      (item) => item.itemId === itemId && item.quantity > 0,
+    );
+    if (index === -1) return false;
+    const inventoryItem = state.inventory[index];
+    inventoryItem.quantity -= 1;
+    if (inventoryItem.quantity <= 0) state.inventory.splice(index, 1);
+    _scheduleAutoSave(chatId);
+    return true;
+  }
+
   function sendGiftByItemId(chatId: string, itemId: string): SendGiftResult {
     const state = getState(chatId);
 
@@ -2232,6 +2247,7 @@ export const useGameEconomyStore = defineStore("gameEconomy", () => {
     // 禮物和轉帳
     sendGift,
     sendGiftByItemId,
+    consumeInventoryItem,
     getGiftHistory,
     getRecentGifts,
     transfer,

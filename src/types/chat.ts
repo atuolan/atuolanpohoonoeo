@@ -1372,7 +1372,8 @@ export interface CharAway {
   lastHangUpAt?: number;    // 忙碌：上次掛電話的時間
   hangUpPeek?: boolean;     // 下次看手機是掛電話後傳訊息
   earlyEndPending?: boolean; // 這一輪擲骰成功：回覆成功後就忙完
-  sneakReason?: "urge" | "peek" | "hangUp"; // 這次為什麼回（面板上的催促／定時看手機／掛電話）
+  sneakReason?: "urge" | "peek" | "hangUp" | "item"; // 這次為什麼回（面板上的催促／定時看手機／掛電話／用了道具）
+  careItemId?: string;      // sneakReason 是 item 時：用了哪個道具
 }
 
 /** 劇情時鐘的狀態：offset 是線上的偏移量，pausedAt 有值代表面對面暫停中 */

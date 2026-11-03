@@ -39,7 +39,8 @@ import {
   savePendingDollTouches,
   type DollTouch,
 } from "@/services/empathyDoll";
-import { GIFT_ITEMS } from "@/data/shopItems";
+import { GIFT_ITEMS, getShopItemById } from "@/data/shopItems";
+import { careItemNotice } from "@/services/careItems";
 import {
   addGiftMemory,
   updateGiftMemory,
@@ -4725,6 +4726,30 @@ function handleSendGift(_giftItemId: string, giftName: string, cardText = "") {
   scrollToBottom();
   saveChat();
   // 不自動觸發 AI 回覆，讓用戶可以繼續發送其他訊息
+}
+
+// 照顧他的道具（咖啡、鬧鐘、早餐、香氛）：扣背包、聊天裡留一行，他接著回一則
+async function handleUseCareItem(itemId: string) {
+  const item = getShopItemById(itemId);
+  if (!item?.careUse) return;
+  const status = charAwayCtl.careItemStatusFor(item);
+  if (!status.ok) {
+    showToast(status.reason);
+    return;
+  }
+  const used = await charAwayCtl.applyCareItem(item, async () => {
+    if (!gameEconomyStore.consumeInventoryItem(GLOBAL_WALLET_ID, itemId)) return;
+    await gameEconomyStore.saveState(GLOBAL_WALLET_ID);
+    messages.value.push({
+      id: `msg_care_${Date.now()}`,
+      role: "system",
+      content: careItemNotice(item, displayCharacterName.value),
+      timestamp: Date.now(),
+    });
+    scrollToBottom();
+    saveChat();
+  });
+  if (!used) showToast("現在不能用這個道具");
 }
 
 // 處理 Pixabay 圖片搜尋選擇：建立 image-url 訊息並加入聊天
@@ -13077,10 +13102,12 @@ useChatCleanup({
         :character-avatar="characterAvatar"
         :is-group="isGroupChat"
         :group-member-names="giftDrawerMemberNames"
+        :care-status="charAwayCtl.careItemStatusFor"
         @close="showGiftDrawer = false"
         @open-shop="handleOpenShop"
         @transfer="handleTransfer"
         @send-gift="handleSendGift"
+        @use-care="handleUseCareItem"
         @redpacket="handleSendRedpacket"
       />
 

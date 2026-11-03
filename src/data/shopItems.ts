@@ -8,7 +8,7 @@
 import type { Rarity } from "@/schemas/gameEconomy";
 
 /** 商品分類 */
-export type ShopCategory = "frame" | "gift" | "rod" | "consumable";
+export type ShopCategory = "frame" | "gift" | "rod" | "consumable" | "care";
 
 /** 消耗品效果類型 */
 export type ConsumableEffectType = "work_efficiency" | "fishing_efficiency";
@@ -69,6 +69,28 @@ export interface ShopItem {
   variants?: ShopItemVariant[];
   /** 禮物專用：回憶卡與日記 */
   giftUse?: GiftUse;
+  /** 照顧他的道具：在他忙碌、睡覺時用 */
+  careUse?: CareUse;
+}
+
+/**
+ * 照顧他的道具什麼時候能用
+ * - busy：他在忙
+ * - sleep：他在睡（天亮前用只會把他吵醒一下）
+ * - sleepMorning：他在睡而且天亮了
+ * - nightAwake：晚上（劇情時間 20:00～05:59）他醒著
+ */
+export type CareTiming = "busy" | "sleep" | "sleepMorning" | "nightAwake";
+
+/** 照顧他的道具效果 */
+export interface CareUse {
+  timing: CareTiming;
+  /** 忙碌／睡覺時：回完這則就忙完／起床的機率（1 是一定）；sleep 只在天亮後算 */
+  endChance?: number;
+  /** 聊天裡顯示的那一行（{{char}} 換成角色名） */
+  notice: string;
+  /** 給 AI 的說明（{{char}}、{{user}} 由提示詞代換） */
+  note: string;
 }
 
 /** 禮物送出後的用法 */
@@ -915,6 +937,85 @@ export const CONSUMABLE_ITEMS: ShopItem[] = [
   },
 ];
 
+// ===== 照顧他的道具 =====
+
+export const CARE_ITEMS: ShopItem[] = [
+  {
+    id: "care_coffee",
+    name: "外帶咖啡",
+    description: "他在忙的時候叫一杯送過去：他會馬上停下來喝一口、回你幾句，一半機會提早忙完",
+    price: 150,
+    category: "care",
+    rarity: "common",
+    icon: "care-coffee",
+    careUse: {
+      timing: "busy",
+      endChance: 0.5,
+      notice: "☕ 你幫{{char}}叫了一杯外帶咖啡",
+      note: "{{user}} 幫 {{char}} 叫了一杯外帶咖啡送過去，{{char}} 剛收到，停下手邊的事喝一口，順便拿手機回 {{user}}。",
+    },
+  },
+  {
+    id: "care_energy",
+    name: "能量飲料",
+    description: "他在忙的時候送過去：喝完一口氣衝刺，一定提早忙完",
+    price: 400,
+    category: "care",
+    rarity: "rare",
+    icon: "care-energy",
+    careUse: {
+      timing: "busy",
+      endChance: 1,
+      notice: "⚡ 你幫{{char}}送了一罐能量飲料",
+      note: "{{user}} 幫 {{char}} 送了一罐能量飲料，{{char}} 喝完精神一振，一口氣把手邊的事衝完了。",
+    },
+  },
+  {
+    id: "care_alarm",
+    name: "鬧鐘",
+    description: "他在睡的時候用，不用玩小遊戲：天亮後他會起床；天還沒亮只會把他吵醒一下，他會再睡回去",
+    price: 120,
+    category: "care",
+    rarity: "common",
+    icon: "care-alarm",
+    careUse: {
+      timing: "sleep",
+      endChance: 1,
+      notice: "⏰ 你幫{{char}}按響了鬧鐘",
+      note: "{{user}} 幫 {{char}} 按響了床邊的鬧鐘，{{char}} 被鬧鐘吵醒，伸手按掉，拿起手機看到 {{user}}。",
+    },
+  },
+  {
+    id: "care_breakfast",
+    name: "愛心早餐",
+    description: "天亮後他還在睡時送到床邊：他會被香味叫醒，開開心心起床",
+    price: 250,
+    category: "care",
+    rarity: "common",
+    icon: "care-breakfast",
+    careUse: {
+      timing: "sleepMorning",
+      endChance: 1,
+      notice: "🍳 你幫{{char}}準備了早餐",
+      note: "{{user}} 幫 {{char}} 準備了早餐送到床邊，{{char}} 被香味叫醒，心情很好，邊吃早餐邊回 {{user}}。",
+    },
+  },
+  {
+    id: "care_aroma",
+    name: "安眠香氛",
+    description: "晚上他還醒著時幫他點上：他會開始覺得睏，比較容易早點去睡",
+    price: 300,
+    category: "care",
+    rarity: "common",
+    icon: "care-aroma",
+    careUse: {
+      timing: "nightAwake",
+      notice: "🕯️ 你幫{{char}}點了安眠香氛",
+      note: "{{user}} 幫 {{char}} 點了安眠香氛，味道讓人很放鬆，{{char}} 開始覺得睏、眼皮變重。依 {{char}} 的個性回應香氛，如果沒有非醒著不可的事，就跟 {{user}} 道晚安，照去睡覺的說明放 <char-sleep>。",
+    },
+  },
+];
+
 // ===== 匯出所有商品 =====
 
 /** 所有商品列表 */
@@ -923,6 +1024,7 @@ export const SHOP_ITEMS: ShopItem[] = [
   ...ROD_ITEMS,
   ...GIFT_ITEMS,
   ...CONSUMABLE_ITEMS,
+  ...CARE_ITEMS,
 ];
 
 // ===== 輔助函數 =====

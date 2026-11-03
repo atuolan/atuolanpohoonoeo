@@ -16,6 +16,7 @@ import {
     isAvatarFrameSvg,
 } from "@/data/avatarFrames";
 import {
+    CARE_ITEMS,
     CONSUMABLE_ITEMS,
     FRAME_ITEMS,
     GIFT_ITEMS,
@@ -32,6 +33,7 @@ import {
     Fish,
     Frame,
     Gift,
+    HeartHandshake,
     Package,
     Palette,
     ShoppingBag,
@@ -40,6 +42,7 @@ import {
 } from "lucide-vue-next";
 import { computed, onMounted, ref } from "vue";
 import { getGiftIcon } from "@/utils/giftIcon";
+import { getCareIcon } from "@/utils/careIcon";
 import ChatSkinShopPanel from "@/components/shop/ChatSkinShopPanel.vue";
 
 const emit = defineEmits<{
@@ -67,6 +70,7 @@ const categories: CategoryTab[] = [
   { id: "rod", label: "魚竿", icon: Fish, items: ROD_ITEMS },
   { id: "gift", label: "禮物", icon: Gift, items: GIFT_ITEMS },
   { id: "consumable", label: "道具", icon: Package, items: CONSUMABLE_ITEMS },
+  { id: "care", label: "照顧他", icon: HeartHandshake, items: CARE_ITEMS },
 ];
 
 // 商城／禮物櫃
@@ -451,6 +455,11 @@ onMounted(async () => {
                 :is="getGiftIcon(item.id)"
                 :size="32"
               />
+              <component
+                v-else-if="item.category === 'care'"
+                :is="getCareIcon(item.id)"
+                :size="32"
+              />
               <div
                 v-else-if="item.category === 'frame' && isAvatarFrameSvg(item.id)"
                 class="svg-frame-preview"
@@ -591,6 +600,11 @@ onMounted(async () => {
                 <component
                   v-else-if="selectedItem.category === 'gift'"
                   :is="getGiftIcon(selectedItem.id)"
+                  :size="48"
+                />
+                <component
+                  v-else-if="selectedItem.category === 'care'"
+                  :is="getCareIcon(selectedItem.id)"
                   :size="48"
                 />
                 <div

@@ -48,8 +48,15 @@ import {
   isEasyWakeSleep,
   CHAR_WAKE_TAP_TARGET_MORNING,
 } from "@/services/charAway";
+import type { ShopItem } from "@/data/shopItems";
+import {
+  buildCareItemNote,
+  careItemStatus,
+  type CareItemStatus,
+} from "@/services/careItems";
 import {
   CHAR_AWAY_CHANGED_EVENT,
+  applyCareItemOnAway,
   cancelCharAway,
   cancelCharAwayPlan,
   finishCharAwaySneak,
@@ -99,6 +106,8 @@ export function useCharAway(ctx: {
   const charSleepEnabled = ref(true);
   const charBusyEnabled = ref(true);
   const now = ref(Date.now());
+  /** 晚上醒著用了道具（香氛）：下一輪回覆給 AI 的說明 */
+  const pendingCareNote = ref<string | null>(null);
   const quickBackGame = ref<null | {
     kind: "tap" | "rps";
     mode: CharAwayKind;
@@ -304,6 +313,7 @@ export function useCharAway(ctx: {
     const leftCount = away ? countLeftSinceSneak(away, entries) : 0;
 
     const notes = [
+      pendingCareNote.value,
       buildCharAwayReturnNote(away, leftCount),
       buildCharAwaySneakNote(away, leftCount),
       buildCharBusySpareNote(away, nowTs),
@@ -465,6 +475,59 @@ export function useCharAway(ctx: {
     }
   }
 
+  // --- 照顧他的道具 ---
+  /** 現在能不能用這個道具 */
+  function careItemStatusFor(item: ShopItem): CareItemStatus {
+    if (!item.careUse) return { ok: false, reason: "這個不能用在他身上" };
+    if (ctx.isGenerating()) return { ok: false, reason: "他正在回你" };
+    return careItemStatus(item.careUse, {
+      away: charAway.value,
+      now: Date.now(),
+      shiftMs: ctx.getClockShiftMs?.() ?? 0,
+      faceToFace: ctx.faceToFace.value,
+      isGroupChat: ctx.isGroupChat.value,
+      sleepEnabled: charSleepEnabled.value,
+    });
+  }
+
+  /**
+   * 用道具：改好他的狀態後呼叫 onApplied（扣背包、在聊天裡留一行），再讓他回一則。
+   * 不能用就回 false，onApplied 不會被呼叫。
+   */
+  async function applyCareItem(
+    item: ShopItem,
+    onApplied: () => Promise<void> | void,
+  ): Promise<boolean> {
+    const chatId = ctx.currentChatId.value;
+    if (!chatId || !item.careUse || !careItemStatusFor(item).ok) return false;
+
+    if (item.careUse.timing === "nightAwake") {
+      await onApplied();
+      pendingCareNote.value = buildCareItemNote(item);
+      try {
+        await ctx.triggerAIResponse();
+      } finally {
+        pendingCareNote.value = null;
+      }
+      return true;
+    }
+
+    const next = await applyCareItemOnAway(chatId, item);
+    if (!next) return false;
+    charAway.value = next;
+    await onApplied();
+
+    await ctx.triggerAIResponse();
+
+    // 沒回成功：跟小遊戲一樣收掉這一輪，狀態照舊
+    const current = charAway.value;
+    if (current && current.id === next.id && current.sneakPending) {
+      const finished = await finishCharAwaySneak(chatId, false);
+      if (finished) charAway.value = finished;
+    }
+    return true;
+  }
+
   // --- 時間到回來後自動接著回留言 ---
   function maybeAutoReply(): void {
     const away = charAway.value;
@@ -618,5 +681,7 @@ export function useCharAway(ctx: {
     openQuickBack,
     closeQuickBack,
     onQuickBackFinish,
+    careItemStatusFor,
+    applyCareItem,
   };
 }
