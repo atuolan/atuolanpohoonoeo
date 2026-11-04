@@ -906,7 +906,7 @@ export const CONSUMABLE_ITEMS: ShopItem[] = [
   {
     id: "item_bait",
     name: "高級魚餌",
-    description: "提升釣魚效率 30%，可使用 50 次",
+    description: "手動釣魚時，每次有 30% 機會多釣到一條，可使用 50 次",
     price: 400,
     category: "consumable",
     rarity: "common",
@@ -922,7 +922,7 @@ export const CONSUMABLE_ITEMS: ShopItem[] = [
     id: "item_auto_fish",
     name: "自動釣魚器",
     description:
-      "掛機釣魚效率 +50%，持續 5 小時（魚竿耐久歸零或達每日上限時暫停）",
+      "掛機釣魚效率 +50%，可以用 5 小時的掛機時間（沒在掛機、魚竿壞掉時不會扣）",
     price: 1000,
     category: "consumable",
     rarity: "rare",
@@ -1026,6 +1026,19 @@ export const SHOP_ITEMS: ShopItem[] = [
   ...CONSUMABLE_ITEMS,
   ...CARE_ITEMS,
 ];
+
+// ===== 消耗品次數 =====
+
+/** 消耗品一份有幾次（時間制換成分鐘）；不是用次數算的回 null */
+export function consumableUnitUses(item: ShopItem): number | null {
+  const effect = item.consumableEffect;
+  if (!effect) return null;
+  if (effect.usageType === "count") return effect.maxUses ?? null;
+  if (effect.usageType === "duration" && effect.duration) {
+    return Math.round(effect.duration / 60_000);
+  }
+  return null;
+}
 
 // ===== 輔助函數 =====
 

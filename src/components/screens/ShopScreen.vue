@@ -76,6 +76,18 @@ const categories: CategoryTab[] = [
 // 商城／禮物櫃
 const view = ref<"shop" | "cabinet">("shop");
 
+/** 背包裡還剩多少（次數制幾次、時間制幾小時幾分） */
+function consumableLeftText(item: ShopItem): string {
+  const left = gameEconomyStore.getConsumableUsesLeft(GLOBAL_WALLET_ID, item.id);
+  if (left <= 0) return "";
+  if (item.consumableEffect?.usageType === "duration") {
+    const h = Math.floor(left / 60);
+    const m = left % 60;
+    return `背包剩 ${h > 0 ? `${h} 小時` : ""}${m > 0 || h === 0 ? `${m} 分` : ""}`;
+  }
+  return `背包剩 ${left} 次`;
+}
+
 // 當前選擇的分類
 const activeCategory = ref<ShopCategory | "chatskin">("chatskin");
 
@@ -534,6 +546,9 @@ onMounted(async () => {
                   Math.round((item.consumableEffect.multiplier - 1) * 100)
                 }}%</span
               >
+              <span v-if="consumableLeftText(item)" class="consumable-left">{{
+                consumableLeftText(item)
+              }}</span>
             </div>
           </div>
         </div>

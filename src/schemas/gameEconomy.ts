@@ -101,6 +101,8 @@ export const InventoryItemSchema = z.object({
   type: ItemTypeSchema,
   quantity: z.number().positive(),
   acquiredAt: z.number(),
+  /** 消耗品：開封的這一份還剩幾次（時間制是剩幾分鐘）；沒有代表還沒開封 */
+  usesLeft: z.number().nonnegative().optional(),
 });
 
 // ===== 送禮記錄 =====
