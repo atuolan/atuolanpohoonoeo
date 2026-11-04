@@ -1,0 +1,151 @@
+{
+ "size": [
+  130,
+  282
+ ],
+ "layers": [
+  "wall",
+  "wainscot",
+  "floor"
+ ],
+ "items": [
+  {
+   "id": "laundry-basket",
+   "name": "洗衣籃",
+   "x": 96,
+   "y": 221,
+   "w": 24,
+   "h": 26,
+   "pixels": 496
+  },
+  {
+   "id": "bath-mat",
+   "name": "浴墊",
+   "x": 30,
+   "y": 240,
+   "w": 40,
+   "h": 6,
+   "pixels": 240
+  },
+  {
+   "id": "plant",
+   "name": "盆栽",
+   "x": 108,
+   "y": 126,
+   "w": 15,
+   "h": 27,
+   "pixels": 296
+  },
+  {
+   "id": "sink",
+   "name": "洗手台",
+   "x": 70,
+   "y": 108,
+   "w": 32,
+   "h": 47,
+   "pixels": 1120
+  },
+  {
+   "id": "toothbrush-cup",
+   "name": "牙刷杯",
+   "x": 92,
+   "y": 104,
+   "w": 4,
+   "h": 10,
+   "pixels": 31
+  },
+  {
+   "id": "towels",
+   "name": "毛巾",
+   "x": 104,
+   "y": 88,
+   "w": 22,
+   "h": 23,
+   "pixels": 386
+  },
+  {
+   "id": "mirror",
+   "name": "鏡子",
+   "x": 72,
+   "y": 64,
+   "w": 26,
+   "h": 34,
+   "pixels": 884
+  },
+  {
+   "id": "window",
+   "name": "小窗",
+   "x": 100,
+   "y": 38,
+   "w": 24,
+   "h": 20,
+   "pixels": 480
+  },
+  {
+   "id": "bathtub",
+   "name": "浴缸",
+   "x": 2,
+   "y": 124,
+   "w": 66,
+   "h": 33,
+   "pixels": 2062
+  },
+  {
+   "id": "skincare-shelf",
+   "name": "保養品架",
+   "x": 20,
+   "y": 88,
+   "w": 24,
+   "h": 13,
+   "pixels": 197
+  },
+  {
+   "id": "shower-head",
+   "name": "蓮蓬頭",
+   "x": 42,
+   "y": 62,
+   "w": 10,
+   "h": 32,
+   "pixels": 96
+  },
+  {
+   "id": "curtain",
+   "name": "浴簾",
+   "x": 3,
+   "y": 58,
+   "w": 62,
+   "h": 66,
+   "pixels": 892
+  },
+  {
+   "id": "duck",
+   "name": "小鴨",
+   "x": 54,
+   "y": 119,
+   "w": 8,
+   "h": 5,
+   "pixels": 36
+  }
+ ],
+ "wall": {
+  "x": 0,
+  "y": 0,
+  "w": 130,
+  "h": 84
+ },
+ "wainscot": {
+  "x": 0,
+  "y": 84,
+  "w": 130,
+  "h": 74
+ },
+ "floor": {
+  "x": 0,
+  "y": 158,
+  "w": 130,
+  "h": 124
+ },
+ "unassigned": 0,
+ "unassignedBox": null,
+ "recomposeMismatch": 0
+}

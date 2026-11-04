@@ -23,6 +23,7 @@
   "toleranceByRows": [[0, 127, 12]],   # 某些列用不同的容差（壁紙有漸層、雜點時）
   band 的 "mode": "fixed" + "colors": ["#e7c2a2", ...]   # 每列直接指定顏色（原圖亂掉的地方重畫成乾淨的橫條）
   band 的 "mode": "grooved" + "color"、"groove"、"period"、"offset"   # 護牆板：底色加每隔幾欄一條溝
+  band 的 "mode": "periodic2d" + "period": [12, 12]   # 磁磚：橫直都重複，同相位取家具框外的眾數
   floors 可以寫成 {"rows": [a, b], "period": 13, "mode": "row"}  # row：同相位的列取全寬（家具框外）最常見的顏色
   "fillHoles": true   # 家具中間被當成背景的小洞（顏色剛好跟背景很像）補回原圖的顏色
   家具另外可以設：
@@ -76,6 +77,19 @@ if bands and isinstance(bands[0], list):
     bands = [{"rows": b, "mode": "periodic", "cleanCols": cfg["bandCleanCols"]} for b in bands]
 for band in bands:
     b0, b1 = band["rows"]
+    if band["mode"] == "periodic2d":
+        # 磁磚：橫直都重複，同相位（x、y 各除以週期的餘數）取家具框外最常見的顏色
+        ppx, ppy = band["period"]
+        for ry in range(ppy):
+            for rx in range(ppx):
+                pts = [(x, y) for y in range(b0 + ry, b1, ppy) for x in range(rx, W, ppx)]
+                votes = Counter(px[x, y] for x, y in pts if not in_boxes(x, y, all_boxes)) or Counter(px[x, y] for x, y in pts)
+                if not votes:
+                    continue
+                color = votes.most_common(1)[0][0]
+                for x, y in pts:
+                    bg[y][x] = color
+        continue
     for y in range(b0, b1):
         if band["mode"] == "grooved":
             base = tuple(int(band["color"].lstrip("#")[i : i + 2], 16) for i in (0, 2, 4))
