@@ -45,7 +45,7 @@ export function usePeerTransferStatus() {
           peerDeviceId: t.targetDeviceId,
           text:
             t.direction === "push"
-              ? `傳到 ${name}：${formatCount(t.done, t.total)}`
+              ? `${name} 已接受，寫入中：${formatCount(t.done, t.total)}`
               : `從 ${name} 下載：${formatCount(t.done, t.total)}`,
           percent: percent(t.done),
         };

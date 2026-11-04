@@ -35,7 +35,11 @@ type PendingRequest<T> = {
   expectedResponseType: PeerMessage["type"];
   timer: ReturnType<typeof setTimeout>;
   startedAt: number;
+  timeoutMs: number;
   accumulator?: unknown;
+  /** 對方回 peer:accepted 時呼叫（只會呼叫一次） */
+  onAccepted?: () => void;
+  accepted?: boolean;
 };
 
 type FetchAccumulator = {
@@ -117,6 +121,22 @@ class PeerSyncSecureManager {
       return;
     }
 
+    if (message.type === "peer:accepted") {
+      // 對方接受了：等人按的時間不算，從現在重新計時，並通知畫面換成「對方寫入中」
+      clearTimeout(pending.timer);
+      pending.timer = this.armTimeout(message.requestId, pending.expectedResponseType, pending.timeoutMs);
+      if (!pending.accepted) {
+        pending.accepted = true;
+        this.log("對方已接受", {
+          requestId: message.requestId,
+          expectedResponseType: pending.expectedResponseType,
+          waitedMs: Date.now() - pending.startedAt,
+        });
+        pending.onAccepted?.();
+      }
+      return;
+    }
+
     if (message.type === "peer:error") {
       clearTimeout(pending.timer);
       this.pending.delete(message.requestId);
@@ -173,31 +193,50 @@ class PeerSyncSecureManager {
     return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
   }
 
+  /** 逾時就把這個 request 從 pending 拿掉並 reject；錯誤帶 peerTimeout，畫面才能講人話 */
+  private armTimeout(
+    requestId: string,
+    expectedResponseType: PeerMessage["type"],
+    timeoutMs: number,
+  ): ReturnType<typeof setTimeout> {
+    return setTimeout(() => {
+      const pending = this.pending.get(requestId);
+      if (!pending) return;
+      this.pending.delete(requestId);
+      this.warn("等待 peer 回應逾時", {
+        requestId,
+        expectedResponseType,
+        timeoutMs,
+        elapsedMs: Date.now() - pending.startedAt,
+        accepted: !!pending.accepted,
+      });
+      pending.reject(
+        Object.assign(new Error(`Peer request ${requestId} timed out after ${timeoutMs}ms`), {
+          peerTimeout: true,
+          peerTimeoutStage: expectedResponseType,
+          peerTimeoutMs: timeoutMs,
+        }),
+      );
+    }, timeoutMs);
+  }
+
   private registerPending<T>(
     requestId: string,
     expectedResponseType: PeerMessage["type"],
     timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS,
     accumulator?: unknown,
+    onAccepted?: () => void,
   ): Promise<T> {
     return new Promise<T>((resolve, reject) => {
-      const startedAt = Date.now();
-      const timer = setTimeout(() => {
-        this.pending.delete(requestId);
-        this.warn("等待 peer 回應逾時", {
-          requestId,
-          expectedResponseType,
-          timeoutMs,
-          elapsedMs: Date.now() - startedAt,
-        });
-        reject(new Error(`Peer request ${requestId} timed out after ${timeoutMs}ms`));
-      }, timeoutMs);
       this.pending.set(requestId, {
         resolve: resolve as (value: unknown) => void,
         reject,
         expectedResponseType,
-        timer,
-        startedAt,
+        timer: this.armTimeout(requestId, expectedResponseType, timeoutMs),
+        startedAt: Date.now(),
+        timeoutMs,
         accumulator,
+        onAccepted,
       });
     });
   }
@@ -362,14 +401,7 @@ class PeerSyncSecureManager {
   }
 
   async collectLocalManifest(): Promise<PeerManifestEntry[]> {
-    const service = getSelfHostedSyncService();
-    const envelopes = await service.collectAllEnvelopesForManifest();
-    return envelopes.map((item) => ({
-      entityType: item.entityType,
-      entityId: item.entityId,
-      updatedAt: item.updatedAt,
-      deletedAt: item.deletedAt,
-    }));
+    return getSelfHostedSyncService().collectManifestRefs();
   }
 
   computeDiff(local: PeerManifestEntry[], remote: PeerManifestEntry[]) {
@@ -413,6 +445,7 @@ class PeerSyncSecureManager {
     entityRefs: PeerEntityRef[],
     sessionId: string,
     onProgress?: PeerTransferProgressCallback,
+    onAccepted?: () => void,
   ): Promise<SelfHostedSyncEntityEnvelope[]> {
     if (entityRefs.length === 0) return [];
     if (!isPeerSyncSocketOpen()) {
@@ -428,6 +461,7 @@ class PeerSyncSecureManager {
       "peer:fetch-response",
       FETCH_REQUEST_TIMEOUT_MS,
       accumulator,
+      onAccepted,
     );
     const encryptedPayload = await this.crypto.encrypt(targetDeviceId, sessionId, {
       entityRefs,
@@ -448,6 +482,7 @@ class PeerSyncSecureManager {
     envelopes: SelfHostedSyncEntityEnvelope[],
     sessionId: string,
     onProgress?: PeerTransferProgressCallback,
+    onAccepted?: () => void,
   ): Promise<PeerApplyResponse> {
     if (!isPeerSyncSocketOpen()) {
       throw new Error("WebSocket 未連線，無法進行同步");
@@ -481,12 +516,20 @@ class PeerSyncSecureManager {
 
     const batches = buildBatches();
     let done = 0;
+    let acceptedNotified = false;
+    const notifyAccepted = () => {
+      if (acceptedNotified) return;
+      acceptedNotified = true;
+      onAccepted?.();
+    };
     const batchPromises = batches.map(async (batch) => {
       const requestId = this.nextRequestId("apply");
       const promise = this.registerPending<PeerApplyResponse>(
         requestId,
         "peer:apply-response",
         APPLY_REQUEST_TIMEOUT_MS,
+        undefined,
+        notifyAccepted,
       );
       const encryptedPayload = await this.crypto.encrypt(targetDeviceId, sessionId, {
         envelopes: batch,

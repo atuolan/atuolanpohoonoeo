@@ -38,8 +38,10 @@ import { useSelfHostedSyncStore } from "@/stores/selfHostedSync";
 import { useSettingsStore } from "@/stores/settings";
 import { recordRuntimeDiagnostic, updateRuntimeSessionStage } from "@/utils/runtimeDiagnostics";
 import type {
+  PeerManifestEntry,
   SelfHostedSyncContentSnapshot,
   SelfHostedSyncEntityEnvelope,
+  SelfHostedSyncEntityType,
   SelfHostedSyncGuardAlert,
   SelfHostedSyncPullResponse,
   SyncCharacterPayload,
@@ -91,6 +93,122 @@ export class SelfHostedSyncService {
    */
   async collectAllEnvelopesForManifest(): Promise<SelfHostedSyncEntityEnvelope[]> {
     return this.collectPushItems({ incremental: false });
+  }
+
+  /**
+   * 供 PeerSync 使用：只取指定的那幾筆完整 envelope（推送、對方拉取時用）。
+   * 用不到的類別整個略過，不用為了幾筆資料把整個資料庫的內容都複製一遍。
+   */
+  async collectEnvelopesForRefs(
+    refs: Array<{ entityType: string; entityId: string }>,
+  ): Promise<SelfHostedSyncEntityEnvelope[]> {
+    if (refs.length === 0) return [];
+    const wanted = new Set(refs.map((ref) => `${ref.entityType}::${ref.entityId}`));
+    return this.collectPushItems({ incremental: false, wanted });
+  }
+
+  /**
+   * 供 PeerSync 的 hash／manifest 使用：只收集每筆資料的類別、ID 和時間，不組 payload。
+   *
+   * 和 collectPushItems 走同樣的資料來源、算出同樣的 updatedAt／deletedAt，
+   * 兩邊的 hash 和 manifest 才對得上（對方可能還是舊版、用完整 envelope 算的）。
+   * 舊做法每次比對都把角色、世界書、設定等整份深拷貝，資料多的手機要跑很久，
+   * 對方等 60 秒等不到就逾時。
+   */
+  async collectManifestRefs(): Promise<PeerManifestEntry[]> {
+    const refs: PeerManifestEntry[] = [];
+    const add = (
+      entityType: SelfHostedSyncEntityType,
+      entityId: string,
+      updatedAt: number,
+      deletedAt: number | null = null,
+    ) => {
+      refs.push({ entityType, entityId, updatedAt, deletedAt });
+    };
+
+    await this.saveCurrentSettingsBeforeCollect();
+
+    const settings = await loadSettingsData();
+    if (settings) {
+      add("settings_preferences", settings.id, settings.updatedAt);
+      add("settings_full", settings.id, settings.updatedAt);
+    }
+
+    const qzoneSettings = await getSetting<QZoneSettings>("qzone-settings");
+    const qzoneAutoInteraction = await getSetting<AutoInteractionConfig>(
+      "qzone-auto-interaction",
+    );
+    if (qzoneSettings || qzoneAutoInteraction) {
+      const qzoneSettingsUpdatedAt = Math.max(
+        settings?.updatedAt ?? 0,
+        this.computeUpdatedAt(qzoneSettings),
+        this.computeUpdatedAt(qzoneAutoInteraction),
+      );
+      add("qzone_settings", "qzone-settings", qzoneSettingsUpdatedAt || Date.now());
+    }
+
+    for (const post of await getAllQzonePosts()) {
+      add("qzone_post", post.id, post.timestamp);
+    }
+    for (const character of await db.getAll<StoredCharacter>(DB_STORES.CHARACTERS)) {
+      add("character", character.id, character.updatedAt);
+    }
+    for (const lorebook of await db.getAll<Lorebook>(DB_STORES.LOREBOOKS)) {
+      add("lorebook", lorebook.id, lorebook.updatedAt);
+    }
+    // 這兩類的 envelope 本來就用 Date.now() 當 updatedAt，照抄才和 collectPushItems 一致
+    for (const item of await db.getAll<PromptDefinition>(DB_STORES.PROMPT_LIBRARY)) {
+      add("prompt_library_item", item.identifier, Date.now());
+    }
+    for (const category of await db.getAll<StickerCategory>(DB_STORES.STICKERS)) {
+      add("sticker_category", category.id, Date.now());
+    }
+    const userData = await db.get<UserData>(DB_STORES.APP_SETTINGS, "user-data");
+    if (userData) {
+      add("user_data", userData.id, userData.updatedAt);
+    }
+    for (const summary of await db.getAll<ConversationSummary>(DB_STORES.SUMMARIES)) {
+      add(
+        "conversation_summary",
+        summary.id,
+        summary.updatedAt ?? summary.createdAt ?? Date.now(),
+      );
+    }
+    for (const log of await db.getAll<ImportantEventsLog>(DB_STORES.IMPORTANT_EVENTS)) {
+      add("important_events_log", log.id, log.updatedAt ?? log.createdAt ?? Date.now());
+    }
+    for (const diary of await db.getAll<DiaryEntry>(DB_STORES.DIARIES)) {
+      add("diary_entry", diary.id, diary.updatedAt ?? diary.createdAt ?? Date.now());
+    }
+
+    const chats = await loadAllChats();
+    for (let index = 0; index < chats.length; index += 1) {
+      const chat = chats[index];
+      add("chat_record", chat.id, chat.updatedAt);
+      for (const message of await loadMessages(chat.id)) {
+        add("chat_message", message.id, message.updatedAt);
+      }
+      if ((index + 1) % SelfHostedSyncService.COOPERATIVE_YIELD_EVERY === 0) {
+        await this.cooperativeYield("manifest refs chats", { done: index + 1, total: chats.length });
+      }
+    }
+
+    for (const deletedItem of await loadDeletedEntities()) {
+      add(deletedItem.entityType, deletedItem.entityId, deletedItem.updatedAt, deletedItem.deletedAt);
+    }
+
+    return refs;
+  }
+
+  private async saveCurrentSettingsBeforeCollect(): Promise<void> {
+    try {
+      const settingsStore = useSettingsStore();
+      if (settingsStore.isLoaded) {
+        await settingsStore.saveSettings();
+      }
+    } catch (error) {
+      console.warn("[SelfHostedSyncService] 同步前保存當前 API/設定狀態失敗，改用 IndexedDB 既有設定:", error);
+    }
   }
 
   /**
@@ -434,100 +552,144 @@ export class SelfHostedSyncService {
   }
 
   private async collectPushItems(
-    options?: { incremental?: boolean },
+    options?: {
+      incremental?: boolean;
+      /** 只要這些 `${entityType}::${entityId}`；沒給就是全部 */
+      wanted?: Set<string>;
+    },
   ): Promise<SelfHostedSyncEntityEnvelope[]> {
     const items: SelfHostedSyncEntityEnvelope[] = [];
+    const wanted = options?.wanted ?? null;
+    const wantedTypes = wanted
+      ? new Set(Array.from(wanted, (key) => key.slice(0, key.indexOf("::"))))
+      : null;
+    const needType = (entityType: SelfHostedSyncEntityType) =>
+      !wantedTypes || wantedTypes.has(entityType);
+    const needItem = (entityType: SelfHostedSyncEntityType, entityId: string) =>
+      !wanted || wanted.has(`${entityType}::${entityId}`);
 
-    try {
-      const settingsStore = useSettingsStore();
-      if (settingsStore.isLoaded) {
-        await settingsStore.saveSettings();
-      }
-    } catch (error) {
-      console.warn("[SelfHostedSyncService] 同步前保存當前 API/設定狀態失敗，改用 IndexedDB 既有設定:", error);
-    }
+    await this.saveCurrentSettingsBeforeCollect();
 
     const settings = await loadSettingsData();
     if (settings) {
-      items.push(toSyncSettingsPreferencesEnvelope(settings));
-      items.push(toSyncSettingsFullEnvelope(settings));
+      if (needItem("settings_preferences", settings.id)) {
+        items.push(toSyncSettingsPreferencesEnvelope(settings));
+      }
+      if (needItem("settings_full", settings.id)) {
+        items.push(toSyncSettingsFullEnvelope(settings));
+      }
     }
 
-    const qzoneSettings = await getSetting<QZoneSettings>("qzone-settings");
-    const qzoneAutoInteraction = await getSetting<AutoInteractionConfig>(
-      "qzone-auto-interaction",
-    );
-    const qzoneSettingsUpdatedAt = Math.max(
-      settings?.updatedAt ?? 0,
-      this.computeUpdatedAt(qzoneSettings),
-      this.computeUpdatedAt(qzoneAutoInteraction),
-    );
-    if (qzoneSettings || qzoneAutoInteraction) {
-      items.push(
-        toSyncQZoneSettingsEnvelope(
-          qzoneSettings ?? this.createDefaultQZoneSettings(),
-          qzoneAutoInteraction ?? this.createDefaultQZoneAutoInteraction(),
-          qzoneSettingsUpdatedAt || Date.now(),
-        ),
+    if (needItem("qzone_settings", "qzone-settings")) {
+      const qzoneSettings = await getSetting<QZoneSettings>("qzone-settings");
+      const qzoneAutoInteraction = await getSetting<AutoInteractionConfig>(
+        "qzone-auto-interaction",
       );
+      const qzoneSettingsUpdatedAt = Math.max(
+        settings?.updatedAt ?? 0,
+        this.computeUpdatedAt(qzoneSettings),
+        this.computeUpdatedAt(qzoneAutoInteraction),
+      );
+      if (qzoneSettings || qzoneAutoInteraction) {
+        items.push(
+          toSyncQZoneSettingsEnvelope(
+            qzoneSettings ?? this.createDefaultQZoneSettings(),
+            qzoneAutoInteraction ?? this.createDefaultQZoneAutoInteraction(),
+            qzoneSettingsUpdatedAt || Date.now(),
+          ),
+        );
+      }
     }
 
-    const qzonePosts = await getAllQzonePosts();
-    for (const post of qzonePosts) {
-      items.push(toSyncQZonePostEnvelope(post));
+    if (needType("qzone_post")) {
+      const qzonePosts = await getAllQzonePosts();
+      for (const post of qzonePosts) {
+        if (needItem("qzone_post", post.id)) items.push(toSyncQZonePostEnvelope(post));
+      }
     }
 
-    const characters = await db.getAll<StoredCharacter>(DB_STORES.CHARACTERS);
-    for (const character of characters) {
-      items.push(toSyncCharacterEnvelope(character));
+    if (needType("character")) {
+      const characters = await db.getAll<StoredCharacter>(DB_STORES.CHARACTERS);
+      for (const character of characters) {
+        if (needItem("character", character.id)) items.push(toSyncCharacterEnvelope(character));
+      }
     }
 
-    const lorebooks = await db.getAll<Lorebook>(DB_STORES.LOREBOOKS);
-    for (const lorebook of lorebooks) {
-      items.push(toSyncLorebookEnvelope(lorebook));
+    if (needType("lorebook")) {
+      const lorebooks = await db.getAll<Lorebook>(DB_STORES.LOREBOOKS);
+      for (const lorebook of lorebooks) {
+        if (needItem("lorebook", lorebook.id)) items.push(toSyncLorebookEnvelope(lorebook));
+      }
     }
 
-    const promptLibraryItems = await db.getAll<PromptDefinition>(DB_STORES.PROMPT_LIBRARY);
-    for (const item of promptLibraryItems) {
-      items.push(toSyncPromptLibraryItemEnvelope(item));
+    if (needType("prompt_library_item")) {
+      const promptLibraryItems = await db.getAll<PromptDefinition>(DB_STORES.PROMPT_LIBRARY);
+      for (const item of promptLibraryItems) {
+        if (needItem("prompt_library_item", item.identifier)) {
+          items.push(toSyncPromptLibraryItemEnvelope(item));
+        }
+      }
     }
 
-    const stickerCategories = await db.getAll<StickerCategory>(DB_STORES.STICKERS);
-    for (const category of stickerCategories) {
-      items.push(toSyncStickerCategoryEnvelope(category));
+    if (needType("sticker_category")) {
+      const stickerCategories = await db.getAll<StickerCategory>(DB_STORES.STICKERS);
+      for (const category of stickerCategories) {
+        if (needItem("sticker_category", category.id)) {
+          items.push(toSyncStickerCategoryEnvelope(category));
+        }
+      }
     }
 
-    const userData = await db.get<UserData>(DB_STORES.APP_SETTINGS, "user-data");
-    if (userData) {
-      items.push(toSyncUserDataEnvelope(userData));
+    if (needType("user_data")) {
+      const userData = await db.get<UserData>(DB_STORES.APP_SETTINGS, "user-data");
+      if (userData && needItem("user_data", userData.id)) {
+        items.push(toSyncUserDataEnvelope(userData));
+      }
     }
 
-    const summaries = await db.getAll<ConversationSummary>(DB_STORES.SUMMARIES);
-    for (const summary of summaries) {
-      items.push(toSyncConversationSummaryEnvelope(summary));
+    if (needType("conversation_summary")) {
+      const summaries = await db.getAll<ConversationSummary>(DB_STORES.SUMMARIES);
+      for (const summary of summaries) {
+        if (needItem("conversation_summary", summary.id)) {
+          items.push(toSyncConversationSummaryEnvelope(summary));
+        }
+      }
     }
 
-    const importantEventsLogs = await db.getAll<ImportantEventsLog>(DB_STORES.IMPORTANT_EVENTS);
-    for (const log of importantEventsLogs) {
-      items.push(toSyncImportantEventsLogEnvelope(log));
+    if (needType("important_events_log")) {
+      const importantEventsLogs = await db.getAll<ImportantEventsLog>(DB_STORES.IMPORTANT_EVENTS);
+      for (const log of importantEventsLogs) {
+        if (needItem("important_events_log", log.id)) {
+          items.push(toSyncImportantEventsLogEnvelope(log));
+        }
+      }
     }
 
-    const diaries = await db.getAll<DiaryEntry>(DB_STORES.DIARIES);
-    for (const diary of diaries) {
-      items.push(toSyncDiaryEntryEnvelope(diary));
+    if (needType("diary_entry")) {
+      const diaries = await db.getAll<DiaryEntry>(DB_STORES.DIARIES);
+      for (const diary of diaries) {
+        if (needItem("diary_entry", diary.id)) items.push(toSyncDiaryEntryEnvelope(diary));
+      }
     }
 
-    const chats = await loadAllChats();
-    for (const chat of chats) {
-      items.push(toSyncChatRecordEnvelope(chat));
-      const messages = await loadMessages(chat.id);
-      for (const message of messages) {
-        items.push(toSyncChatMessageEnvelope(chat.id, message));
+    if (needType("chat_record") || needType("chat_message")) {
+      const chats = await loadAllChats();
+      const wantMessages = needType("chat_message");
+      for (const chat of chats) {
+        if (needItem("chat_record", chat.id)) items.push(toSyncChatRecordEnvelope(chat));
+        if (!wantMessages) continue;
+        const messages = await loadMessages(chat.id);
+        for (const message of messages) {
+          if (needItem("chat_message", message.id)) {
+            items.push(toSyncChatMessageEnvelope(chat.id, message));
+          }
+        }
       }
     }
 
     const deletedItems = await loadDeletedEntities();
     for (const deletedItem of deletedItems) {
+      if (!needItem(deletedItem.entityType, deletedItem.entityId)) continue;
       items.push({
         entityType: deletedItem.entityType,
         entityId: deletedItem.entityId,

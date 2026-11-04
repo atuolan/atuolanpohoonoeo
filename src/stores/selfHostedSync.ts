@@ -877,21 +877,18 @@ export const useSelfHostedSyncStore = defineStore("selfHostedSync", () => {
             entityType: e.entityType,
             entityId: e.entityId,
           }));
-          const allLocal = await getSelfHostedSyncService().collectAllEnvelopesForManifest();
-          const byKey = new Map(
-            allLocal.map((env) => [`${env.entityType}::${env.entityId}`, env]),
-          );
-          const envelopes = wantRefs
-            .map((r) => byKey.get(`${r.entityType}::${r.entityId}`))
-            .filter(
-              (e): e is NonNullable<typeof e> => e !== undefined,
-            );
+          const envelopes = await getSelfHostedSyncService().collectEnvelopesForRefs(wantRefs);
           console.log(LOG_TAG, "4/4 推送 envelope", {
             count: envelopes.length,
           });
           setPeerTransferStage("waiting", 0, envelopes.length);
-          const resp = await manager.requestApply(targetDeviceId, envelopes, sessionId, (done, total) =>
-            setPeerTransferStage("transferring", done, total),
+          const resp = await manager.requestApply(
+            targetDeviceId,
+            envelopes,
+            sessionId,
+            (done, total) => setPeerTransferStage("transferring", done, total),
+            // 對方一按接受就換掉「等對方按接受」，不然寫入第一批之前畫面都沒動靜
+            () => setPeerTransferStage("transferring", 0, envelopes.length),
           );
           applied = resp.applied ?? 0;
           const rejectedByUser = resp.rejected?.some((r) => r.reason === "rejected-by-user") ?? false;
@@ -919,8 +916,12 @@ export const useSelfHostedSyncStore = defineStore("selfHostedSync", () => {
           }));
           console.log(LOG_TAG, "4/4 發送 fetch-request", { refs: refs.length });
           setPeerTransferStage("waiting", 0, refs.length);
-          const envelopes = await manager.requestFetch(targetDeviceId, refs, sessionId, (done, total) =>
-            setPeerTransferStage("transferring", done, total),
+          const envelopes = await manager.requestFetch(
+            targetDeviceId,
+            refs,
+            sessionId,
+            (done, total) => setPeerTransferStage("transferring", done, total),
+            () => setPeerTransferStage("transferring", 0, refs.length),
           );
           console.log(LOG_TAG, "fetch 完成，準備寫入本機", {
             envelopeCount: envelopes.length,
