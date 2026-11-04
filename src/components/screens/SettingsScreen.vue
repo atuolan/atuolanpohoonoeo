@@ -55,6 +55,7 @@ const pageComponents: Record<SubPageId, Component> = {
   notification: lazyPage(() => import("@/components/settings/pages/NotificationPage.vue")),
   background: lazyPage(() => import("@/components/settings/pages/BackgroundPage.vue")),
   phone: lazyPage(() => import("@/components/settings/pages/PhonePage.vue")),
+  homeScreen: lazyPage(() => import("@/components/settings/pages/HomeScreenPage.vue")),
   backup: lazyPage(() => import("@/components/settings/pages/BackupPage.vue")),
   sync: lazyPage(() => import("@/components/settings/pages/SyncPage.vue")),
   storage: lazyPage(() => import("@/components/settings/pages/StoragePage.vue")),

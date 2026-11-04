@@ -22,6 +22,7 @@ import {
   CupSoda,
   FileText,
   HardDrive,
+  House,
   Mailbox,
   MapPin,
   Mic,
@@ -34,6 +35,7 @@ import {
   Split,
   SquareTerminal,
 } from "lucide-vue-next";
+import { loadPixelHouseState } from "@/components/pixelHouse/houseState";
 import { computed, onActivated, onMounted, ref, type Component } from "vue";
 import { useApiProfiles } from "./composables/useApiProfiles";
 import { formatRelativeTime, getEndpointHost, getProviderLabel } from "./settingsHelpers";
@@ -91,6 +93,14 @@ onMounted(refreshSummaries);
 onActivated(refreshSummaries);
 onMounted(refreshPhoneCalendarMethod);
 onActivated(refreshPhoneCalendarMethod);
+
+// 主頁樣式存在 localStorage，回到首頁時重讀
+const homeStyleLabel = ref("");
+function refreshHomeStyle() {
+  homeStyleLabel.value = loadPixelHouseState().homeStyle === "pixel-house" ? "像素小屋" : "畫布";
+}
+onMounted(refreshHomeStyle);
+onActivated(refreshHomeStyle);
 
 // ===== 清單 =====
 type Hue = "mint" | "sky" | "lavender" | "butter" | "peach" | "slate" | "pink" | "grey";
@@ -233,6 +243,14 @@ const groups = computed<Array<{ title: string; items: HomeItem[] }>>(() => [
         hue: "mint",
         value: phoneCalendarMethodLabel.value,
         onClick: () => emit("open", "phone"),
+      },
+      {
+        key: "homeScreen",
+        label: "主頁",
+        icon: House,
+        hue: "pink",
+        value: homeStyleLabel.value,
+        onClick: () => emit("open", "homeScreen"),
       },
     ],
   },
