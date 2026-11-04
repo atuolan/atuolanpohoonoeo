@@ -49,6 +49,11 @@ export interface MiniMaxTTSSettings {
   timberWeights: TimberWeight[];
   /** 是否啟用音色混合 */
   timberWeightsEnabled: boolean;
+  /**
+   * 聊天訊息一回覆就把所有段落的語音都生成好。
+   * 關掉（預設）時只在點播放按鈕時才生成那一段，沒聽的句子不花錢；通話不受影響。
+   */
+  autoGenerate?: boolean;
 }
 
 export interface MiniMaxTTSResponse {
@@ -180,6 +185,7 @@ export function createDefaultMiniMaxTTSSettings(): MiniMaxTTSSettings {
     sampleRate: 32000,
     timberWeights: [],
     timberWeightsEnabled: false,
+    autoGenerate: false,
   };
 }
 

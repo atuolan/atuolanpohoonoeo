@@ -3621,6 +3621,7 @@ const {
   closeMinimaxTTSSettings,
   saveMinimaxTTSSettings,
   processMessageTTS,
+  synthesizeMessageTTSSegment,
   regenerateMessageTTS,
 } = useChatTTS({
   messages,
@@ -3630,6 +3631,14 @@ const {
   saveChat,
   resolveSpeakerId: (name) => resolveGroupMemberByName(name).characterId,
 });
+/** 訊息的語音按鈕被點了、那段還沒生成：現在才生成（沒聽的句子不花錢） */
+async function requestTtsSegment(messageId: string, index: number) {
+  const result = await synthesizeMessageTTSSegment(messageId, index);
+  if (result.success) return result.audioUrl;
+  if (result.reason === "missing-api-key") showToast("請先設定 MiniMax API Key");
+  else if (result.reason === "synthesis-failed") showToast("語音生成失敗，請重試");
+  return undefined;
+}
 /** 全域音色混合實際會送出的音色數（0 表示沒在用混合） */
 const globalTimbreMixCount = computed(
   () => getActiveTimbreWeights(settingsStore.minimaxTTS).length,
@@ -12621,6 +12630,7 @@ useChatCleanup({
             :disabled-regex-ids="chatDisabledRegexIds"
             :tts-audio-url="message.ttsAudioUrl"
             :tts-segments="message.ttsSegments"
+            :request-tts-segment="requestTtsSegment"
             :audio-blob="message._audioBlob || null"
             :audio-blob-id="message.audioBlobId"
             :audio-duration="message.audioDuration"

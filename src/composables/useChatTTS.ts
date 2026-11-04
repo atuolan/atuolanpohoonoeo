@@ -41,6 +41,13 @@ export type MessageTTSRegenerationResult =
         | "synthesis-failed";
     };
 
+export type MessageTTSSegmentResult =
+  | { success: true; audioUrl: string }
+  | {
+      success: false;
+      reason: "missing-api-key" | "not-found" | "synthesis-failed";
+    };
+
 export function useChatTTS(context: {
   messages: Ref<Message[]>;
   chatMinimaxTTSEnabled: Ref<boolean>;
@@ -53,6 +60,8 @@ export function useChatTTS(context: {
   const chatMinimaxTTSOverride = ref<ChatMinimaxTTSOverride>({});
   const showMinimaxTTSSettingsModal = ref(false);
   const regeneratingMessageIds = new Set<string>();
+  /** 正在生成中的段落（key = messageId#index），避免連點重複扣費 */
+  const segmentJobs = new Map<string, Promise<MessageTTSSegmentResult>>();
 
   async function toggleMinimaxTTS() {
     context.chatMinimaxTTSEnabled.value = !context.chatMinimaxTTSEnabled.value;
@@ -74,16 +83,109 @@ export function useChatTTS(context: {
     showMinimaxTTSSettingsModal.value = false;
   }
 
+  /** MiniMax 回傳的是 Aliyun OSS 簽名 URL（約 24h 後過期），下載轉成 base64 data URL 保存 */
+  async function persistAudioUrl(audioUrl: string): Promise<string> {
+    try {
+      const audioResp = await fetch(audioUrl);
+      if (!audioResp.ok) {
+        console.warn(
+          `[MiniMax TTS] 下載音頻失敗，HTTP ${audioResp.status}，仍使用臨時 URL`,
+        );
+        return audioUrl;
+      }
+      const blob = await audioResp.blob();
+      return await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          const r = reader.result;
+          if (typeof r === "string") resolve(r);
+          else reject(new Error("FileReader 結果非字串"));
+        };
+        reader.onerror = () => reject(reader.error);
+        reader.readAsDataURL(blob);
+      });
+    } catch (fetchErr) {
+      console.warn("[MiniMax TTS] 下載音頻失敗，仍使用臨時 URL：", fetchErr);
+      return audioUrl;
+    }
+  }
+
   /**
-   * 處理 AI 回覆的 TTS 語音合成
+   * 合成一則訊息的第 index 段並寫回 audioUrl（不存檔）。
+   * 設定在合成當下才讀，所以點播放時用的是最新的音色、語速。
+   */
+  async function synthesizeSegment(
+    messageId: string,
+    index: number,
+  ): Promise<string | undefined> {
+    const message = context.messages.value.find((m) => m.id === messageId);
+    const seg = message?.ttsSegments?.[index];
+    if (!message || !seg) return undefined;
+
+    const { synthesizeSpeech } = await import("@/api/MiniMaxTTSApi");
+    const override = chatMinimaxTTSOverride.value;
+    const memberVoice = (id: string | undefined) => (id && override.memberVoices?.[id]?.trim()) || undefined;
+    // 群聊：說話的成員有自己的音色就用它，其次才是這個聊天的音色
+    const senderVoice = memberVoice(message.senderCharacterId);
+    const baseSettings = {
+      ...context.settingsStore.minimaxTTS,
+      ...(override.pitch !== undefined && { pitch: override.pitch }),
+      ...(override.languageBoost !== undefined && { languageBoost: override.languageBoost }),
+    };
+    // 聊天設定的語速是基準，AI 標的 speed 是相對快慢（1 = 照基準）
+    const baseSpeed = override.speed ?? baseSettings.speed ?? 1;
+    // 多人卡面對面一則訊息有好幾個人說話，台詞自己標的說話者優先
+    const speakerVoice = seg.speaker
+      ? memberVoice(context.resolveSpeakerId?.(seg.speaker))
+      : undefined;
+    const voiceId = speakerVoice || senderVoice || override.voiceId;
+    // 每段用自己的 speed 和 emotion
+    const mergedSettings = {
+      ...baseSettings,
+      // 成員或聊天自己指定的音色優先於全域的音色混合
+      ...(voiceId && { voiceId, timberWeightsEnabled: false }),
+      speed: baseSpeed * (seg.speed ?? 1),
+    };
+    const ttsText = convertTTSContentToSimplified(seg.text, mergedSettings.languageBoost);
+
+    const result = await synthesizeSpeech(ttsText, mergedSettings, {
+      emotion: seg.emotion !== "neutral" ? seg.emotion : override.emotion,
+    });
+    if (!result.success || !result.audioUrl) {
+      console.warn(`[MiniMax TTS] 段落 ${index} 合成失敗:`, result.error);
+      return undefined;
+    }
+
+    const persistedUrl = await persistAudioUrl(result.audioUrl);
+
+    // 合成期間訊息可能被重新生成，段落換了就不寫回去
+    const current = context.messages.value.find((m) => m.id === messageId);
+    const segment = current?.ttsSegments?.[index];
+    if (!current || !segment || segment.text !== seg.text) return undefined;
+    segment.audioUrl = persistedUrl;
+    // 向下相容：第一段也寫入 ttsAudioUrl
+    if (index === 0) {
+      current.ttsAudioUrl = persistedUrl;
+    }
+    return persistedUrl;
+  }
+
+  /**
+   * 處理 AI 回覆的 TTS 語音
    * 1. 如果 TTS 啟用且內容含 TTS 標記，保存原始文字到 ttsRawContent
-   * 2. 清除顯示文字中的 TTS 標記
-   * 3. 逐句解析對話段落，各自獨立呼叫 MiniMax API 合成語音
+   * 2. 逐句解析對話段落寫進 ttsSegments（畫面上變成行內播放按鈕）
+   * 3. 只有開了「自動生成」或 synthesize: true（手動重新生成）才馬上呼叫 MiniMax，
+   *    否則等使用者點播放按鈕時才生成那一段（synthesizeMessageTTSSegment）
    */
   async function processMessageTTS(
     messageId: string,
     content: string,
-    options?: { force?: boolean; languageMode?: TTSLanguageMode },
+    options?: {
+      force?: boolean;
+      languageMode?: TTSLanguageMode;
+      /** 不管設定，立刻把所有段落都合成（手動重新生成用） */
+      synthesize?: boolean;
+    },
   ): Promise<boolean> {
     if (!context.chatMinimaxTTSEnabled.value) return false;
     if (!context.settingsStore.minimaxTTS.apiKey) return false;
@@ -124,89 +226,24 @@ export function useChatTTS(context: {
       speed: s.speed,
       text: s.text,
       clean: s.clean,
+      ...(s.speaker && { speaker: s.speaker }),
     }));
     // 清除舊版單一音頻欄位，避免部分分段成功時殘留過期 URL。
     context.messages.value[idx].ttsAudioUrl = undefined;
 
-    // 異步逐句合成語音
-    try {
-      const { synthesizeSpeech } = await import("@/api/MiniMaxTTSApi");
-      const override = chatMinimaxTTSOverride.value;
-      const memberVoice = (id: string | undefined) => (id && override.memberVoices?.[id]?.trim()) || undefined;
-      // 群聊：說話的成員有自己的音色就用它，其次才是這個聊天的音色
-      const senderVoice = memberVoice(context.messages.value[idx].senderCharacterId);
-      const baseSettings = {
-        ...context.settingsStore.minimaxTTS,
-        ...(override.pitch !== undefined && { pitch: override.pitch }),
-        ...(override.languageBoost !== undefined && { languageBoost: override.languageBoost }),
-      };
-      // 聊天設定的語速是基準，AI 標的 speed 是相對快慢（1 = 照基準）
-      const baseSpeed = override.speed ?? baseSettings.speed ?? 1;
+    const shouldSynthesize =
+      options?.synthesize ?? !!context.settingsStore.minimaxTTS.autoGenerate;
+    if (!shouldSynthesize) {
+      // 點了才生成：先把段落存起來，播放按鈕會在點擊時呼叫 synthesizeMessageTTSSegment
+      await context.saveChat();
+      return true;
+    }
 
+    // 逐句合成語音
+    try {
       let anySuccess = false;
       for (let i = 0; i < segments.length; i++) {
-        const seg = segments[i];
-        // 多人卡面對面一則訊息有好幾個人說話，台詞自己標的說話者優先
-        const speakerVoice = seg.speaker
-          ? memberVoice(context.resolveSpeakerId?.(seg.speaker))
-          : undefined;
-        const voiceId = speakerVoice || senderVoice || override.voiceId;
-        // 每段用自己的 speed 和 emotion
-        const mergedSettings = {
-          ...baseSettings,
-          // 成員或聊天自己指定的音色優先於全域的音色混合
-          ...(voiceId && { voiceId, timberWeightsEnabled: false }),
-          speed: baseSpeed * seg.speed,
-        };
-        const ttsText = convertTTSContentToSimplified(seg.text, mergedSettings.languageBoost);
-
-        const result = await synthesizeSpeech(ttsText, mergedSettings, {
-          emotion: seg.emotion !== "neutral" ? seg.emotion : override.emotion,
-        });
-
-        const msgIdx = context.messages.value.findIndex((m) => m.id === messageId);
-        if (msgIdx !== -1 && result.success && result.audioUrl) {
-          // MiniMax 回傳的是 Aliyun OSS 簽名 URL（約 24h 後過期），
-          // 立即下載並轉成 base64 data URL 保存，避免重新載入聊天時音頻失效。
-          let persistedUrl = result.audioUrl;
-          try {
-            const audioResp = await fetch(result.audioUrl);
-            if (audioResp.ok) {
-              const blob = await audioResp.blob();
-              persistedUrl = await new Promise<string>((resolve, reject) => {
-                const reader = new FileReader();
-                reader.onloadend = () => {
-                  const r = reader.result;
-                  if (typeof r === "string") resolve(r);
-                  else reject(new Error("FileReader 結果非字串"));
-                };
-                reader.onerror = () => reject(reader.error);
-                reader.readAsDataURL(blob);
-              });
-            } else {
-              console.warn(
-                `[MiniMax TTS] 下載音頻失敗，HTTP ${audioResp.status}，仍使用臨時 URL`,
-              );
-            }
-          } catch (fetchErr) {
-            console.warn(
-              "[MiniMax TTS] 下載音頻失敗，仍使用臨時 URL：",
-              fetchErr,
-            );
-          }
-
-          const segment = context.messages.value[msgIdx].ttsSegments?.[i];
-          if (segment) {
-            segment.audioUrl = persistedUrl;
-          }
-          // 向下相容：第一段也寫入 ttsAudioUrl
-          if (i === 0) {
-            context.messages.value[msgIdx].ttsAudioUrl = persistedUrl;
-          }
-          anySuccess = true;
-        } else if (!result.success) {
-          console.warn(`[MiniMax TTS] 段落 ${i} 合成失敗:`, result.error);
-        }
+        if (await synthesizeSegment(messageId, i)) anySuccess = true;
       }
 
       if (anySuccess) {
@@ -217,6 +254,43 @@ export function useChatTTS(context: {
       console.error("[MiniMax TTS] 錯誤:", error);
       return false;
     }
+  }
+
+  /**
+   * 點播放按鈕時才生成某一段的語音（已經有就直接回傳）。
+   * 同一段連點只會打一次 API。
+   */
+  async function synthesizeMessageTTSSegment(
+    messageId: string,
+    index: number,
+  ): Promise<MessageTTSSegmentResult> {
+    const message = context.messages.value.find((m) => m.id === messageId);
+    const segment = message?.ttsSegments?.[index];
+    if (!message || !segment) return { success: false, reason: "not-found" };
+    if (segment.audioUrl) return { success: true, audioUrl: segment.audioUrl };
+    if (!context.settingsStore.minimaxTTS.apiKey) {
+      return { success: false, reason: "missing-api-key" };
+    }
+
+    const key = `${messageId}#${index}`;
+    let job = segmentJobs.get(key);
+    if (!job) {
+      job = (async (): Promise<MessageTTSSegmentResult> => {
+        try {
+          const audioUrl = await synthesizeSegment(messageId, index);
+          if (!audioUrl) return { success: false, reason: "synthesis-failed" };
+          await context.saveChat();
+          return { success: true, audioUrl };
+        } catch (error) {
+          console.error("[MiniMax TTS] 錯誤:", error);
+          return { success: false, reason: "synthesis-failed" };
+        } finally {
+          segmentJobs.delete(key);
+        }
+      })();
+      segmentJobs.set(key, job);
+    }
+    return job;
   }
 
   async function regenerateMessageTTS(
@@ -256,9 +330,11 @@ export function useChatTTS(context: {
 
     regeneratingMessageIds.add(messageId);
     try {
+      // 使用者主動按「重新生成語音」：照舊立刻把整則合成好
       const success = await processMessageTTS(messageId, source, {
         force: true,
         languageMode,
+        synthesize: true,
       });
       if (!success) {
         message.ttsRawContent = previousTTS.ttsRawContent;
@@ -280,6 +356,7 @@ export function useChatTTS(context: {
     closeMinimaxTTSSettings,
     saveMinimaxTTSSettings,
     processMessageTTS,
+    synthesizeMessageTTSSegment,
     regenerateMessageTTS,
   };
 }

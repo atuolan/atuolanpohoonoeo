@@ -543,6 +543,8 @@ export interface ChatMessage {
     speed: number;
     text: string;
     clean: string;
+    /** 多人卡面對面：這句是誰說的（點播放時才生成，要存下來挑成員音色） */
+    speaker?: string;
     audioUrl?: string;
   }>;
 
