@@ -7,6 +7,8 @@
  * @requirements 5.1, 5.2, 10.3
  */
 import PixelRod from "@/components/common/PixelRod.vue";
+import PixelArtCanvas from "@/components/room/PixelArtCanvas.vue";
+import { FURNITURE_ART } from "@/data/pixelArt/furniture";
 import GiftCabinet from "@/components/gift/GiftCabinet.vue";
 import {
     getAvatarFrameLayers,
@@ -18,6 +20,7 @@ import {
 import {
     CARE_ITEMS,
     CONSUMABLE_ITEMS,
+    FURNITURE_ITEMS,
     FRAME_ITEMS,
     GIFT_ITEMS,
     ROD_ITEMS,
@@ -34,6 +37,7 @@ import {
     Frame,
     Gift,
     HeartHandshake,
+    Sofa,
     Package,
     Palette,
     ShoppingBag,
@@ -71,10 +75,16 @@ const categories: CategoryTab[] = [
   { id: "gift", label: "禮物", icon: Gift, items: GIFT_ITEMS },
   { id: "consumable", label: "道具", icon: Package, items: CONSUMABLE_ITEMS },
   { id: "care", label: "照顧他", icon: HeartHandshake, items: CARE_ITEMS },
+  { id: "furniture", label: "家具", icon: Sofa, items: FURNITURE_ITEMS },
 ];
 
 // 商城／禮物櫃
 const view = ref<"shop" | "cabinet">("shop");
+
+/** 家具商品的像素圖 */
+function furnitureArtOf(item: ShopItem) {
+  return item.furnitureId ? FURNITURE_ART[item.furnitureId] : undefined;
+}
 
 /** 背包裡還剩多少（次數制幾次、時間制幾小時幾分） */
 function consumableLeftText(item: ShopItem): string {
@@ -472,6 +482,12 @@ onMounted(async () => {
                 :is="getCareIcon(item.id)"
                 :size="32"
               />
+              <PixelArtCanvas
+                v-else-if="item.category === 'furniture' && furnitureArtOf(item)"
+                :art="furnitureArtOf(item)!"
+                :art-id="item.icon"
+                :size="44"
+              />
               <div
                 v-else-if="item.category === 'frame' && isAvatarFrameSvg(item.id)"
                 class="svg-frame-preview"
@@ -621,6 +637,12 @@ onMounted(async () => {
                   v-else-if="selectedItem.category === 'care'"
                   :is="getCareIcon(selectedItem.id)"
                   :size="48"
+                />
+                <PixelArtCanvas
+                  v-else-if="selectedItem.category === 'furniture' && furnitureArtOf(selectedItem)"
+                  :art="furnitureArtOf(selectedItem)!"
+                  :art-id="selectedItem.icon"
+                  :size="72"
                 />
                 <div
                   v-else-if="

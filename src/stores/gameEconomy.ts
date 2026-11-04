@@ -1018,6 +1018,7 @@ export const useGameEconomyStore = defineStore("gameEconomy", () => {
       case "gift":
       case "consumable":
       case "care":
+      case "furniture":
         return purchaseInventoryItem(chatId, item);
       default:
         return { success: false, error: "invalid_item" };
@@ -1207,7 +1208,8 @@ export const useGameEconomyStore = defineStore("gameEconomy", () => {
         id: `inv-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
         itemId: item.id,
         name: item.name,
-        type: item.category === "gift" ? "gift" : "consumable",
+        // 家具買來放進房間，跟禮物、道具分開
+        type: item.category === "gift" ? "gift" : item.category === "furniture" ? "equipment" : "consumable",
         quantity: 1,
         acquiredAt: Date.now(),
       };
