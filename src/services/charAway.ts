@@ -1,4 +1,5 @@
 import type { CharAway, CharAwayKind } from "@/types/chat";
+import { getShopItemById } from "@/data/shopItems";
 
 /** 暫時離開最短分鐘數 */
 export const CHAR_AWAY_MIN_MINUTES = 3;
@@ -729,6 +730,24 @@ export function buildCharAwaySneakNote(
 
   const kind = awayKind(away);
   const left = Math.max(0, leftCount);
+
+  // 用了道具（咖啡、鬧鐘、早餐…）：先說道具，再說回完會怎樣
+  const careItem =
+    away.sneakReason === "item" && away.careItemId
+      ? getShopItemById(away.careItemId)
+      : undefined;
+  if (careItem?.careUse && (kind === "sleep" || kind === "busy")) {
+    const leftText = left > 0 ? `，也回應 {{user}} 留的 ${left} 則訊息` : "";
+    const outcome =
+      kind === "sleep"
+        ? away.earlyEndPending
+          ? `{{char}} ${formatClock(away.startedAt)} 睡著了，現在天已經亮了，被叫醒後就起床了，不會再睡回去：帶點剛睡醒的感覺回應${leftText}，之後就正常聊天。不要說要再睡一下或繼續睡。`
+          : `{{char}} ${formatClock(away.startedAt)} 睡著了（預計 ${formatClock(away.returnAt)} 起床），現在天還沒亮，迷迷糊糊依性格回一兩句${leftText}，回完會繼續睡，不要說自己起床了。`
+        : away.earlyEndPending
+          ? `{{char}} 原本要「${away.reason}」到 ${formatClock(away.returnAt)}，現在提早忙完、有空了。自然地跟 {{user}} 說一聲${leftText}，之後就正常聊天。`
+          : `{{char}} 還在「${away.reason}」（到 ${formatClock(away.returnAt)}），簡短回幾句${leftText}，語氣像抽空回覆，回完還是在忙。`;
+    return [`[${careItem.name}]`, careItem.careUse.note, outcome].join("\n");
+  }
 
   // 天亮後被叫醒：這則回完就起床（earlyEndPending 由 urgeCharAway 設好）
   if (kind === "sleep" && away.earlyEndPending) {

@@ -49,6 +49,8 @@ import type {
 } from "@/services/charAway";
 import type { CharAway, Chat, ChatMessage } from "@/types/chat";
 import { computeChatNow, getChatClockShift } from "@/utils/fakeTime";
+import type { ShopItem } from "@/data/shopItems";
+import { applyCareItemToAway } from "@/services/careItems";
 
 export const CHAR_AWAY_CHANGED_EVENT = "aguaphone:char-away-changed";
 
@@ -427,6 +429,24 @@ export async function urgeCharAway(
     await cancelScheduledNotification(notificationTag(chatId, away));
   }
   await saveCharAway(chatId, next);
+  return next;
+}
+
+/** 忙碌／睡覺時用了道具：他馬上回一則（不在進行中或正在回時回 null） */
+export async function applyCareItemOnAway(
+  chatId: string,
+  item: ShopItem,
+  random: () => number = Math.random,
+): Promise<CharAway | null> {
+  const chat = await loadChatById(chatId);
+  const away = chat?.charAway;
+  if (!chat || !away || !isCharAwayActive(away) || away.sneakPending) return null;
+
+  const now = Date.now();
+  const next = applyCareItemToAway(away, item, now, getChatClockShift(chat, now), random);
+  await saveCharAway(chatId, next);
+  // 原本排好的看手機用不到了，回完會重排
+  clearBusyTimer(chatId);
   return next;
 }
 
