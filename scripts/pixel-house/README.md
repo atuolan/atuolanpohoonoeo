@@ -15,6 +15,9 @@ rm public/pixel-house/kitchen/_recomposed.png public/pixel-house/kitchen/_unassi
 
 python3 -I scripts/pixel-house/split_room.py scripts/pixel-house/source/bath.png scripts/pixel-house/bath.json public/pixel-house/bath
 rm public/pixel-house/bath/_recomposed.png public/pixel-house/bath/_unassigned.png
+
+# 小人走路圖（女生／男生 × 向左／向右 × 6 格）
+python3 -I scripts/pixel-house/extract_walk.py scripts/pixel-house/source/walk-sheet.webp public/pixel-house/chars
 ```
 
 臥室之後的房間都直接寫在設定檔裡（家具的顏色過濾、被擋住的地方補畫），不用另外的 refine 腳本。

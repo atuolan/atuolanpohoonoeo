@@ -1,0 +1,26 @@
+{
+ "girl-left": {
+  "w": 188,
+  "h": 318,
+  "frames": 6,
+  "anchor": "bottom-center"
+ },
+ "girl-right": {
+  "w": 198,
+  "h": 317,
+  "frames": 6,
+  "anchor": "bottom-center"
+ },
+ "boy-left": {
+  "w": 180,
+  "h": 312,
+  "frames": 6,
+  "anchor": "bottom-center"
+ },
+ "boy-right": {
+  "w": 174,
+  "h": 302,
+  "frames": 6,
+  "anchor": "bottom-center"
+ }
+}
