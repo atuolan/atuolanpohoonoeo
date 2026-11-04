@@ -1,0 +1,70 @@
+{
+ "poses": {
+  "front": {
+   "w": 25,
+   "h": 41,
+   "layers": [
+    {
+     "slot": "body",
+     "styles": {
+      "01": "doll/front/body_01.png"
+     }
+    },
+    {
+     "slot": "eyes",
+     "styles": {
+      "01": "doll/front/eyes_01.png"
+     }
+    },
+    {
+     "slot": "blush",
+     "styles": {
+      "01": "doll/front/blush_01.png"
+     }
+    },
+    {
+     "slot": "brows",
+     "styles": {
+      "01": "doll/front/brows_01.png"
+     }
+    },
+    {
+     "slot": "hair",
+     "styles": {
+      "01": "doll/front/hair_01.png"
+     }
+    },
+    {
+     "slot": "underwear",
+     "styles": {
+      "01": "doll/front/underwear_01.png"
+     }
+    },
+    {
+     "slot": "shoes",
+     "styles": {
+      "01": "doll/front/shoes_01.png"
+     }
+    },
+    {
+     "slot": "pants",
+     "styles": {
+      "01": "doll/front/pants_01.png"
+     }
+    },
+    {
+     "slot": "shirt",
+     "styles": {
+      "01": "doll/front/shirt_01.png"
+     }
+    },
+    {
+     "slot": "jacket",
+     "styles": {
+      "01": "doll/front/jacket_01.png"
+     }
+    }
+   ]
+  }
+ }
+}

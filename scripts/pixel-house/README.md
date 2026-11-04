@@ -16,7 +16,10 @@ rm public/pixel-house/kitchen/_recomposed.png public/pixel-house/kitchen/_unassi
 python3 -I scripts/pixel-house/split_room.py scripts/pixel-house/source/bath.png scripts/pixel-house/bath.json public/pixel-house/bath
 rm public/pixel-house/bath/_recomposed.png public/pixel-house/bath/_unassigned.png
 
-# 小人走路圖（女生／男生 × 向左／向右 × 6 格）
+# 自己畫的分層小人（Aseprite 匯出 Sprite Sheet → 分割圖層，直排；圖層名由底往上）
+python3 -I scripts/pixel-house/split_doll.py scripts/pixel-house/source/boy-front-layers.png boy front body,eyes,blush,brows,hair,underwear,shoes,pants,shirt,jacket 01
+
+# 小人走路圖（暫用；女生／男生 × 向左／向右 × 6 格）
 python3 -I scripts/pixel-house/extract_walk.py scripts/pixel-house/source/walk-sheet.webp public/pixel-house/chars
 ```
 

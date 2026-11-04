@@ -61,6 +61,28 @@ interface RoomLayout {
 
 const layouts = reactive<Partial<Record<RoomId, RoomLayout>>>({});
 const walkSizes = ref<Record<string, { w: number; h: number }>>({});
+
+/** 使用者自己畫的分層小人（紙娃娃）：每個動作一組圖層，1 px＝房間 1 格 */
+interface DollPose {
+  w: number;
+  h: number;
+  layers: { slot: string; styles: Record<string, string> }[];
+}
+interface DollManifest {
+  poses: Record<string, DollPose>;
+}
+const doll = ref<DollManifest | null>(null);
+
+async function loadDoll(look: string): Promise<DollManifest | null> {
+  try {
+    const res = await fetch(`${ASSET}chars/${look}/doll.json`);
+    if (!res.ok) return null;
+    const data = (await res.json()) as DollManifest;
+    return data?.poses && Object.keys(data.poses).length ? data : null;
+  } catch {
+    return null;
+  }
+}
 const loaded = ref(false);
 
 async function loadAssets() {
@@ -76,6 +98,7 @@ async function loadAssets() {
   } catch {
     walkSizes.value = {};
   }
+  doll.value = await loadDoll(state.look);
   loaded.value = true;
 }
 
@@ -316,7 +339,30 @@ const spriteSrc = computed(() => {
   const n = life.walking.value ? (frame.value % 6) + 1 : 1;
   return `${ASSET}chars/${state.look}/walk-${dir}-${n}.png`;
 });
+/** 紙娃娃現在用哪個動作：有畫的就用，沒畫的先用正面 */
+const dollPose = computed<DollPose | null>(() => {
+  const d = doll.value;
+  if (!d) return null;
+  const dir = life.facing.value > 0 ? "right" : "left";
+  const want = life.walking.value ? [`walk-${dir}`, "walk", "front"] : [meAct.value?.pose ?? "front", "front"];
+  for (const k of want) if (d.poses[k]) return d.poses[k];
+  return Object.values(d.poses)[0] ?? null;
+});
+
+/** 這個動作每一層的圖（由底往上）；款式先用第一款，之後換裝再接設定 */
+const dollLayers = computed(() =>
+  (dollPose.value?.layers ?? []).map((l) => {
+    const file = Object.values(l.styles)[0];
+    return { slot: l.slot, src: `${ASSET}chars/${state.look}/${file}` };
+  }),
+);
+
+/** 小人高幾格：紙娃娃照原尺寸，暫用的走路圖拉成 CHAR_HEIGHT */
+const charUnits = computed(() => dollPose.value?.h ?? CHAR_HEIGHT);
+
 const spriteSize = computed(() => {
+  const p = dollPose.value;
+  if (p) return { w: u(p.w), h: u(p.h) };
   const sz = walkSizes.value[spriteSet.value] ?? { w: 180, h: 312 };
   const h = u(CHAR_HEIGHT);
   return { w: (sz.w / sz.h) * h, h };
@@ -343,9 +389,13 @@ const spriteStyle = computed(() => {
     width: `${w}px`,
     height: `${h}px`,
     left: `${-w / 2}px`,
-    top: `${-h + u(1)}px`,
-    // 躺下：先用站姿轉 90 度代替（之後換成睡覺的圖）
-    transform: lying.value ? "rotate(-90deg)" : undefined,
+    top: `${-h + (dollPose.value ? 0 : u(1))}px`,
+    // 躺下：先用站姿轉 90 度代替（之後換成睡覺的圖）；紙娃娃只有正面時，走路一上一下跳
+    transform: lying.value
+      ? "rotate(-90deg)"
+      : dollPose.value && life.walking.value && frame.value % 2
+        ? `translateY(${-u(1)}px)`
+        : undefined,
     transformOrigin: lying.value ? "50% 100%" : undefined,
   };
 });
@@ -706,7 +756,16 @@ const clickableInView = (room: RoomId) => roomItems.value[room].filter((it) => i
       <!-- 他（在客廳／臥室／廚房時） -->
       <div v-if="isHome && !meInBath" class="ph-me" :style="meStyle">
         <div v-if="!lying" class="ph-me-shadow" :style="{ width: `${u(24)}px`, height: `${u(3.4)}px` }"></div>
+        <div
+          v-if="dollPose"
+          class="ph-me-sprite ph-doll"
+          :class="{ 'is-hop': meAct?.hop && !life.walking.value }"
+          :style="spriteStyle"
+        >
+          <img v-for="l in dollLayers" :key="l.slot" :src="l.src" alt="" draggable="false" />
+        </div>
         <img
+          v-else
           class="ph-me-sprite"
           :class="{ 'is-hop': meAct?.hop && !life.walking.value }"
           :src="spriteSrc"
@@ -724,12 +783,12 @@ const clickableInView = (room: RoomId) => roomItems.value[room].filter((it) => i
           v-if="bubbleText && !editMode"
           class="ph-bubble"
           :class="{ 'is-unread': unread > 0 }"
-          :style="{ top: `${-(lying ? u(30) : spriteSize.h) - 34}px`, left: lying ? `${-u(CHAR_HEIGHT / 2)}px` : undefined }"
+          :style="{ top: `${-(lying ? u(30) : spriteSize.h) - 34}px`, left: lying ? `${-u(charUnits / 2)}px` : undefined }"
           aria-hidden="true"
         >
           {{ bubbleText }}
         </div>
-        <div v-if="lying" class="ph-zs" :style="{ left: `${-u(CHAR_HEIGHT - 6)}px`, top: `${-u(14)}px` }" aria-hidden="true">
+        <div v-if="lying" class="ph-zs" :style="{ left: `${-u(charUnits - 6)}px`, top: `${-u(14)}px` }" aria-hidden="true">
           <span>Z</span><span>Z</span><span>Z</span>
         </div>
       </div>
@@ -770,7 +829,10 @@ const clickableInView = (room: RoomId) => roomItems.value[room].filter((it) => i
       </template>
       <div v-if="isHome && meInBath" class="ph-me" :style="meStyle">
         <div class="ph-me-shadow" :style="{ width: `${u(24)}px`, height: `${u(3.4)}px` }"></div>
-        <img class="ph-me-sprite" :src="spriteSrc" alt="" draggable="false" :style="spriteStyle" />
+        <div v-if="dollPose" class="ph-me-sprite ph-doll" :style="spriteStyle">
+          <img v-for="l in dollLayers" :key="l.slot" :src="l.src" alt="" draggable="false" />
+        </div>
+        <img v-else class="ph-me-sprite" :src="spriteSrc" alt="" draggable="false" :style="spriteStyle" />
         <button
           class="ph-me-hit"
           :style="{ width: `${spriteSize.w}px`, height: `${spriteSize.h}px`, left: `${-spriteSize.w / 2}px`, top: `${-spriteSize.h}px` }"
@@ -939,6 +1001,17 @@ const clickableInView = (room: RoomId) => roomItems.value[room].filter((it) => i
 .ph-me-sprite {
   position: absolute;
   display: block;
+  pointer-events: none;
+  -webkit-user-drag: none;
+}
+
+.ph-doll img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  image-rendering: crisp-edges;
+  image-rendering: pixelated;
   pointer-events: none;
   -webkit-user-drag: none;
 }
