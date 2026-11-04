@@ -27,9 +27,9 @@ beforeEach(() => {
 });
 
 describe("loadCallContext", () => {
-  it("沒有設定時跟聊天一樣讀最近 5 條總結", async () => {
+  it("沒有設定時跟聊天一樣讀最近 5 條總結，加上最早那條", async () => {
     const ctx = await loadCallContext({ chatId: "chat-1", characterId: "char-1" });
-    expect(ctx.summaries.map((s) => s.id)).toEqual(["s3", "s4", "s5", "s6", "s7"]);
+    expect(ctx.summaries.map((s) => s.id)).toEqual(["s0", "s3", "s4", "s5", "s6", "s7"]);
   });
 
   it("總結數量照這個聊天的讀取設定", async () => {
@@ -37,7 +37,7 @@ describe("loadCallContext", () => {
       summarySettings: { summaryReadMode: "recent", summaryReadCount: 2 },
     } as any);
     const ctx = await loadCallContext({ chatId: "chat-1", characterId: "char-1" });
-    expect(ctx.summaries.map((s) => s.id)).toEqual(["s6", "s7"]);
+    expect(ctx.summaries.map((s) => s.id)).toEqual(["s0", "s6", "s7"]);
   });
 
   it("設成讀取全部時，通話也讀全部", async () => {

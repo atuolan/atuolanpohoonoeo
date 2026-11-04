@@ -3,6 +3,7 @@
  * 聊天、主動訊息、電話、雲端推播都走這裡，規則才會一致：
  * - 已被合併進元總結的不送（內容已包含在元總結裡）
  * - 釘選（isImportant）的一定送，不受讀取數量限制
+ * - 時間軸上最早的那一條一定送（通常是兩人怎麼認識的），不佔名額；讀取數量設 0 時不送
  * - 其餘依「涵蓋到的時間」取最新 N 條
  */
 
@@ -37,6 +38,8 @@ export function selectSummariesForPrompt<T extends SelectableSummary>(
     .filter(isActiveSummary)
     .sort((a, b) => summaryTimelineKey(b) - summaryTimelineKey(a));
   const picked = new Set(active.slice(0, Math.max(0, readCount)));
+  // 最早的一條（怎麼認識的）：聊久了會被擠出最近 N 條，玩家不知道要釘選
+  if (readCount > 0 && active.length > 0) picked.add(active[active.length - 1]);
   for (const s of active) {
     if (s.isImportant) picked.add(s);
   }
