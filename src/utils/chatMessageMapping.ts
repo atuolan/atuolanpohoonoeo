@@ -346,6 +346,7 @@ export function convertToStorableMessage(m: any, charName: string): ChatMessage 
     refundOfMessageId: m.refundOfMessageId,
     charWalletEntryId: m.charWalletEntryId,
     charWalletCharacterId: m.charWalletCharacterId,
+    dateCard: m.dateCard ? JSON.parse(JSON.stringify(m.dateCard)) : undefined,
     isWaimaiShare: m.isWaimaiShare,
     isWaimaiPaymentRequest: m.isWaimaiPaymentRequest,
     isWaimaiPaymentConfirm: m.isWaimaiPaymentConfirm,

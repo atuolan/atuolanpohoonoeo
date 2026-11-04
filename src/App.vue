@@ -969,6 +969,9 @@ const showFoodLogManager = ref(false);
 // 電話聯絡人選擇彈窗
 const showPhoneContactPicker = ref(false);
 const startPhoneCallFlag = ref(false);
+// 主畫面「約會」：選角色 → 打開聊天並跳出選地點
+const showDateContactPicker = ref(false);
+const openDatePickerFlag = ref(false);
 const pendingIncomingCallReason = ref("");
 
 // 多人卡模式設定彈窗
@@ -1946,6 +1949,9 @@ function handleNavigate(page: string) {
   } else if (page === "phone") {
     // 電話：打開聯絡人選擇
     showPhoneContactPicker.value = true;
+  } else if (page === "date" || page === "約會") {
+    // 約會：選角色後打開聊天的選地點
+    showDateContactPicker.value = true;
   } else if (
     page === "peek-phone" ||
     page === "偷窺" ||
@@ -2293,6 +2299,26 @@ async function startPhoneCall(characterId: string) {
     navigationHistory.value.push(currentPage.value);
     navigateToPage("chat");
   }
+}
+
+// 從主畫面「約會」選了角色：打開他最近的私聊，跳出選地點
+async function startDateFromHome(characterId: string) {
+  showDateContactPicker.value = false;
+  const character = charactersStore.characters.find((c) => c.id === characterId);
+  if (!character) return;
+  chatCharacterName.value = character.nickname || character.data?.name || "角色";
+  chatCharacterAvatar.value = character.avatar || "";
+  currentChatCharacterId.value = characterId;
+  try {
+    const preferredChat = await resolvePreferredDirectChat(characterId);
+    currentChatId.value = preferredChat?.id || null;
+  } catch (e) {
+    console.warn("[App] 查找現有聊天失敗:", e);
+    currentChatId.value = null;
+  }
+  openDatePickerFlag.value = true;
+  navigationHistory.value.push(currentPage.value);
+  navigateToPage("chat");
 }
 
 // ===== 通話恢復處理 =====
@@ -3221,6 +3247,8 @@ useSwipeBack(handleGlobalSwipeBack, swipeBackEnabled);
       :pending-appearance="pendingChatAppearance"
       :pending-message="pendingChatMessage"
       :start-phone-call="startPhoneCallFlag"
+      :open-date-picker="openDatePickerFlag"
+      @date-picker-opened="openDatePickerFlag = false"
       :incoming-call-reason="pendingIncomingCallReason"
       @appearance-applied="pendingChatAppearance = undefined"
       @pending-message-consumed="pendingChatMessage = ''"
@@ -3461,6 +3489,12 @@ useSwipeBack(handleGlobalSwipeBack, swipeBackEnabled);
       v-if="showPhoneContactPicker"
       @close="showPhoneContactPicker = false"
       @call="startPhoneCall"
+    />
+    <PhoneContactPickerModal
+      v-if="showDateContactPicker"
+      purpose="date"
+      @close="showDateContactPicker = false"
+      @call="startDateFromHome"
     />
 
     <!-- 番茄鐘完成證書 -->

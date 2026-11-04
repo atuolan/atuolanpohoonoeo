@@ -51,3 +51,24 @@ describe("轉帳說明後面接角色帳戶餘額", () => {
     expect(count(contentOf(store.config.groupChatPrompts, "gcGroupXmlFormat"))).toBe(1);
   });
 });
+
+describe("角色主動約出門的標籤說明", () => {
+  beforeEach(() => {
+    storage.clear();
+    setActivePinia(createPinia());
+  });
+
+  it("預設內容接在忙碌說明後面；舊存檔載入時補上一次", async () => {
+    const DATE = "{{dateGuide}}";
+    const config = createDefaultPromptManagerConfig();
+    expect(contentOf(config.prompts, "onlineModeFeatures")).toContain(`{{charBusyGuide}}\n${DATE}\n`);
+    config.prompts = config.prompts.map((p) =>
+      p.identifier === "onlineModeFeatures" ? { ...p, content: p.content.replace(`${DATE}\n`, "") } : p,
+    );
+    storage.set("promptManagerConfig", config);
+    const store = usePromptManagerStore();
+    await store.loadConfig();
+    await store.loadConfig();
+    expect(contentOf(store.config.prompts, "onlineModeFeatures").split(DATE).length - 1).toBe(1);
+  });
+});

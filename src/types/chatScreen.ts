@@ -110,6 +110,7 @@ export interface ChatScreenMessage {
   refundOfMessageId?: string;
   charWalletEntryId?: string;
   charWalletCharacterId?: string;
+  dateCard?: import("@/types/date").DateCardData;
   isWaimaiShare?: boolean;
   isWaimaiPaymentRequest?: boolean;
   isWaimaiPaymentConfirm?: boolean;
@@ -302,5 +303,7 @@ export interface ChatScreenProps {
   pendingAppearance?: ChatAppearance;
   pendingMessage?: string | PendingInjectedMessage;
   startPhoneCall?: boolean;
+  /** 從主畫面「約會」進來：打開選地點 */
+  openDatePicker?: boolean;
   incomingCallReason?: string;
 }

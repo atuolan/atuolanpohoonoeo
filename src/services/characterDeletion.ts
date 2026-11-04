@@ -12,6 +12,7 @@ import { deleteChatCascade, loadChatsByCharacter } from "@/storage/chatStorage";
 import { deleteDiaryBook } from "@/services/diaryBook";
 import { deleteGiftDiaryMeta } from "@/services/giftDiary";
 import { deleteGiftMemories } from "@/services/giftMemories";
+import { deleteDateMemories } from "@/services/dateOuting";
 
 /** 角色庫和編輯頁共用的刪除確認文字 */
 export const CHARACTER_DELETE_CONFIRM =
@@ -89,6 +90,7 @@ export async function deleteCharacterRelatedData(
   await deleteDiaryBook(characterId);
   await deleteGiftMemories(characterId);
   await deleteGiftDiaryMeta(characterId);
+  await deleteDateMemories(characterId);
 
   return {
     deletedChatCount: targetChats.length,
