@@ -9,6 +9,9 @@ rm public/pixel-house/living/_recomposed.png public/pixel-house/living/_unassign
 
 python3 -I scripts/pixel-house/split_room.py scripts/pixel-house/source/bedroom.png scripts/pixel-house/bedroom.json public/pixel-house/bedroom
 rm public/pixel-house/bedroom/_recomposed.png public/pixel-house/bedroom/_unassigned.png
+
+python3 -I scripts/pixel-house/split_room.py scripts/pixel-house/source/kitchen.png scripts/pixel-house/kitchen.json public/pixel-house/kitchen
+rm public/pixel-house/kitchen/_recomposed.png public/pixel-house/kitchen/_unassigned.png
 ```
 
 臥室之後的房間都直接寫在設定檔裡（家具的顏色過濾、被擋住的地方補畫），不用另外的 refine 腳本。

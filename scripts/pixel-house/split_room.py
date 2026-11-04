@@ -22,6 +22,7 @@
   另外：
   "toleranceByRows": [[0, 127, 12]],   # 某些列用不同的容差（壁紙有漸層、雜點時）
   band 的 "mode": "fixed" + "colors": ["#e7c2a2", ...]   # 每列直接指定顏色（原圖亂掉的地方重畫成乾淨的橫條）
+  band 的 "mode": "grooved" + "color"、"groove"、"period"、"offset"   # 護牆板：底色加每隔幾欄一條溝
   floors 可以寫成 {"rows": [a, b], "period": 13, "mode": "row"}  # row：同相位的列取全寬（家具框外）最常見的顏色
   "fillHoles": true   # 家具中間被當成背景的小洞（顏色剛好跟背景很像）補回原圖的顏色
   家具另外可以設：
@@ -76,6 +77,12 @@ if bands and isinstance(bands[0], list):
 for band in bands:
     b0, b1 = band["rows"]
     for y in range(b0, b1):
+        if band["mode"] == "grooved":
+            base = tuple(int(band["color"].lstrip("#")[i : i + 2], 16) for i in (0, 2, 4))
+            groove = tuple(int(band["groove"].lstrip("#")[i : i + 2], 16) for i in (0, 2, 4))
+            for x in range(W):
+                bg[y][x] = groove if (x - band.get("offset", 0)) % band["period"] == 0 else base
+            continue
         if band["mode"] == "fixed":
             color = tuple(int(band["colors"][y - b0].lstrip("#")[i : i + 2], 16) for i in (0, 2, 4))
             for x in range(W):
@@ -190,8 +197,8 @@ for name, rows in layers_cfg.items():
 taken = {p for pts in assigned.values() for p in pts}
 
 
-def fill_holes(pts):
-    """家具框內被包住的透明小洞（不連到外框）補回原圖的像素"""
+def fill_holes(pts, holes=()):
+    """家具框內被包住的透明小洞（不連到外框）補回原圖的像素；設定裡的 holes 不補"""
     if not pts:
         return pts
     xs = [p[0] for p in pts]
@@ -212,7 +219,7 @@ def fill_holes(pts):
                 stack.append(q)
     holes = [
         (x, y) for x in range(x0, x1) for y in range(y0, y1)
-        if (x, y) not in solid and (x, y) not in outside and (x, y) not in taken
+        if (x, y) not in solid and (x, y) not in outside and (x, y) not in taken and not in_boxes(x, y, holes)
     ]
     return pts + holes
 
@@ -221,7 +228,7 @@ colors_of = {}
 for it in items:
     pts = assigned[it["id"]]
     if cfg.get("fillHoles") and not it.get("noFill"):
-        pts = fill_holes(pts)
+        pts = fill_holes(pts, it.get("holes", []))
     colors_of[it["id"]] = {p: px[p[0], p[1]] for p in pts}
 
 

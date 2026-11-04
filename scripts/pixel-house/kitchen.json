@@ -1,0 +1,42 @@
+{
+ "tolerance": 4,
+ "fillHoles": true,
+ "wall": [0, 127],
+ "wallCleanRows": [0, 44],
+ "bands": [
+  {"rows": [127, 129], "mode": "fixed", "colors": ["#9a6546", "#e0b796"]},
+  {"rows": [129, 151], "mode": "grooved", "color": "#ce9b77", "groove": "#bc8763", "period": 7, "offset": 0},
+  {"rows": [151, 158], "mode": "fixed", "colors": ["#6a452f", "#c2855d", "#c2855d", "#c2855d", "#c2855d", "#ca8c62", "#8f5b3d"]}
+ ],
+ "floors": [{"rows": [158, 282], "period": 12}],
+ "layers": {"wall": [0, 127], "wainscot": [127, 158], "floor": [158, 282]},
+ "items": [
+  {"id": "clock", "name": "掛鐘", "box": [104, 44, 123, 64]},
+  {"id": "valance", "name": "窗簾盒", "box": [4, 46, 42, 52]},
+  {"id": "window", "name": "窗戶", "box": [6, 52, 40, 81]},
+  {"id": "spice-rack", "name": "調味料架", "box": [44, 57, 66, 69]},
+  {"id": "canister-shelf", "name": "罐子架", "box": [44, 72, 66, 83]},
+  {"id": "hood", "name": "抽油煙機", "box": [66, 46, 92, 82]},
+  {"id": "pot", "name": "鍋子", "box": [67, 111, 87, 124], "excludeColors": ["#f4f1e8", "#cfe3da"]},
+  {"id": "stove", "name": "爐子", "box": [65, 124, 93, 127], "excludeColors": ["#f4f1e8", "#cfe3da"]},
+  {"id": "cutting-board", "name": "砧板和蔬菜", "box": [43, 120, 58, 127], "excludeColors": ["#f4f1e8", "#cfe3da"]},
+  {"id": "faucet", "name": "水龍頭", "box": [25, 115, 33, 127], "excludeColors": ["#f4f1e8", "#cfe3da"]},
+  {"id": "tiles", "name": "磁磚牆面", "box": [0, 90, 96, 127]},
+  {"id": "fridge", "name": "冰箱", "box": [98, 70, 128, 155]},
+  {"id": "counter", "name": "流理台", "box": [0, 127, 96, 154]},
+  {"id": "mug-blue", "name": "藍杯子", "box": [38, 213, 46, 220]},
+  {"id": "mug-pink", "name": "粉杯子", "box": [86, 213, 94, 220]},
+  {"id": "fruit-plate", "name": "水果盤", "box": [54, 208, 72, 220]},
+  {"id": "chair-left", "name": "椅子（左）", "boxes": [[11, 210, 25, 245], [12, 245, 14, 246], [22, 245, 24, 246]]},
+  {"id": "chair-right", "name": "椅子（右）", "boxes": [[105, 210, 119, 245], [106, 245, 108, 246], [116, 245, 118, 246]]},
+  {"id": "table", "name": "餐桌", "boxes": [[26, 220, 104, 245], [18, 245, 114, 247]], "holes": [[34, 229, 96, 245]]}
+ ],
+ "repairs": [
+  {"item": "window", "rect": [8, 51, 38, 52], "fill": "#8f5b3d"},
+  {"item": "tiles", "rect": [25, 115, 33, 127], "copy": [0, -18]},
+  {"item": "tiles", "rect": [43, 120, 58, 127], "copy": [0, -18]},
+  {"item": "tiles", "rect": [65, 111, 93, 127], "copy": [0, -18]},
+  {"item": "table", "rect": [22, 245, 24, 246], "copy": [-2, 0]},
+  {"item": "table", "rect": [106, 245, 108, 246], "copy": [-2, 0]}
+ ]
+}
