@@ -5,8 +5,13 @@
 ```
 python3 -I scripts/pixel-house/split_room.py scripts/pixel-house/source/living.png scripts/pixel-house/living.json public/pixel-house/living
 python3 -I scripts/pixel-house/refine_living.py public/pixel-house/living
-rm public/pixel-house/living/_recomposed.png
+rm public/pixel-house/living/_recomposed.png public/pixel-house/living/_unassigned.png
+
+python3 -I scripts/pixel-house/split_room.py scripts/pixel-house/source/bedroom.png scripts/pixel-house/bedroom.json public/pixel-house/bedroom
+rm public/pixel-house/bedroom/_recomposed.png public/pixel-house/bedroom/_unassigned.png
 ```
+
+臥室之後的房間都直接寫在設定檔裡（家具的顏色過濾、被擋住的地方補畫），不用另外的 refine 腳本。
 
 `refine_<房間>.py`：細拆和補畫。牆再拆成壁紙、護牆板；疊在一起的東西拆開（窗戶／窗簾／窗台盆栽／花瓶、電視／電視櫃），被擋住的地方照周圍補畫。
 

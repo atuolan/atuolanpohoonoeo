@@ -78,6 +78,8 @@ for name, layer in (("wall", full_wall), ("wainscot", wainscot)):
     layer.crop(bbox).save(f"{out}/{name}.png")
     meta[name] = {"x": bbox[0], "y": bbox[1], "w": bbox[2] - bbox[0], "h": bbox[3] - bbox[1]}
 
+meta["layers"] = ["wall", "wainscot", "floor"]
+
 new_items = []
 names = {i["id"]: i["name"] for i in meta["items"]}
 
