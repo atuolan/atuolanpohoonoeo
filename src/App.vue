@@ -36,6 +36,7 @@ import {
   isPeerMessageType,
   setPeerSyncSocket,
 } from "@/services/peerSyncSocket";
+import { isPongMessage, startSocketHeartbeat, type SocketHeartbeat } from "@/services/syncSocketHeartbeat";
 import { startPeerSyncResponder } from "@/services/PeerSyncSecureResponder";
 import type { PeerMessage } from "@/types/selfHostedSync";
 import {
@@ -205,6 +206,7 @@ let lastSelfHostedForegroundPullAt = 0;
 const SELF_HOSTED_WS_RECONNECT_BASE_MS = 3000;
 const SELF_HOSTED_WS_RECONNECT_MAX_MS = 30000;
 let selfHostedSyncSocket: WebSocket | null = null;
+let selfHostedSyncHeartbeat: SocketHeartbeat | null = null;
 let selfHostedSyncSocketToken: string | null = null;
 let lastRefreshedAccessToken: string | null = null;
 let lastSessionRefreshAt = 0;
@@ -261,8 +263,34 @@ function clearSelfHostedSyncSocketReconnectTimer() {
   }
 }
 
+function stopSelfHostedSyncHeartbeat() {
+  selfHostedSyncHeartbeat?.stop();
+  selfHostedSyncHeartbeat = null;
+}
+
+/** 心跳判定連線已死：不等瀏覽器的 onclose（半死的連線可能很久才觸發），直接丟掉重連 */
+function dropDeadSelfHostedSyncSocket(socket: WebSocket, waitedMs: number) {
+  if (selfHostedSyncSocket !== socket) return;
+  recordSelfHostedSyncDiagnostic("Self-hosted sync WebSocket heartbeat timeout", { waitedMs });
+  console.warn("[App] 同步 WebSocket 沒有回應，重新連線", { waitedMs });
+  stopSelfHostedSyncHeartbeat();
+  socket.onopen = null;
+  socket.onmessage = null;
+  socket.onerror = null;
+  socket.onclose = null;
+  try {
+    socket.close();
+  } catch {
+    // 已經在關了
+  }
+  selfHostedSyncSocket = null;
+  setPeerSyncSocket(null);
+  scheduleSelfHostedSyncSocketReconnect();
+}
+
 function closeSelfHostedSyncSocket() {
   clearSelfHostedSyncSocketReconnectTimer();
+  stopSelfHostedSyncHeartbeat();
   if (selfHostedSyncSocket) {
     selfHostedSyncSocket.onopen = null;
     selfHostedSyncSocket.onmessage = null;
@@ -535,6 +563,11 @@ async function ensureSelfHostedSyncSocketConnected() {
       clearSelfHostedSyncSocketReconnectTimer();
       setPeerSyncSocket(socket);
       startPeerSyncResponder();
+      stopSelfHostedSyncHeartbeat();
+      selfHostedSyncHeartbeat = startSocketHeartbeat({
+        send: (text) => socket.send(text),
+        onDead: ({ waitedMs }) => dropDeadSelfHostedSyncSocket(socket, waitedMs),
+      });
       console.log("[App] Peer sync WebSocket connected, responder started");
       recordSelfHostedSyncDiagnostic("Self-hosted sync WebSocket opened", {
         reconnectAttempt: selfHostedSyncSocketReconnectAttempt,
@@ -545,6 +578,9 @@ async function ensureSelfHostedSyncSocketConnected() {
     };
 
     socket.onmessage = (event) => {
+      const isPong = isPongMessage(String(event.data));
+      if (selfHostedSyncSocket === socket) selfHostedSyncHeartbeat?.markAlive(isPong);
+      if (isPong) return;
       try {
         recordSelfHostedSyncDiagnostic("Self-hosted sync WebSocket message received", {
           rawLength: String(event.data).length,
@@ -691,6 +727,9 @@ async function ensureSelfHostedSyncSocketConnected() {
       }
       if (selfHostedSyncSocket === socket) {
         selfHostedSyncSocket = null;
+        stopSelfHostedSyncHeartbeat();
+        // 馬上告訴 peer sync：還在等回應的請求直接失敗重試，不用乾等到逾時
+        setPeerSyncSocket(null);
         scheduleSelfHostedSyncSocketReconnect();
       }
     };

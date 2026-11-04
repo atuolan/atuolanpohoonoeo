@@ -16,11 +16,13 @@ const handlers = new Set<PeerMessageHandler>();
 const disconnectHandlers = new Set<PeerDisconnectHandler>();
 
 export function setPeerSyncSocket(next: WebSocket | null): void {
-  const wasOpen = !!socket && socket.readyState === WebSocket.OPEN;
+  const previous = socket;
   socket = next;
-  // 如果從有連線變成 null（斷線），通知所有監聽者
-  if (wasOpen && !next) {
-    console.log("[peerSyncSocket] socket 斷線，通知 disconnect handlers");
+  // 舊的 socket 被拿掉或換掉，就通知所有監聽者，讓還在等回應的請求馬上失敗重試。
+  // 不能只看舊 socket 是不是 OPEN：onclose 之後才來清的時候它已經是 CLOSED，
+  // 以前就因為這樣沒通知，請求只能乾等到逾時。
+  if (previous && previous !== next) {
+    console.log("[peerSyncSocket] socket 斷線或更換，通知 disconnect handlers");
     for (const handler of disconnectHandlers) {
       try {
         handler();

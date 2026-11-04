@@ -112,6 +112,58 @@ function buildFetchSummary(entityRefs: Array<{ entityType: string }>) {
   return Array.from(counts.entries()).map(([entityType, count]) => ({ entityType, count }));
 }
 
+/**
+ * 一次同步會先要 hash、再要差異類別的 manifest，兩次間隔只有幾秒，
+ * 同一個 session 收集一次就好，省掉第二次掃整個資料庫。
+ */
+const REFS_CACHE_TTL_MS = 60_000;
+const refsCache = new Map<string, { at: number; refs: Promise<PeerManifestEntry[]> }>();
+
+function collectRefsForSession(
+  sourceDeviceId: string,
+  sessionId: string | undefined,
+): Promise<PeerManifestEntry[]> {
+  const now = Date.now();
+  for (const [key, entry] of refsCache) {
+    if (now - entry.at > REFS_CACHE_TTL_MS) refsCache.delete(key);
+  }
+  const collect = () => getSelfHostedSyncService().collectManifestRefs();
+  if (!sessionId) return collect();
+  const key = `${sourceDeviceId}::${sessionId}`;
+  const cached = refsCache.get(key);
+  if (cached) return cached.refs;
+  const refs = collect();
+  refsCache.set(key, { at: now, refs });
+  refs.catch(() => refsCache.delete(key));
+  return refs;
+}
+
+/** 本機寫入了別人傳來的資料，之前收集的清單就不準了 */
+function invalidateRefsCache(): void {
+  refsCache.clear();
+}
+
+/** 還在寫入別台推過來的資料：這時再開始新的同步，比對結果會不準，也會拖慢正在寫的那批 */
+let activeApplyCount = 0;
+
+/**
+ * 使用者按了接受（或同一次傳輸的後續批次自動放行）就先告訴對方，
+ * 對方才知道不用再等人按，畫面可以換成「寫入中」，等待時間也從這裡重新算。
+ * 舊版收到不認得的 peer 訊息會直接忽略，不影響相容。
+ */
+function sendPeerAccepted(sourceDeviceId: string, requestId: string): void {
+  try {
+    sendPeerMessage({
+      type: "peer:accepted",
+      requestId,
+      sourceDeviceId: "__self__",
+      ...({ targetDeviceId: sourceDeviceId } as Record<string, unknown>),
+    } as unknown as PeerMessage);
+  } catch (error) {
+    warn("送出 peer:accepted 失敗", error);
+  }
+}
+
 async function handleSessionOffer(
   msg: PeerSessionOffer & {
     sourceDeviceId?: string;
@@ -159,18 +211,10 @@ async function handleManifestRequest(
     ? new Set<SelfHostedSyncEntityType>(msg.entityTypes)
     : null;
   try {
-    const service = getSelfHostedSyncService();
-    const envelopes = await service.collectAllEnvelopesForManifest();
-    const entries: PeerManifestEntry[] = [];
-    for (const env of envelopes) {
-      if (entityTypeFilter && !entityTypeFilter.has(env.entityType)) continue;
-      entries.push({
-        entityType: env.entityType,
-        entityId: env.entityId,
-        updatedAt: env.updatedAt,
-        deletedAt: env.deletedAt,
-      });
-    }
+    const allRefs = await collectRefsForSession(sourceDeviceId, msg.sessionId);
+    const entries: PeerManifestEntry[] = entityTypeFilter
+      ? allRefs.filter((entry) => entityTypeFilter.has(entry.entityType))
+      : allRefs;
     if (msg.sessionId) {
       const encryptedPayload = await peerCrypto.encrypt(sourceDeviceId, msg.sessionId, {
         entries,
@@ -218,15 +262,19 @@ async function handleHashRequest(
     warn("收到 hash-request 但沒有 sourceDeviceId，忽略", msg);
     return;
   }
+  if (activeApplyCount > 0) {
+    log("還在寫入上一次收到的資料，先不開始新的比對", { sourceDeviceId, activeApplyCount });
+    sendPeerFailure(
+      sourceDeviceId,
+      msg.requestId,
+      "responder-busy-applying",
+      { activeApplyCount },
+      "hash",
+    );
+    return;
+  }
   try {
-    const service = getSelfHostedSyncService();
-    const envelopes = await service.collectAllEnvelopesForManifest();
-    const entries: PeerManifestEntry[] = envelopes.map((env) => ({
-      entityType: env.entityType,
-      entityId: env.entityId,
-      updatedAt: env.updatedAt,
-      deletedAt: env.deletedAt,
-    }));
+    const entries = await collectRefsForSession(sourceDeviceId, msg.sessionId);
     const payload = computeBucketHashes(entries);
     if (msg.sessionId) {
       const encryptedPayload = await peerCrypto.encrypt(sourceDeviceId, msg.sessionId, payload);
@@ -310,17 +358,9 @@ async function handleFetchRequest(
       sendPeerFailure(sourceDeviceId, msg.requestId, "rejected-by-user", "peer fetch rejected by user", "fetch");
       return;
     }
+    sendPeerAccepted(sourceDeviceId, msg.requestId);
 
-    const service = getSelfHostedSyncService();
-    const allEnvelopes = await service.collectAllEnvelopesForManifest();
-    const refKey = (entityType: string, entityId: string) => `${entityType}::${entityId}`;
-    const wanted = new Set(entityRefs.map((ref) => refKey(ref.entityType, ref.entityId)));
-    const matched: SelfHostedSyncEntityEnvelope[] = [];
-    for (const env of allEnvelopes) {
-      if (wanted.has(refKey(env.entityType, env.entityId))) {
-        matched.push(env);
-      }
-    }
+    const matched = await getSelfHostedSyncService().collectEnvelopesForRefs(entityRefs);
 
     for (let index = 0; index < matched.length; index += FETCH_BATCH_SIZE) {
       if (!isPeerSyncSocketOpen()) {
@@ -475,6 +515,8 @@ async function handleApplyRequest(
     return;
   }
 
+  sendPeerAccepted(sourceDeviceId, msg.requestId);
+  activeApplyCount += 1;
   try {
     const service = getSelfHostedSyncService();
     const pseudoResponse: SelfHostedSyncPullResponse = {
@@ -483,9 +525,15 @@ async function handleApplyRequest(
       hasMore: false,
       nextSince: undefined,
     };
-    const applied = await service.applyPullResponsePublic(pseudoResponse, {
-      forceOverwrite: true,
-    });
+    let applied: number;
+    try {
+      applied = await service.applyPullResponsePublic(pseudoResponse, {
+        forceOverwrite: true,
+      });
+    } finally {
+      activeApplyCount = Math.max(0, activeApplyCount - 1);
+      invalidateRefsCache();
+    }
     notifyPeerBatchResult(sourceDeviceId, "applied", applied);
     reportPeerApplyProgress(sourceDeviceId, envelopes.length);
     if (msg.sessionId) {
