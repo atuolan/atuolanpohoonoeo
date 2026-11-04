@@ -23,6 +23,8 @@ import type { CaughtFinding } from "@/services/PeekPhonePromptBuilder";
 import { describeRealDataForPrompt, describeRealPhotosForPrompt } from "@/utils/peekRealData";
 import { buildPlannerPromptText, toDateString } from "@/utils/charPlanner";
 import { computeChatNow } from "@/utils/fakeTime";
+import { ensureCharWallet, mutateCharWallet, storyNowForChat } from "@/services/charWallet";
+import { applyPeekSpending } from "@/utils/charWalletLogic";
 import { isWorldInfoEntryEnabled } from "@/utils/worldInfoEntryState";
 import { findPeekMember, peekGroupInfo } from "@/utils/peekMember";
 import { useSettingsStore } from "@/stores/settings";
@@ -286,6 +288,13 @@ export const usePeekPhoneStore = defineStore("peekPhone", () => {
     // 真的聊天、交易、日記：跟使用者那串直接顯示真的，交易和日記不要重複
     const charName = character.data.name || character.nickname || "角色";
     const real = await loadPeekRealData(chat, { userName, charName, now }).catch(() => null);
+    // 角色帳戶：多人卡成員沒有自己的角色卡，照舊讓 AI 編
+    const wallet = member
+      ? null
+      : await ensureCharWallet(charId, storyNowForChat(chat)).catch((e) => {
+          console.warn("[PeekPhone] 讀取角色帳戶失敗:", e);
+          return null;
+        });
     return {
       chatContext: await extractChatContext(chat, 15, userName),
       summariesAndEvents: await extractSummariesAndEvents(cId, charId),
@@ -299,7 +308,32 @@ export const usePeekPhoneStore = defineStore("peekPhone", () => {
       realPhotosText: real ? describeRealPhotosForPrompt(real) || undefined : undefined,
       firstChatDate: real?.firstChatDate,
       ...(member ? { group: peekGroupInfo(chat, charId) } : {}),
+      ...(wallet
+        ? { wallet: { balance: wallet.balance, monthlyIncome: wallet.monthlyIncome, incomeNote: wallet.incomeNote } }
+        : {}),
     };
+  }
+
+  /** 錢包組生成好了：今天的消費從角色帳戶扣（一天一次），手機上的餘額換成帳戶的真實餘額 */
+  async function applyPeekWallet(
+    charId: string,
+    chat: Chat,
+    sources: PeekSources,
+    partial: Partial<PeekPhoneData>,
+  ): Promise<number | null> {
+    if (!sources.wallet || !partial.transactions) return null;
+    try {
+      const storyNow = storyNowForChat(chat);
+      const wallet = await mutateCharWallet(
+        charId,
+        storyNow,
+        (w) => applyPeekSpending(w, partial.transactions ?? [], storyNow).wallet,
+      );
+      return wallet.balance;
+    } catch (e) {
+      console.warn("[PeekPhone] 扣角色帳戶消費失敗:", e);
+      return null;
+    }
   }
 
   /** 行程、備忘錄組生成好了：寫回角色的待辦和行程，聊天頁和之後的聊天都照著走 */
@@ -624,6 +658,8 @@ export const usePeekPhoneStore = defineStore("peekPhone", () => {
 
       // 生成中解鎖、找到的秘密記在 data.value 上，跟結果合併
       data.value = { ...result, progress: data.value?.progress };
+      const realBalance = await applyPeekWallet(charId, chat, sources, result);
+      if (realBalance !== null && data.value) data.value = { ...data.value, balance: realBalance };
       groupStatus.value = { A: "done", B: "done", C: "done", D: "done" };
       groupErrors.value = { A: null, B: null, C: null, D: null };
 
@@ -771,6 +807,10 @@ export const usePeekPhoneStore = defineStore("peekPhone", () => {
 
       // 合併回 data
       data.value = { ...data.value!, ...partial };
+      if (phase === "BC") {
+        const realBalance = await applyPeekWallet(charId, chat, sources, partial);
+        if (realBalance !== null) data.value = { ...data.value!, balance: realBalance };
+      }
 
       // 更新狀態
       if (phase === "A") {

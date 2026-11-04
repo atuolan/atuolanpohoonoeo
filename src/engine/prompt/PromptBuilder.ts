@@ -292,6 +292,8 @@ export interface PromptBuilderOptions {
   charBusyGuide?: string;
   /** 噗文分享的標籤說明與最近的噗（{{plurkShareGuide}} 宏）；沒有時是空字串或不傳 */
   plurkShareGuide?: string;
+  /** 角色帳戶餘額（{{charWallet}} 宏，接在轉帳說明後面）；沒有時是空字串或不傳 */
+  charWallet?: string;
   /** 角色剛暫離回來那一輪的說明（[剛忙完回來]／[被催回來]），附加在 timeInfo 後面 */
   charAwayReturnNote?: string;
   /** 回送禮物的說明（只在節日、提到禮物、很久沒送時那一輪帶），附加在 timeInfo 後面 */
@@ -684,6 +686,7 @@ export class PromptBuilder {
         charSleepGuide: options.charSleepGuide || "",
         charBusyGuide: options.charBusyGuide || "",
         plurkShareGuide: options.plurkShareGuide || "",
+        charWallet: options.charWallet || "",
         userMoodNote: options.userMoodNote || "",
         charPlanner: options.charPlanner || "",
         userCalendar: options.userCalendar || "",
@@ -846,6 +849,7 @@ export class PromptBuilder {
         charSleepGuide: options.charSleepGuide || "",
         charBusyGuide: options.charBusyGuide || "",
         plurkShareGuide: options.plurkShareGuide || "",
+        charWallet: options.charWallet || "",
         userMoodNote: options.userMoodNote || "",
         charPlanner: options.charPlanner || "",
         userCalendar: options.userCalendar || "",

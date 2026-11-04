@@ -33,6 +33,12 @@ vi.mock("@/services/PeekPhoneService", () => ({
   ),
 }));
 
+// 角色帳戶另外測；這裡當成沒有帳戶，手機照舊讓 AI 編餘額
+vi.mock("@/services/charWallet", () => ({
+  ensureCharWallet: vi.fn(async () => null),
+  mutateCharWallet: vi.fn(),
+  storyNowForChat: () => Date.now(),
+}));
 vi.mock("@/composables/useStreamingWindow", () => ({ useStreamingWindow: vi.fn() }));
 vi.mock("@/stores/settings", () => ({
   useSettingsStore: () => ({

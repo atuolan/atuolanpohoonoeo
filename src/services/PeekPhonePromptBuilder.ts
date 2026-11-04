@@ -34,6 +34,8 @@ export interface PeekPromptContext {
   firstChatDate?: string;
   /** 多人卡成員的手機：群組名和其他成員（不是多人卡就不給） */
   group?: { groupName: string; otherMembers: string[] };
+  /** 角色帳戶（真的）：有的話 balance 照抄、transactions 只寫今天的支出 */
+  wallet?: { balance: number; monthlyIncome: number; incomeNote?: string };
 }
 
 const WEEKDAYS = ["日", "一", "二", "三", "四", "五", "六"];
@@ -247,10 +249,19 @@ export function buildGroupBCPrompt(ctx: PeekPromptContext, previousContext = "")
   const realBlock = ctx.realDataText
     ? `\n\n【真的發生過的事 —— 已經會顯示在手機裡，下面要生成的不要重複，也不能跟這些衝突】\n${ctx.realDataText}`
     : "";
+  const walletBlock = ctx.wallet
+    ? `\n\n【${charName}的帳戶 —— 是真的】目前餘額 ${ctx.wallet.balance} 元，月收入約 ${ctx.wallet.monthlyIncome} 元${ctx.wallet.incomeNote ? `（${ctx.wallet.incomeNote}）` : ""}。balance 照抄 ${ctx.wallet.balance}；transactions 只寫今天的日常支出（負數），不要寫薪水或其他收入，花費要符合這個收入水準。`
+    : "";
+  const balanceLine = ctx.wallet
+    ? `- balance 帳戶餘額：照抄 ${ctx.wallet.balance}`
+    : "- balance 帳戶餘額：符合角色經濟狀況的整數";
+  const transactionsLine = ctx.wallet
+    ? "- transactions 今天的支出 3 到 8 筆：description、amount（支出寫負數）、time（時:分）"
+    : "- transactions 最近的交易 3 到 8 筆：description、amount（入帳寫正數，支出寫負數）、time（時:分）";
 
   return `你是角色扮演內容生成器。請根據以下資料，生成「${charName}」手機裡的行程、飲食、備忘錄、記事本、日記和錢包。
 
-${buildCharacterBlock(ctx)}${prevBlock}${plannerBlock}${realBlock}
+${buildCharacterBlock(ctx)}${prevBlock}${plannerBlock}${realBlock}${walletBlock}
 
 【要生成的內容】
 - schedule 今天的行程 3 到 8 項：time（時:分）、title、location（沒有地點就不寫這行）、done（現在之前的寫 true，還沒到的寫 false）
@@ -258,8 +269,8 @@ ${buildCharacterBlock(ctx)}${prevBlock}${plannerBlock}${realBlock}
 - memos 備忘 2 到 6 條：text、done（true 或 false）
 - notes 記事本 1 到 3 篇：title、content
 - diary 日記 1 到 3 篇：date（今天或之前的 YYYY-MM-DD）、mood 只能是 happy / neutral / sad / angry / excited、content、weather（沒有就不寫這行）
-- balance 帳戶餘額：符合角色經濟狀況的整數
-- transactions 最近的交易 3 到 8 筆：description、amount（入帳寫正數，支出寫負數）、time（時:分）
+${balanceLine}
+${transactionsLine}
 
 【跟「${userName}」有關】
 - 日記和記事本是最私密的地方：寫出角色對${userName}真正的心情，自然呼應聊天裡發生的事、收回的訊息和沒送出的草稿，但不要整段照抄。

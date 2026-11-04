@@ -30,6 +30,7 @@ import type { Lorebook } from "@/types/worldinfo";
 import { resolveSummaryReadCount, selectSummariesForPrompt } from "@/utils/summarySelection";
 import { buildEventScanText, selectImportantEventsForPrompt } from "@/utils/importantEventSelection";
 import type { ImportantEventsLog } from "@/types/importantEvents";
+import { buildCharWalletPromptNote, storyNowForChat } from "@/services/charWallet";
 import {
   applyPromptRegexToHistory,
   applyWorldInfoRegexToLorebooks,
@@ -1387,6 +1388,11 @@ export class ProactiveMessageService {
         userMoodNote: noteBoardContext.moodNote,
         charPlanner: charPlannerText,
         userCalendar: userCalendarText,
+        // 角色帳戶餘額（{{charWallet}}，接在轉帳說明後面）
+        charWallet: await buildCharWalletPromptNote(
+          [{ characterId: character.id, name: character.data?.name || character.nickname || "角色" }],
+          storyNowForChat(chat),
+        ),
         // 噗文分享：可以留言的噗＋（有開設定時）最近的噗；面對面模式不帶
         plurkShareGuide: chat.faceToFaceMode
           ? ""

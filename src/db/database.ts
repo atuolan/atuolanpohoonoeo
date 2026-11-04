@@ -364,6 +364,11 @@ interface AguaphoneDB extends DBSchema {
       "by-updated": number;
     };
   };
+  // === v31 新增：角色帳戶（以 characterId 為 key） ===
+  charWallets: {
+    key: string;
+    value: import("@/types/charWallet").CharWallet;
+  };
 }
 
 // ============================================================
@@ -372,7 +377,8 @@ interface AguaphoneDB extends DBSchema {
   
   const DB_NAME = "aguaphone-db";
   // v30 新增收藏語音功能
-  const DB_VERSION = 30;
+  // v31 新增角色帳戶
+  const DB_VERSION = 31;
   
   // Store 名稱常量
 export const DB_STORES = {
@@ -409,6 +415,7 @@ export const DB_STORES = {
   PROMPT_OVERRIDES: "promptOverrides",
   FAVORITE_AUDIOS: "favoriteAudios",
   FAVORITE_AUDIO_GROUPS: "favoriteAudioGroups",
+  CHAR_WALLETS: "charWallets",
 } as const;
 
 const SELF_HOSTED_SYNC_SNAPSHOT_STORES = new Set<string>([
@@ -963,6 +970,11 @@ export async function getDatabase(): Promise<IDBPDatabase<AguaphoneDB>> {
           keyPath: "id",
         });
         favoriteAudioGroupsStore.createIndex("by-updated", "updatedAt");
+      }
+
+      // 建立 charWallets 表（角色帳戶）
+      if (!db.objectStoreNames.contains("charWallets")) {
+        db.createObjectStore("charWallets", { keyPath: "characterId" });
       }
     },
     blocked() {

@@ -1003,6 +1003,7 @@ export function useBackupImport() {
       ["favoriteAudios", "favoriteAudios"],
       ["favoriteAudioGroups", "favoriteAudioGroups"],
       ["peekPhoneData", "peekPhoneData"],
+      ["charWallets", "charWallets"],
       ["imageGallery", "imageCache"],
       ["announcementAcks", "announcementAcks"],
     ] as const) {

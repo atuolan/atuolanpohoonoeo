@@ -458,6 +458,10 @@ export interface ChatMessage {
   transferSettledBy?: string;
   /** 角色的退款：退的是哪一則使用者轉帳 */
   refundOfMessageId?: string;
+  /** 使用者轉給角色、角色收下時，記在角色帳戶的哪一筆 */
+  charWalletEntryId?: string;
+  /** 使用者轉給角色時，入的是哪個角色的帳戶 */
+  charWalletCharacterId?: string;
 
   // --- 外賣/商城（MVP） ---
   /** 是否為商品分享卡 */
