@@ -460,6 +460,8 @@ export interface ChatMessage {
   refundOfMessageId?: string;
   /** 使用者轉給角色、角色收下時，記在角色帳戶的哪一筆 */
   charWalletEntryId?: string;
+  /** 約會卡片（邀請、請求、出發、回憶） */
+  dateCard?: import("@/types/date").DateCardData;
   /** 使用者轉給角色時，入的是哪個角色的帳戶 */
   charWalletCharacterId?: string;
 

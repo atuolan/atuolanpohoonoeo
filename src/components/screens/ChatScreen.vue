@@ -272,6 +272,11 @@ import { useUserStore } from "@/stores/user";
 import { useFitnessStore } from "@/stores/fitness";
 import { settleUserTransfers, unsettleUserTransfers } from "@/utils/transferSettlement";
 import { useChatCharWallet } from "@/composables/useChatCharWallet";
+import { useChatDate } from "@/composables/useChatDate";
+import DateCard from "@/components/date/DateCard.vue";
+import DateSpotPicker from "@/components/date/DateSpotPicker.vue";
+import { parseDateTags } from "@/utils/dateTags";
+import { DATE_REQUEST_GUIDE, formatDuration } from "@/utils/dateLogic";
 import { buildCharWalletPromptNote, creditCharWallet } from "@/services/charWallet";
 import type {
   Chat,
@@ -378,6 +383,7 @@ const props = withDefaults(defineProps<ChatProps>(), {
   pendingAppearance: undefined,
   pendingMessage: "",
   startPhoneCall: false,
+  openDatePicker: false,
   incomingCallReason: "",
 });
 
@@ -395,6 +401,7 @@ const emit = defineEmits<{
   (e: "appearanceApplied"): void;
   (e: "pendingMessageConsumed"): void;
   (e: "phoneCallStarted"): void;
+  (e: "datePickerOpened"): void;
   (e: "incomingCallConsumed"): void;
   (e: "openChat", chatId: string, characterId: string): void;
   (e: "chatSwitched", chatId: string): void;
@@ -3005,6 +3012,59 @@ const {
     charWallet.chargeCharacter(msg, amount, "redpacket", "紅包被領走"),
 });
 
+// ===== 約會出門 =====
+const dateCtl = useChatDate({
+  messages,
+  chatId: () => currentChatId.value || props.chatId,
+  characterId: () => props.characterId || currentCharacter.value?.id,
+  names: () => ({
+    userName: getUserDisplayName(),
+    charName: currentCharacter.value?.data?.name || props.characterName || "角色",
+  }),
+  isGroupChat: () => isGroupChat.value,
+  chatFaceToFaceMode,
+  saveChatImmediate,
+  showToast,
+  storyNow: () => walletStoryNow(),
+  advanceStory: (minutes) => fakeTime.advanceBy(minutes),
+  spendUserMoney: async (amount, description) => {
+    const result = gameEconomyStore.spendMoney(GLOBAL_WALLET_ID, amount, "other", description);
+    if (result.success) await gameEconomyStore.saveState(GLOBAL_WALLET_ID);
+    return result.success;
+  },
+  onReturnedOnline: () => promptStoryClockReturn(),
+});
+watch(
+  () => currentChatId.value || props.chatId,
+  () => void dateCtl.load().catch((e) => console.warn("[約會] 載入失敗:", e)),
+  { immediate: true },
+);
+
+// 從主畫面「約會」進來：等約會狀態載入完再打開選地點
+watch(
+  () => props.openDatePicker,
+  async (open) => {
+    if (!open) return;
+    emit("datePickerOpened");
+    await dateCtl.load().catch(() => undefined);
+    dateCtl.openPicker();
+  },
+  { immediate: true },
+);
+
+/** 約會橫幅上的「已經 1 小時 20 分」：跟著畫面上的時鐘更新 */
+const dateBannerElapsed = computed(() => {
+  void fakeTime.formattedFakeTime.value;
+  if (!dateCtl.isOngoing.value) return "";
+  const minutes = dateCtl.elapsedMinutes();
+  return minutes > 0 ? `已經 ${formatDuration(minutes)}` : "";
+});
+
+function endDateFromBanner(): void {
+  if (!confirm("結束這次約會？會整理成回憶，然後回到線上聊天。")) return;
+  void dateCtl.end().catch((e) => console.error("[約會] 結束失敗:", e));
+}
+
 // ===== 來電功能 composable =====
 const {
   showIncomingCallModal,
@@ -3628,6 +3688,7 @@ const {
   openChatFilesPanel,
   startGroupCall,
   onShareMusic: handleShareMusicToChat,
+  openDatePicker: () => dateCtl.openPicker(),
   emit: emit as (e: string, ...args: any[]) => void,
 });
 
@@ -6148,7 +6209,7 @@ async function runAIResponseOnce(
       id: m.id,
       // 「已記錄」飲食通知當系統訊息送，講明已經記好了，角色才不會每輪又記一次
       // 骰子結果也當系統訊息：當成角色說的話，模型會學著自己寫 🎲 結果（畫面變成角色泡泡、點數也是編的）
-      sender: (m.isFoodRecord && m.foodRecordData) || m.isDiceRoll
+      sender: (m.isFoodRecord && m.foodRecordData) || m.isDiceRoll || m.dateCard
         ? ("system" as const)
         : m.role === "user"
           ? ("user" as const)
@@ -6156,7 +6217,7 @@ async function runAIResponseOnce(
             ? ("system" as const)
             : ("assistant" as const),
       name:
-        (m.isFoodRecord && m.foodRecordData) || m.isDiceRoll
+        (m.isFoodRecord && m.foodRecordData) || m.isDiceRoll || m.dateCard
           ? "system"
           : m.role === "user"
             ? "User"
@@ -6703,6 +6764,11 @@ async function runAIResponseOnce(
       // 噗文分享：可以留言的噗、可以傳的噗（{{plurkShareGuide}}）
       plurkShareGuide,
       charWallet: charWalletNote,
+      // 約會：邀請等回覆、約會中的地點／付錢／事件（插在聊天紀錄最後面）
+      dateNote: await dateCtl.promptNote(),
+      // 角色主動約出門的標籤說明：只在單人線上、沒有約會進行中時
+      dateGuide:
+        !isGroupChat.value && !chatFaceToFaceMode.value && !dateCtl.isActive.value ? DATE_REQUEST_GUIDE : "",
       // 傳入這個角色上一張紙條（{{charStickyNote}}）與 user 的心情（{{userMoodNote}}）
       charStickyNote: noteBoardContext.charStickyNote,
       userMoodNote: noteBoardContext.moodNote,
@@ -8208,6 +8274,11 @@ async function runAIResponseOnce(
             if (parsed.hasStickyNote && parsed.stickyNoteData) {
               await handleStickyNote(parsed.stickyNoteData.text);
             }
+
+            // 約會：邀請、回覆、付錢、結束（結束要寫回顧，不卡住這一輪的其他處理）
+            void dateCtl
+              .handleAiReply(parseDateTags(finalContent))
+              .catch((e) => console.error("[約會] 處理標籤失敗:", e));
 
             // 處理回覆心情標籤
             if (parsed.hasMoodReply && parsed.moodReplyData) {
@@ -12370,6 +12441,8 @@ useChatCleanup({
             message.roundTableModel,
             message.whisperWith,
             message.roundTableCard?.redpacketSent,
+            message.dateCard,
+            dateCtl.session.value?.inviteMessageId === message.id,
             roundTableOn,
             readingImageNoteId === message.id,
             groupMemberAvatarVersion,
@@ -12515,6 +12588,24 @@ useChatCleanup({
             </svg>
             <span class="system-notification-text">你撤回了一條訊息</span>
             <button class="recall-undo-btn" @click.stop="handleUndoRecall(message.id)">取消</button>
+          </div>
+
+          <!-- 約會卡片：邀請、請求、出發、回憶 -->
+          <div
+            v-else-if="message.dateCard"
+            class="date-card-row"
+            @click="isSelectingMessages ? toggleMessageSelection(message.id) : undefined"
+            @contextmenu.prevent="handleMessageDelete(message.id)"
+          >
+            <DateCard
+              :card="message.dateCard"
+              :user-name="getUserDisplayName()"
+              :char-name="currentCharacter?.data?.name || props.characterName || '角色'"
+              :actionable="dateCtl.session.value?.inviteMessageId === message.id"
+              @accept="dateCtl.acceptRequest(message.id)"
+              @decline="dateCtl.declineRequest(message.id)"
+              @cancel="dateCtl.cancelInvite(message.id)"
+            />
           </div>
 
           <div
@@ -12912,6 +13003,22 @@ useChatCleanup({
         </div>
       </div>
     </Teleport>
+
+    <!-- 約會中：地點、過了多久、結束約會 -->
+    <div v-if="dateCtl.isOngoing.value && dateCtl.session.value" class="date-banner" role="status">
+      <span class="date-banner-text">
+        {{ dateCtl.session.value.emoji }} {{ dateCtl.session.value.place }}約會中<template v-if="dateBannerElapsed">・{{ dateBannerElapsed }}</template>
+      </span>
+      <button type="button" class="date-banner-end" :disabled="dateCtl.ending.value" @click="endDateFromBanner">
+        {{ dateCtl.ending.value ? "整理回憶中…" : "結束約會" }}
+      </button>
+    </div>
+    <DateSpotPicker
+      :visible="dateCtl.showPicker.value"
+      :char-name="currentCharacter?.data?.name || props.characterName || '角色'"
+      @close="dateCtl.showPicker.value = false"
+      @pick="(pick) => dateCtl.inviteFromUser(pick)"
+    />
 
     <ChatScreenInputArea
       ref="inputAreaRef"
@@ -16500,6 +16607,45 @@ useChatCleanup({
 }
 
 // 日期分隔符
+.date-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 0 12px 6px;
+  padding: 8px 12px;
+  border-radius: 14px;
+  background: var(--color-surface, #fff);
+  border: 1px solid var(--color-border, #e5e7eb);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  font-size: 13px;
+  color: var(--color-text-primary, #1f2937);
+}
+
+.date-banner-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.date-banner-end {
+  flex-shrink: 0;
+  padding: 5px 12px;
+  border: none;
+  border-radius: 999px;
+  background: var(--color-primary, #7dd3a8);
+  color: var(--color-on-primary-contrast, #fff);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+
+  &:disabled {
+    opacity: 0.6;
+    cursor: default;
+  }
+}
+
 .date-separator {
   display: flex;
   justify-content: center;

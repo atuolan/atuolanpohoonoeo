@@ -396,6 +396,17 @@ const widgetDefs: WidgetDef[] = [
     data: { type: "3", label: "頭盔TA" },
   },
   {
+    id: "app-date",
+    type: "fluid-button",
+    name: "約會",
+    icon: Heart,
+    category: "app",
+    defaultWidth: 4,
+    defaultHeight: 4,
+    gradient: "linear-gradient(135deg, #fde2e4 0%, #fbcfe8 100%)",
+    data: { type: "1", label: "約會" },
+  },
+  {
     id: "app-reading",
     type: "fluid-button",
     name: "閱讀",

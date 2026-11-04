@@ -1,7 +1,12 @@
 <script setup lang="ts">
 import { useCharactersStore } from "@/stores";
-import { Phone, X } from "lucide-vue-next";
+import { Heart, Phone, X } from "lucide-vue-next";
 import { computed, ref } from "vue";
+
+/** call＝撥電話（預設），date＝約出門 */
+const props = withDefaults(defineProps<{ purpose?: "call" | "date" }>(), { purpose: "call" });
+const ActionIcon = computed(() => (props.purpose === "date" ? Heart : Phone));
+const title = computed(() => (props.purpose === "date" ? "約誰出門" : "撥打電話"));
 
 const emit = defineEmits<{
   (e: "close"): void;
@@ -40,8 +45,8 @@ function getInitial(c: (typeof charactersStore.characters)[0]) {
       <div class="phone-picker-modal">
         <!-- 標題列 -->
         <div class="picker-header">
-          <Phone :size="20" :stroke-width="1.5" />
-          <span class="picker-title">撥打電話</span>
+          <component :is="ActionIcon" :size="20" :stroke-width="1.5" />
+          <span class="picker-title">{{ title }}</span>
           <button class="close-btn" @click="emit('close')">
             <X :size="18" :stroke-width="1.5" />
           </button>
@@ -83,7 +88,7 @@ function getInitial(c: (typeof charactersStore.characters)[0]) {
               <span class="contact-name">{{ getDisplayName(character) }}</span>
             </div>
             <div class="call-icon">
-              <Phone :size="16" :stroke-width="1.5" />
+              <component :is="ActionIcon" :size="16" :stroke-width="1.5" />
             </div>
           </button>
         </div>

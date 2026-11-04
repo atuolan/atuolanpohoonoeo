@@ -4,6 +4,7 @@
  */
 
 import { stripPromptStatusNotes } from "@/utils/promptMessageContent";
+import { DATE_TAG_REGEX } from "@/utils/dateTags";
 import type { CalendarEventData } from "@/types/calendar";
 import type { GroupActionType, PlurkShareSnapshot } from "@/types/chat";
 import {
@@ -1435,6 +1436,7 @@ function parseShieldedResponse(rawResponse: string): ParsedResponse {
         .replace(CHAR_BUSY_TAG_REGEX, "")
         .replace(CHAR_WAKE_TAG_REGEX, "")
         .replace(STICKY_NOTE_TAG_REGEX, "")
+        .replace(DATE_TAG_REGEX, "")
         .replace(MOOD_REPLY_TAG_REGEX, "")
         .replace(CHAR_PLANNER_TAG_REGEX, "")
         .replace(/<time-(?:jump|advance)\s+[^>]*?\s*\/?>(?:<\/time-(?:jump|advance)>)?/gi, "")

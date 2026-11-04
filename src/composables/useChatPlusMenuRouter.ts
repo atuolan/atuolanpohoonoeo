@@ -35,6 +35,8 @@ export function useChatPlusMenuRouter(deps: {
   openChatFilesPanel: () => void;
   startGroupCall: () => void;
   onShareMusic?: () => void;
+  /** 約會出門：選地點 */
+  openDatePicker?: () => void;
   emit: (e: string, ...args: any[]) => void;
 }) {
   const phoneCallStore = usePhoneCallStore();
@@ -96,6 +98,9 @@ export function useChatPlusMenuRouter(deps: {
         deps.openWeatherModal();
         break;
       case "file":
+        break;
+      case "date":
+        deps.openDatePicker?.();
         break;
       case "magic":
         timeTravelInput.value = "";

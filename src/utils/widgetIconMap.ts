@@ -105,6 +105,7 @@ export const WIDGET_ICON_MAP: Record<string, Component> = {
   閱讀: BookOpen,
   書架: Book,
   占卜: Sparkles,
+  約會: Heart,
 
   // 圖標選擇器中的所有可選圖標
   MessageCircle,
