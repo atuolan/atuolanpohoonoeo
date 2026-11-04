@@ -15,6 +15,14 @@ import {
   supportsVarietyBoost,
 } from "@/api/NovelAIImageApi";
 import {
+  BANANA_MODEL_SUGGESTIONS,
+  fetchImageProviderModels,
+  GPT_IMAGE_MODEL_SUGGESTIONS,
+  IMAGE_PROVIDERS,
+  MJ_VERSION_OPTIONS,
+  NIJI_VERSION_OPTIONS,
+} from "@/api/ImageGenApi";
+import {
   createImageMessage,
   OpenAICompatibleClient,
   type APIMessage,
@@ -10120,6 +10128,10 @@ function exportNovelAIConfig() {
     apiSource: settingsStore.novelAIImage.apiSource,
     customBaseUrl: settingsStore.novelAIImage.customBaseUrl,
     openaiModel: settingsStore.novelAIImage.openaiModel,
+    provider: settingsStore.novelAIImage.provider,
+    gpt: settingsStore.novelAIImage.gpt,
+    banana: settingsStore.novelAIImage.banana,
+    midjourney: settingsStore.novelAIImage.midjourney,
   };
 
   const json = JSON.stringify(config, null, 2);
@@ -10134,15 +10146,81 @@ function exportNovelAIConfig() {
   URL.revokeObjectURL(url);
 }
 
+// 文生圖設定畫面：目前選的生圖服務（NovelAI / GPT / Banana / MJ / Niji）
+const imgProvider = computed(
+  () => settingsStore.novelAIImage.provider ?? "novelai",
+);
+const imgIsNovelAI = computed(() => imgProvider.value === "novelai");
+const imgIsMidjourney = computed(
+  () => imgProvider.value === "midjourney" || imgProvider.value === "niji",
+);
+// 舊資料或匯入檔可能沒有各服務的子設定，畫面綁定前先補上
+watch(
+  imgProvider,
+  () => {
+    const nai = settingsStore.novelAIImage;
+    if (!nai.gpt || !nai.banana || !nai.midjourney) {
+      applySavedNovelAIImageSettings(nai, { ...nai });
+    }
+  },
+  { immediate: true },
+);
+const gptImg = computed(() => settingsStore.novelAIImage.gpt!);
+const bananaImg = computed(() => settingsStore.novelAIImage.banana!);
+const mjImg = computed(() => settingsStore.novelAIImage.midjourney!);
+// MJ 的 stylize 用文字框，空字串存成 null（不指定）
+const mjStylizeInput = computed({
+  get: () => mjImg.value.stylize ?? "",
+  set: (v: string | number) => {
+    const n = Number(v);
+    mjImg.value.stylize = v === "" || v == null || Number.isNaN(n) ? null : n;
+  },
+});
+const imgModelSuggestions = computed(() =>
+  imgProvider.value === "gpt"
+    ? GPT_IMAGE_MODEL_SUGGESTIONS
+    : BANANA_MODEL_SUGGESTIONS,
+);
+const imgProviderModels = ref<string[]>([]);
+const imgProviderModelsLoading = ref(false);
+const imgProviderModelsMessage = ref("");
+watch(imgProvider, () => {
+  imgProviderModels.value = [];
+  imgProviderModelsMessage.value = "";
+});
+async function loadImageProviderModels() {
+  imgProviderModelsLoading.value = true;
+  imgProviderModelsMessage.value = "";
+  try {
+    const models = await fetchImageProviderModels(settingsStore.novelAIImage);
+    imgProviderModels.value = models;
+    imgProviderModelsMessage.value = models.length
+      ? `連線成功，共 ${models.length} 個生圖模型`
+      : "連線成功，但沒有列出生圖模型，請手動填寫";
+  } catch (e) {
+    imgProviderModels.value = [];
+    imgProviderModelsMessage.value =
+      e instanceof Error ? e.message : "取得模型失敗";
+  } finally {
+    imgProviderModelsLoading.value = false;
+  }
+}
+
 // NAI 設定畫面：依模型決定能選哪些預設、哪些進階選項
 const naiIsOpenAIFormat = computed(
   () => settingsStore.novelAIImage.apiSource === "openai",
 );
-// 套用官方預設要看的模型：OpenAI 格式看填的模型名稱（不是 NAI 模型就不套）
+// 步數、CFG、採樣器等 NovelAI 參數：只有 NovelAI 原生格式才有
+const naiShowNaiParams = computed(
+  () => imgIsNovelAI.value && !naiIsOpenAIFormat.value,
+);
+// 套用官方預設要看的模型：OpenAI 格式看填的模型名稱（不是 NAI 模型就不套）；其他服務不套
 const naiPresetModel = computed(() =>
-  naiIsOpenAIFormat.value
-    ? settingsStore.novelAIImage.openaiModel?.trim() || ""
-    : settingsStore.novelAIImage.model,
+  !imgIsNovelAI.value
+    ? ""
+    : naiIsOpenAIFormat.value
+      ? settingsStore.novelAIImage.openaiModel?.trim() || ""
+      : settingsStore.novelAIImage.model,
 );
 const naiUcPresetOptions = computed(() =>
   getUcPresetOptions(naiPresetModel.value),
@@ -14365,7 +14443,7 @@ useChatCleanup({
         </div>
       </Transition>
 
-      <!-- NovelAI 文生圖設定 Modal -->
+      <!-- 文生圖設定 Modal（NovelAI / GPT / Banana / Midjourney / Niji） -->
       <Transition name="fade">
         <div
           v-if="showNovelAISettingsModal"
@@ -14380,7 +14458,7 @@ useChatCleanup({
                     d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"
                   />
                 </svg>
-                NovelAI 文生圖設定
+                AI 文生圖設定
               </h3>
               <button class="close-btn" @click="closeNovelAISettings">
                 <svg viewBox="0 0 24 24" fill="currentColor">
@@ -14407,6 +14485,303 @@ useChatCleanup({
                 </label>
               </div>
 
+              <div class="setting-group">
+                <label class="setting-label">生圖服務</label>
+                <select
+                  class="setting-select"
+                  v-model="settingsStore.novelAIImage.provider"
+                >
+                  <option
+                    v-for="p in IMAGE_PROVIDERS"
+                    :key="p.value"
+                    :value="p.value"
+                  >
+                    {{ p.label }}
+                  </option>
+                </select>
+                <span class="setting-hint">
+                  各服務的 Key 和地址分開存，切換不會弄丟
+                </span>
+              </div>
+
+              <!-- ── 非 NovelAI 服務的連線設定 ── -->
+              <template v-if="!imgIsNovelAI">
+                <div class="setting-divider">連線</div>
+
+                <!-- GPT Image -->
+                <template v-if="imgProvider === 'gpt'">
+                  <div class="setting-group">
+                    <label class="setting-label">請求格式</label>
+                    <select class="setting-select" v-model="gptImg.requestFormat">
+                      <option value="images">圖片 API（/images/generations）</option>
+                      <option value="chat">聊天 API（/chat/completions）</option>
+                    </select>
+                    <span class="setting-hint">
+                      官方和大部分中轉站選圖片 API；只給聊天格式的（例如 gpt-4o-image）才選聊天 API
+                    </span>
+                  </div>
+                  <div class="setting-group">
+                    <label class="setting-label">API 地址</label>
+                    <input
+                      type="text"
+                      class="setting-input"
+                      v-model="gptImg.baseUrl"
+                      placeholder="https://api.openai.com/v1"
+                      autocomplete="off"
+                      autocorrect="off"
+                      autocapitalize="off"
+                      spellcheck="false"
+                    />
+                    <span class="setting-hint">官方填 https://api.openai.com/v1；中轉站填到 /v1</span>
+                  </div>
+                  <div class="setting-group">
+                    <label class="setting-label">API Key</label>
+                    <input
+                      type="text"
+                      class="setting-input api-key-field masked"
+                      v-model="gptImg.apiKey"
+                      placeholder="sk-xxxx..."
+                      autocomplete="off"
+                      autocorrect="off"
+                      autocapitalize="off"
+                      spellcheck="false"
+                    />
+                  </div>
+                </template>
+
+                <!-- Nano Banana -->
+                <template v-else-if="imgProvider === 'banana'">
+                  <div class="setting-group">
+                    <label class="setting-label">API 格式</label>
+                    <select class="setting-select" v-model="bananaImg.apiFormat">
+                      <option value="gemini">Gemini 原生（Google 官方）</option>
+                      <option value="openai">OpenAI 格式（中轉站 /chat/completions）</option>
+                    </select>
+                  </div>
+                  <div class="setting-group">
+                    <label class="setting-label">API 地址</label>
+                    <input
+                      type="text"
+                      class="setting-input"
+                      v-model="bananaImg.baseUrl"
+                      :placeholder="
+                        bananaImg.apiFormat === 'gemini'
+                          ? 'https://generativelanguage.googleapis.com'
+                          : 'https://example.com/v1'
+                      "
+                      autocomplete="off"
+                      autocorrect="off"
+                      autocapitalize="off"
+                      spellcheck="false"
+                    />
+                    <span class="setting-hint">{{
+                      bananaImg.apiFormat === "gemini"
+                        ? "官方填 https://generativelanguage.googleapis.com；支援 Gemini 格式的中轉站填它的網域"
+                        : "中轉站（New API、OpenRouter 等）填到 /v1"
+                    }}</span>
+                  </div>
+                  <div class="setting-group">
+                    <label class="setting-label">API Key</label>
+                    <input
+                      type="text"
+                      class="setting-input api-key-field masked"
+                      v-model="bananaImg.apiKey"
+                      :placeholder="bananaImg.apiFormat === 'gemini' ? 'AIza...' : 'sk-xxxx...'"
+                      autocomplete="off"
+                      autocorrect="off"
+                      autocapitalize="off"
+                      spellcheck="false"
+                    />
+                    <span class="setting-hint" v-if="bananaImg.apiFormat === 'gemini'">
+                      從 Google AI Studio 取得
+                    </span>
+                  </div>
+                </template>
+
+                <!-- Midjourney / Niji -->
+                <template v-else-if="imgIsMidjourney">
+                  <div class="setting-group">
+                    <label class="setting-label">API 地址</label>
+                    <input
+                      type="text"
+                      class="setting-input"
+                      v-model="mjImg.baseUrl"
+                      placeholder="https://example.com"
+                      autocomplete="off"
+                      autocorrect="off"
+                      autocapitalize="off"
+                      spellcheck="false"
+                    />
+                    <span class="setting-hint">
+                      Midjourney 沒有官方 API，要用支援 midjourney-proxy 格式的中轉站或自架服務；會送到「地址/mj/submit/imagine」。Midjourney 和 Niji 共用這組設定
+                    </span>
+                  </div>
+                  <div class="setting-group">
+                    <label class="setting-label">API Key</label>
+                    <input
+                      type="text"
+                      class="setting-input api-key-field masked"
+                      v-model="mjImg.apiKey"
+                      placeholder="sk-xxxx... 或 mj-api-secret"
+                      autocomplete="off"
+                      autocorrect="off"
+                      autocapitalize="off"
+                      spellcheck="false"
+                    />
+                  </div>
+                </template>
+
+                <div class="setting-divider">生成</div>
+
+                <!-- GPT / Banana 模型 -->
+                <div
+                  class="setting-group"
+                  v-if="imgProvider === 'gpt' || imgProvider === 'banana'"
+                >
+                  <label class="setting-label">模型</label>
+                  <div class="nai-model-row" v-if="imgProvider === 'gpt'">
+                    <input
+                      type="text"
+                      class="setting-input"
+                      v-model="gptImg.model"
+                      list="img-provider-models"
+                      placeholder="gpt-image-2"
+                      autocomplete="off"
+                      autocorrect="off"
+                      autocapitalize="off"
+                      spellcheck="false"
+                    />
+                    <button
+                      class="nai-fetch-models-btn"
+                      :disabled="imgProviderModelsLoading"
+                      @click="loadImageProviderModels"
+                    >
+                      {{ imgProviderModelsLoading ? "讀取中…" : "取得模型" }}
+                    </button>
+                  </div>
+                  <div class="nai-model-row" v-else>
+                    <input
+                      type="text"
+                      class="setting-input"
+                      v-model="bananaImg.model"
+                      list="img-provider-models"
+                      placeholder="gemini-2.5-flash-image"
+                      autocomplete="off"
+                      autocorrect="off"
+                      autocapitalize="off"
+                      spellcheck="false"
+                    />
+                    <button
+                      class="nai-fetch-models-btn"
+                      :disabled="imgProviderModelsLoading"
+                      @click="loadImageProviderModels"
+                    >
+                      {{ imgProviderModelsLoading ? "讀取中…" : "取得模型" }}
+                    </button>
+                  </div>
+                  <datalist id="img-provider-models">
+                    <option
+                      v-for="m in imgProviderModels.length
+                        ? imgProviderModels
+                        : imgModelSuggestions"
+                      :key="m"
+                      :value="m"
+                    />
+                  </datalist>
+                  <span class="setting-hint">
+                    {{
+                      imgProviderModelsMessage ||
+                      (imgProvider === "gpt"
+                        ? "gpt-image-2 最新；gpt-image-1-mini 最便宜。中轉站的名稱可能不同，按「取得模型」看清單"
+                        : "gemini-2.5-flash-image＝Nano Banana；gemini-3-pro-image-preview＝Nano Banana Pro")
+                    }}
+                  </span>
+                </div>
+
+                <div class="setting-group" v-if="imgProvider === 'gpt' && gptImg.requestFormat === 'images'">
+                  <label class="setting-label">畫質</label>
+                  <select class="setting-select" v-model="gptImg.quality">
+                    <option value="low">低（最便宜、最快）</option>
+                    <option value="medium">中</option>
+                    <option value="high">高（最貴、最慢）</option>
+                    <option value="auto">自動</option>
+                  </select>
+                </div>
+
+                <div
+                  class="setting-group"
+                  v-if="imgProvider === 'banana' && bananaImg.apiFormat === 'gemini' && !bananaImg.model.includes('2.5')"
+                >
+                  <label class="setting-label">解析度</label>
+                  <select class="setting-select" v-model="bananaImg.imageSize">
+                    <option value="1K">1K</option>
+                    <option value="2K">2K</option>
+                    <option value="4K">4K（較貴）</option>
+                  </select>
+                </div>
+
+                <!-- Midjourney / Niji 參數 -->
+                <template v-if="imgIsMidjourney">
+                  <div class="setting-group" v-if="imgProvider === 'niji'">
+                    <label class="setting-label">Niji 版本</label>
+                    <select class="setting-select" v-model="mjImg.nijiVersion">
+                      <option
+                        v-for="v in NIJI_VERSION_OPTIONS"
+                        :key="v.value"
+                        :value="v.value"
+                      >
+                        {{ v.label }}
+                      </option>
+                    </select>
+                  </div>
+                  <div class="setting-group" v-else>
+                    <label class="setting-label">Midjourney 版本</label>
+                    <select class="setting-select" v-model="mjImg.mjVersion">
+                      <option
+                        v-for="v in MJ_VERSION_OPTIONS"
+                        :key="v.value"
+                        :value="v.value"
+                      >
+                        {{ v.label }}
+                      </option>
+                    </select>
+                  </div>
+                  <div class="setting-group">
+                    <label class="setting-label">出圖方式</label>
+                    <select class="setting-select" v-model="mjImg.resultMode">
+                      <option value="single">切出第一張（推薦，不另外花錢）</option>
+                      <option value="upscale">自動放大 U1（多一次任務）</option>
+                      <option value="grid">保留四宮格</option>
+                    </select>
+                  </div>
+                  <div class="setting-group">
+                    <label class="setting-label">速度</label>
+                    <select class="setting-select" v-model="mjImg.speed">
+                      <option value="default">不指定</option>
+                      <option value="fast">Fast</option>
+                      <option value="relax">Relax（可能要排隊很久）</option>
+                      <option value="turbo">Turbo</option>
+                    </select>
+                  </div>
+                  <div class="setting-group">
+                    <label class="setting-label">Stylize（--s，留空不指定）</label>
+                    <input
+                      type="number"
+                      class="setting-input"
+                      v-model="mjStylizeInput"
+                      min="0"
+                      max="1000"
+                      placeholder="例如 100"
+                    />
+                    <span class="setting-hint">
+                      比例會照下面的圖片尺寸自動加 --ar；其他參數（--sref 等）可以寫在提示詞後綴
+                    </span>
+                  </div>
+                </template>
+              </template>
+
+              <!-- ── NovelAI 的連線設定 ── -->
+              <template v-else>
               <!-- 代理設定 -->
               <div class="setting-divider">連線/代理</div>
 
@@ -14601,6 +14976,8 @@ useChatCleanup({
                 </span>
               </div>
 
+              </template>
+
               <!-- 尺寸選擇 -->
               <div class="setting-group">
                 <label class="setting-label">圖片尺寸</label>
@@ -14622,10 +14999,16 @@ useChatCleanup({
                     {{ size.label }}
                   </button>
                 </div>
+                <span class="setting-hint" v-if="imgProvider === 'gpt'">
+                  GPT 只看直式／橫式／正方形，會換成 1024×1536、1536×1024 或 1024×1024
+                </span>
+                <span class="setting-hint" v-else-if="!imgIsNovelAI">
+                  只看比例，解析度由服務決定
+                </span>
               </div>
 
               <!-- 生成步數 -->
-              <div class="setting-group" v-if="!naiIsOpenAIFormat">
+              <div class="setting-group" v-if="naiShowNaiParams">
                 <label class="setting-label"
                   >生成步數:
                   {{
@@ -14649,7 +15032,7 @@ useChatCleanup({
               </div>
 
               <!-- CFG Scale -->
-              <div class="setting-group" v-if="!naiIsOpenAIFormat">
+              <div class="setting-group" v-if="naiShowNaiParams">
                 <label class="setting-label"
                   >CFG Scale: {{ settingsStore.novelAIImage.scale }}</label
                 >
@@ -14666,7 +15049,7 @@ useChatCleanup({
               <!-- 採樣器 -->
               <div
                 class="setting-group"
-                v-if="!naiIsOpenAIFormat && !naiIsMediumModel"
+                v-if="naiShowNaiParams && !naiIsMediumModel"
               >
                 <label class="setting-label">採樣器</label>
                 <select
@@ -14694,6 +15077,12 @@ useChatCleanup({
                 ></textarea>
                 <span class="setting-hint" v-if="naiUcPresetOptions.length"
                   >會接在下面「負面提示詞預設」的後面</span
+                >
+                <span class="setting-hint" v-else-if="imgIsMidjourney"
+                  >會變成 --no 參數</span
+                >
+                <span class="setting-hint" v-else-if="!imgIsNovelAI"
+                  >這個服務沒有負面提示詞欄位，會以「Avoid: …」接在提示詞最後</span
                 >
               </div>
 
@@ -14770,7 +15159,7 @@ useChatCleanup({
                 >
               </div>
 
-              <template v-if="!naiIsOpenAIFormat">
+              <template v-if="naiShowNaiParams">
               <!-- 進階設定分隔線 -->
               <div class="setting-divider">進階設定</div>
 
