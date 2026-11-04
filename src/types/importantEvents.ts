@@ -2,6 +2,8 @@
  * 重要事件記錄本類型定義
  */
 
+import type { ImportantEventInjectMode } from "@/utils/importantEventSelection";
+
 // ===== 事件分類 =====
 export type ImportantEventCategory = 
   | 'relationship'  // 關係與交往
@@ -11,7 +13,7 @@ export type ImportantEventCategory =
   | 'custom';       // 其他
 
 // ===== 事件優先級 =====
-export type ImportantEventPriority = 1 | 2 | 3; // 1=最重要，3=一般
+export type ImportantEventPriority = 1 | 2 | 3; // 1=常駐（每輪都送），2=重要，3=一般（2、3 聊到才送）
 
 // ===== 事件來源 =====
 export type ImportantEventSource = 'user' | 'ai' | 'system';
@@ -26,7 +28,7 @@ export interface ImportantEvent {
   timestamp: number;
   /** 事件分類 */
   category?: ImportantEventCategory;
-  /** 優先級（1=最重要，3=一般） */
+  /** 優先級（1=常駐每輪都送；2、3 聊到關鍵詞或向量記憶找到才送） */
   priority?: ImportantEventPriority;
   /** 來源 */
   source?: ImportantEventSource;
@@ -46,6 +48,8 @@ export interface ImportantEventsSettings {
   autoSave: boolean;
   /** 最大事件數量 */
   maxEvents: number;
+  /** 送給 AI 的方式：triggered（預設）＝常駐＋聊到才送；all＝全部送（舊做法） */
+  injectMode?: ImportantEventInjectMode;
 }
 
 // ===== 重要事件記錄本 =====

@@ -5,6 +5,21 @@
 import type { PromptDefinition, PromptOrderEntry } from "./types";
 import { INJECTION_RELATIVE } from "./types";
 
+/** 舊版的重要程度欄位（沒講哪邊最重要，也沒有常駐） */
+export const LEGACY_EVENTS_IMPORTANCE = `    "importance": "重要程度（1-5）"
+  }
+]
+`;
+
+/** 重要程度講清楚 5 最重要，並讓 AI 標出要常駐（每輪都送）的事件 */
+export const EVENTS_IMPORTANCE_AND_PINNED = `    "importance": "重要程度 1-5，5 最重要",
+    "pinned": "是否常駐（true/false）"
+  }
+]
+
+pinned 規則：會一直改變兩人關係、之後每次聊天都該記得的事才填 true，例如開始交往、求婚、送戒指、結婚、分手、搬去一起住、知道對方的重大秘密。大部分事件填 false，之後聊到相關話題時才會想起。
+`;
+
 // ===== 重要事件提示詞定義 =====
 export const IMPORTANT_EVENTS_PROMPT_DEFINITIONS: PromptDefinition[] = [
   {
@@ -29,10 +44,7 @@ export const IMPORTANT_EVENTS_PROMPT_DEFINITIONS: PromptDefinition[] = [
     "title": "事件標題",
     "description": "事件描述",
     "emotion": "相關情緒（開心/難過/感動/緊張等）",
-    "importance": "重要程度（1-5）"
-  }
-]
-
+${EVENTS_IMPORTANCE_AND_PINNED}
 如果沒有重要事件，返回空陣列 []`,
     system_prompt: true,
     marker: false,

@@ -928,6 +928,23 @@
                 >{{ eventsSettings.maxEvents }} 筆</span
               >
             </div>
+            <div class="setting-item inject-mode-setting">
+              <span>送給 AI</span>
+              <select
+                v-model="eventsSettings.injectMode"
+                class="meta-select"
+                @change="saveEventsLog"
+              >
+                <option value="triggered">常駐＋聊到才送（省 token）</option>
+                <option value="all">全部都送</option>
+              </select>
+            </div>
+            <p class="events-hint">
+              <template v-if="eventsSettings.injectMode !== 'all'">
+                ⭐ 常駐的每輪都送；其他事件要最近的對話提到它的關鍵詞（或向量記憶找到它）才送。目前常駐 {{ pinnedEventsCount }} 條。
+              </template>
+              <template v-else>每輪依優先級送前 {{ eventsSettings.maxEvents }} 條，事件多了會很花 token。</template>
+            </p>
           </div>
 
           <div class="add-event-section">
@@ -947,9 +964,9 @@
                 <option value="custom">其他</option>
               </select>
               <select v-model="newEventPriority" class="meta-select">
-                <option :value="1">最重要</option>
-                <option :value="2">重要</option>
-                <option :value="3">一般</option>
+                <option :value="1">⭐ 常駐</option>
+                <option :value="2">重要（聊到才送）</option>
+                <option :value="3">一般（聊到才送）</option>
               </select>
             </div>
             <button
@@ -974,6 +991,7 @@
                 :class="`priority-${event.priority || 3}`"
               >
                 <div class="event-header">
+                  <span v-if="event.priority === 1" class="event-pinned">⭐ 常駐</span>
                   <span class="event-category">{{
                     getCategoryName(event.category)
                   }}</span>
@@ -1030,11 +1048,17 @@
                       <option value="custom">其他</option>
                     </select>
                     <select v-model="editingEventPriority" class="meta-select">
-                      <option :value="1">最重要</option>
-                      <option :value="2">重要</option>
-                      <option :value="3">一般</option>
+                      <option :value="1">⭐ 常駐</option>
+                      <option :value="2">重要（聊到才送）</option>
+                      <option :value="3">一般（聊到才送）</option>
                     </select>
                   </div>
+                  <input
+                    v-model="editingEventKeywords"
+                    type="text"
+                    class="event-keywords-input"
+                    placeholder="觸發關鍵詞，用逗號分隔（留空就自動抓）"
+                  />
                   <div class="event-edit-actions">
                     <button class="btn-edit-cancel" @click="cancelEditEvent">
                       取消
@@ -1048,6 +1072,7 @@
                 <div v-else class="event-content">{{ event.content }}</div>
                 <!-- 向量關鍵詞預覽 -->
                 <div v-if="event.vectorKeywords && event.vectorKeywords.length > 0" class="keywords-preview">
+                  <span v-if="event.priority !== 1" class="keywords-label">聊到就想起：</span>
                   <span
                     v-for="kw in event.vectorKeywords.slice(0, 6)"
                     :key="kw"
@@ -1513,6 +1538,7 @@ import type {
     ImportantEventCategory,
     ImportantEventPriority,
     ImportantEventsLog,
+    ImportantEventsSettings,
 } from "@/types/importantEvents";
 import {
     createDefaultImportantEventsLog,
@@ -2203,17 +2229,24 @@ async function rebuildVectors() {
 
 // ===== 重要事件 =====
 const eventsLog = ref<ImportantEventsLog | null>(null);
-const eventsSettings = ref({ enabled: true, autoSave: true, maxEvents: 50 });
+const eventsSettings = ref<ImportantEventsSettings>({
+  enabled: true,
+  autoSave: true,
+  maxEvents: 50,
+  injectMode: "triggered",
+});
 const newEventContent = ref("");
 const newEventCategory = ref<ImportantEventCategory>("custom");
 const newEventPriority = ref<ImportantEventPriority>(2);
 const events = computed(() => eventsLog.value?.events || []);
+const pinnedEventsCount = computed(() => events.value.filter((e) => e.priority === 1).length);
 
 // 事件編輯狀態
 const editingEventId = ref<string | null>(null);
 const editingEventContent = ref("");
 const editingEventCategory = ref<ImportantEventCategory>("custom");
 const editingEventPriority = ref<ImportantEventPriority>(2);
+const editingEventKeywords = ref("");
 
 async function loadEventsLog() {
   try {
@@ -2225,7 +2258,7 @@ async function loadEventsLog() {
     );
     if (existing) {
       eventsLog.value = existing;
-      eventsSettings.value = { ...existing.settings };
+      eventsSettings.value = { injectMode: "triggered", ...existing.settings };
     } else {
       eventsLog.value = createDefaultImportantEventsLog(
         props.characterId,
@@ -2301,11 +2334,13 @@ function startEditEvent(event: {
   content: string;
   category?: ImportantEventCategory;
   priority?: ImportantEventPriority;
+  vectorKeywords?: string[];
 }) {
   editingEventId.value = event.id;
   editingEventContent.value = event.content;
   editingEventCategory.value = event.category || "custom";
   editingEventPriority.value = event.priority || 2;
+  editingEventKeywords.value = (event.vectorKeywords ?? []).join("，");
 }
 
 function cancelEditEvent() {
@@ -2313,9 +2348,10 @@ function cancelEditEvent() {
   editingEventContent.value = "";
   editingEventCategory.value = "custom";
   editingEventPriority.value = 2;
+  editingEventKeywords.value = "";
 }
 
-function saveEditEvent() {
+async function saveEditEvent() {
   if (
     !eventsLog.value ||
     !editingEventId.value ||
@@ -2330,6 +2366,14 @@ function saveEditEvent() {
       editingEventContent.value.trim();
     eventsLog.value.events[eventIndex].category = editingEventCategory.value;
     eventsLog.value.events[eventIndex].priority = editingEventPriority.value;
+    // 關鍵詞留空就從新內容重新抓
+    const typed = editingEventKeywords.value
+      .split(/[,，、\s]+/)
+      .map((k) => k.trim())
+      .filter(Boolean);
+    const { extractSummaryKeywords } = await import("@/utils/summaryKeywordExtractor");
+    eventsLog.value.events[eventIndex].vectorKeywords =
+      typed.length > 0 ? [...new Set(typed)] : extractSummaryKeywords(editingEventContent.value.trim());
     saveEventsLog();
   }
   cancelEditEvent();
@@ -3742,6 +3786,16 @@ onMounted(async () => {
       color: var(--color-text, #374151);
     }
 
+    &.inject-mode-setting .meta-select {
+      flex: 1;
+      padding: 4px 6px;
+      border: 1.5px solid var(--color-border, #e5e7eb);
+      border-radius: 6px;
+      font-size: 12px;
+      background: var(--color-surface, white);
+      color: var(--color-text, #1f2937);
+    }
+
     &.slider-setting {
       gap: 8px;
 
@@ -3760,6 +3814,13 @@ onMounted(async () => {
       }
     }
   }
+}
+
+.events-hint {
+  margin: 8px 0 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--color-text-secondary, #6b7280);
 }
 
 .add-event-section {
@@ -3872,6 +3933,11 @@ onMounted(async () => {
         margin-left: auto;
       }
 
+      .event-pinned {
+        font-weight: 600;
+        color: #ef4444;
+      }
+
       .btn-delete {
         background: none;
         border: none;
@@ -3903,6 +3969,11 @@ onMounted(async () => {
       flex-wrap: wrap;
       gap: 3px;
       margin-top: 5px;
+
+      .keywords-label {
+        font-size: 10px;
+        color: var(--color-text-secondary, #6b7280);
+      }
 
       .keyword-tag-mini {
         font-size: 10px;
@@ -3958,6 +4029,21 @@ onMounted(async () => {
         &:focus {
           outline: none;
           box-shadow: 0 0 0 2px rgba(125, 211, 168, 0.2);
+        }
+      }
+
+      .event-keywords-input {
+        width: 100%;
+        padding: 6px 8px;
+        border: 1.5px solid var(--color-border, #e5e7eb);
+        border-radius: 6px;
+        font-size: 12px;
+        background: var(--color-surface, white);
+        color: var(--color-text, #1f2937);
+
+        &:focus {
+          outline: none;
+          border-color: var(--color-primary, #7dd3a8);
         }
       }
 

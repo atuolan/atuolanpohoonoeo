@@ -122,9 +122,9 @@
           </select>
 
           <select v-model="newEventPriority" class="meta-select">
-            <option :value="1">最重要</option>
-            <option :value="2">重要</option>
-            <option :value="3">一般</option>
+            <option :value="1">⭐ 常駐</option>
+            <option :value="2">重要（聊到才送）</option>
+            <option :value="3">一般（聊到才送）</option>
           </select>
 
           <input
