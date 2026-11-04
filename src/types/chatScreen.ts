@@ -108,6 +108,8 @@ export interface ChatScreenMessage {
   transferStatus?: "sent" | "pending" | "received" | "refunded";
   transferSettledBy?: string;
   refundOfMessageId?: string;
+  charWalletEntryId?: string;
+  charWalletCharacterId?: string;
   isWaimaiShare?: boolean;
   isWaimaiPaymentRequest?: boolean;
   isWaimaiPaymentConfirm?: boolean;

@@ -271,6 +271,8 @@ import { useRegexScriptsStore } from "@/stores/regexScripts";
 import { useUserStore } from "@/stores/user";
 import { useFitnessStore } from "@/stores/fitness";
 import { settleUserTransfers, unsettleUserTransfers } from "@/utils/transferSettlement";
+import { useChatCharWallet } from "@/composables/useChatCharWallet";
+import { buildCharWalletPromptNote, creditCharWallet } from "@/services/charWallet";
 import type {
   Chat,
   ChatAppearance,
@@ -2957,6 +2959,27 @@ const onMessageFavoriteAudio = async (...args: any[]) => {
   }
 };
 
+// ===== 角色帳戶 =====
+// 收下角色的轉帳、領角色的紅包從他的帳戶扣；他收下使用者的轉帳入他的帳戶
+const charWallet = useChatCharWallet({
+  chatId: () => currentChatId.value || props.chatId,
+  characterIdOf: (msg) => {
+    if (msg.role === "user") return null;
+    if (!isGroupChat.value) return props.characterId || currentCharacter.value?.id || null;
+    if (groupMetadata.value?.isMultiCharCard || !msg.senderCharacterName) return null;
+    const id = resolveGroupMemberByName(msg.senderCharacterName, true).characterId;
+    return id && charactersStore.getCharacterById(id) ? id : null;
+  },
+  storyNow: () => walletStoryNow(),
+  userTransferTargetId: () =>
+    isGroupChat.value ? null : props.characterId || currentCharacter.value?.id || null,
+});
+
+/** 角色帳戶算收入用的劇情時間；輪迴時間會一直回到同幾天，改用現實時間 */
+function walletStoryNow(): number {
+  return fakeTime.fakeTimeMode.value === "loop" ? Date.now() : fakeTime.getChatNow().getTime();
+}
+
 // ===== 紅包 composable =====
 const {
   voiceClaimModalState,
@@ -2978,6 +3001,8 @@ const {
   charactersStore,
   saveChatImmediate,
   showToast,
+  chargeCharacter: (msg, amount) =>
+    charWallet.chargeCharacter(msg, amount, "redpacket", "紅包被領走"),
 });
 
 // ===== 來電功能 composable =====
@@ -4647,6 +4672,24 @@ async function handleAcceptTransfer(messageId: string) {
   const msg = messages.value[msgIndex];
   if (!msg.isTransfer || msg.transferStatus !== "pending") return;
 
+  // 從角色帳戶扣；不夠就收不下（之後他有錢了還能再按一次）
+  if (msg.transferAmount) {
+    const payerName = getCharacterDisplayNameFromMessage(msg);
+    const charged = await charWallet.chargeCharacter(msg, msg.transferAmount, "to_user", "轉帳給你");
+    if (!charged.ok) {
+      showToast(`${payerName} 的帳戶只剩 $${charged.balance}，轉帳沒有成功`);
+      messages.value.push({
+        id: `msg_claim_${Date.now()}_wallet_short`,
+        role: "user",
+        content: `${payerName} 想轉 $${msg.transferAmount}，但帳戶只剩 $${charged.balance}，轉帳沒有成功`,
+        timestamp: Date.now(),
+        isTransactionClaimNotice: true,
+      });
+      await saveChatImmediate();
+      return;
+    }
+  }
+
   // 更新狀態為已收款
   messages.value[msgIndex].transferStatus = "received";
 
@@ -4700,7 +4743,8 @@ async function handleUpdateTranscript(messageId: string, transcript: string) {
 async function settleTransfersAfterReply() {
   await expireOldRedpackets();
   const { refunds, changed } = settleUserTransfers(messages.value);
-  if (!changed) return;
+  const walletChanged = await charWallet.syncUserTransfers(messages.value);
+  if (!changed && !walletChanged) return;
   for (const { amount } of refunds) {
     gameEconomyStore.earnMoney(
       GLOBAL_WALLET_ID,
@@ -4718,6 +4762,8 @@ async function syncRoundTransfers(removed: Message[], restored: Message[]): Prom
   const restoredIds = new Set(restored.map((m) => m.id));
   const removedIds = new Set(removed.map((m) => m.id).filter((id) => !restoredIds.has(id)));
   const takeBack = unsettleUserTransfers(messages.value, removedIds);
+  // 改回還沒收的轉帳，從角色帳戶還原
+  if (await charWallet.syncUserTransfers(messages.value)) await saveChatImmediate();
   for (const { amount } of takeBack) {
     gameEconomyStore.spendMoney(GLOBAL_WALLET_ID, amount, "transfer", `收回 ${props.characterName} 的退款（換掉了那一輪回覆）`);
   }
@@ -6550,6 +6596,23 @@ async function runAIResponseOnce(
           })
         : "";
 
+    // 角色帳戶餘額（{{charWallet}}，接在轉帳說明後面）；多人卡的子角色沒有帳戶
+    const charWalletNote = await buildCharWalletPromptNote(
+      isGroupChat.value
+        ? groupMetadata.value?.isMultiCharCard
+          ? []
+          : (groupMetadata.value?.members ?? [])
+              .filter((m) => !m.isVirtual && m.characterId && charactersStore.getCharacterById(m.characterId))
+              .map((m) => {
+                const c = charactersStore.getCharacterById(m.characterId)!;
+                return { characterId: m.characterId, name: m.nickname || c.nickname || c.data?.name || "角色" };
+              })
+        : char
+          ? [{ characterId: char.id, name: char.data?.name || props.characterName || "角色" }]
+          : [],
+      walletStoryNow(),
+    );
+
     // 回送提示：只在單人線上聊天，節日／提到禮物／很久沒送時那一輪帶
     const giftNudgeNote =
       !isGroupChat.value && !chatFaceToFaceMode.value
@@ -6639,6 +6702,7 @@ async function runAIResponseOnce(
       giftNudgeNote,
       // 噗文分享：可以留言的噗、可以傳的噗（{{plurkShareGuide}}）
       plurkShareGuide,
+      charWallet: charWalletNote,
       // 傳入這個角色上一張紙條（{{charStickyNote}}）與 user 的心情（{{userMoodNote}}）
       charStickyNote: noteBoardContext.charStickyNote,
       userMoodNote: noteBoardContext.moodNote,
@@ -7886,6 +7950,18 @@ async function runAIResponseOnce(
                     ...target.redpacketState!,
                     claims: [...target.redpacketState!.claims],
                   };
+                  // 使用者發的紅包被角色領走，入那個角色的帳戶
+                  if (target.role === "user" && senderCharId && charactersStore.getCharacterById(senderCharId)) {
+                    void creditCharWallet({
+                      characterId: senderCharId,
+                      amount: cents / 100,
+                      kind: "from_user",
+                      description: "領到你的紅包",
+                      storyNowMs: walletStoryNow(),
+                      chatId: currentChatId.value || props.chatId,
+                      messageId: target.id,
+                    }).catch((e) => console.warn("[角色帳戶] 紅包入帳失敗:", e));
+                  }
                   await _gcDelayIfNeeded(parsedMsg);
                   messages.value.push(
                     createTransactionClaimNoticeMessage({

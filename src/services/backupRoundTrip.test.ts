@@ -295,6 +295,19 @@ const SEEDS: Record<BackedUpStoreName, Seed> = {
     { id: "grp-1", name: "最愛", audioIds: ["fav-1"], createdAt: 1, updatedAt: 1 },
     "grp-1",
   ),
+  charWallets: record(
+    DB_STORES.CHAR_WALLETS,
+    {
+      characterId: "char-1",
+      balance: 42000,
+      monthlyIncome: 60000,
+      lastPaidStoryDay: "2026-11-04",
+      ledger: [],
+      initializedFrom: "default",
+      updatedAt: 1,
+    },
+    "char-1",
+  ),
 };
 
 const SEEDS_EXTRA = {

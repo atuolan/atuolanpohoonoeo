@@ -42,6 +42,15 @@ import type { Chat } from "@/types/chat";
 import type { PeekChatMessage, PeekChatThread, PeekDiaryEntry, PeekPhoneTab } from "@/types/peekPhone";
 import { computeChatNow } from "@/utils/fakeTime";
 import {
+  CHAR_WALLET_CHANGED_EVENT,
+  editCharWallet,
+  ensureCharWallet,
+  refineCharWalletEstimate,
+  storyNowForChat,
+  type CharWalletChangedDetail,
+} from "@/services/charWallet";
+import type { CharWallet } from "@/types/charWallet";
+import {
   CHAR_PLANNER_CHANGED_EVENT,
   loadCharPlanner,
   type CharPlannerChangedDetail,
@@ -230,7 +239,77 @@ const upcomingPlans = computed(() =>
   (planner.value?.plans ?? []).filter((p) => p.date > phoneToday.value).sort(comparePlans).slice(0, 8),
 );
 const meals = computed(() => [...realData.value.meals, ...(storeData.value?.meals ?? [])]);
-const balance = computed(() => storeData.value?.balance ?? 0);
+// ===== 角色帳戶（多人卡成員沒有，照舊顯示 AI 編的） =====
+const charWallet = ref<CharWallet | null>(null);
+const walletEditing = ref(false);
+const walletEstimating = ref(false);
+const walletForm = ref({ balance: 0, monthlyIncome: 0, incomeNote: "" });
+/** 日常消費已經在下面的交易紀錄，帳戶紀錄只列轉帳、收入、約會這些 */
+const walletLedger = computed(() =>
+  (charWallet.value?.ledger ?? []).filter((e) => e.kind !== "daily").slice(0, 15),
+);
+
+async function loadWallet(): Promise<void> {
+  if (props.memberId || !props.characterId) {
+    charWallet.value = null;
+    return;
+  }
+  try {
+    charWallet.value = await ensureCharWallet(props.characterId, storyNowForChat(chatRecord.value));
+  } catch (e) {
+    console.warn("[PeekPhone] 讀取角色帳戶失敗:", e);
+  }
+}
+watch([() => props.characterId, () => props.memberId, chatRecord], () => void loadWallet(), { immediate: true });
+
+function onWalletChanged(e: Event): void {
+  const detail = (e as CustomEvent<CharWalletChangedDetail>).detail;
+  if (detail?.characterId === props.characterId && !props.memberId) charWallet.value = detail.wallet;
+}
+onMounted(() => window.addEventListener(CHAR_WALLET_CHANGED_EVENT, onWalletChanged));
+onUnmounted(() => window.removeEventListener(CHAR_WALLET_CHANGED_EVENT, onWalletChanged));
+
+function startWalletEdit(): void {
+  if (!charWallet.value) return;
+  walletForm.value = {
+    balance: charWallet.value.balance,
+    monthlyIncome: charWallet.value.monthlyIncome,
+    incomeNote: charWallet.value.incomeNote ?? "",
+  };
+  walletEditing.value = true;
+}
+
+async function saveWalletEdit(): Promise<void> {
+  charWallet.value = await editCharWallet(
+    props.characterId,
+    {
+      balance: Number(walletForm.value.balance),
+      monthlyIncome: Number(walletForm.value.monthlyIncome),
+      incomeNote: walletForm.value.incomeNote.trim(),
+    },
+    storyNowForChat(chatRecord.value),
+  );
+  walletEditing.value = false;
+}
+
+async function reestimateWallet(): Promise<void> {
+  if (!confirm("請 AI 依角色設定重新估算存款和月收入？目前的餘額會被換掉。")) return;
+  walletEstimating.value = true;
+  try {
+    const next = await refineCharWalletEstimate(props.characterId, { force: true });
+    if (next) charWallet.value = next;
+    else alert("估算失敗，請檢查「重要事件」用的 API 設定");
+  } finally {
+    walletEstimating.value = false;
+  }
+}
+
+function formatLedgerTime(ms: number): string {
+  const d = new Date(ms);
+  return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+const balance = computed(() => charWallet.value?.balance ?? storeData.value?.balance ?? 0);
 const transactions = computed(() => [...realData.value.transactions, ...(storeData.value?.transactions ?? [])]);
 const memos = computed<PeekMemoView[]>(() => {
   const todos = planner.value?.todos ?? [];
@@ -1359,8 +1438,40 @@ const todayLabel = computed(
             <span class="wallet-amount">
               <span class="wallet-currency">$</span>{{ balance.toLocaleString() }}
             </span>
-            <span class="wallet-hint">上次更新：今天</span>
+            <span v-if="charWallet" class="wallet-hint">
+              月收入 ${{ charWallet.monthlyIncome.toLocaleString() }}<template v-if="charWallet.incomeNote">・{{ charWallet.incomeNote }}</template>
+            </span>
+            <span v-else class="wallet-hint">上次更新：今天</span>
+            <div v-if="charWallet && !walletEditing" class="wallet-actions">
+              <button type="button" class="wallet-btn" @click="startWalletEdit">修改</button>
+              <button type="button" class="wallet-btn" :disabled="walletEstimating" @click="reestimateWallet">
+                {{ walletEstimating ? "估算中…" : "請 AI 重新估算" }}
+              </button>
+            </div>
+            <div v-if="charWallet && walletEditing" class="wallet-edit">
+              <label>餘額<input v-model.number="walletForm.balance" type="number" min="0" inputmode="numeric" /></label>
+              <label>月收入<input v-model.number="walletForm.monthlyIncome" type="number" min="0" inputmode="numeric" /></label>
+              <label>收入來源<input v-model="walletForm.incomeNote" type="text" maxlength="30" placeholder="例如：公司薪水" /></label>
+              <div class="wallet-actions">
+                <button type="button" class="wallet-btn" @click="walletEditing = false">取消</button>
+                <button type="button" class="wallet-btn is-primary" @click="saveWalletEdit">儲存</button>
+              </div>
+            </div>
           </div>
+          <template v-if="walletLedger.length > 0">
+            <div class="app-section-label">帳戶紀錄</div>
+            <ul class="app-card">
+              <li v-for="entry in walletLedger" :key="entry.id" class="app-row tx-row">
+                <span class="tx-main">
+                  <span class="tx-desc">{{ entry.description }}</span>
+                  <span class="tx-time">{{ formatLedgerTime(entry.storyTime) }}</span>
+                </span>
+                <span class="tx-amount" :class="entry.amount >= 0 ? 'is-in' : 'is-out'">
+                  {{ entry.amount >= 0 ? "+" : "" }}{{ entry.amount.toLocaleString() }}
+                </span>
+              </li>
+            </ul>
+          </template>
           <template v-if="transactions.length > 0">
             <div class="app-section-label">交易紀錄</div>
             <ul class="app-card">
@@ -2701,6 +2812,60 @@ const todayLabel = computed(
   margin-right: 4px;
   font-size: 24px;
   color: var(--a-ink-2);
+}
+
+.wallet-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.wallet-btn {
+  flex: 1;
+  padding: 8px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.08);
+  color: inherit;
+  font-size: 13px;
+  cursor: pointer;
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+
+  &.is-primary {
+    background: rgba(123, 216, 143, 0.22);
+    border-color: rgba(123, 216, 143, 0.5);
+  }
+}
+
+.wallet-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+
+  label {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 13px;
+    color: var(--a-ink-2);
+  }
+
+  input {
+    flex: 1;
+    min-width: 0;
+    padding: 7px 10px;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 10px;
+    background: rgba(0, 0, 0, 0.2);
+    color: inherit;
+    font-family: var(--p-num);
+    font-size: 14px;
+  }
 }
 
 .tx-main {

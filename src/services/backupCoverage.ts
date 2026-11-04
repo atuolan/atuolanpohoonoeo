@@ -51,6 +51,7 @@ export const STORE_BACKUP_PLAN = {
   promptOverrides: { skip: "已停用的表，專屬預設已改存在各聊天的 chatVariables" },
   favoriteAudios: "backup",
   favoriteAudioGroups: "backup",
+  charWallets: "backup",
 } satisfies Record<StoreName, StoreBackupPlan>;
 
 /** 登記為 "backup" 的表 */
