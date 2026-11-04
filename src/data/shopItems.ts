@@ -6,10 +6,9 @@
  * @requirements 5.1
  */
 import type { Rarity } from "@/schemas/gameEconomy";
-import { FURNITURE, furnitureShopId } from "@/data/roomFurniture";
 
 /** 商品分類 */
-export type ShopCategory = "frame" | "gift" | "rod" | "consumable" | "care" | "furniture";
+export type ShopCategory = "frame" | "gift" | "rod" | "consumable" | "care";
 
 /** 消耗品效果類型 */
 export type ConsumableEffectType = "work_efficiency" | "fishing_efficiency";
@@ -72,8 +71,6 @@ export interface ShopItem {
   giftUse?: GiftUse;
   /** 照顧他的道具：在他忙碌、睡覺時用 */
   careUse?: CareUse;
-  /** 像素房間的家具：家具 id（見 roomFurniture.ts） */
-  furnitureId?: string;
 }
 
 /**
@@ -1022,25 +1019,12 @@ export const CARE_ITEMS: ShopItem[] = [
 // ===== 匯出所有商品 =====
 
 /** 所有商品列表 */
-/** 像素房間的家具（基本款不賣） */
-export const FURNITURE_ITEMS: ShopItem[] = FURNITURE.filter((f) => !f.isDefault).map((f) => ({
-  id: furnitureShopId(f.id),
-  name: f.name,
-  description: `${f.description}。${f.hint}`,
-  price: f.price,
-  category: "furniture" as const,
-  rarity: f.rarity,
-  icon: `furniture:${f.id}`,
-  furnitureId: f.id,
-}));
-
 export const SHOP_ITEMS: ShopItem[] = [
   ...FRAME_ITEMS,
   ...ROD_ITEMS,
   ...GIFT_ITEMS,
   ...CONSUMABLE_ITEMS,
   ...CARE_ITEMS,
-  ...FURNITURE_ITEMS,
 ];
 
 // ===== 消耗品次數 =====
