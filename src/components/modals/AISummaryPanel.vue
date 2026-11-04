@@ -1844,24 +1844,37 @@ const savedReadIds = computed(
 const readCutoffIndex = computed(() =>
   savedReadCount.value < sortedSummaries.value.length ? savedReadCount.value : -1,
 );
+/** 最近 N 條以外、但一定會送的最早那一條（通常是怎麼認識的） */
+const keptOldest = computed(() => {
+  if (readCutoffIndex.value < 0 || savedReadCount.value <= 0) return null;
+  const list = sortedSummaries.value;
+  return list.length > readCutoffIndex.value ? list[list.length - 1] : null;
+});
 const olderPinnedCount = computed(() =>
   readCutoffIndex.value < 0
     ? 0
     : sortedSummaries.value
         .slice(readCutoffIndex.value)
-        .filter((s) => s.isImportant).length,
+        .filter((s) => s.isImportant && s.id !== keptOldest.value?.id).length,
 );
 const readStatusText = computed(() => {
   const total = activeSummaries.value.length;
   if (readCutoffIndex.value < 0) return `AI 每次回覆會讀取全部 ${total} 條總結`;
-  const pinned = olderPinnedCount.value;
+  const extras = [
+    ...(keptOldest.value ? ["最早的一條"] : []),
+    ...(olderPinnedCount.value > 0 ? [`${olderPinnedCount.value} 條較早的釘選`] : []),
+  ];
   return `AI 每次回覆會讀取最近 ${savedReadCount.value} 條總結${
-    pinned > 0 ? `，另加 ${pinned} 條較早的釘選` : ""
+    extras.length > 0 ? `，另加${extras.join("和")}` : ""
   }`;
 });
 const readDividerText = computed(() => {
   let text = "以下較舊的總結 AI 目前不會讀到";
-  if (olderPinnedCount.value > 0) text += "（釘選的除外）";
+  const kept = [
+    ...(keptOldest.value ? ["最早的一條"] : []),
+    ...(olderPinnedCount.value > 0 ? ["釘選的"] : []),
+  ];
+  if (kept.length > 0) text += `（${kept.join("和")}除外）`;
   if (settingsStore.vectorMemoryEnabled) text += "，向量記憶會依話題挑出相關的";
   return text;
 });
