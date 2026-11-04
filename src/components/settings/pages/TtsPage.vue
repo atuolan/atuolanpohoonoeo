@@ -362,6 +362,18 @@ onUnmounted(saveApiKeyDraft);
         <SettingsSelectRow v-model="tts.languageBoost" label="語言增強" :options="MINIMAX_LANGUAGES" @change="save" />
       </SettingsGroup>
 
+      <SettingsGroup
+        title="生成時機"
+        footer="關掉時，聊天訊息只會在你點播放按鈕的那一句才生成語音，沒聽的句子不花錢；已生成的會存起來，重聽不再扣費。通話一律即時生成，不受影響。"
+      >
+        <SettingsSwitchRow
+          v-model="tts.autoGenerate"
+          label="回覆後自動生成全部語音"
+          description="開啟後每則回覆一到就把所有句子都生成好，點了馬上播，但會比較花錢"
+          @change="save"
+        />
+      </SettingsGroup>
+
       <SettingsGroup title="輸出">
         <SettingsSelectRow
           v-model="tts.format"
