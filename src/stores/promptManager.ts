@@ -41,6 +41,7 @@ import {
   PLURK_POST_LANGUAGE_MODE,
   RETIRED_PLURK_COMMENT_PROMPT_IDS,
 } from "@/data/defaultPrompts/plurk";
+import { EVENTS_IMPORTANCE_AND_PINNED, LEGACY_EVENTS_IMPORTANCE } from "@/data/defaultPrompts/events";
 import { DEFAULT_F2F_PANEL_LAYOUT } from "@/data/faceToFacePanelLayout";
 import { parseF2FPanelLayout, type F2FPanelLayout } from "@/types/f2fPanel";
 import { clonePlain, reconcileLayout } from "@/utils/f2fPanelEngine";
@@ -203,6 +204,8 @@ const LOCKED_PROMPT_CONTENT_FIXES: Record<string, Array<[string, string]>> = {
   // 只有內容跟舊預設一字不差才會整段換掉，改過的保留
   custom_1780660237892: [[LEGACY_CHAR_LANGUAGE_CONTENT, defaultContent(DEFAULT_PROMPT_DEFINITIONS, "custom_1780660237892")]],
   gc_custom_1792300000851: [[LEGACY_GROUP_CHAR_LANGUAGE_CONTENT, defaultContent(GROUP_CHAT_PROMPT_DEFINITIONS, "gc_custom_1792300000851")]],
+  // 重要事件提取：重要程度講清楚 5 最重要，並讓 AI 標出要常駐的事件
+  eventsSystemPrompt: [[LEGACY_EVENTS_IMPORTANCE, EVENTS_IMPORTANCE_AND_PINNED]],
   batchCommentsSystemPrompt: [
     ["5. 如果角色使用外語，只在外語部分後加括號翻譯", "5. 如果角色使用外語，只在外語部分後面附上中文翻譯，格式是「外語<br>中文翻譯」"],
     [
@@ -1108,6 +1111,7 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
     fixLockedPromptContent(stored.plurkPostPrompts);
     fixLockedPromptContent(stored.plurkCommentPrompts);
     fixLockedPromptContent(stored.batchCommentsPrompts);
+    fixLockedPromptContent(stored.eventsPrompts);
 
     // 噗浪評論：移除舊版逐則回覆的條目，舊預設名稱改成新名稱
     removeRetiredPrompts(stored.plurkCommentPrompts, RETIRED_PLURK_COMMENT_IDS);

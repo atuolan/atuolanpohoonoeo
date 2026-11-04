@@ -1844,6 +1844,12 @@ import {
   ImportantEventsLog,
 } from "@/types";
 import {
+  buildEventScanText,
+  isPinnedGiftName,
+  selectImportantEventsForPrompt,
+  type ImportantEventSelectOptions,
+} from "@/utils/importantEventSelection";
+import {
   createDefaultSummarySettings,
   type SummarySettings,
 } from "@/types/chat";
@@ -5051,7 +5057,8 @@ async function recordGiftToImportantEvents(
         : `${charName} 送了「${giftName}」給 ${userName}`,
       {
         category: "relationship",
-        priority: 2,
+        // 戒指、求婚這類禮物常駐，每輪都記得；其他禮物聊到才想起
+        priority: isPinnedGiftName(giftName) ? 1 : 2,
         source: "system",
         tags: ["禮物", giftName],
       },
@@ -6255,51 +6262,20 @@ async function runAIResponseOnce(
       console.log("[向量記憶] ℹ️ 總結讀取模式為「全部」，向量檢索不適用，跳過");
     }
 
-    // 準備重要事件數據（向量記憶啟用時，從檢索結果中分離事件類型）
-    let eventsToSend: Array<{
-      id: string;
-      content: string;
-      category?: string;
-      priority?: number;
-    }> = [];
-
-    if (
-      settingsStore.vectorMemoryEnabled &&
-      vectorMemories &&
-      vectorMemories.length > 0
-    ) {
-      // 從向量檢索結果中提取 event 類型的記憶
-      const vectorEvents = vectorMemories.filter(
-        (m) => m.sourceType === "event",
-      );
-      // 非 event 類型的保留在 vectorMemories 中（總結/日記）
+    // 準備重要事件：常駐（優先級 1）每輪都送，其他聊到關鍵詞或向量記憶找到才送
+    let vectorEventIds: string[] = [];
+    if (vectorMemories && vectorMemories.length > 0) {
+      // 向量找到的事件交給重要事件區塊送，總結／日記留在向量記憶裡
+      vectorEventIds = vectorMemories
+        .filter((m) => m.sourceType === "event")
+        .map((m) => m.sourceId);
       vectorMemories = vectorMemories.filter((m) => m.sourceType !== "event");
-
-      if (vectorEvents.length > 0) {
-        eventsToSend = vectorEvents.map((m) => ({
-          id: m.sourceId,
-          content: m.content,
-        }));
-        console.log(
-          `[向量記憶] 📋 從檢索結果分離出 ${vectorEvents.length} 條重要事件`,
-        );
-      }
-
-      // 補充：始終注入高優先級事件（priority=1），即使向量未命中
-      const allEvents = await loadImportantEventsForPrompt();
-      const highPriorityEvents = allEvents.filter(
-        (e) => e.priority === 1 && !eventsToSend.some((ve) => ve.id === e.id),
-      );
-      if (highPriorityEvents.length > 0) {
-        eventsToSend.push(...highPriorityEvents);
-        console.log(
-          `[向量記憶] ⭐ 補充 ${highPriorityEvents.length} 條高優先級事件`,
-        );
-      }
-    } else {
-      // 向量記憶未啟用，使用全量載入（原有行為）
-      eventsToSend = await loadImportantEventsForPrompt();
     }
+    const eventsToSend = await loadImportantEventsForPrompt({
+      scanText: buildEventScanText(messagesToUse),
+      vectorHitIds: vectorEventIds,
+      excludeNames: [char.data.name, userStore.currentPersona?.name ?? ""],
+    });
 
     // 準備天氣數據（優先使用聊天專屬位置覆蓋，回退至全域天氣）
     let weatherInfoToSend: typeof weatherStore.weatherData extends null
@@ -10644,8 +10620,10 @@ async function loadSummariesAndDiaries() {
   }
 }
 
-// 載入重要事件用於 prompt
-async function loadImportantEventsForPrompt(): Promise<
+// 載入重要事件用於 prompt：依記錄本設定挑常駐＋聊到的（或全部）
+async function loadImportantEventsForPrompt(
+  selectOptions: Omit<ImportantEventSelectOptions, "mode" | "limit"> = {},
+): Promise<
   Array<{
     id: string;
     content: string;
@@ -10660,27 +10638,25 @@ async function loadImportantEventsForPrompt(): Promise<
 
   try {
     const id = chatId || charId;
-    const eventsLog = await db.get<{
-      events: Array<{
-        id: string;
-        content: string;
-        category?: string;
-        priority?: number;
-      }>;
-      settings: { enabled: boolean; maxEvents?: number };
-    }>(DB_STORES.IMPORTANT_EVENTS, id!);
+    const eventsLog = await db.get<ImportantEventsLog>(
+      DB_STORES.IMPORTANT_EVENTS,
+      id!,
+    );
 
     if (
       eventsLog &&
       eventsLog.settings?.enabled &&
       eventsLog.events?.length > 0
     ) {
-      // 按優先級排序後截取 maxEvents 數量
-      const maxEvents = eventsLog.settings?.maxEvents ?? 50;
-      return eventsLog.events
-        .slice()
-        .sort((a, b) => (a.priority || 3) - (b.priority || 3))
-        .slice(0, maxEvents);
+      const picked = selectImportantEventsForPrompt(eventsLog.events, {
+        ...selectOptions,
+        mode: eventsLog.settings.injectMode,
+        limit: eventsLog.settings.maxEvents ?? 50,
+      });
+      console.log(
+        `[重要事件] 送出 ${picked.length}/${eventsLog.events.length} 條（模式：${eventsLog.settings.injectMode ?? "triggered"}）`,
+      );
+      return picked;
     }
   } catch (e) {
     console.error("載入重要事件失敗:", e);

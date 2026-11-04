@@ -6,6 +6,7 @@
 import type { APIMessage } from "@/api/OpenAICompatible";
 import type { PromptBuilderOptions } from "@/engine/prompt/PromptBuilder";
 import type { Lorebook } from "@/types/worldinfo";
+import { buildEventScanText, selectImportantEventsForPrompt } from "@/utils/importantEventSelection";
 import {
   applyPromptRegexToHistory,
   applyWorldInfoRegexToLorebooks,
@@ -335,16 +336,10 @@ async function loadCompanionContext(character: StoredCharacter): Promise<Compani
       isImportant: s.isImportant,
     }));
 
-    // 重要事件存成「記錄本」（id 是聊天 id，舊資料是角色 id），事件在 events 裡；跟電話模式同樣的取法
+    // 重要事件存成「記錄本」（id 是聊天 id，舊資料是角色 id），事件在 events 裡；跟聊天同樣的挑法
     const eventsLog =
       (chat ? await db.get<any>(DB_STORES.IMPORTANT_EVENTS, chat.id) : undefined) ??
       (await db.get<any>(DB_STORES.IMPORTANT_EVENTS, character.id));
-    context.importantEvents = eventsLog?.settings?.enabled
-      ? [...(eventsLog.events ?? [])]
-          .sort((a: any, b: any) => (a.priority || 3) - (b.priority || 3))
-          .slice(0, eventsLog.settings.maxEvents ?? 50)
-          .map((e: any) => ({ id: e.id, content: e.content, category: e.category, priority: e.priority }))
-      : [];
 
     if (chat) {
       // 只取一般對話；共讀卡本身就是伴讀紀錄，不重複放
@@ -358,6 +353,15 @@ async function loadCompanionContext(character: StoredCharacter): Promise<Compani
           createdAt: m.createdAt,
         }));
     }
+
+    // 常駐的每次都帶；其他看最近聊天聊到什麼
+    context.importantEvents = eventsLog?.settings?.enabled
+      ? selectImportantEventsForPrompt<any>(eventsLog.events ?? [], {
+          mode: eventsLog.settings.injectMode,
+          limit: eventsLog.settings.maxEvents ?? 50,
+          scanText: buildEventScanText(context.recentChatHistory),
+        }).map((e: any) => ({ id: e.id, content: e.content, category: e.category, priority: e.priority }))
+      : [];
   } catch (e) {
     console.warn("[CompanionChat] 讀取私聊記憶失敗:", e);
   }

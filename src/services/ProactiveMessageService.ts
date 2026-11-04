@@ -28,6 +28,8 @@ import type { GroupMember, MultiCharMember } from "@/types/chat";
 import type { StoredCharacter } from "@/types/character";
 import type { Lorebook } from "@/types/worldinfo";
 import { resolveSummaryReadCount, selectSummariesForPrompt } from "@/utils/summarySelection";
+import { buildEventScanText, selectImportantEventsForPrompt } from "@/utils/importantEventSelection";
+import type { ImportantEventsLog } from "@/types/importantEvents";
 import {
   applyPromptRegexToHistory,
   applyWorldInfoRegexToLorebooks,
@@ -1244,26 +1246,22 @@ export class ProactiveMessageService {
         priority?: number;
       }> = [];
       try {
-        const eventsLog = await db.get<{
-          events: Array<{
-            id: string;
-            content: string;
-            category?: string;
-            priority?: number;
-          }>;
-          settings: { enabled: boolean; maxEvents?: number };
-        }>(DB_STORES.IMPORTANT_EVENTS, chat.id);
+        const eventsLog = await db.get<ImportantEventsLog>(
+          DB_STORES.IMPORTANT_EVENTS,
+          chat.id,
+        );
 
         if (
           eventsLog &&
           eventsLog.settings?.enabled &&
           eventsLog.events?.length > 0
         ) {
-          const maxEvents = eventsLog.settings?.maxEvents ?? 50;
-          eventsToSend = eventsLog.events
-            .slice()
-            .sort((a, b) => (a.priority || 3) - (b.priority || 3))
-            .slice(0, maxEvents);
+          // 常駐的每次都帶；其他看最近聊到什麼
+          eventsToSend = selectImportantEventsForPrompt(eventsLog.events, {
+            mode: eventsLog.settings.injectMode,
+            limit: eventsLog.settings.maxEvents ?? 50,
+            scanText: buildEventScanText(messagesToUse),
+          });
         }
         console.log(
           `[ProactiveMessage] Important events: sending=${eventsToSend.length}`,
