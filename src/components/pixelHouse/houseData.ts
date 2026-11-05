@@ -75,7 +75,9 @@ export const NIGHT_ITEMS: Record<RoomId, string[]> = {
 export type FurnitureAction =
   | { kind: "app"; app: string; to: string }
   | { kind: "choose"; to: string; options: { app: string; label: string }[] }
-  | { kind: "enter-bath"; to: string };
+  | { kind: "enter-bath"; to: string }
+  /** 打開衣櫃，從這個部位開始 */
+  | { kind: "wardrobe"; to: string; slot: string };
 
 /** 家具 → 打開什麼。沒列的（或功能還沒做的）點了沒反應，只能在編輯時移動 */
 export const FURNITURE_ACTIONS: Record<RoomId, Record<string, FurnitureAction>> = {
@@ -111,6 +113,8 @@ export const FURNITURE_ACTIONS: Record<RoomId, Record<string, FurnitureAction>> 
   },
   bath: {
     "skincare-shelf": { kind: "app", app: "shop", to: "購物" },
+    mirror: { kind: "wardrobe", to: "換外觀", slot: "hair" },
+    "laundry-basket": { kind: "wardrobe", to: "換衣服", slot: "shirt" },
     window: { kind: "app", app: "weather", to: "天氣" },
   },
 };
@@ -123,10 +127,8 @@ export const COMING_SOON: { label: string; where: string }[] = [
   { label: "做菜小遊戲", where: "廚房的爐子" },
   { label: "購物清單", where: "廚房的調味料架" },
   { label: "記帳", where: "廚房的餐桌" },
-  { label: "換外觀", where: "浴室的鏡子" },
   { label: "泡澡", where: "浴室的浴缸" },
   { label: "洗衣和換季", where: "浴室的毛巾" },
-  { label: "換衣服", where: "浴室的洗衣籃" },
 ];
 
 // ===== 他會做的事 =====

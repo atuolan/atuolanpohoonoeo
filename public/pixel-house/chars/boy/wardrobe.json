@@ -1,0 +1,11 @@
+{
+ "uploadFee": 1500,
+ "styles": {
+  "hair": { "01": { "name": "蓬蓬短髮", "price": 0 } },
+  "eyes": { "01": { "name": "圓眼", "price": 0 } },
+  "shirt": { "01": { "name": "V 領 T 恤", "price": 0 } },
+  "jacket": { "01": { "name": "夾克", "price": 0 } },
+  "pants": { "01": { "name": "長褲", "price": 0 } },
+  "shoes": { "01": { "name": "便鞋", "price": 0 } }
+ }
+}

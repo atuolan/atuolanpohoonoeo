@@ -1,12 +1,12 @@
 <script setup lang="ts">
 /**
- * 主頁：主頁用畫布還是像素小屋；像素小屋住的是誰、小人是男生還是女生、家具擺設還原。
+ * 主頁：主頁用畫布還是像素小屋；像素小屋住的是誰、光線、家具擺設還原。
+ * （小人的外觀在小屋裡的衣櫃換，每個角色各一套）
  */
 import {
   loadPixelHouseState,
   updatePixelHouseState,
   type HomeStyle,
-  type ResidentLook,
 } from "@/components/pixelHouse/houseState";
 import { useCharactersStore } from "@/stores";
 import { computed, onMounted, ref } from "vue";
@@ -20,7 +20,6 @@ const charactersStore = useCharactersStore();
 const initial = loadPixelHouseState();
 const homeStyle = ref<HomeStyle>(initial.homeStyle);
 const residentId = ref<string>(initial.residentCharId ?? "");
-const look = ref<ResidentLook>(initial.look);
 const timeLight = ref(initial.timeLight);
 const hasPlacements = ref(Object.keys(initial.placements).length > 0);
 const resetDone = ref(false);
@@ -32,10 +31,6 @@ onMounted(() => {
 const styleOptions = [
   { value: "canvas", label: "畫布" },
   { value: "pixel-house", label: "像素小屋" },
-];
-const lookOptions = [
-  { value: "boy", label: "男生" },
-  { value: "girl", label: "女生" },
 ];
 
 const residentOptions = computed(() => [
@@ -54,11 +49,6 @@ function setStyle(v: string) {
 function setResident(v: string) {
   residentId.value = v;
   updatePixelHouseState({ residentCharId: v || null });
-}
-
-function setLook(v: string) {
-  look.value = v === "girl" ? "girl" : "boy";
-  updatePixelHouseState({ look: look.value });
 }
 
 function setTimeLight(v: boolean) {
@@ -92,7 +82,7 @@ function resetPlacements() {
 
     <SettingsGroup
       title="像素小屋"
-      footer="住在小屋的角色決定之後就固定，不會跟著最近聊天換。他會跟聊天裡的狀態連動：在睡就去床上睡、在忙就坐在電腦前、出門或約會就不在家。"
+      footer="住在小屋的角色決定之後就固定，不會跟著最近聊天換。他會跟聊天裡的狀態連動：在睡就去床上睡、在忙就坐在電腦前、出門或約會就不在家。換外觀：在小屋點浴室的鏡子，或轉盤 › 全部 App › 換外觀，每個角色各一套。"
     >
       <SettingsSelectRow
         label="住在小屋的角色"
@@ -100,7 +90,6 @@ function resetPlacements() {
         :options="residentOptions"
         @update:model-value="setResident"
       />
-      <SettingsSelectRow label="小人" :model-value="look" :options="lookOptions" @update:model-value="setLook" />
       <SettingsSwitchRow
         label="跟著時間變暗"
         description="黃昏偏橘、晚上偏藍；關掉就一直是白天的亮度"

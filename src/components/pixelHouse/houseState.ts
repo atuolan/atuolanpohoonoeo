@@ -4,9 +4,12 @@
  * - 住在小屋的角色（第一次用時是最近聊天的那位，之後固定）
  * - 小人是男生還是女生
  * - 房間要不要跟著現在的時間變黃昏、晚上的光線
+ * - 每個角色的外觀（穿什麼、什麼顏色、買過哪些款式）
+ * 用戶上傳自己畫的部位另外存一個 key（圖比較大，所有角色共用）
  * - 家具擺在哪（只存搬過的）
  */
 import type { RoomId } from "./houseData";
+import { parseCustomParts, parseOutfit, type CustomPart, type Outfit } from "./wardrobeLogic";
 
 export type HomeStyle = "canvas" | "pixel-house";
 export type ResidentLook = "boy" | "girl";
@@ -14,7 +17,10 @@ export type ResidentLook = "boy" | "girl";
 export interface PixelHouseState {
   homeStyle: HomeStyle;
   residentCharId: string | null;
+  /** 還沒換過外觀的角色用這個身體 */
   look: ResidentLook;
+  /** 角色 id → 外觀 */
+  looks: Record<string, Outfit>;
   /** 黃昏、晚上房間變暗（關掉就一直是白天的亮度） */
   timeLight: boolean;
   /** 房間 → 家具 id → [x, y]（房間格子） */
@@ -25,7 +31,7 @@ const STORAGE_KEY = "pixel_house_state";
 export const PIXEL_HOUSE_CHANGED_EVENT = "aguaphone:pixel-house-changed";
 
 export function defaultPixelHouseState(): PixelHouseState {
-  return { homeStyle: "canvas", residentCharId: null, look: "boy", timeLight: true, placements: {} };
+  return { homeStyle: "canvas", residentCharId: null, look: "boy", looks: {}, timeLight: true, placements: {} };
 }
 
 /** 讀不到或格式不對的欄位用預設值 */
@@ -46,10 +52,18 @@ export function parsePixelHouseState(raw: unknown): PixelHouseState {
       placements[room as RoomId] = clean;
     }
   }
+  const look: ResidentLook = r.look === "girl" ? "girl" : "boy";
+  const looks: Record<string, Outfit> = {};
+  if (r.looks && typeof r.looks === "object" && !Array.isArray(r.looks)) {
+    for (const [charId, outfit] of Object.entries(r.looks as Record<string, unknown>)) {
+      if (charId) looks[charId] = parseOutfit(outfit, look);
+    }
+  }
   return {
     homeStyle: r.homeStyle === "pixel-house" ? "pixel-house" : "canvas",
     residentCharId: typeof r.residentCharId === "string" && r.residentCharId ? r.residentCharId : null,
-    look: r.look === "girl" ? "girl" : "boy",
+    look,
+    looks,
     timeLight: r.timeLight !== false,
     placements,
   };
@@ -80,4 +94,28 @@ export function updatePixelHouseState(patch: Partial<PixelHouseState>): PixelHou
   const next = { ...loadPixelHouseState(), ...patch };
   savePixelHouseState(next);
   return next;
+}
+
+// ===== 用戶上傳的部位 =====
+
+const CUSTOM_PARTS_KEY = "pixel_house_custom_parts";
+
+export function loadCustomParts(): CustomPart[] {
+  try {
+    const saved = localStorage.getItem(CUSTOM_PARTS_KEY);
+    return parseCustomParts(saved ? JSON.parse(saved) : []);
+  } catch {
+    return [];
+  }
+}
+
+/** 存不下（空間滿了）回傳 false */
+export function saveCustomParts(parts: CustomPart[]): boolean {
+  try {
+    localStorage.setItem(CUSTOM_PARTS_KEY, JSON.stringify(parts));
+  } catch {
+    return false;
+  }
+  if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent(PIXEL_HOUSE_CHANGED_EVENT));
+  return true;
 }

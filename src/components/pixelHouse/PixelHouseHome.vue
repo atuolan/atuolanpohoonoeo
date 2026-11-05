@@ -13,6 +13,8 @@ import { useHomeBadgesStore } from "@/stores/homeBadges";
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from "vue";
 import HouseAppsSheet from "./HouseAppsSheet.vue";
 import HouseRoom from "./HouseRoom.vue";
+import HouseWardrobe from "./HouseWardrobe.vue";
+import type { PartSlot } from "./wardrobeData";
 import PixelDial from "./PixelDial.vue";
 import {
   ACTS,
@@ -29,7 +31,9 @@ import {
   type RoomId,
 } from "./houseData";
 import { clampPlacement, followAnchor, pickDefaultResident, residentStatus, sceneAt, stripIndex, type ResidentStatus } from "./houseLogic";
-import { loadPixelHouseState, PIXEL_HOUSE_CHANGED_EVENT, savePixelHouseState, type PixelHouseState } from "./houseState";
+import { loadCustomParts, loadPixelHouseState, PIXEL_HOUSE_CHANGED_EVENT, savePixelHouseState, type PixelHouseState } from "./houseState";
+import { composeLook, loadDollManifest, loadWardrobeCatalog, type ComposedLook } from "./dollCompose";
+import { defaultOutfit, type CustomPart, type DollManifest, type DollPose, type Outfit, type WardrobeCatalog } from "./wardrobeLogic";
 import { stripX, useHouseResident } from "./useHouseResident";
 
 const emit = defineEmits<{
@@ -62,32 +66,12 @@ interface RoomLayout {
 const layouts = reactive<Partial<Record<RoomId, RoomLayout>>>({});
 const walkSizes = ref<Record<string, { w: number; h: number }>>({});
 
-/** 使用者自己畫的分層小人（紙娃娃）：每個動作一組圖層，1 px＝房間 1 格 */
-interface DollPose {
-  w: number;
-  h: number;
-  /** 好幾格的動作（走路）：幾格、每格幾毫秒；每個款式是一格一張圖 */
-  frames?: number;
-  ms?: number;
-  /** 畫的是往哪邊；另一邊左右翻 */
-  faces?: "left" | "right";
-  layers: { slot: string; styles: Record<string, string | string[]> }[];
-}
-interface DollManifest {
-  poses: Record<string, DollPose>;
-}
+/** 使用者自己畫的分層小人（紙娃娃）：每個動作一組圖層，1 px＝房間 1 格；照他的外觀疊好再顯示 */
 const doll = ref<DollManifest | null>(null);
+const catalog = ref<WardrobeCatalog | null>(null);
+/** 讀過這個身體的紙娃娃了（讀完才決定要用紙娃娃還是暫用的走路圖，不會先閃一下暫用圖） */
+const dollChecked = ref(false);
 
-async function loadDoll(look: string): Promise<DollManifest | null> {
-  try {
-    const res = await fetch(`${ASSET}chars/${look}/doll.json`);
-    if (!res.ok) return null;
-    const data = (await res.json()) as DollManifest;
-    return data?.poses && Object.keys(data.poses).length ? data : null;
-  } catch {
-    return null;
-  }
-}
 const loaded = ref(false);
 
 async function loadAssets() {
@@ -103,7 +87,6 @@ async function loadAssets() {
   } catch {
     walkSizes.value = {};
   }
-  doll.value = await loadDoll(state.look);
   loaded.value = true;
 }
 
@@ -112,9 +95,10 @@ const state = reactive<PixelHouseState>(loadPixelHouseState());
 function persist() {
   savePixelHouseState(JSON.parse(JSON.stringify(state)));
 }
-/** 設定頁改了光線就跟著換（其他設定回到主頁時才重新讀） */
+/** 設定頁改了光線就跟著換（其他設定回到主頁時才重新讀）；上傳的部位也重讀 */
 function onSettingsChanged() {
   state.timeLight = loadPixelHouseState().timeLight;
+  customParts.value = loadCustomParts();
 }
 
 function floorTop(room: RoomId): number {
@@ -273,8 +257,59 @@ const residentId = ref<string | null>(null);
 const residentChatId = ref<string | null>(null);
 const status = ref<ResidentStatus>("home");
 const unread = ref(0);
-const pronoun = computed(() => (state.look === "girl" ? "她" : "他"));
 const resident = computed(() => charactersStore.characters.find((c) => c.id === residentId.value) ?? null);
+
+// ===== 他的外觀（每個角色一套） =====
+const customParts = ref<CustomPart[]>(loadCustomParts());
+const residentOutfit = computed<Outfit>(() => (residentId.value && state.looks[residentId.value]) || defaultOutfit(state.look));
+const currentBase = computed(() => residentOutfit.value.base);
+const pronoun = computed(() => (currentBase.value === "girl" ? "她" : "他"));
+const composedLook = ref<ComposedLook | null>(null);
+
+watch(
+  currentBase,
+  async (base) => {
+    dollChecked.value = false;
+    const [d, c] = await Promise.all([loadDollManifest(`${ASSET}chars/`, base), loadWardrobeCatalog(`${ASSET}chars/`, base)]);
+    if (currentBase.value !== base) return;
+    doll.value = d;
+    catalog.value = c;
+    dollChecked.value = true;
+  },
+  { immediate: true },
+);
+
+watch(
+  () => [doll.value, JSON.stringify(residentOutfit.value), customParts.value] as const,
+  async () => {
+    const d = doll.value;
+    if (!d) {
+      composedLook.value = null;
+      return;
+    }
+    const want = residentOutfit.value;
+    const look = await composeLook(d, `${ASSET}chars/${want.base}/`, want, customParts.value);
+    if (JSON.stringify(residentOutfit.value) === JSON.stringify(want) && doll.value === d) composedLook.value = look;
+  },
+  { immediate: true },
+);
+
+const residentName = computed(() => resident.value?.nickname || resident.value?.data?.name || "他");
+const wardrobeOpen = ref(false);
+const wardrobeSlot = ref<PartSlot | null>(null);
+function openWardrobe(slot: PartSlot | null) {
+  // 沒人住就沒有衣櫃（下面的提示會說到設定選一位）
+  if (!residentId.value) return;
+  wardrobeSlot.value = slot;
+  wardrobeOpen.value = true;
+}
+
+/** 衣櫃存好了：記到這個角色 */
+function saveOutfit(outfit: Outfit) {
+  if (!residentId.value) return;
+  state.looks[residentId.value] = JSON.parse(JSON.stringify(outfit)) as Outfit;
+  persist();
+}
 
 const life = useHouseResident({
   scene,
@@ -344,30 +379,25 @@ const meInBath = computed(() => life.me.room === "bath");
 const meAct = computed(() => ACTS[life.act.value]);
 const lying = computed(() => !life.walking.value && life.act.value === "sleep");
 
-const spriteSet = computed(() => `${state.look}-${life.facing.value > 0 ? "right" : "left"}`);
+const spriteSet = computed(() => `${currentBase.value}-${life.facing.value > 0 ? "right" : "left"}`);
 const spriteSrc = computed(() => {
   const dir = life.facing.value > 0 ? "right" : "left";
   const n = life.walking.value ? (frame.value % 6) + 1 : 1;
-  return `${ASSET}chars/${state.look}/walk-${dir}-${n}.png`;
+  return `${ASSET}chars/${currentBase.value}/walk-${dir}-${n}.png`;
 });
 /** 紙娃娃現在用哪個動作：有畫的就用，沒畫的先用正面 */
-const dollPose = computed<DollPose | null>(() => {
+const dollPoseKey = computed<string | null>(() => {
   const d = doll.value;
   if (!d) return null;
   const dir = life.facing.value > 0 ? "right" : "left";
   const want = life.walking.value ? [`walk-${dir}`, "walk", "front"] : [meAct.value?.pose ?? "front", "front"];
-  for (const k of want) if (d.poses[k]) return d.poses[k];
-  return Object.values(d.poses)[0] ?? null;
+  for (const k of want) if (d.poses[k]) return k;
+  return Object.keys(d.poses)[0] ?? null;
 });
+const dollPose = computed<DollPose | null>(() => (dollPoseKey.value ? (doll.value?.poses[dollPoseKey.value] ?? null) : null));
 
-/** 這個動作每一層的圖（由底往上）；款式先用第一款，之後換裝再接設定。好幾格的每格都放，只顯示現在這格（換格時不會閃） */
-const dollLayers = computed(() =>
-  (dollPose.value?.layers ?? []).map((l) => {
-    const file = Object.values(l.styles)[0];
-    const files = Array.isArray(file) ? file : [file];
-    return { slot: l.slot, srcs: files.map((f) => `${ASSET}chars/${state.look}/${f}`) };
-  }),
-);
+/** 這個動作疊好的每一格（照他的外觀換好色）；每格都放，只顯示現在這格（換格時不會閃） */
+const dollFrames = computed(() => (dollPoseKey.value ? (composedLook.value?.[dollPoseKey.value] ?? []) : []));
 /** 好幾格的動作現在在第幾格（frame 每 110ms 加一） */
 const dollFrame = computed(() => {
   const p = dollPose.value;
@@ -461,6 +491,7 @@ function onItemClick(it: { room: RoomId; id: string; name: string; action?: Furn
     flashKey.value = null;
     if (action.kind === "enter-bath") openBath();
     else if (action.kind === "choose") choosing.value = { name: it.name, options: action.options };
+    else if (action.kind === "wardrobe") openWardrobe(action.slot as PartSlot);
     else emit("navigate", action.app);
   }, 160);
 }
@@ -536,8 +567,12 @@ let ptr: PointerState | null = null;
 let longPressTimer: ReturnType<typeof setTimeout> | null = null;
 let suppressClick = false;
 
+/** 蓋在房間上的面板（全部 App、衣櫃、轉盤）：在上面滑不要帶動房間 */
+const OVERLAY_SELECTOR = ".ph-sheet-wrap, .wd-wrap, .ph-dial-root";
+
 function onPointerDown(e: PointerEvent) {
   if (ptr || (e.pointerType === "mouse" && e.button !== 0)) return;
+  if ((e.target as HTMLElement | null)?.closest?.(OVERLAY_SELECTOR)) return;
   stopAnim();
   ptr = {
     id: e.pointerId,
@@ -675,9 +710,15 @@ function hintTap() {
 // ===== 開始 =====
 const onChatEvent = () => void refreshResident();
 
-/** 瀏覽器把聚焦的按鈕捲進畫面時會捲動 overflow:hidden 的容器，捲回來（左右滑由 scrollX 控制） */
+/**
+ * 瀏覽器把聚焦的按鈕捲進畫面時會捲動 overflow:hidden 的容器，捲回來（左右滑由 scrollX 控制）。
+ * 本來就可以捲的（全部 App、衣櫃的清單）不管。
+ */
 function onNativeScroll(e: Event) {
   const el = e.target as HTMLElement;
+  if (!(el instanceof HTMLElement)) return;
+  const st = getComputedStyle(el);
+  if (/(auto|scroll)/.test(st.overflowY) || /(auto|scroll)/.test(st.overflowX)) return;
   if (el.scrollLeft !== 0) el.scrollLeft = 0;
   if (el.scrollTop !== 0) el.scrollTop = 0;
 }
@@ -791,12 +832,10 @@ const clickableInView = (room: RoomId) => roomItems.value[room].filter((it) => i
           :class="{ 'is-hop': meAct?.hop && !life.walking.value }"
           :style="spriteStyle"
         >
-          <template v-for="l in dollLayers" :key="l.slot">
-            <img v-for="(src, n) in l.srcs" v-show="n === dollFrame" :key="src" :src="src" alt="" draggable="false" />
-          </template>
+          <img v-for="(src, n) in dollFrames" v-show="n === dollFrame" :key="n" :src="src" alt="" draggable="false" />
         </div>
         <img
-          v-else
+          v-else-if="dollChecked"
           class="ph-me-sprite"
           :class="{ 'is-hop': meAct?.hop && !life.walking.value }"
           :src="spriteSrc"
@@ -862,11 +901,9 @@ const clickableInView = (room: RoomId) => roomItems.value[room].filter((it) => i
       <div v-if="isHome && meInBath" class="ph-me" :style="meStyle">
         <div class="ph-me-shadow" :style="{ width: `${u(24)}px`, height: `${u(3.4)}px` }"></div>
         <div v-if="dollPose" class="ph-me-sprite ph-doll" :style="spriteStyle">
-          <template v-for="l in dollLayers" :key="l.slot">
-            <img v-for="(src, n) in l.srcs" v-show="n === dollFrame" :key="src" :src="src" alt="" draggable="false" />
-          </template>
+          <img v-for="(src, n) in dollFrames" v-show="n === dollFrame" :key="n" :src="src" alt="" draggable="false" />
         </div>
-        <img v-else class="ph-me-sprite" :src="spriteSrc" alt="" draggable="false" :style="spriteStyle" />
+        <img v-else-if="dollChecked" class="ph-me-sprite" :src="spriteSrc" alt="" draggable="false" :style="spriteStyle" />
         <button
           class="ph-me-hit"
           :style="{ width: `${spriteSize.w}px`, height: `${spriteSize.h}px`, left: `${-spriteSize.w / 2}px`, top: `${-spriteSize.h}px` }"
@@ -952,8 +989,20 @@ const clickableInView = (room: RoomId) => roomItems.value[room].filter((it) => i
         @close="sheetOpen = false"
         @pick="pickSheetApp"
         @edit-layout="enterEdit"
+        @wardrobe="sheetOpen = false; openWardrobe(null)"
         @global-theme="sheetOpen = false; emit('open-global-theme')"
         @back-to-canvas="backToCanvas"
+      />
+      <HouseWardrobe
+        :open="wardrobeOpen"
+        :char-name="residentName"
+        :outfit="residentOutfit"
+        :customs="customParts"
+        :asset="ASSET"
+        :start-slot="wardrobeSlot"
+        @close="wardrobeOpen = false"
+        @save="saveOutfit"
+        @customs-changed="customParts = $event"
       />
     </div>
 

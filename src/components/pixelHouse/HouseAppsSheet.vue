@@ -11,6 +11,7 @@ const emit = defineEmits<{
   (e: "close"): void;
   (e: "pick", app: string): void;
   (e: "edit-layout"): void;
+  (e: "wardrobe"): void;
   (e: "global-theme"): void;
   (e: "back-to-canvas"): void;
 }>();
@@ -48,6 +49,9 @@ function badgeText(n: number): string {
 
           <h3 class="ph-sheet-sub">小屋</h3>
           <div class="ph-row-list">
+            <button class="ph-row" @click="emit('wardrobe')">
+              <span>換外觀</span><span class="ph-row-note">也可以點浴室的鏡子</span>
+            </button>
             <button class="ph-row" @click="emit('edit-layout')">
               <span>移動家具</span><span class="ph-row-note">也可以長按房間</span>
             </button>
@@ -123,6 +127,8 @@ function badgeText(n: number): string {
 
 .ph-sheet-body {
   overflow-y: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
   padding: 12px 14px 18px;
   -webkit-overflow-scrolling: touch;
 }

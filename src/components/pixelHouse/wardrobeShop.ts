@@ -1,0 +1,24 @@
+/**
+ * 換外觀付錢：用跟商店、遊戲同一個錢包（gameEconomy 的 "global"），記一筆商店支出。
+ */
+import { useGameEconomyStore } from "@/stores/gameEconomy";
+import { WARDROBE_WALLET_ID } from "./wardrobeData";
+
+export async function loadWardrobeBalance(): Promise<number> {
+  const store = useGameEconomyStore();
+  await store.loadState(WARDROBE_WALLET_ID);
+  return store.getBalance(WARDROBE_WALLET_ID);
+}
+
+export type PayResult = { ok: true; balance: number } | { ok: false; error: "insufficient_funds" | "failed" };
+
+/** 扣錢並立刻存檔；金額 0 直接成功 */
+export async function payCoins(amount: number, description: string, itemId: string): Promise<PayResult> {
+  const store = useGameEconomyStore();
+  await store.loadState(WARDROBE_WALLET_ID);
+  if (amount <= 0) return { ok: true, balance: store.getBalance(WARDROBE_WALLET_ID) };
+  const r = store.spendMoney(WARDROBE_WALLET_ID, amount, "shop", description, itemId);
+  if (!r.success) return { ok: false, error: r.error === "insufficient_funds" ? "insufficient_funds" : "failed" };
+  await store.saveState(WARDROBE_WALLET_ID);
+  return { ok: true, balance: store.getBalance(WARDROBE_WALLET_ID) };
+}
