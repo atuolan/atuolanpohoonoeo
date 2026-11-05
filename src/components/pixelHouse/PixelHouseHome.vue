@@ -774,6 +774,72 @@ function itemStyle(it: RenderItem) {
 }
 
 const clickableInView = (room: RoomId) => roomItems.value[room].filter((it) => it.action);
+
+// ===== 「？」的標籤 =====
+// 量每個標籤的大小，一起排：快超出畫面左右就往內推、跟別的標籤疊到就往下挪；家具幾乎看不到就不顯示
+const LABEL_MARGIN = 8;
+const LABEL_GAP = 3;
+/** 家具至少要露出這麼多（px）才顯示標籤 */
+const LABEL_MIN_VISIBLE = 12;
+const labelSizes = reactive<Record<string, { w: number; h: number }>>({});
+function measureLabel(key: string, el: unknown) {
+  if (!(el instanceof HTMLElement) || !el.offsetWidth) return;
+  const cur = labelSizes[key];
+  if (!cur || cur.w !== el.offsetWidth || cur.h !== el.offsetHeight) labelSizes[key] = { w: el.offsetWidth, h: el.offsetHeight };
+}
+/** 這間房的左邊在畫面上的哪裡 */
+function roomScreenLeft(room: RoomId): number {
+  if (room === "bath") return bathLeft.value;
+  return stripOffset.value - scrollX.value + stripIndex(room) * roomPx.value;
+}
+
+/** 每個標籤在畫面上的位置（x 是畫面座標，y 跟房間同一個座標） */
+const labelLayout = computed(() => {
+  const out: Record<string, { x: number; y: number } | null> = {};
+  if (!showAll.value) return out;
+  const rooms: RoomId[] = bathOpen.value ? ["bath"] : STRIP_ROOMS;
+  const entries: { key: string; x: number; y: number; w: number; h: number }[] = [];
+  for (const room of rooms) {
+    for (const it of clickableInView(room)) {
+      const key = `${room}:${it.id}`;
+      const itemL = roomScreenLeft(room) + u(it.px);
+      const itemW = u(it.w);
+      const shown = Math.min(itemL + itemW, stageW.value) - Math.max(itemL, 0);
+      // 露出不到 12px（很小的家具：整件都要露出來）就不顯示；減 0.5 是小數誤差
+      if (shown < Math.min(LABEL_MIN_VISIBLE, itemW) - 0.5) {
+        out[key] = null;
+        continue;
+      }
+      const size = labelSizes[key] ?? { w: 0, h: 22 };
+      const x = Math.max(LABEL_MARGIN, Math.min(itemL, stageW.value - LABEL_MARGIN - size.w));
+      entries.push({ key, x, y: Math.max(0, u(it.py) - 20), w: size.w, h: size.h });
+    }
+  }
+  // 由上往下放；疊到上面已經放好的就往下挪到它下面
+  entries.sort((a, b) => a.y - b.y || a.x - b.x);
+  const placed: { x: number; y: number; w: number; h: number }[] = [];
+  const hits = (a: { x: number; y: number; w: number; h: number }) =>
+    placed.filter((p) => a.x < p.x + p.w + LABEL_GAP && p.x < a.x + a.w + LABEL_GAP && a.y < p.y + p.h + LABEL_GAP && p.y < a.y + a.h + LABEL_GAP);
+  for (const e of entries) {
+    let y = e.y;
+    for (let i = 0; i < 8; i++) {
+      const over = hits({ ...e, y });
+      if (!over.length) break;
+      y = Math.max(...over.map((p) => p.y + p.h + LABEL_GAP));
+    }
+    placed.push({ ...e, y });
+    out[e.key] = { x: e.x, y };
+  }
+  return out;
+});
+
+function labelStyle(room: RoomId, it: RenderItem) {
+  const pos = labelLayout.value[`${room}:${it.id}`];
+  if (!pos) return { left: "0px", top: "0px", visibility: "hidden" as const };
+  // 標籤放在橫條（或浴室）裡：畫面座標換回那一層的座標
+  const layerLeft = room === "bath" ? bathLeft.value : stripOffset.value - scrollX.value;
+  return { left: `${pos.x - layerLeft}px`, top: `${pos.y}px` };
+}
 </script>
 
 <template>
@@ -810,18 +876,24 @@ const clickableInView = (room: RoomId) => roomItems.value[room].filter((it) => i
         />
         <!-- 「？」：所有可以點的地方 -->
         <template v-if="showAll && !bathOpen">
-          <template v-for="it in clickableInView(room)" :key="`hint-${it.id}`">
-            <div class="ph-spot" :style="itemStyle(it)" aria-hidden="true"></div>
-            <div
-              class="ph-spot-label"
-              :style="{ left: `${u(it.px)}px`, top: `${Math.max(0, u(it.py) - 20)}px` }"
-              aria-hidden="true"
-            >
-              {{ it.name }} → {{ it.action?.to }}
-            </div>
-          </template>
+          <div v-for="it in clickableInView(room)" :key="`hint-${it.id}`" class="ph-spot" :style="itemStyle(it)" aria-hidden="true"></div>
         </template>
       </div>
+      <!-- 「？」的標籤：放在所有房間上面，跨到隔壁房間也不會被切掉 -->
+      <template v-if="showAll && !bathOpen">
+        <template v-for="room in STRIP_ROOMS" :key="`labels-${room}`">
+          <div
+            v-for="it in clickableInView(room)"
+            :key="`label-${room}-${it.id}`"
+            :ref="(el) => measureLabel(`${room}:${it.id}`, el)"
+            class="ph-spot-label"
+            :style="labelStyle(room, it)"
+            aria-hidden="true"
+          >
+            {{ it.name }} → {{ it.action?.to }}
+          </div>
+        </template>
+      </template>
 
       <!-- 他（在客廳／臥室／廚房時） -->
       <div v-if="isHome && !meInBath" class="ph-me" :style="meStyle">
@@ -893,7 +965,12 @@ const clickableInView = (room: RoomId) => roomItems.value[room].filter((it) => i
       <template v-if="showAll && bathOpen">
         <template v-for="it in clickableInView('bath')" :key="`hint-${it.id}`">
           <div class="ph-spot" :style="itemStyle(it)" aria-hidden="true"></div>
-          <div class="ph-spot-label" :style="{ left: `${u(it.px)}px`, top: `${Math.max(0, u(it.py) - 20)}px` }" aria-hidden="true">
+          <div
+            :ref="(el) => measureLabel(`bath:${it.id}`, el)"
+            class="ph-spot-label"
+            :style="labelStyle('bath', it)"
+            aria-hidden="true"
+          >
             {{ it.name }} → {{ it.action?.to }}
           </div>
         </template>
@@ -1069,7 +1146,8 @@ const clickableInView = (room: RoomId) => roomItems.value[room].filter((it) => i
   line-height: 18px;
   white-space: nowrap;
   pointer-events: none;
-  z-index: 2;
+  /* 在小人上面：按「？」就是要看清楚 */
+  z-index: 4;
   box-shadow: 0 2px 6px rgba(43, 30, 27, 0.25);
 }
 
