@@ -171,11 +171,11 @@ export const ACT_WEIGHTS: Record<Scene, Record<string, number>> = {
   day: { tv: 2, game: 2, sofa: 3, workout: 1, door: 1, pc: 3, read: 2, bedphone: 2, daze: 1, fridge: 2, cook: 1, dishes: 1, eat: 1, brush: 1, mirror: 1 },
 };
 
-/** 時間的光線：multiply 疊色，白色＝不變 */
+/** 時間的光線：multiply 疊色，白色＝不變（淡一點，晚上也看得清楚家具） */
 export const SCENE_TINT: Record<Scene, string> = {
   day: "#FFFFFF",
-  dusk: "#F4C4A0",
-  night: "#5C649A",
+  dusk: "#FBDDC4",
+  night: "#B4B9DE",
 };
 
 /** 走路速度（房間格子／秒） */

@@ -3,6 +3,7 @@
  * - 主頁用哪種：畫布或像素小屋
  * - 住在小屋的角色（第一次用時是最近聊天的那位，之後固定）
  * - 小人是男生還是女生
+ * - 房間要不要跟著現在的時間變黃昏、晚上的光線
  * - 家具擺在哪（只存搬過的）
  */
 import type { RoomId } from "./houseData";
@@ -14,6 +15,8 @@ export interface PixelHouseState {
   homeStyle: HomeStyle;
   residentCharId: string | null;
   look: ResidentLook;
+  /** 黃昏、晚上房間變暗（關掉就一直是白天的亮度） */
+  timeLight: boolean;
   /** 房間 → 家具 id → [x, y]（房間格子） */
   placements: Partial<Record<RoomId, Record<string, [number, number]>>>;
 }
@@ -22,7 +25,7 @@ const STORAGE_KEY = "pixel_house_state";
 export const PIXEL_HOUSE_CHANGED_EVENT = "aguaphone:pixel-house-changed";
 
 export function defaultPixelHouseState(): PixelHouseState {
-  return { homeStyle: "canvas", residentCharId: null, look: "boy", placements: {} };
+  return { homeStyle: "canvas", residentCharId: null, look: "boy", timeLight: true, placements: {} };
 }
 
 /** 讀不到或格式不對的欄位用預設值 */
@@ -47,6 +50,7 @@ export function parsePixelHouseState(raw: unknown): PixelHouseState {
     homeStyle: r.homeStyle === "pixel-house" ? "pixel-house" : "canvas",
     residentCharId: typeof r.residentCharId === "string" && r.residentCharId ? r.residentCharId : null,
     look: r.look === "girl" ? "girl" : "boy",
+    timeLight: r.timeLight !== false,
     placements,
   };
 }

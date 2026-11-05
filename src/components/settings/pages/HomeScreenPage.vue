@@ -14,12 +14,14 @@ import SettingsGroup from "../ui/SettingsGroup.vue";
 import SettingsRow from "../ui/SettingsRow.vue";
 import SettingsSegmented from "../ui/SettingsSegmented.vue";
 import SettingsSelectRow from "../ui/SettingsSelectRow.vue";
+import SettingsSwitchRow from "../ui/SettingsSwitchRow.vue";
 
 const charactersStore = useCharactersStore();
 const initial = loadPixelHouseState();
 const homeStyle = ref<HomeStyle>(initial.homeStyle);
 const residentId = ref<string>(initial.residentCharId ?? "");
 const look = ref<ResidentLook>(initial.look);
+const timeLight = ref(initial.timeLight);
 const hasPlacements = ref(Object.keys(initial.placements).length > 0);
 const resetDone = ref(false);
 
@@ -59,6 +61,11 @@ function setLook(v: string) {
   updatePixelHouseState({ look: look.value });
 }
 
+function setTimeLight(v: boolean) {
+  timeLight.value = v;
+  updatePixelHouseState({ timeLight: v });
+}
+
 function resetPlacements() {
   updatePixelHouseState({ placements: {} });
   hasPlacements.value = false;
@@ -94,6 +101,12 @@ function resetPlacements() {
         @update:model-value="setResident"
       />
       <SettingsSelectRow label="小人" :model-value="look" :options="lookOptions" @update:model-value="setLook" />
+      <SettingsSwitchRow
+        label="跟著時間變暗"
+        description="黃昏偏橘、晚上偏藍；關掉就一直是白天的亮度"
+        :model-value="timeLight"
+        @update:model-value="setTimeLight"
+      />
       <SettingsRow
         label="還原家具擺設"
         :description="resetDone ? '已經還原成預設的擺法' : '在小屋裡長按房間可以移動家具；這裡把四間都放回原位'"

@@ -29,7 +29,7 @@ import {
   type RoomId,
 } from "./houseData";
 import { clampPlacement, followAnchor, pickDefaultResident, residentStatus, sceneAt, stripIndex, type ResidentStatus } from "./houseLogic";
-import { loadPixelHouseState, savePixelHouseState, type PixelHouseState } from "./houseState";
+import { loadPixelHouseState, PIXEL_HOUSE_CHANGED_EVENT, savePixelHouseState, type PixelHouseState } from "./houseState";
 import { stripX, useHouseResident } from "./useHouseResident";
 
 const emit = defineEmits<{
@@ -111,6 +111,10 @@ async function loadAssets() {
 const state = reactive<PixelHouseState>(loadPixelHouseState());
 function persist() {
   savePixelHouseState(JSON.parse(JSON.stringify(state)));
+}
+/** 設定頁改了光線就跟著換（其他設定回到主頁時才重新讀） */
+function onSettingsChanged() {
+  state.timeLight = loadPixelHouseState().timeLight;
 }
 
 function floorTop(room: RoomId): number {
@@ -259,7 +263,7 @@ function closeBath() {
 // ===== 時間的光線 =====
 const now = ref(new Date());
 const scene = computed(() => sceneAt(now.value));
-const tint = computed(() => SCENE_TINT[scene.value]);
+const tint = computed(() => (state.timeLight ? SCENE_TINT[scene.value] : SCENE_TINT.day));
 
 // ===== 住在小屋的他 =====
 const charactersStore = useCharactersStore();
@@ -691,6 +695,7 @@ onMounted(async () => {
   clockTimer = setInterval(() => (now.value = new Date()), 60_000);
   window.addEventListener(CHAT_UNREAD_CHANGED_EVENT, onChatEvent);
   window.addEventListener("aguaphone:chat-messages-appended", onChatEvent);
+  window.addEventListener(PIXEL_HOUSE_CHANGED_EVENT, onSettingsChanged);
 
   await loadAssets();
   await ensureResident();
@@ -711,6 +716,7 @@ onUnmounted(() => {
   if (longPressTimer) clearTimeout(longPressTimer);
   window.removeEventListener(CHAT_UNREAD_CHANGED_EVENT, onChatEvent);
   window.removeEventListener("aguaphone:chat-messages-appended", onChatEvent);
+  window.removeEventListener(PIXEL_HOUSE_CHANGED_EVENT, onSettingsChanged);
   window.removeEventListener("pointermove", onPointerMove);
   window.removeEventListener("pointerup", onPointerUp);
   window.removeEventListener("pointercancel", onPointerUp);

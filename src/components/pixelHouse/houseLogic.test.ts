@@ -148,14 +148,16 @@ describe("residentStatus", () => {
 
 describe("parsePixelHouseState", () => {
   it("壞掉的資料用預設值，擺放只留數字", () => {
-    expect(parsePixelHouseState(null)).toEqual({ homeStyle: "canvas", residentCharId: null, look: "boy", placements: {} });
+    expect(parsePixelHouseState(null)).toEqual({ homeStyle: "canvas", residentCharId: null, look: "boy", timeLight: true, placements: {} });
     expect(
       parsePixelHouseState({
         homeStyle: "pixel-house",
         residentCharId: "c1",
         look: "girl",
+        timeLight: false,
         placements: { living: { sofa: [1, 2], bad: ["x", 2], worse: 3 } },
       }),
-    ).toEqual({ homeStyle: "pixel-house", residentCharId: "c1", look: "girl", placements: { living: { sofa: [1, 2] } } });
+    ).toEqual({ homeStyle: "pixel-house", residentCharId: "c1", look: "girl", timeLight: false, placements: { living: { sofa: [1, 2] } } });
+    expect(parsePixelHouseState({ timeLight: "x" }).timeLight).toBe(true);
   });
 });
