@@ -16,6 +16,9 @@ rm public/pixel-house/kitchen/_recomposed.png public/pixel-house/kitchen/_unassi
 python3 -I scripts/pixel-house/split_room.py scripts/pixel-house/source/bath.png scripts/pixel-house/bath.json public/pixel-house/bath
 rm public/pixel-house/bath/_recomposed.png public/pixel-house/bath/_unassigned.png
 
+# 晚上的窗戶（夜空、星星、月亮）：items/window-night.png
+python3 -I scripts/pixel-house/night_windows.py
+
 # 自己畫的分層小人（Aseprite 匯出 Sprite Sheet → 分割圖層，直排或橫排都可以；圖層名由底往上）
 python3 -I scripts/pixel-house/split_doll.py scripts/pixel-house/source/boy-front-layers-fixed.png boy front body,eyes,blush,brows,hair,underwear,shoes,pants,shirt,jacket 01
 # （boy-front-layers.png 是使用者畫的原稿，-fixed 是修過的版本）

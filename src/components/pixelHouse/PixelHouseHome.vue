@@ -237,6 +237,8 @@ function fling(v: number) {
 
 /** 畫面中間是哪一間 */
 const viewIdx = computed(() => {
+  // 三間都看得到（寬螢幕）就算在客廳
+  if (maxScroll.value <= 2) return 0;
   const center = scrollX.value + stageW.value / 2 - stripOffset.value;
   return Math.min(Math.max(Math.floor(center / roomPx.value), 0), STRIP_ROOMS.length - 1);
 });
@@ -701,9 +703,8 @@ onMounted(async () => {
   await ensureResident();
   await refreshResident();
   if (residentId.value && status.value !== "away" && status.value !== "date") life.start();
-  // 一打開就看他在的那間
-  scrollToRoom(isHome.value ? stripIndex(life.me.room) : 0, 0);
-  if (isHome.value && meInBath.value) bathOpen.value = true;
+  // 一打開都從客廳開始（不跟著他跑；想看他點下面的提示）
+  scrollToRoom(0, 0);
   statusTimer = setInterval(() => void refreshResident(), 30_000);
 });
 
@@ -763,6 +764,7 @@ const clickableInView = (room: RoomId) => roomItems.value[room].filter((it) => i
           :edit-mode="editMode"
           :dragging="dragging"
           :flash-key="flashKey"
+          :night="scene === 'night'"
           @item-click="onItemClick"
         />
         <!-- 「？」：所有可以點的地方 -->
@@ -846,6 +848,7 @@ const clickableInView = (room: RoomId) => roomItems.value[room].filter((it) => i
         :edit-mode="editMode"
         :dragging="dragging"
         :flash-key="flashKey"
+        :night="scene === 'night'"
         @item-click="onItemClick"
       />
       <template v-if="showAll && bathOpen">

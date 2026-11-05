@@ -3,7 +3,7 @@
  * 一間房：牆、護牆板、地板、每件家具。
  * 用原本的像素大小（1 格 = 1px）排好，再整間一起放大，所有圖層的格子才會對齊。
  */
-import type { FurnitureAction, ItemZone, RoomId } from "./houseData";
+import { NIGHT_ITEMS, type FurnitureAction, type ItemZone, type RoomId } from "./houseData";
 
 export interface RoomLayer {
   name: string;
@@ -22,7 +22,7 @@ export interface RoomItem {
   action?: FurnitureAction;
 }
 
-defineProps<{
+const props = defineProps<{
   room: RoomId;
   asset: string;
   scale: number;
@@ -31,7 +31,14 @@ defineProps<{
   editMode: boolean;
   dragging: string | null;
   flashKey: string | null;
+  /** 晚上：窗戶換成夜空 */
+  night?: boolean;
 }>();
+
+function itemSrc(id: string): string {
+  const night = props.night && NIGHT_ITEMS[props.room].includes(id);
+  return `${props.asset}${props.room}/items/${id}${night ? "-night" : ""}.png`;
+}
 
 const emit = defineEmits<{ (e: "item-click", it: RoomItem): void }>();
 </script>
@@ -59,7 +66,7 @@ const emit = defineEmits<{ (e: "item-click", it: RoomItem): void }>();
       }"
       :data-room="room"
       :data-item="it.id"
-      :src="`${asset}${room}/items/${it.id}.png`"
+      :src="itemSrc(it.id)"
       :alt="it.action && !editMode ? `${it.name}，${it.action.to}` : ''"
       :role="it.action && !editMode ? 'button' : undefined"
       draggable="false"

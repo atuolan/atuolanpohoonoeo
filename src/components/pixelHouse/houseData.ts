@@ -63,6 +63,14 @@ export function itemZone(room: RoomId, id: string, defaultBottom: number, floorT
   return defaultBottom >= floorTop - 6 ? "floor" : "any";
 }
 
+/** 晚上換成夜景的家具（items/<id>-night.png，scripts/pixel-house/night_windows.py 做的） */
+export const NIGHT_ITEMS: Record<RoomId, string[]> = {
+  living: ["window"],
+  bedroom: ["window"],
+  kitchen: ["window"],
+  bath: ["window"],
+};
+
 /** 點家具打開的東西：App（handleNavigate 的 id）、幾個 App 選一個、或進浴室 */
 export type FurnitureAction =
   | { kind: "app"; app: string; to: string }
