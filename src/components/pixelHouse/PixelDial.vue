@@ -104,7 +104,7 @@ const total = computed(() => DIAL_APPS.reduce((s, a) => s + (props.badges[a.app]
 .ph-dial-dim {
   position: absolute;
   inset: 0;
-  background: rgba(43, 30, 27, 0.45);
+  background: rgba(30, 20, 18, 0.38);
   opacity: 0;
   transition: opacity 260ms ease;
   pointer-events: none;
@@ -140,16 +140,17 @@ const total = computed(() => DIAL_APPS.reduce((s, a) => s + (props.badges[a.app]
   inset: 0;
   padding: 0;
   box-sizing: border-box;
-  border: 3px solid #3b2a26;
+  border: 0;
+  border-radius: 16px;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   pointer-events: none;
   box-shadow:
-    inset 3px 3px 0 rgba(255, 255, 255, 0.5),
-    inset -3px -3px 0 rgba(59, 42, 38, 0.18),
-    3px 3px 0 rgba(43, 30, 27, 0.35);
+    inset 0 1px 0 rgba(255, 255, 255, 0.55),
+    0 6px 16px rgba(30, 20, 18, 0.22),
+    0 1px 3px rgba(30, 20, 18, 0.18);
 }
 
 .ph-dial-list.is-open .ph-dial-app {
@@ -165,15 +166,17 @@ const total = computed(() => DIAL_APPS.reduce((s, a) => s + (props.badges[a.app]
 
 .ph-dial-label {
   position: absolute;
-  right: 60px;
-  top: 15px;
-  padding: 2px 7px;
-  background: #3b2a26;
-  color: #fbf7ee;
+  right: 62px;
+  top: 14px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: rgba(255, 251, 245, 0.95);
+  color: #3b2a26;
   font-size: 14px;
+  font-weight: 500;
   line-height: 18px;
   white-space: nowrap;
-  box-shadow: 0 0 0 2px #fbf7ee;
+  box-shadow: 0 4px 12px rgba(30, 20, 18, 0.2);
 }
 
 .ph-dial-badge {
@@ -202,7 +205,7 @@ const total = computed(() => DIAL_APPS.reduce((s, a) => s + (props.badges[a.app]
   height: 52px;
   image-rendering: pixelated;
   transition: transform 520ms cubic-bezier(0.34, 1.56, 0.64, 1);
-  filter: drop-shadow(3px 3px 0 rgba(43, 30, 27, 0.35));
+  filter: drop-shadow(0 4px 8px rgba(30, 20, 18, 0.3));
 }
 
 .ph-dial-btn-badge {
@@ -215,14 +218,16 @@ const total = computed(() => DIAL_APPS.reduce((s, a) => s + (props.badges[a.app]
   min-width: 20px;
   height: 20px;
   box-sizing: border-box;
-  padding: 0 3px;
-  background: #d9453a;
-  border: 3px solid #3b2a26;
-  color: #fbf7ee;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: #e0533f;
+  color: #fff;
   font-size: 11px;
-  line-height: 14px;
+  font-weight: 600;
+  line-height: 20px;
   text-align: center;
   pointer-events: none;
+  box-shadow: 0 0 0 2px #fff;
 }
 </style>
 

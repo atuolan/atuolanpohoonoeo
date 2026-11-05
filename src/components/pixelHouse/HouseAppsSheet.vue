@@ -40,7 +40,7 @@ function badgeText(n: number): string {
               @click="emit('pick', app.id)"
             >
               <span class="ph-app-icon">
-                <component :is="app.icon" :size="22" :stroke-width="2.4" />
+                <component :is="app.icon" :size="24" :stroke-width="2" />
                 <span v-if="badges[app.id]" class="ph-app-badge" aria-hidden="true">{{ badgeText(badges[app.id]) }}</span>
               </span>
               <span class="ph-app-name">{{ app.label }}</span>
@@ -83,18 +83,20 @@ function badgeText(n: number): string {
   display: flex;
   align-items: flex-end;
   justify-content: center;
-  background: rgba(43, 30, 27, 0.45);
+  background: rgba(30, 20, 18, 0.4);
+  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(2px);
 }
 
 .ph-sheet {
-  width: min(100%, 460px);
-  max-height: 78%;
+  position: relative;
+  width: min(100%, 480px);
+  max-height: 80%;
   display: flex;
   flex-direction: column;
-  background: #fbf7ee;
-  border: 3px solid #3b2a26;
-  border-bottom: 0;
-  box-shadow: 0 -3px 0 rgba(43, 30, 27, 0.25);
+  background: #fffbf5;
+  border-radius: 24px 24px 0 0;
+  box-shadow: 0 -10px 40px rgba(30, 20, 18, 0.25);
   color: #3b2a26;
   padding-bottom: env(safe-area-inset-bottom);
 }
@@ -103,21 +105,21 @@ function badgeText(n: number): string {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 12px 8px 16px;
-  border-bottom: 3px solid #3b2a26;
+  padding: 18px 14px 8px 20px;
 }
 
 .ph-sheet-head h2 {
   margin: 0;
-  font-size: 18px;
-  font-weight: normal;
+  font-size: 19px;
+  font-weight: 700;
 }
 
 .ph-sheet-close {
-  width: 36px;
-  height: 36px;
-  border: 3px solid #3b2a26;
-  background: #fbf7ee;
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(59, 42, 38, 0.08);
   color: #3b2a26;
   font-family: inherit;
   font-size: 20px;
@@ -129,14 +131,14 @@ function badgeText(n: number): string {
   overflow-y: auto;
   overscroll-behavior: contain;
   touch-action: pan-y;
-  padding: 12px 14px 18px;
+  padding: 8px 16px 20px;
   -webkit-overflow-scrolling: touch;
 }
 
 .ph-app-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px 8px;
+  gap: 16px 8px;
 }
 
 .ph-app {
@@ -154,58 +156,86 @@ function badgeText(n: number): string {
 
 .ph-app-icon {
   position: relative;
-  width: 48px;
-  height: 48px;
+  width: 54px;
+  height: 54px;
   display: flex;
   align-items: center;
   justify-content: center;
   box-sizing: border-box;
-  border: 3px solid #3b2a26;
-  background: #f3d98b;
+  border-radius: 16px;
+  background: linear-gradient(160deg, #f8e3a3, #efc96c);
+  color: #3b2a26;
   box-shadow:
-    inset 3px 3px 0 rgba(255, 255, 255, 0.5),
-    inset -3px -3px 0 rgba(59, 42, 38, 0.18),
-    3px 3px 0 rgba(43, 30, 27, 0.3);
+    inset 0 1px 0 rgba(255, 255, 255, 0.6),
+    0 4px 10px rgba(59, 42, 38, 0.14);
 }
 
-.ph-app:nth-child(5n + 2) .ph-app-icon { background: #9ed3a5; }
-.ph-app:nth-child(5n + 3) .ph-app-icon { background: #9cc7e6; }
-.ph-app:nth-child(5n + 4) .ph-app-icon { background: #f4a9b8; }
-.ph-app:nth-child(5n + 5) .ph-app-icon { background: #c9a7e0; }
+.ph-app:nth-child(5n + 2) .ph-app-icon { background: linear-gradient(160deg, #c3e8c8, #93cc9c); }
+.ph-app:nth-child(5n + 3) .ph-app-icon { background: linear-gradient(160deg, #c6e1f4, #92bfe2); }
+.ph-app:nth-child(5n + 4) .ph-app-icon { background: linear-gradient(160deg, #f9cdd6, #f0a2b2); }
+.ph-app:nth-child(5n + 5) .ph-app-icon { background: linear-gradient(160deg, #e2cdf0, #c3a0dc); }
+
+.ph-row:last-child,
+.ph-soon li:last-child {
+  border-bottom: 0;
+}
+
+.ph-row:active {
+  background: rgba(59, 42, 38, 0.05);
+}
+
+/* 上面的小把手 */
+.ph-sheet::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 7px;
+  width: 38px;
+  height: 5px;
+  margin-left: -19px;
+  border-radius: 999px;
+  background: rgba(59, 42, 38, 0.18);
+}
 
 .ph-app-badge {
   position: absolute;
-  right: -10px;
-  top: -10px;
+  right: -6px;
+  top: -6px;
   min-width: 20px;
   height: 20px;
   box-sizing: border-box;
-  padding: 0 3px;
-  background: #d9453a;
-  border: 3px solid #3b2a26;
-  color: #fbf7ee;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: #e0533f;
+  color: #fff;
   font-size: 11px;
-  line-height: 14px;
+  font-weight: 600;
+  line-height: 20px;
   text-align: center;
+  box-shadow: 0 0 0 2px #fffbf5;
 }
 
 .ph-app-name {
-  font-size: 13px;
+  font-size: 12px;
   line-height: 16px;
   white-space: nowrap;
 }
 
 .ph-sheet-sub {
-  margin: 20px 0 8px;
-  font-size: 14px;
-  font-weight: normal;
-  opacity: 0.7;
+  margin: 24px 4px 8px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  opacity: 0.55;
 }
 
 .ph-row-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  overflow: hidden;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(59, 42, 38, 0.1);
 }
 
 .ph-row {
@@ -213,21 +243,21 @@ function badgeText(n: number): string {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  min-height: 44px;
-  padding: 0 12px;
-  border: 3px solid #3b2a26;
-  background: #fff;
+  min-height: 50px;
+  padding: 0 16px;
+  border: 0;
+  border-bottom: 1px solid rgba(59, 42, 38, 0.08);
+  background: transparent;
   color: #3b2a26;
   font-family: inherit;
   font-size: 15px;
   text-align: left;
   cursor: pointer;
-  box-shadow: 3px 3px 0 rgba(59, 42, 38, 0.25);
 }
 
 .ph-row-note {
   font-size: 12px;
-  opacity: 0.6;
+  opacity: 0.5;
 }
 
 .ph-soon {
@@ -236,17 +266,19 @@ function badgeText(n: number): string {
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  overflow: hidden;
+  border-radius: 16px;
+  background: rgba(59, 42, 38, 0.04);
 }
 
 .ph-soon li {
   display: flex;
   justify-content: space-between;
   gap: 8px;
-  padding: 8px 12px;
-  border: 2px dashed rgba(59, 42, 38, 0.4);
+  padding: 11px 16px;
+  border-bottom: 1px solid rgba(59, 42, 38, 0.06);
   font-size: 14px;
-  opacity: 0.75;
+  opacity: 0.7;
 }
 
 .ph-sheet-enter-active,

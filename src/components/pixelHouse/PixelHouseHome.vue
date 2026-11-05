@@ -1014,12 +1014,20 @@ const clickableInView = (room: RoomId) => roomItems.value[room].filter((it) => i
 .pixel-house {
   --ph-top: calc(var(--safe-area-inset-top, env(safe-area-inset-top, 0px)) + 12px);
   --ph-bottom: calc(var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)) + 14px);
+  /* 介面（按鈕、視窗）用一般字體和圓角；房間和小人維持像素 */
+  --ui-ink: #3b2a26;
+  --ui-paper: rgba(255, 251, 245, 0.9);
+  --ui-glass: rgba(255, 251, 245, 0.78);
+  --ui-dark: rgba(52, 37, 33, 0.84);
+  --ui-accent: #e8a33d;
+  --ui-shadow: 0 6px 18px rgba(43, 30, 27, 0.18), 0 1px 3px rgba(43, 30, 27, 0.14);
   position: absolute;
   inset: 0;
   overflow: hidden;
   overflow: clip;
   background: #3b2a26;
-  font-family: "DotGothic16", "Noto Sans TC", "PingFang TC", sans-serif;
+  /* 介面跟著 App 的字體（全局美化可以換） */
+  font-family: inherit;
   color: #3b2a26;
   touch-action: none;
   user-select: none;
@@ -1053,14 +1061,16 @@ const clickableInView = (room: RoomId) => roomItems.value[room].filter((it) => i
 
 .ph-spot-label {
   position: absolute;
-  padding: 2px 6px;
-  background: #3b2a26;
-  color: #fbf7ee;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--ui-dark);
+  color: #fff;
   font-size: 12px;
-  line-height: 16px;
+  line-height: 18px;
   white-space: nowrap;
   pointer-events: none;
   z-index: 2;
+  box-shadow: 0 2px 6px rgba(43, 30, 27, 0.25);
 }
 
 /* ===== 他 ===== */
@@ -1119,18 +1129,33 @@ const clickableInView = (room: RoomId) => roomItems.value[room].filter((it) => i
   position: absolute;
   left: 0;
   transform: translateX(-50%);
-  padding: 3px 8px;
-  background: #fbf7ee;
-  border: 3px solid #3b2a26;
+  padding: 4px 10px;
+  border-radius: 12px;
+  background: rgba(255, 251, 245, 0.96);
+  color: var(--ui-ink);
   font-size: 13px;
-  line-height: 16px;
+  font-weight: 500;
+  line-height: 18px;
   white-space: nowrap;
   pointer-events: none;
-  box-shadow: 3px 3px 0 rgba(59, 42, 38, 0.25);
+  box-shadow: var(--ui-shadow);
+}
+
+.ph-bubble::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -5px;
+  width: 10px;
+  height: 10px;
+  margin-left: -5px;
+  background: inherit;
+  transform: rotate(45deg);
+  border-radius: 0 0 3px 0;
 }
 
 .ph-bubble.is-unread {
-  background: #fff3c4;
+  background: #fff1c9;
 }
 
 .ph-zs {
@@ -1145,6 +1170,7 @@ const clickableInView = (room: RoomId) => roomItems.value[room].filter((it) => i
 .ph-zs span {
   position: absolute;
   color: #fff3c4;
+  font-family: "DotGothic16", sans-serif;
   text-shadow: 2px 2px 0 #3b2a26;
   line-height: 1;
   animation: ph-z 1.8s linear infinite;
@@ -1227,41 +1253,52 @@ const clickableInView = (room: RoomId) => roomItems.value[room].filter((it) => i
   left: 12px;
   top: var(--ph-top);
   display: flex;
-  gap: 4px;
+  gap: 2px;
+  padding: 4px;
+  border-radius: 999px;
+  background: var(--ui-glass);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  box-shadow: var(--ui-shadow);
 }
 
 .ph-tab {
   position: relative;
-  height: 40px;
-  min-width: 60px;
-  padding: 0 10px;
-  border: 3px solid #3b2a26;
-  background: #fbf7ee;
-  color: #3b2a26;
+  height: 36px;
+  min-width: 56px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ui-ink);
   font-family: inherit;
   font-size: 15px;
+  font-weight: 500;
   cursor: pointer;
-  box-shadow: 3px 3px 0 rgba(59, 42, 38, 0.3);
+  transition: background 160ms ease, color 160ms ease;
 }
 
 .ph-tab.is-current {
-  background: #3b2a26;
-  color: #fbf7ee;
+  background: var(--ui-ink);
+  color: #fff;
 }
 
 .ph-tab-here {
   position: absolute;
-  right: -7px;
-  top: -9px;
-  padding: 0 3px;
+  right: -2px;
+  top: -6px;
+  min-width: 18px;
   height: 18px;
+  padding: 0 4px;
   box-sizing: border-box;
-  background: #d9453a;
-  border: 2px solid #3b2a26;
-  color: #fbf7ee;
+  border-radius: 999px;
+  background: #e0533f;
+  color: #fff;
   font-size: 11px;
-  line-height: 14px;
+  font-weight: 600;
+  line-height: 18px;
   white-space: nowrap;
+  box-shadow: 0 0 0 2px #fff;
 }
 
 .ph-help {
@@ -1271,19 +1308,23 @@ const clickableInView = (room: RoomId) => roomItems.value[room].filter((it) => i
   width: 44px;
   height: 44px;
   padding: 0;
-  border: 3px solid #3b2a26;
-  background: #fbf7ee;
-  color: #3b2a26;
+  border: 0;
+  border-radius: 50%;
+  background: var(--ui-glass);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  color: var(--ui-ink);
   font-family: inherit;
-  font-size: 20px;
+  font-size: 19px;
+  font-weight: 600;
   line-height: 20px;
   cursor: pointer;
-  box-shadow: 3px 3px 0 rgba(59, 42, 38, 0.3);
+  box-shadow: var(--ui-shadow);
 }
 
 .ph-help.is-on {
-  background: #3b2a26;
-  color: #fbf7ee;
+  background: var(--ui-ink);
+  color: #fff;
 }
 
 .ph-ui > .ph-dial-root,
@@ -1294,16 +1335,20 @@ const clickableInView = (room: RoomId) => roomItems.value[room].filter((it) => i
 .ph-arrow {
   position: absolute;
   top: 50%;
-  width: 32px;
-  height: 52px;
-  margin-top: -26px;
+  width: 36px;
+  height: 36px;
+  margin-top: -18px;
   padding: 0;
-  border: 3px solid #3b2a26;
-  background: rgba(251, 247, 238, 0.88);
-  color: #3b2a26;
+  border: 0;
+  border-radius: 50%;
+  background: var(--ui-glass);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  color: var(--ui-ink);
   font-family: inherit;
-  font-size: 16px;
+  font-size: 13px;
   cursor: pointer;
+  box-shadow: var(--ui-shadow);
 }
 
 .ph-arrow.is-left { left: 6px; }
@@ -1314,14 +1359,18 @@ const clickableInView = (room: RoomId) => roomItems.value[room].filter((it) => i
   left: 12px;
   top: calc(var(--ph-top) + 56px);
   height: 40px;
-  padding: 0 12px;
-  border: 3px solid #3b2a26;
-  background: #fbf7ee;
-  color: #3b2a26;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--ui-glass);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  color: var(--ui-ink);
   font-family: inherit;
   font-size: 15px;
+  font-weight: 500;
   cursor: pointer;
-  box-shadow: 3px 3px 0 rgba(59, 42, 38, 0.3);
+  box-shadow: var(--ui-shadow);
 }
 
 .ph-hint {
@@ -1329,21 +1378,24 @@ const clickableInView = (room: RoomId) => roomItems.value[room].filter((it) => i
   left: 50%;
   bottom: var(--ph-bottom);
   transform: translateX(-50%);
-  width: min(298px, calc(100% - 92px));
-  min-height: 40px;
+  width: min(300px, calc(100% - 92px));
+  min-height: 42px;
   box-sizing: border-box;
-  padding: 4px 12px;
+  padding: 6px 16px;
   border: 0;
-  background: #3b2a26;
-  color: #fbf7ee;
+  border-radius: 999px;
+  background: var(--ui-dark);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  color: #fff;
   font-family: inherit;
-  font-size: 15px;
+  font-size: 14px;
   line-height: 18px;
   display: flex;
   align-items: center;
   justify-content: center;
   text-align: center;
-  box-shadow: 0 0 0 3px #fbf7ee;
+  box-shadow: var(--ui-shadow);
   cursor: pointer;
 }
 
@@ -1357,10 +1409,13 @@ const clickableInView = (room: RoomId) => roomItems.value[room].filter((it) => i
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 6px 6px 12px;
-  background: #3b2a26;
-  color: #fbf7ee;
-  box-shadow: 0 0 0 3px #fbf7ee;
+  padding: 6px 6px 6px 16px;
+  border-radius: 999px;
+  background: var(--ui-dark);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  color: #fff;
+  box-shadow: var(--ui-shadow);
 }
 
 .ph-edit-text {
@@ -1371,10 +1426,11 @@ const clickableInView = (room: RoomId) => roomItems.value[room].filter((it) => i
 
 .ph-edit-btn {
   height: 34px;
-  padding: 0 10px;
-  border: 3px solid #fbf7ee;
-  background: transparent;
-  color: #fbf7ee;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
   font-family: inherit;
   font-size: 14px;
   cursor: pointer;
@@ -1382,8 +1438,9 @@ const clickableInView = (room: RoomId) => roomItems.value[room].filter((it) => i
 }
 
 .ph-edit-btn.is-primary {
-  background: #fbf7ee;
+  background: var(--ui-accent);
   color: #3b2a26;
+  font-weight: 600;
 }
 
 .ph-choose-wrap {
@@ -1393,39 +1450,44 @@ const clickableInView = (room: RoomId) => roomItems.value[room].filter((it) => i
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(43, 30, 27, 0.45);
+  background: rgba(30, 20, 18, 0.4);
+  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(2px);
 }
 
 .ph-choose {
-  width: 220px;
+  width: 240px;
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 12px;
-  background: #fbf7ee;
-  border: 3px solid #3b2a26;
-  box-shadow: 4px 4px 0 rgba(43, 30, 27, 0.35);
+  padding: 16px;
+  border-radius: 20px;
+  background: #fffbf5;
+  box-shadow: 0 16px 40px rgba(30, 20, 18, 0.28);
 }
 
 .ph-choose-title {
   font-size: 16px;
+  font-weight: 600;
   text-align: center;
-  margin-bottom: 2px;
+  margin-bottom: 4px;
 }
 
 .ph-choose-btn {
-  height: 42px;
-  border: 3px solid #3b2a26;
-  background: #f3d98b;
+  height: 44px;
+  border: 0;
+  border-radius: 12px;
+  background: #f6e2b5;
   color: #3b2a26;
   font-family: inherit;
   font-size: 15px;
+  font-weight: 500;
   cursor: pointer;
-  box-shadow: 3px 3px 0 rgba(59, 42, 38, 0.25);
 }
 
 .ph-choose-btn.is-cancel {
-  background: #fbf7ee;
+  background: transparent;
+  color: rgba(59, 42, 38, 0.6);
 }
 
 .ph-loading {

@@ -540,17 +540,21 @@ const selectedCustom = computed(() => {
   display: flex;
   align-items: flex-end;
   justify-content: center;
-  background: rgba(43, 30, 27, 0.45);
+  background: rgba(30, 20, 18, 0.4);
+  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(2px);
 }
 
 .wd {
-  width: min(100%, 460px);
-  height: min(100%, 760px);
+  position: relative;
+  width: min(100%, 480px);
+  height: min(100%, 780px);
   display: flex;
   flex-direction: column;
-  background: #fbf7ee;
-  border: 3px solid #3b2a26;
-  border-bottom: 0;
+  overflow: hidden;
+  background: #fffbf5;
+  border-radius: 24px 24px 0 0;
+  box-shadow: 0 -10px 40px rgba(30, 20, 18, 0.25);
   color: #3b2a26;
   padding-bottom: env(safe-area-inset-bottom);
 }
@@ -559,35 +563,37 @@ const selectedCustom = computed(() => {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 12px 8px 16px;
-  border-bottom: 3px solid #3b2a26;
+  padding: 18px 14px 10px 20px;
 }
 
 .wd-head h2 {
   flex: 1;
   min-width: 0;
   margin: 0;
-  font-size: 18px;
-  font-weight: normal;
+  font-size: 19px;
+  font-weight: 700;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .wd-coins {
-  padding: 3px 8px;
-  border: 2px solid #3b2a26;
-  background: #f3d98b;
+  padding: 5px 12px;
+  border-radius: 999px;
+  background: #fbe9bd;
+  color: #7a5a1e;
   font-size: 13px;
+  font-weight: 600;
   white-space: nowrap;
 }
 
 .wd-x {
-  width: 36px;
-  height: 36px;
+  width: 34px;
+  height: 34px;
   flex: none;
-  border: 3px solid #3b2a26;
-  background: #fbf7ee;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(59, 42, 38, 0.08);
   color: #3b2a26;
   font-family: inherit;
   font-size: 20px;
@@ -609,15 +615,12 @@ const selectedCustom = computed(() => {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
-  padding: 14px 12px 10px;
-  background-color: #efe6d4;
-  background-image:
-    linear-gradient(45deg, rgba(59, 42, 38, 0.05) 25%, transparent 25%, transparent 75%, rgba(59, 42, 38, 0.05) 75%),
-    linear-gradient(45deg, rgba(59, 42, 38, 0.05) 25%, transparent 25%, transparent 75%, rgba(59, 42, 38, 0.05) 75%);
-  background-size: 20px 20px;
-  background-position: 0 0, 10px 10px;
-  border-bottom: 3px solid #3b2a26;
+  gap: 10px;
+  margin: 0 16px;
+  padding: 16px 12px 12px;
+  border-radius: 20px;
+  background: radial-gradient(circle at 50% 40%, #fff6e3 0%, #f3e4c8 70%);
+  box-shadow: inset 0 0 0 1px rgba(59, 42, 38, 0.06);
 }
 
 .wd-doll {
@@ -644,20 +647,23 @@ const selectedCustom = computed(() => {
 .wd-poses button,
 .wd-tabs button {
   min-height: 32px;
-  padding: 0 10px;
-  border: 2px solid #3b2a26;
-  background: #fff;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.85);
   color: #3b2a26;
   font-family: inherit;
   font-size: 14px;
   white-space: nowrap;
   cursor: pointer;
+  box-shadow: 0 1px 3px rgba(59, 42, 38, 0.12);
+  transition: background 150ms ease, color 150ms ease;
 }
 
 .wd-poses button.on,
 .wd-tabs button.on {
   background: #3b2a26;
-  color: #fbf7ee;
+  color: #fff;
 }
 
 .wd-poses button:disabled {
@@ -668,9 +674,20 @@ const selectedCustom = computed(() => {
 .wd-tabs {
   overflow-x: auto;
   touch-action: pan-x;
-  padding: 10px 12px;
-  border-bottom: 2px dashed rgba(59, 42, 38, 0.3);
+  padding: 14px 16px 8px;
   scrollbar-width: none;
+}
+
+.wd::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 7px;
+  width: 38px;
+  height: 5px;
+  margin-left: -19px;
+  border-radius: 999px;
+  background: rgba(59, 42, 38, 0.18);
 }
 
 .wd-tabs::-webkit-scrollbar {
@@ -678,14 +695,14 @@ const selectedCustom = computed(() => {
 }
 
 .wd-panel {
-  padding: 4px 14px 16px;
+  padding: 0 16px 18px;
 }
 
 .wd-sub {
-  margin: 12px 0 8px;
-  font-size: 14px;
-  font-weight: normal;
-  opacity: 0.75;
+  margin: 14px 2px 8px;
+  font-size: 13px;
+  font-weight: 600;
+  opacity: 0.55;
 }
 
 .wd-sub-note {
@@ -706,19 +723,20 @@ const selectedCustom = computed(() => {
   flex-direction: column;
   align-items: center;
   gap: 3px;
-  padding: 6px 4px 7px;
-  border: 2px solid #3b2a26;
+  padding: 8px 4px 9px;
+  border: 0;
+  border-radius: 16px;
   background: #fff;
   color: #3b2a26;
   font-family: inherit;
   cursor: pointer;
-  box-shadow: 2px 2px 0 rgba(59, 42, 38, 0.2);
+  box-shadow: 0 1px 4px rgba(59, 42, 38, 0.12);
+  transition: box-shadow 150ms ease, transform 150ms ease;
 }
 
 .wd-card.on {
-  outline: 3px solid #e2a03a;
-  outline-offset: -1px;
-  background: #fff7e0;
+  box-shadow: 0 0 0 2.5px #e8a33d, 0 4px 12px rgba(232, 163, 61, 0.3);
+  background: #fffaf0;
 }
 
 .wd-card:disabled {
@@ -727,7 +745,8 @@ const selectedCustom = computed(() => {
 }
 
 .wd-card-add {
-  border-style: dashed;
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px rgba(59, 42, 38, 0.25);
 }
 
 .wd-thumb {
@@ -745,7 +764,7 @@ const selectedCustom = computed(() => {
 }
 
 .wd-card-name {
-  font-size: 13px;
+  font-size: 12px;
   line-height: 16px;
   text-align: center;
   word-break: break-all;
@@ -766,26 +785,28 @@ const selectedCustom = computed(() => {
 
 .wd-swatch {
   position: relative;
-  width: 36px;
-  height: 36px;
+  width: 34px;
+  height: 34px;
   padding: 0;
-  border: 2px solid #3b2a26;
+  border: 0;
+  border-radius: 50%;
   cursor: pointer;
   font-family: inherit;
   font-size: 11px;
   color: #3b2a26;
+  box-shadow: inset 0 0 0 1px rgba(59, 42, 38, 0.18), 0 1px 3px rgba(59, 42, 38, 0.15);
 }
 
 .wd-swatch.on {
-  outline: 3px solid #e2a03a;
-  outline-offset: 1px;
+  box-shadow: 0 0 0 2px #fffbf5, 0 0 0 4.5px #e8a33d;
 }
 
 .wd-swatch.is-original,
 .wd-swatch.is-custom {
   width: auto;
-  min-width: 44px;
-  padding: 0 6px;
+  min-width: 48px;
+  padding: 0 10px;
+  border-radius: 999px;
   background: #fff;
   display: inline-flex;
   align-items: center;
@@ -800,14 +821,13 @@ const selectedCustom = computed(() => {
 }
 
 .wd-link {
-  margin-top: 8px;
-  padding: 4px 0;
+  margin-top: 10px;
+  padding: 4px 2px;
   border: 0;
   background: none;
-  color: #b0453c;
+  color: #c0443a;
   font-family: inherit;
   font-size: 13px;
-  text-decoration: underline;
   cursor: pointer;
 }
 
@@ -819,16 +839,19 @@ const selectedCustom = computed(() => {
 }
 
 .wd-upload h3 {
-  margin: 12px 0 6px;
-  font-size: 16px;
-  font-weight: normal;
+  margin: 6px 0 8px;
+  font-size: 17px;
+  font-weight: 700;
 }
 
 .wd-steps {
   margin: 0;
-  padding-left: 20px;
+  padding: 12px 14px 12px 32px;
+  border-radius: 14px;
+  background: #fff;
   font-size: 13px;
-  line-height: 20px;
+  line-height: 21px;
+  box-shadow: 0 1px 3px rgba(59, 42, 38, 0.1);
 }
 
 .wd-steps a {
@@ -840,11 +863,13 @@ const selectedCustom = computed(() => {
   position: relative;
   display: inline-flex;
   align-items: center;
-  margin-top: 10px;
-  min-height: 40px;
-  padding: 0 16px;
-  border: 2px solid #3b2a26;
-  background: #fff;
+  margin-top: 12px;
+  min-height: 42px;
+  padding: 0 18px;
+  border-radius: 12px;
+  background: #3b2a26;
+  color: #fff;
+  font-weight: 500;
   cursor: pointer;
 }
 
@@ -857,12 +882,12 @@ const selectedCustom = computed(() => {
 
 .wd-sheet {
   display: block;
-  margin-top: 10px;
+  margin-top: 12px;
   max-width: 100%;
   height: 82px;
   image-rendering: pixelated;
-  background: #efe6d4;
-  border: 2px solid #3b2a26;
+  border-radius: 10px;
+  background: #f3e4c8;
 }
 
 .wd-name {
@@ -875,9 +900,11 @@ const selectedCustom = computed(() => {
 
 .wd-name input {
   flex: 1;
-  min-height: 34px;
-  padding: 0 8px;
-  border: 2px solid #3b2a26;
+  min-height: 38px;
+  padding: 0 12px;
+  border: 1px solid rgba(59, 42, 38, 0.2);
+  border-radius: 10px;
+  background: #fff;
   font-family: inherit;
   font-size: 16px;
 }
@@ -889,9 +916,9 @@ const selectedCustom = computed(() => {
 }
 
 .wd-foot {
-  padding: 8px 12px 10px;
-  border-top: 3px solid #3b2a26;
-  background: #fbf7ee;
+  padding: 10px 16px 12px;
+  border-top: 1px solid rgba(59, 42, 38, 0.08);
+  background: #fffbf5;
 }
 
 .wd-msg {
@@ -912,26 +939,28 @@ const selectedCustom = computed(() => {
 
 .wd-btn {
   flex: 1;
-  min-height: 44px;
-  padding: 0 10px;
-  border: 3px solid #3b2a26;
-  background: #fff;
+  min-height: 46px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 14px;
+  background: rgba(59, 42, 38, 0.07);
   color: #3b2a26;
   font-family: inherit;
   font-size: 15px;
+  font-weight: 500;
   cursor: pointer;
-  box-shadow: 3px 3px 0 rgba(59, 42, 38, 0.25);
 }
 
 .wd-btn.is-main {
   flex: 1.6;
-  background: #f3d98b;
+  background: #3b2a26;
+  color: #fff;
+  font-weight: 600;
 }
 
 .wd-btn:disabled {
-  opacity: 0.45;
+  opacity: 0.4;
   cursor: default;
-  box-shadow: none;
 }
 
 .ph-sheet-enter-active,
