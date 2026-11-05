@@ -1,5 +1,5 @@
 """
-把 Aseprite「匯出 Sprite Sheet → 分割圖層」的直排長條切成一層一張，寫進紙娃娃清單。
+把 Aseprite「匯出 Sprite Sheet → 分割圖層」的長條（直排或橫排都可以）切成一層一張，寫進紙娃娃清單。
 
 用法：python3 -I scripts/pixel-house/split_doll.py <長條圖> <角色> <動作> <圖層名,…（由底往上）> [款式]
 例：  python3 -I scripts/pixel-house/split_doll.py scripts/pixel-house/source/boy-front-layers.png boy front body,eyes,blush,brows,hair,underwear,shoes,pants,shirt,jacket 01
@@ -20,16 +20,18 @@ root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "pub
 root = os.path.normpath(root)
 
 sheet = Image.open(src).convert("RGBA")
-W, total = sheet.size
-H = total // len(names)
-assert H * len(names) == total, f"高度 {total} 不能平均分成 {len(names)} 層"
+SW, SH = sheet.size
+# 比較寬就是橫排（一層一格往右排），否則是直排（往下排）
+horizontal = SW > SH
+W, H = (SW // len(names), SH) if horizontal else (SW, SH // len(names))
+assert (W * len(names) == SW) if horizontal else (H * len(names) == SH), f"{SW}×{SH} 不能平均分成 {len(names)} 層"
 
 os.makedirs(os.path.join(root, "doll", pose), exist_ok=True)
 manifest_path = os.path.join(root, "doll.json")
 manifest = json.load(open(manifest_path, encoding="utf-8")) if os.path.exists(manifest_path) else {"poses": {}}
 layers = []
 for i, name in enumerate(names):
-    part = sheet.crop((0, i * H, W, (i + 1) * H))
+    part = sheet.crop((i * W, 0, (i + 1) * W, H)) if horizontal else sheet.crop((0, i * H, W, (i + 1) * H))
     px = part.load()
     for y in range(H):
         for x in range(W):
