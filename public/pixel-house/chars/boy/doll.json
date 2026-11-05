@@ -65,6 +65,54 @@
      }
     }
    ]
+  },
+  "back": {
+   "w": 25,
+   "h": 41,
+   "layers": [
+    {
+     "slot": "body",
+     "styles": {
+      "01": "doll/back/body_01.png"
+     }
+    },
+    {
+     "slot": "underwear",
+     "styles": {
+      "01": "doll/back/underwear_01.png"
+     }
+    },
+    {
+     "slot": "pants",
+     "styles": {
+      "01": "doll/back/pants_01.png"
+     }
+    },
+    {
+     "slot": "shoes",
+     "styles": {
+      "01": "doll/back/shoes_01.png"
+     }
+    },
+    {
+     "slot": "shirt",
+     "styles": {
+      "01": "doll/back/shirt_01.png"
+     }
+    },
+    {
+     "slot": "jacket",
+     "styles": {
+      "01": "doll/back/jacket_01.png"
+     }
+    },
+    {
+     "slot": "hair",
+     "styles": {
+      "01": "doll/back/hair_01.png"
+     }
+    }
+   ]
   }
  }
 }
