@@ -19,6 +19,10 @@ rm public/pixel-house/bath/_recomposed.png public/pixel-house/bath/_unassigned.p
 # 自己畫的分層小人（Aseprite 匯出 Sprite Sheet → 分割圖層，直排或橫排都可以；圖層名由底往上）
 python3 -I scripts/pixel-house/split_doll.py scripts/pixel-house/source/boy-front-layers-fixed.png boy front body,eyes,blush,brows,hair,underwear,shoes,pants,shirt,jacket 01
 # （boy-front-layers.png 是使用者畫的原稿，-fixed 是修過的版本）
+python3 -I scripts/pixel-house/split_doll.py scripts/pixel-house/source/boy-back-layers.png boy back body,underwear,pants,shoes,shirt,jacket,hair 01
+# 側面走路：格子圖（一列一層、一欄一格），畫的是往左走，往右程式左右翻
+# （褲子、衣服、外套的 1~3 格是照第 0 格補畫的）
+python3 -I scripts/pixel-house/split_doll.py scripts/pixel-house/source/boy-walk-layers.png boy walk body,eyes,hair,pants,shirt,jacket 01 --frames 4 --ms 150 --faces left
 
 # 小人走路圖（暫用；女生／男生 × 向左／向右 × 6 格）
 python3 -I scripts/pixel-house/extract_walk.py scripts/pixel-house/source/walk-sheet.webp public/pixel-house/chars

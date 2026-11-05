@@ -66,7 +66,12 @@ const walkSizes = ref<Record<string, { w: number; h: number }>>({});
 interface DollPose {
   w: number;
   h: number;
-  layers: { slot: string; styles: Record<string, string> }[];
+  /** 好幾格的動作（走路）：幾格、每格幾毫秒；每個款式是一格一張圖 */
+  frames?: number;
+  ms?: number;
+  /** 畫的是往哪邊；另一邊左右翻 */
+  faces?: "left" | "right";
+  layers: { slot: string; styles: Record<string, string | string[]> }[];
 }
 interface DollManifest {
   poses: Record<string, DollPose>;
@@ -349,13 +354,27 @@ const dollPose = computed<DollPose | null>(() => {
   return Object.values(d.poses)[0] ?? null;
 });
 
-/** 這個動作每一層的圖（由底往上）；款式先用第一款，之後換裝再接設定 */
+/** 這個動作每一層的圖（由底往上）；款式先用第一款，之後換裝再接設定。好幾格的每格都放，只顯示現在這格（換格時不會閃） */
 const dollLayers = computed(() =>
   (dollPose.value?.layers ?? []).map((l) => {
     const file = Object.values(l.styles)[0];
-    return { slot: l.slot, src: `${ASSET}chars/${state.look}/${file}` };
+    const files = Array.isArray(file) ? file : [file];
+    return { slot: l.slot, srcs: files.map((f) => `${ASSET}chars/${state.look}/${f}`) };
   }),
 );
+/** 好幾格的動作現在在第幾格（frame 每 110ms 加一） */
+const dollFrame = computed(() => {
+  const p = dollPose.value;
+  if (!p?.frames || p.frames < 2) return 0;
+  return Math.floor((frame.value * 110) / (p.ms ?? 150)) % p.frames;
+});
+const dollAnimated = computed(() => (dollPose.value?.frames ?? 1) > 1);
+/** 畫的方向跟現在走的方向相反就左右翻 */
+const dollFlip = computed(() => {
+  const faces = dollPose.value?.faces;
+  if (!faces) return false;
+  return (faces === "left") !== (life.facing.value < 0);
+});
 
 /** 小人高幾格：紙娃娃照原尺寸，暫用的走路圖拉成 CHAR_HEIGHT */
 const charUnits = computed(() => dollPose.value?.h ?? CHAR_HEIGHT);
@@ -390,12 +409,14 @@ const spriteStyle = computed(() => {
     height: `${h}px`,
     left: `${-w / 2}px`,
     top: `${-h + (dollPose.value ? 0 : u(1))}px`,
-    // 躺下：先用站姿轉 90 度代替（之後換成睡覺的圖）；紙娃娃只有正面時，走路一上一下跳
+    // 躺下：先用站姿轉 90 度代替（之後換成睡覺的圖）；紙娃娃沒有走路的圖時，走路一上一下跳
     transform: lying.value
       ? "rotate(-90deg)"
-      : dollPose.value && life.walking.value && frame.value % 2
-        ? `translateY(${-u(1)}px)`
-        : undefined,
+      : dollFlip.value
+        ? "scaleX(-1)"
+        : dollPose.value && !dollAnimated.value && life.walking.value && frame.value % 2
+          ? `translateY(${-u(1)}px)`
+          : undefined,
     transformOrigin: lying.value ? "50% 100%" : undefined,
   };
 });
@@ -762,7 +783,9 @@ const clickableInView = (room: RoomId) => roomItems.value[room].filter((it) => i
           :class="{ 'is-hop': meAct?.hop && !life.walking.value }"
           :style="spriteStyle"
         >
-          <img v-for="l in dollLayers" :key="l.slot" :src="l.src" alt="" draggable="false" />
+          <template v-for="l in dollLayers" :key="l.slot">
+            <img v-for="(src, n) in l.srcs" v-show="n === dollFrame" :key="src" :src="src" alt="" draggable="false" />
+          </template>
         </div>
         <img
           v-else
@@ -830,7 +853,9 @@ const clickableInView = (room: RoomId) => roomItems.value[room].filter((it) => i
       <div v-if="isHome && meInBath" class="ph-me" :style="meStyle">
         <div class="ph-me-shadow" :style="{ width: `${u(24)}px`, height: `${u(3.4)}px` }"></div>
         <div v-if="dollPose" class="ph-me-sprite ph-doll" :style="spriteStyle">
-          <img v-for="l in dollLayers" :key="l.slot" :src="l.src" alt="" draggable="false" />
+          <template v-for="l in dollLayers" :key="l.slot">
+            <img v-for="(src, n) in l.srcs" v-show="n === dollFrame" :key="src" :src="src" alt="" draggable="false" />
+          </template>
         </div>
         <img v-else class="ph-me-sprite" :src="spriteSrc" alt="" draggable="false" :style="spriteStyle" />
         <button

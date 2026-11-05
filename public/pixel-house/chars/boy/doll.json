@@ -113,6 +113,81 @@
      }
     }
    ]
+  },
+  "walk": {
+   "w": 25,
+   "h": 41,
+   "frames": 4,
+   "ms": 150,
+   "faces": "left",
+   "layers": [
+    {
+     "slot": "body",
+     "styles": {
+      "01": [
+       "doll/walk/body_01_0.png",
+       "doll/walk/body_01_1.png",
+       "doll/walk/body_01_2.png",
+       "doll/walk/body_01_3.png"
+      ]
+     }
+    },
+    {
+     "slot": "eyes",
+     "styles": {
+      "01": [
+       "doll/walk/eyes_01_0.png",
+       "doll/walk/eyes_01_1.png",
+       "doll/walk/eyes_01_2.png",
+       "doll/walk/eyes_01_3.png"
+      ]
+     }
+    },
+    {
+     "slot": "hair",
+     "styles": {
+      "01": [
+       "doll/walk/hair_01_0.png",
+       "doll/walk/hair_01_1.png",
+       "doll/walk/hair_01_2.png",
+       "doll/walk/hair_01_3.png"
+      ]
+     }
+    },
+    {
+     "slot": "pants",
+     "styles": {
+      "01": [
+       "doll/walk/pants_01_0.png",
+       "doll/walk/pants_01_1.png",
+       "doll/walk/pants_01_2.png",
+       "doll/walk/pants_01_3.png"
+      ]
+     }
+    },
+    {
+     "slot": "shirt",
+     "styles": {
+      "01": [
+       "doll/walk/shirt_01_0.png",
+       "doll/walk/shirt_01_1.png",
+       "doll/walk/shirt_01_2.png",
+       "doll/walk/shirt_01_3.png"
+      ]
+     }
+    },
+    {
+     "slot": "jacket",
+     "styles": {
+      "01": [
+       "doll/walk/jacket_01_0.png",
+       "doll/walk/jacket_01_1.png",
+       "doll/walk/jacket_01_2.png",
+       "doll/walk/jacket_01_3.png"
+      ]
+     }
+    }
+   ]
   }
  }
 }
