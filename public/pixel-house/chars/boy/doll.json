@@ -23,6 +23,12 @@
      }
     },
     {
+     "slot": "mouth",
+     "styles": {
+      "01": "doll/front/mouth_01.png"
+     }
+    },
+    {
      "slot": "brows",
      "styles": {
       "01": "doll/front/brows_01.png"
