@@ -1,0 +1,11 @@
+{
+ "uploadFee": 1500,
+ "styles": {
+  "hair": { "01": { "name": "長捲髮", "price": 0 }, "02": { "name": "鮑伯頭", "price": 2500 }, "03": { "name": "雙馬尾", "price": 3000 } },
+  "eyes": { "01": { "name": "圓眼睫毛", "price": 0 } },
+  "shirt": { "01": { "name": "白色帽T", "price": 0 }, "02": { "name": "V 領 T 恤", "price": 1200 }, "03": { "name": "條紋長袖", "price": 1800 }, "04": { "name": "白襯衫", "price": 1600 } },
+  "jacket": { "01": { "name": "夾克", "price": 2000 }, "02": { "name": "駝色長大衣", "price": 4200 }, "03": { "name": "針織背心", "price": 2200 } },
+  "pants": { "01": { "name": "百褶裙", "price": 0 }, "02": { "name": "長褲", "price": 1200 }, "03": { "name": "卡其短褲", "price": 1500 } },
+  "shoes": { "01": { "name": "白襪皮鞋", "price": 0 }, "02": { "name": "白帆布鞋", "price": 1800 }, "03": { "name": "便鞋", "price": 1200 } }
+ }
+}

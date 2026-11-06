@@ -19,17 +19,19 @@ export interface PartSlotDef {
   upload: boolean;
   /** 換這個部位的顏色時，這幾層也跟著換（眉毛跟頭髮同色） */
   colorAlso?: string[];
+  /** 同一個款式還畫在這幾層（長頭髮垂在身體後面那段）：跟著這個部位的款式和顏色，沒畫就沒有 */
+  layersAlso?: string[];
   /** 換色時保留白色和黑色（眼白、瞳孔的反光） */
   keepNeutrals?: boolean;
 }
 
 export const PART_SLOTS: PartSlotDef[] = [
   { slot: "body", label: "膚色", styles: false, optional: false, upload: false },
-  { slot: "hair", label: "髮型", styles: true, optional: false, upload: true, colorAlso: ["brows"] },
+  { slot: "hair", label: "髮型", styles: true, optional: false, upload: true, colorAlso: ["brows"], layersAlso: ["hairBack"] },
   { slot: "eyes", label: "眼睛", styles: true, optional: false, upload: true, keepNeutrals: true },
   { slot: "shirt", label: "上衣", styles: true, optional: false, upload: true },
   { slot: "jacket", label: "外套", styles: true, optional: true, upload: true },
-  { slot: "pants", label: "褲子", styles: true, optional: false, upload: true },
+  { slot: "pants", label: "下裝", styles: true, optional: false, upload: true },
   { slot: "shoes", label: "鞋子", styles: true, optional: true, upload: true },
 ];
 
@@ -39,10 +41,18 @@ export function partSlotDef(slot: string): PartSlotDef | undefined {
   return PART_SLOTS.find((d) => d.slot === slot);
 }
 
-/** 圖層 → 用哪個部位的顏色（眉毛跟頭髮） */
+/** 圖層 → 用哪個部位的顏色（眉毛、身體後面的頭髮跟頭髮） */
 export function colorSlotOf(layer: string): PartSlot | null {
   for (const d of PART_SLOTS) {
-    if (d.slot === layer || d.colorAlso?.includes(layer)) return d.slot;
+    if (d.slot === layer || d.colorAlso?.includes(layer) || d.layersAlso?.includes(layer)) return d.slot;
+  }
+  return null;
+}
+
+/** 圖層 → 跟著哪個部位選款式（hairBack 跟著 hair） */
+export function ownerSlotOf(layer: string): PartSlot | null {
+  for (const d of PART_SLOTS) {
+    if (d.slot === layer || d.layersAlso?.includes(layer)) return d.slot;
   }
   return null;
 }

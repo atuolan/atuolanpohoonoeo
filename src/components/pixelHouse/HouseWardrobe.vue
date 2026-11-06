@@ -206,7 +206,7 @@ watch(
     for (const card of cards.value) {
       if (card.style === null) continue;
       const o: Outfit = { ...draft.value, parts: { [def.slot]: card.style } };
-      out[card.key] = await composePartPreview(d, `${CHARS.value}${draft.value.base}/`, o, allCustoms.value, ["body", def.slot, ...(def.colorAlso ?? [])]);
+      out[card.key] = await composePartPreview(d, `${CHARS.value}${draft.value.base}/`, o, allCustoms.value, ["hairBack", "body", def.slot, ...(def.colorAlso ?? []), ...(def.layersAlso ?? [])]);
     }
     thumbs.value = out;
   },

@@ -144,6 +144,39 @@ describe("buildLayerPlan", () => {
   });
 });
 
+describe("長頭髮身體後面那層、身體的預設穿搭", () => {
+  const girl: DollManifest = {
+    defaults: { jacket: null },
+    poses: {
+      front: {
+        w: 25,
+        h: 41,
+        layers: [
+          { slot: "hairBack", styles: { "01": "f/hb_01.png" } },
+          { slot: "body", styles: { "01": "f/body_01.png" } },
+          { slot: "hair", styles: { "01": "f/hair_01.png", "02": "f/hair_02.png" } },
+          { slot: "jacket", styles: { "01": "f/jacket_01.png" } },
+        ],
+      },
+    },
+  };
+  it("hairBack 跟著髮型選款、跟著髮色；那款沒畫就沒有這層", () => {
+    const long = buildLayerPlan(girl, "front", 0, { ...defaultOutfit("girl"), colors: { hair: "#E8C35A" } }, []);
+    expect(long.map((l) => l.layer)).toEqual(["hairBack", "body", "hair"]);
+    expect(long[0].color).toBe("#E8C35A");
+    const short = buildLayerPlan(girl, "front", 0, { ...defaultOutfit("girl"), parts: { hair: "02" } }, []);
+    expect(short.map((l) => l.layer)).toEqual(["body", "hair"]);
+    // 上傳的頭髮沒有身體後面那層
+    const up = buildLayerPlan(girl, "front", 0, { ...defaultOutfit("girl"), parts: { hair: "u-1" } }, [custom({ base: "girl", slot: "hair" })]);
+    expect(up.map((l) => l.layer)).toEqual(["body", "hair"]);
+  });
+  it("沒選的部位照身體的預設；自己選了就照選的", () => {
+    expect(resolveChoice(defaultOutfit("girl"), girl, "jacket", [])).toEqual({ kind: "none" });
+    expect(resolveChoice({ ...defaultOutfit("girl"), parts: { jacket: "01" } }, girl, "jacket", [])).toEqual({ kind: "official", style: "01" });
+    expect(officialStyles(girl, "hair")).toEqual(["01", "02"]);
+  });
+});
+
 describe("recolorPixels", () => {
   const px = (...cols: [number, number, number, number][]) => new Uint8ClampedArray(cols.flat());
   it("主色變成選的顏色，深淺順序不變", () => {

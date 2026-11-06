@@ -55,3 +55,20 @@ python3 -I scripts/pixel-house/add_style.py <長條圖> boy shirt 05 --name 毛�
 `shoes_01.png` 只有走路那 4 格是新的（原本走路沒穿鞋）。
 
 加完之後跑 `npx vitest run src/components/pixelHouse/dollAssets.test.ts`：會檢查檔案在不在、尺寸對不對、清單上的款式每個角度都有畫。
+
+## 女生（chars/girl）
+
+- 跟男生同一個人胚：`doll.json` 裡的身體、腮紅、眉毛、內褲直接指到 `../boy/doll/...`；男生的衣服也換個編號放進來（改男生那張，女生也會跟著變）。
+- 女生自己的款式長條圖在 `source/girl-styles/`，一樣用 `add_style.py ... girl <部位> <款式>` 放回去。
+- `doll.json` 的 `defaults`：沒選的部位預設穿什麼，`null` = 不穿（女生預設不穿外套）。
+
+## 長頭髮：hairBack
+
+垂到肩膀以下的頭髮要畫在身體後面，不然會被衣服蓋住：另外畫一張 `hairBack` 長條圖（正面｜背面｜走路，背面通常空著），
+跟著同一個髮型編號、同一個髮色：
+
+```
+python3 -I scripts/pixel-house/add_style.py source/girl-styles/hairBack_01.png girl hairBack 01
+```
+
+注意：換色是拿每一層「最多的那個顏色」當主色，所以 hairBack 的主色要跟前面的頭髮一樣，外框和陰影不要比主色多。

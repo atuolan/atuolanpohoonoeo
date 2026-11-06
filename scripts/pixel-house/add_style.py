@@ -25,6 +25,7 @@ for key in ("--name", "--price"):
         del args[i : i + 2]
 if len(args) != 4:
     sys.exit(__doc__)
+# 部位也可以是「跟著別的部位的層」：hairBack = 長頭髮垂在身體後面那段（跟著 hair 的款式），那格空著就不畫
 src, who, slot, style = args
 ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "public", "pixel-house", "chars", who))
 manifest_path = os.path.join(ROOT, "doll.json")
@@ -71,9 +72,9 @@ def walk_bob() -> list:
 
 # 部位沒有這層時要插在哪：照這個順序找前一層
 ORDER = {
-    "front": ["body", "eyes", "blush", "brows", "hair", "underwear", "shoes", "pants", "shirt", "jacket"],
+    "front": ["hairBack", "body", "eyes", "blush", "brows", "hair", "underwear", "shoes", "pants", "shirt", "jacket"],
     "back": ["body", "underwear", "pants", "shoes", "shirt", "jacket", "hair"],
-    "walk": ["body", "shoes", "eyes", "hair", "pants", "shirt", "jacket"],
+    "walk": ["hairBack", "body", "shoes", "eyes", "hair", "pants", "shirt", "jacket"],
 }
 
 
@@ -92,14 +93,22 @@ def put(pose: str, value) -> None:
     layer["styles"][style] = value
 
 
+def empty(im: Image.Image) -> bool:
+    return im.getchannel("A").getbbox() is None
+
+
 written = []
 for i, pose in enumerate(("front", "back")):
+    if empty(cell(i)):
+        continue  # 這個角度看不到（例如背面沒有「身體後面的頭髮」）
     rel = f"doll/{pose}/{slot}_{style}.png"
     cell(i).save(os.path.join(ROOT, rel))
     put(pose, rel)
     written.append(rel)
 bob = walk_bob()
 walk = []
+if empty(cell(2)) and (cells == 3 or all(empty(cell(2 + f)) for f in range(FRAMES))):
+    FRAMES = 0
 for f in range(FRAMES):
     if cells > 3:
         im = cell(2 + f)
@@ -109,7 +118,8 @@ for f in range(FRAMES):
     rel = f"doll/walk/{slot}_{style}_{f}.png"
     im.save(os.path.join(ROOT, rel))
     walk.append(rel)
-put("walk", walk)
+if walk:
+    put("walk", walk)
 written += walk
 json.dump(manifest, open(manifest_path, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
 

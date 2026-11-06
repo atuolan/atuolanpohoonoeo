@@ -12,6 +12,7 @@ import {
   DEFAULT_UPLOAD_FEE,
   PART_SLOT_IDS,
   colorSlotOf,
+  ownerSlotOf,
   partSlotDef,
   type PartSlot,
 } from "./wardrobeData";
@@ -30,6 +31,8 @@ export interface DollPose {
 }
 export interface DollManifest {
   poses: Record<string, DollPose>;
+  /** 沒選的部位穿哪款；null = 不穿（例如女生預設不穿外套）。沒寫 = 第一款 */
+  defaults?: Partial<Record<string, string | null>>;
 }
 
 /** wardrobe.json：款式的名字、價錢，上傳費 */
@@ -153,7 +156,7 @@ export type PartChoice = { kind: "none" } | { kind: "official"; style: string } 
 
 /** 這個部位現在穿什麼：沒選、選的不存在 → 第一款 */
 export function resolveChoice(outfit: Outfit, manifest: DollManifest | null, slot: PartSlot, customs: CustomPart[]): PartChoice {
-  const pick = outfit.parts[slot];
+  const pick = slot in outfit.parts ? outfit.parts[slot] : manifest?.defaults?.[slot];
   const def = partSlotDef(slot);
   if (pick === null && def?.optional) return { kind: "none" };
   if (typeof pick === "string" && pick.startsWith("u-")) {
@@ -209,7 +212,7 @@ export interface PlanLayer {
 }
 
 /** 沒有這層的動作要插進用戶上傳的部位時，照這個順序插（由底往上） */
-const DEFAULT_ORDER = ["body", "underwear", "shoes", "pants", "shirt", "jacket", "eyes", "blush", "brows", "hair"];
+const DEFAULT_ORDER = ["hairBack", "body", "underwear", "shoes", "pants", "shirt", "jacket", "eyes", "blush", "brows", "hair"];
 
 /** 用戶上傳的圖哪一格對到哪個動作；只有 3 格的，走路 2~4 都用走路 1（畫的時候再照身體上下移） */
 function customSource(part: CustomPart, pose: string, frame: number): LayerSource | null {
@@ -249,9 +252,16 @@ export function buildLayerPlan(
   for (const slot of PART_SLOT_IDS) choices.set(slot, resolveChoice(outfit, manifest, slot, customs));
 
   for (const l of pose.layers) {
-    const slot = PART_SLOT_IDS.includes(l.slot as PartSlot) ? (l.slot as PartSlot) : null;
+    const slot = ownerSlotOf(l.slot);
     const choice = slot ? choices.get(slot)! : null;
     if (choice?.kind === "none") continue;
+    if (slot && slot !== l.slot) {
+      // 跟著別的部位的層（身體後面的頭髮）：那款有畫才疊，上傳的沒有這層
+      const v = choice?.kind === "official" ? l.styles[choice.style] : undefined;
+      const path = Array.isArray(v) ? (v[Math.min(frame, v.length - 1)] ?? null) : (v ?? null);
+      if (path) plan.push({ layer: l.slot, source: { kind: "file", path }, color: colorFor(l.slot), keepNeutrals: keepFor(l.slot) });
+      continue;
+    }
     if (choice?.kind === "custom") {
       const source = customSource(choice.part, poseName, frame);
       if (source) {
