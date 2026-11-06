@@ -31,7 +31,8 @@
     {
      "slot": "hair",
      "styles": {
-      "01": "doll/front/hair_01.png"
+      "01": "doll/front/hair_01.png",
+      "02": "doll/front/hair_02.png"
      }
     },
     {
@@ -123,7 +124,8 @@
     {
      "slot": "hair",
      "styles": {
-      "01": "doll/back/hair_01.png"
+      "01": "doll/back/hair_01.png",
+      "02": "doll/back/hair_02.png"
      }
     }
    ]
@@ -182,6 +184,12 @@
        "doll/walk/hair_01_1.png",
        "doll/walk/hair_01_2.png",
        "doll/walk/hair_01_3.png"
+      ],
+      "02": [
+       "doll/walk/hair_02_0.png",
+       "doll/walk/hair_02_1.png",
+       "doll/walk/hair_02_2.png",
+       "doll/walk/hair_02_3.png"
       ]
      }
     },
