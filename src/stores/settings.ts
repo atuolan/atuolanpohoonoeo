@@ -2,6 +2,7 @@ import {
   createDefaultMiniMaxTTSSettings,
   type MiniMaxTTSSettings,
 } from "@/api/MiniMaxTTSApi";
+import { createDefaultFishAudioSettings } from "@/api/FishAudioTTSApi";
 import {
   applySavedNovelAIImageSettings,
   createDefaultNovelAIImageSettings,
@@ -320,9 +321,10 @@ export const useSettingsStore = defineStore("settings", () => {
   );
 
   // MiniMax TTS 語音合成設定
-  const minimaxTTS = reactive<MiniMaxTTSSettings>(
-    createDefaultMiniMaxTTSSettings(),
-  );
+  const minimaxTTS = reactive<MiniMaxTTSSettings>({
+    ...createDefaultMiniMaxTTSSettings(),
+    fishAudio: createDefaultFishAudioSettings(),
+  });
 
   // 語言設定
   // 預設為 'none' = 不轉換（按使用者打字 / AI 回覆原樣顯示），避免簡體使用者預設被自動轉成繁體
@@ -570,6 +572,11 @@ export const useSettingsStore = defineStore("settings", () => {
           // 載入 MiniMax TTS 語音合成設定
           if (saved.minimaxTTS) {
             Object.assign(minimaxTTS, saved.minimaxTTS);
+            // 舊資料沒有 Fish Audio 的設定，或少了新加的欄位，補上預設值
+            minimaxTTS.fishAudio = {
+              ...createDefaultFishAudioSettings(),
+              ...(saved.minimaxTTS.fishAudio ?? {}),
+            };
           }
 
           // 載入語言設定
