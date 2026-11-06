@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
+import { shouldBackupLocalStorageKey } from "@/services/backupCoverage";
 import { parsePixelHouseState } from "./houseState";
 import {
   bobOffsets,
   buildLayerPlan,
   checkUploadSize,
+  customPartFilename,
   defaultOutfit,
   markOwned,
   officialStyles,
@@ -180,6 +182,14 @@ describe("checkUploadSize", () => {
   });
 });
 
+describe("customPartFilename", () => {
+  it("名字_部位.png，手機不收的字元換掉", () => {
+    expect(customPartFilename({ name: "紅鞋" }, "鞋子")).toBe("紅鞋_鞋子.png");
+    expect(customPartFilename({ name: 'a/b:c*"d' }, "頭髮")).toBe("a_b_c__d_頭髮.png");
+    expect(customPartFilename({ name: "  " }, "")).toBe("自己畫的_衣服.png");
+  });
+});
+
 describe("bobOffsets", () => {
   it("跟第一格比", () => {
     expect(bobOffsets([4, 3, 4, 3])).toEqual([0, -1, 0, -1]);
@@ -205,5 +215,12 @@ describe("讀檔", () => {
     const ok = { id: "u-1", base: "boy", slot: "hair", name: " 長髮 ", sheet: "data:image/png;base64,AA", cells: 6, createdAt: 5 };
     const parts = parseCustomParts([ok, { ...ok, id: "x" }, { ...ok, slot: "body" }, { ...ok, sheet: "http://x" }, null]);
     expect(parts).toEqual([{ ...ok, name: "長髮" }]);
+  });
+});
+
+describe("備份", () => {
+  it("小屋的外觀、買過的紀錄、上傳的衣服都會跟著 app 備份", () => {
+    expect(shouldBackupLocalStorageKey("pixel_house_state")).toBe(true);
+    expect(shouldBackupLocalStorageKey("pixel_house_custom_parts")).toBe(true);
   });
 });

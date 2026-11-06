@@ -388,6 +388,12 @@ export type UploadCheck =
   | { ok: true; cells: 3 | 6; scale: number }
   | { ok: false; error: string };
 
+/** 下載原圖用的檔名：名字_部位.png；這個檔案可以原樣再上傳 */
+export function customPartFilename(part: Pick<CustomPart, "name">, slotLabel: string): string {
+  const safe = (s: string) => s.replace(/[\\/:*?"<>|\u0000-\u001f]/g, "_").trim();
+  return `${safe(part.name) || "自己畫的"}_${safe(slotLabel) || "衣服"}.png`;
+}
+
 /** 上傳的圖要是 3 格或 6 格寬、1 格高（可以整數倍放大，例如 2 倍匯出） */
 export function checkUploadSize(width: number, height: number, cellW: number, cellH: number): UploadCheck {
   if (height % cellH !== 0 || height < cellH) {

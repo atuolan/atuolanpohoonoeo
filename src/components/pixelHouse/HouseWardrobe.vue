@@ -19,6 +19,7 @@ import { saveCustomParts, type ResidentLook } from "./houseState";
 import { PART_COLORS, PART_SLOTS, partSlotDef, type PartSlot } from "./wardrobeData";
 import {
   checkUploadSize,
+  customPartFilename,
   isStyleOwned,
   markOwned,
   officialStyles,
@@ -63,6 +64,8 @@ const message = ref("");
 const busy = ref(false);
 const confirming = ref(false);
 const leaving = ref(false);
+/** 準備刪掉的自己畫的衣服（先問一次） */
+const deleting = ref<CustomPart | null>(null);
 const walkFrame = ref(0);
 let walkTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -373,6 +376,7 @@ async function confirmUpload() {
 }
 
 function deleteCustom(c: CustomPart) {
+  deleting.value = null;
   const next = props.customs.filter((p) => p.id !== c.id);
   saveCustomParts(next);
   emit("customs-changed", next);
@@ -386,6 +390,15 @@ const selectedCustom = computed(() => {
   const id = draft.value.parts[def.slot];
   return props.customs.find((c) => c.id === id) ?? null;
 });
+
+// 換了款式或分頁就不再問刪除
+watch(selectedCustom, (c) => {
+  if (deleting.value && c?.id !== deleting.value.id) deleting.value = null;
+});
+
+function customFilename(c: CustomPart): string {
+  return customPartFilename(c, partSlotDef(c.slot)?.label ?? "");
+}
 </script>
 
 <template>
@@ -485,7 +498,10 @@ const selectedCustom = computed(() => {
                     <span class="wd-badge">{{ fee.toLocaleString() }} 金幣</span>
                   </button>
                 </div>
-                <button v-if="selectedCustom" class="wd-link" @click="deleteCustom(selectedCustom)">刪掉「{{ selectedCustom.name }}」</button>
+                <div v-if="selectedCustom" class="wd-links">
+                  <a class="wd-link" :href="selectedCustom.sheet" :download="customFilename(selectedCustom)">下載原圖</a>
+                  <button class="wd-link is-danger" @click="deleting = selectedCustom">刪掉「{{ selectedCustom.name }}」</button>
+                </div>
               </template>
 
               <h3 class="wd-sub">顏色<span class="wd-sub-note">免費</span></h3>
@@ -511,6 +527,9 @@ const selectedCustom = computed(() => {
 
         <footer class="wd-foot">
           <p v-if="leaving" class="wd-msg">還沒換上，確定要離開？</p>
+          <p v-else-if="deleting" class="wd-msg">
+            刪掉「{{ deleting.name }}」就拿不回來，上傳費也不會退。想留著的話先下載原圖，之後可以再上傳。
+          </p>
           <p v-else-if="confirming" class="wd-msg">
             要付 {{ cost.total.toLocaleString() }} 金幣買：{{ cost.items.map((i) => i.name).join("、") }}
           </p>
@@ -518,6 +537,11 @@ const selectedCustom = computed(() => {
           <div v-if="leaving" class="wd-actions">
             <button class="wd-btn" @click="leaving = false">繼續換</button>
             <button class="wd-btn is-main" @click="emit('close')">不存，離開</button>
+          </div>
+          <div v-else-if="deleting" class="wd-actions">
+            <a class="wd-btn" :href="deleting.sheet" :download="customFilename(deleting)">下載原圖</a>
+            <button class="wd-btn" @click="deleting = null">先不要</button>
+            <button class="wd-btn is-danger" @click="deleteCustom(deleting)">確定刪掉</button>
           </div>
           <div v-else-if="!upload" class="wd-actions">
             <button class="wd-btn" :disabled="!changed || busy" @click="reset">還原</button>
@@ -820,15 +844,27 @@ const selectedCustom = computed(() => {
   cursor: pointer;
 }
 
-.wd-link {
+.wd-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 18px;
   margin-top: 10px;
+}
+
+.wd-link {
   padding: 4px 2px;
   border: 0;
   background: none;
-  color: #c0443a;
+  color: inherit;
   font-family: inherit;
   font-size: 13px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
   cursor: pointer;
+}
+
+.wd-link.is-danger {
+  color: #c0443a;
 }
 
 .wd-note {
@@ -956,6 +992,19 @@ const selectedCustom = computed(() => {
   background: #3b2a26;
   color: #fff;
   font-weight: 600;
+}
+
+.wd-btn.is-danger {
+  background: #c0443a;
+  color: #fff;
+  font-weight: 600;
+}
+
+a.wd-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
 }
 
 .wd-btn:disabled {
