@@ -40,3 +40,18 @@ python3 -I scripts/pixel-house/extract_walk.py scripts/pixel-house/source/walk-s
 - 輸出：`wall.png`（壁紙）、`wainscot.png`（護牆板＋踢腳板；浴室是下半的磁磚牆）、`floor.png`、`items/<id>.png`、`layout.json`（每層的位置；`unassigned` 是丟掉的雜點數）
 
 做法：牆每欄一色（從乾淨的上緣取）、護牆板每列找水平週期、地板每 12 列重複取眾數，重建出空房間；跟原圖不一樣的像素就是家具。
+
+## 加一個新款式（一張長條圖）
+
+畫一張 150×41：正面｜背面｜走路 1～4，每格 25×41（跟用戶上傳的格式一樣；只畫到走路 1 的 75×41 也可以，可以整數倍匯出）：
+
+```
+python3 -I scripts/pixel-house/add_style.py <長條圖> boy shirt 05 --name 毛衣 --price 2000
+```
+
+會切好放進 `doll/`、寫進 `doll.json` 和 `wardrobe.json`。同一個款式重跑會覆蓋。
+
+`source/boy-styles/` 是我（Claude）畫的那幾套的長條圖，想改就在 Aseprite 裡改，再用上面的指令放回去。
+`shoes_01.png` 只有走路那 4 格是新的（原本走路沒穿鞋）。
+
+加完之後跑 `npx vitest run src/components/pixelHouse/dollAssets.test.ts`：會檢查檔案在不在、尺寸對不對、清單上的款式每個角度都有畫。

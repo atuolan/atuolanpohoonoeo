@@ -75,6 +75,14 @@ old = {l["slot"]: l for l in manifest["poses"].get(pose, {}).get("layers", [])}
 for l in layers:
     if l["slot"] in old:
         l["styles"] = {**old[l["slot"]]["styles"], **l["styles"]}
+# 這次沒拆到的層（例如另外加的走路鞋子）也留著，放回原本前一層的後面
+prev = None
+for slot, l in old.items():
+    names_now = [x["slot"] for x in layers]
+    if slot not in names_now:
+        at = names_now.index(prev) + 1 if prev in names_now else 0
+        layers.insert(at, l)
+    prev = slot
 entry = {"w": W, "h": H}
 if frames > 1:
     entry["frames"] = frames
