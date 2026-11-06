@@ -10,7 +10,9 @@
     {
      "slot": "hairBack",
      "styles": {
-      "01": "doll/front/hairBack_01.png"
+      "01": "doll/front/hairBack_01.png",
+      "06": "doll/front/hairBack_06.png",
+      "07": "doll/front/hairBack_07.png"
      }
     },
     {
@@ -42,7 +44,11 @@
      "styles": {
       "01": "doll/front/hair_01.png",
       "02": "doll/front/hair_02.png",
-      "03": "doll/front/hair_03.png"
+      "03": "doll/front/hair_03.png",
+      "04": "doll/front/hair_04.png",
+      "05": "doll/front/hair_05.png",
+      "06": "doll/front/hair_06.png",
+      "07": "doll/front/hair_07.png"
      }
     },
     {
@@ -140,7 +146,11 @@
      "styles": {
       "01": "doll/back/hair_01.png",
       "02": "doll/back/hair_02.png",
-      "03": "doll/back/hair_03.png"
+      "03": "doll/back/hair_03.png",
+      "04": "doll/back/hair_04.png",
+      "05": "doll/back/hair_05.png",
+      "06": "doll/back/hair_06.png",
+      "07": "doll/back/hair_07.png"
      }
     }
    ]
@@ -166,6 +176,18 @@
        "doll/walk/hairBack_03_1.png",
        "doll/walk/hairBack_03_2.png",
        "doll/walk/hairBack_03_3.png"
+      ],
+      "06": [
+       "doll/walk/hairBack_06_0.png",
+       "doll/walk/hairBack_06_1.png",
+       "doll/walk/hairBack_06_2.png",
+       "doll/walk/hairBack_06_3.png"
+      ],
+      "07": [
+       "doll/walk/hairBack_07_0.png",
+       "doll/walk/hairBack_07_1.png",
+       "doll/walk/hairBack_07_2.png",
+       "doll/walk/hairBack_07_3.png"
       ]
      }
     },
@@ -234,6 +256,30 @@
        "doll/walk/hair_03_1.png",
        "doll/walk/hair_03_2.png",
        "doll/walk/hair_03_3.png"
+      ],
+      "04": [
+       "doll/walk/hair_04_0.png",
+       "doll/walk/hair_04_1.png",
+       "doll/walk/hair_04_2.png",
+       "doll/walk/hair_04_3.png"
+      ],
+      "05": [
+       "doll/walk/hair_05_0.png",
+       "doll/walk/hair_05_1.png",
+       "doll/walk/hair_05_2.png",
+       "doll/walk/hair_05_3.png"
+      ],
+      "06": [
+       "doll/walk/hair_06_0.png",
+       "doll/walk/hair_06_1.png",
+       "doll/walk/hair_06_2.png",
+       "doll/walk/hair_06_3.png"
+      ],
+      "07": [
+       "doll/walk/hair_07_0.png",
+       "doll/walk/hair_07_1.png",
+       "doll/walk/hair_07_2.png",
+       "doll/walk/hair_07_3.png"
       ]
      }
     },
