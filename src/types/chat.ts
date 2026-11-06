@@ -1264,6 +1264,10 @@ export interface Chat {
     callBilingual?: boolean;
     /** 群聊成員各自的音色：key 是訊息的 senderCharacterId，value 是 voice_id */
     memberVoices?: Record<string, string>;
+    /** Fish Audio 的音色（reference_id）；跟 MiniMax 的 voice_id 不通用，分開存 */
+    fishVoiceId?: string;
+    /** Fish Audio 的群聊成員音色 */
+    fishMemberVoices?: Record<string, string>;
   };
 
   /** 是否為分支聊天（不顯示在主列表，只在角色卡聊天檔案中顯示） */

@@ -10,6 +10,12 @@ import {
   getMessageTTSSource,
 } from "@/utils/messageTTS";
 import {
+  applyTTSVoiceOverride,
+  getOverrideMemberVoices,
+  getOverrideVoice,
+  isTTSConfigured,
+} from "@/api/ttsProvider";
+import {
   convertTTSContentToSimplified,
   prepareTTSContent,
   type TTSLanguageMode,
@@ -26,6 +32,10 @@ export interface ChatMinimaxTTSOverride {
   callBilingual?: boolean;
   /** 群聊成員各自的音色：key 是訊息的 senderCharacterId，value 是 voice_id */
   memberVoices?: Record<string, string>;
+  /** Fish Audio 的音色（reference_id）；跟 MiniMax 的 voice_id 不通用，分開存 */
+  fishVoiceId?: string;
+  /** Fish Audio 的群聊成員音色 */
+  fishMemberVoices?: Record<string, string>;
 }
 
 export type MessageTTSRegenerationResult =
@@ -85,6 +95,8 @@ export function useChatTTS(context: {
 
   /** MiniMax 回傳的是 Aliyun OSS 簽名 URL（約 24h 後過期），下載轉成 base64 data URL 保存 */
   async function persistAudioUrl(audioUrl: string): Promise<string> {
+    // Fish Audio 直接回傳音頻，已經是 data URL
+    if (audioUrl.startsWith("data:")) return audioUrl;
     try {
       const audioResp = await fetch(audioUrl);
       if (!audioResp.ok) {
@@ -124,11 +136,13 @@ export function useChatTTS(context: {
 
     const { synthesizeSpeech } = await import("@/api/MiniMaxTTSApi");
     const override = chatMinimaxTTSOverride.value;
-    const memberVoice = (id: string | undefined) => (id && override.memberVoices?.[id]?.trim()) || undefined;
+    const globalSettings = context.settingsStore.minimaxTTS;
+    const memberVoices = getOverrideMemberVoices(globalSettings, override);
+    const memberVoice = (id: string | undefined) => (id && memberVoices?.[id]?.trim()) || undefined;
     // 群聊：說話的成員有自己的音色就用它，其次才是這個聊天的音色
     const senderVoice = memberVoice(message.senderCharacterId);
     const baseSettings = {
-      ...context.settingsStore.minimaxTTS,
+      ...globalSettings,
       ...(override.pitch !== undefined && { pitch: override.pitch }),
       ...(override.languageBoost !== undefined && { languageBoost: override.languageBoost }),
     };
@@ -138,21 +152,19 @@ export function useChatTTS(context: {
     const speakerVoice = seg.speaker
       ? memberVoice(context.resolveSpeakerId?.(seg.speaker))
       : undefined;
-    const voiceId = speakerVoice || senderVoice || override.voiceId;
-    // 每段用自己的 speed 和 emotion
-    const mergedSettings = {
-      ...baseSettings,
-      // 成員或聊天自己指定的音色優先於全域的音色混合
-      ...(voiceId && { voiceId, timberWeightsEnabled: false }),
-      speed: baseSpeed * (seg.speed ?? 1),
-    };
+    const voiceId = speakerVoice || senderVoice || getOverrideVoice(globalSettings, override);
+    // 每段用自己的 speed 和 emotion；成員或聊天自己指定的音色優先於全域的音色混合
+    const mergedSettings = applyTTSVoiceOverride(
+      { ...baseSettings, speed: baseSpeed * (seg.speed ?? 1) },
+      voiceId,
+    );
     const ttsText = convertTTSContentToSimplified(seg.text, mergedSettings.languageBoost);
 
     const result = await synthesizeSpeech(ttsText, mergedSettings, {
       emotion: seg.emotion !== "neutral" ? seg.emotion : override.emotion,
     });
     if (!result.success || !result.audioUrl) {
-      console.warn(`[MiniMax TTS] 段落 ${index} 合成失敗:`, result.error);
+      console.warn(`[TTS] 段落 ${index} 合成失敗:`, result.error);
       return undefined;
     }
 
@@ -188,7 +200,7 @@ export function useChatTTS(context: {
     },
   ): Promise<boolean> {
     if (!context.chatMinimaxTTSEnabled.value) return false;
-    if (!context.settingsStore.minimaxTTS.apiKey) return false;
+    if (!isTTSConfigured(context.settingsStore.minimaxTTS)) return false;
     if (!options?.force && !hasTTSTags(content)) return false;
 
     // 找到訊息並保存原始文字
@@ -268,7 +280,7 @@ export function useChatTTS(context: {
     const segment = message?.ttsSegments?.[index];
     if (!message || !segment) return { success: false, reason: "not-found" };
     if (segment.audioUrl) return { success: true, audioUrl: segment.audioUrl };
-    if (!context.settingsStore.minimaxTTS.apiKey) {
+    if (!isTTSConfigured(context.settingsStore.minimaxTTS)) {
       return { success: false, reason: "missing-api-key" };
     }
 
@@ -300,7 +312,7 @@ export function useChatTTS(context: {
     if (!context.chatMinimaxTTSEnabled.value) {
       return { success: false, reason: "disabled" };
     }
-    if (!context.settingsStore.minimaxTTS.apiKey) {
+    if (!isTTSConfigured(context.settingsStore.minimaxTTS)) {
       return { success: false, reason: "missing-api-key" };
     }
     if (regeneratingMessageIds.has(messageId)) {
