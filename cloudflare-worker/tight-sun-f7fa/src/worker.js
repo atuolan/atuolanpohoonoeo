@@ -42,6 +42,8 @@ const FORWARD_HEADERS = [
 	'content-length',
 	// 可讓前端標記來源，方便你在 Worker log/除錯時辨識（不影響上游）
 	'x-aguaphone-client',
+	// Fish Audio 用 model 標頭選模型
+	'model',
 ];
 
 /** 偽裝的 User-Agent（瀏覽器 fetch 無法覆蓋 User-Agent，所以由 Worker 來設定） */
@@ -55,7 +57,7 @@ function corsHeaders(origin) {
 	return {
 		'Access-Control-Allow-Origin': allowed,
 		'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-		'Access-Control-Allow-Headers': 'Authorization, Content-Type, Accept, Cache-Control, X-Api-Key, Anthropic-Version, X-Aguaphone-Client',
+		'Access-Control-Allow-Headers': 'Authorization, Content-Type, Accept, Cache-Control, X-Api-Key, Anthropic-Version, X-Aguaphone-Client, Model',
 		'Access-Control-Max-Age': '86400',
 	};
 }

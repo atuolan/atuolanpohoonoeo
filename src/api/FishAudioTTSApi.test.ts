@@ -3,6 +3,7 @@ import {
   createDefaultFishAudioSettings,
   fetchFishAudioVoices,
   synthesizeFishAudio,
+  testFishAudioConnection,
   toFishAudioText,
 } from "./FishAudioTTSApi";
 import { synthesizeSpeech, createDefaultMiniMaxTTSSettings } from "./MiniMaxTTSApi";
@@ -163,5 +164,47 @@ describe("provider switching", () => {
       reference_id: "chat-fish",
       prosody: { speed: 1.3 },
     });
+  });
+});
+
+describe("connection", () => {
+  it("accepts a pasted /v1/tts address as the API base", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(audioResponse());
+    vi.stubGlobal("fetch", fetchMock);
+
+    await synthesizeFishAudio("你好", settings({ baseUrl: "https://api.fish.audio/v1/tts/" }));
+
+    expect(fetchMock.mock.calls[0][0]).toBe("https://api.fish.audio/v1/tts");
+  });
+
+  it("goes through the app proxy worker when the proxy is on", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ credit: "12.5" })));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await testFishAudioConnection(settings({ useProxy: true, baseUrl: "https://ignored.example" }));
+
+    expect(result).toEqual({ success: true, credit: "12.5" });
+    expect(fetchMock.mock.calls[0][0]).toMatch(/^https:\/\/[^/]+\/proxy\/api\.fish\.audio\/wallet\/self\/api-credit$/);
+  });
+
+  it("gives up with a clear message instead of hanging forever", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((_url: string, init: RequestInit) =>
+        new Promise((_, reject) => {
+          init.signal?.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")));
+        }),
+      ),
+    );
+
+    const pending = testFishAudioConnection(settings());
+    await vi.advanceTimersByTimeAsync(20_000);
+    const result = await pending;
+    vi.useRealTimers();
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("連線逾時");
+    expect(result.error).toContain("透過代理連線");
   });
 });
