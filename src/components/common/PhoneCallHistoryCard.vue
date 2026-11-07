@@ -1,4 +1,9 @@
 <script setup lang="ts">
+import {
+  peekPlayableAudioUrl,
+  prefetchPlayableAudioUrls,
+  resolvePlayableAudioUrl,
+} from "@/db/messageAudio";
 import { getCallLineDisplay } from "@/utils/callLines";
 import { computed, onUnmounted, ref, watch } from "vue";
 
@@ -58,7 +63,7 @@ function stopAudio() {
   playingIndex.value = null;
 }
 
-function playMessage(idx: number, url?: string) {
+async function playMessage(idx: number, url?: string) {
   if (!url) return;
   // 點擊正在播放的語音 → 停止
   if (playingIndex.value === idx) {
@@ -66,7 +71,15 @@ function playMessage(idx: number, url?: string) {
     return;
   }
   stopAudio();
-  const el = new Audio(url);
+  // 語音是 audio-blobs 的引用（打開視窗時已先讀好，通常不用等）
+  playingIndex.value = idx;
+  const playable = peekPlayableAudioUrl(url) ?? (await resolvePlayableAudioUrl(url));
+  if (playingIndex.value !== idx) return;
+  if (!playable) {
+    playingIndex.value = null;
+    return;
+  }
+  const el = new Audio(playable);
   audio = el;
   playingIndex.value = idx;
   el.onended = () => {
@@ -96,6 +109,7 @@ function onKeydown(e: KeyboardEvent) {
 
 watch(showModal, (open) => {
   if (open) {
+    prefetchPlayableAudioUrls(props.messages.map((m) => m.audioUrl));
     window.addEventListener("keydown", onKeydown);
   } else {
     window.removeEventListener("keydown", onKeydown);

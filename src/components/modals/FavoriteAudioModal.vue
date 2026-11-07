@@ -132,6 +132,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue';
 import type { FavoriteAudio } from '@/types/favoriteAudio';
+import { resolvePlayableAudioUrl } from '@/db/messageAudio';
 import {
   getAllFavoriteAudios,
   getFavoriteAudiosByCharacter,
@@ -257,7 +258,8 @@ async function togglePlay(audio: FavoriteAudio) {
         audioUrl = URL.createObjectURL(blobRecord.blob);
       }
     } else if (audio.ttsAudioUrl) {
-      audioUrl = audio.ttsAudioUrl;
+      // 新的 TTS 語音存在 audio-blobs，這裡是引用
+      audioUrl = await resolvePlayableAudioUrl(audio.ttsAudioUrl);
     }
 
     if (audioUrl && audioPlayer.value) {

@@ -58,6 +58,11 @@ import {
   isAudioBlobRef,
   isChatImageRef,
 } from "@/db/operations";
+import {
+  peekPlayableAudioUrl,
+  prefetchPlayableAudioUrls,
+  resolvePlayableAudioUrl,
+} from "@/db/messageAudio";
 import { formatTime } from "@/services/AudioRecorder";
 import { getRegexedString, regex_placement } from "@/services/RegexEngine";
 import { filterChatDisabledScripts } from "@/services/promptRegex";
@@ -3325,20 +3330,28 @@ async function playTTSSegment(e: Event, index: number, button?: HTMLElement) {
   }
 
   stopTTS();
-  if (seg.audioUrl) {
-    startTTSAudio(new Audio(seg.audioUrl), index);
+  // 語音存在 audio-blobs，訊息裡是引用；讀過的話點擊當下就能播
+  const ready = peekPlayableAudioUrl(seg.audioUrl);
+  if (ready) {
+    startTTSAudio(new Audio(ready), index);
     return;
   }
-  if (!props.requestTtsSegment) return;
+  if (!seg.audioUrl && !props.requestTtsSegment) return;
 
+  // 引用還沒讀過、或這段還沒生成：先用無聲檔解鎖播放器（iOS），等讀完或生成完再播
   const seq = ttsRequestSeq;
   const audio = new Audio(getSilentWav());
   audio.play().catch(() => {});
   ttsPlayingIndex.value = index;
   button?.classList.add("tts-inline-btn--loading");
-  let url: string | undefined;
+  let url: string | null | undefined;
   try {
-    url = await props.requestTtsSegment(props.id, index);
+    url = seg.audioUrl ? await resolvePlayableAudioUrl(seg.audioUrl) : undefined;
+    // 還沒生成，或音檔不在這台裝置上（從別台同步過來）：生成這一段
+    if (!url && props.requestTtsSegment && seq === ttsRequestSeq) {
+      const generated = await props.requestTtsSegment(props.id, index);
+      url = generated ? await resolvePlayableAudioUrl(generated) : undefined;
+    }
   } finally {
     // 生成成功時段落會帶 audioUrl、按鈕整個重畫；失敗或被取消時要自己拿掉轉圈
     button?.classList.remove("tts-inline-btn--loading");
@@ -3389,8 +3402,11 @@ async function playAllTTS(e: Event) {
     if (!isTTSPlaying.value) break; // 被手動停止
 
     ttsPlayingIndex.value = i;
+    const url = peekPlayableAudioUrl(seg.audioUrl) ?? (await resolvePlayableAudioUrl(seg.audioUrl));
+    if (!url) continue;
+    if (!isTTSPlaying.value) break;
     await new Promise<void>((resolve) => {
-      const audio = new Audio(seg.audioUrl);
+      const audio = new Audio(url);
       audio.addEventListener("ended", () => resolve());
       audio.addEventListener("error", () => resolve());
       ttsAudio.value = audio;
@@ -3402,7 +3418,7 @@ async function playAllTTS(e: Event) {
 }
 
 /** 向下相容：播放舊版單段 */
-function toggleTTSLegacy(e: Event) {
+async function toggleTTSLegacy(e: Event) {
   e.stopPropagation();
   if (!props.ttsAudioUrl) return;
 
@@ -3416,7 +3432,10 @@ function toggleTTSLegacy(e: Event) {
     return;
   }
 
-  const audio = new Audio(props.ttsAudioUrl);
+  const url =
+    peekPlayableAudioUrl(props.ttsAudioUrl) ?? (await resolvePlayableAudioUrl(props.ttsAudioUrl));
+  if (!url || ttsAudio.value) return;
+  const audio = new Audio(url);
   audio.addEventListener("ended", () => {
     isTTSPlaying.value = false;
   });
@@ -3424,6 +3443,13 @@ function toggleTTSLegacy(e: Event) {
   isTTSPlaying.value = true;
   audio.play();
 }
+
+// 語音是 audio-blobs 的引用：先換成 blob: 網址，點下去才能馬上出聲（iOS 要在點擊當下播放）
+watch(
+  () => [props.ttsAudioUrl, ...(props.ttsSegments?.map((s) => s.audioUrl) ?? [])],
+  (urls) => prefetchPlayableAudioUrls(urls),
+  { immediate: true },
+);
 
 onUnmounted(() => {
   stopTTS();
