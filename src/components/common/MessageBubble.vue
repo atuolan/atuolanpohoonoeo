@@ -3240,9 +3240,43 @@ const hasTTSLegacy = computed(() => {
 /** 每次點播放就加一；等語音生成回來時若已經不是最新的點擊（點了別段或按停止），就不播 */
 let ttsRequestSeq = 0;
 
-/** 很短的無聲 WAV：點擊當下先播它，iOS 才允許等語音生成完後由同一個播放器出聲 */
-const SILENT_WAV =
-  "data:audio/wav;base64,UklGRnQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YVAAAACAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgA==";
+/**
+ * 很短的無聲 WAV：點擊當下先播它，iOS 才允許等語音生成完後由同一個播放器出聲。
+ * 一定要用高取樣率：Safari 會讓播放器沿用第一次播放的取樣率，
+ * 以前用 8000 Hz、8 位元的檔案，後面的語音就被壓成電話音質，聽起來很糊。
+ */
+let silentWavUrl: string | null = null;
+function getSilentWav(): string {
+  if (silentWavUrl) return silentWavUrl;
+  const sampleRate = 48000;
+  const samples = 2400; // 0.05 秒
+  const dataSize = samples * 2; // 16 位元單聲道
+  const view = new DataView(new ArrayBuffer(44 + dataSize));
+  const ascii = (offset: number, text: string) => {
+    for (let i = 0; i < text.length; i++) view.setUint8(offset + i, text.charCodeAt(i));
+  };
+  ascii(0, "RIFF");
+  view.setUint32(4, 36 + dataSize, true);
+  ascii(8, "WAVE");
+  ascii(12, "fmt ");
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true); // PCM
+  view.setUint16(22, 1, true); // 單聲道
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * 2, true);
+  view.setUint16(32, 2, true);
+  view.setUint16(34, 16, true);
+  ascii(36, "data");
+  view.setUint32(40, dataSize, true);
+  // 16 位元 PCM 的無聲就是 0，ArrayBuffer 本來就是 0
+  let binary = "";
+  const bytes = new Uint8Array(view.buffer);
+  for (let i = 0; i < bytes.length; i += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  }
+  silentWavUrl = `data:audio/wav;base64,${btoa(binary)}`;
+  return silentWavUrl;
+}
 
 /** 停止當前播放 */
 function stopTTS() {
@@ -3255,7 +3289,8 @@ function stopTTS() {
   ttsPlayingIndex.value = -1;
 }
 
-function startTTSAudio(audio: HTMLAudioElement, index: number) {
+/** 把播放器設成目前在播的這段（還不呼叫 play） */
+function attachTTSAudio(audio: HTMLAudioElement, index: number) {
   audio.addEventListener("ended", () => {
     if (ttsAudio.value !== audio) return;
     isTTSPlaying.value = false;
@@ -3264,6 +3299,10 @@ function startTTSAudio(audio: HTMLAudioElement, index: number) {
   ttsAudio.value = audio;
   ttsPlayingIndex.value = index;
   isTTSPlaying.value = true;
+}
+
+function startTTSAudio(audio: HTMLAudioElement, index: number) {
+  attachTTSAudio(audio, index);
   audio.play().catch((err) => {
     console.warn("[TTS] 播放失敗:", err);
     if (ttsAudio.value !== audio) return;
@@ -3293,7 +3332,7 @@ async function playTTSSegment(e: Event, index: number, button?: HTMLElement) {
   if (!props.requestTtsSegment) return;
 
   const seq = ttsRequestSeq;
-  const audio = new Audio(SILENT_WAV);
+  const audio = new Audio(getSilentWav());
   audio.play().catch(() => {});
   ttsPlayingIndex.value = index;
   button?.classList.add("tts-inline-btn--loading");
@@ -3310,8 +3349,22 @@ async function playTTSSegment(e: Event, index: number, button?: HTMLElement) {
     return;
   }
   audio.pause();
-  audio.src = url;
-  startTTSAudio(audio, index);
+  // 先用全新的播放器播，音質最乾淨；瀏覽器說不能自動播放（iOS）才改用點擊時解鎖的那個
+  const fresh = new Audio(url);
+  try {
+    await fresh.play();
+  } catch {
+    if (seq !== ttsRequestSeq) return;
+    audio.src = url;
+    startTTSAudio(audio, index);
+    return;
+  }
+  // 播放開始前使用者可能已經按了停止或點了別段
+  if (seq !== ttsRequestSeq) {
+    fresh.pause();
+    return;
+  }
+  attachTTSAudio(fresh, index);
 }
 
 /** 全部播放（逐段串接） */
