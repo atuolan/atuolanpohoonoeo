@@ -9,6 +9,7 @@ import {
   FISH_AUDIO_MODELS,
   fetchFishAudioVoices,
   fishModelSupportsMarkers,
+  normalizeFishAudioBaseUrl,
   synthesizeFishAudio,
   testFishAudioConnection,
   type FishAudioTTSSettings,
@@ -162,13 +163,35 @@ async function previewVoice(id: string) {
 // ===== 模型 =====
 const markersSupported = computed(() => fishModelSupportsMarkers(fish.model || "s1"));
 
+// 模型：從清單選，清單沒有的選「自訂」再自己輸入（不用 datalist，Android 上會浮在畫面上）
+const CUSTOM_MODEL = "__custom__";
+const customModel = ref(!FISH_AUDIO_MODELS.some((m) => m.value === fish.model));
+const modelOptions = [...FISH_AUDIO_MODELS, { value: CUSTOM_MODEL, label: "自訂模型名稱…" }];
+const modelChoice = computed({
+  get: () => (customModel.value ? CUSTOM_MODEL : fish.model),
+  set: (value: string) => {
+    customModel.value = value === CUSTOM_MODEL;
+    if (!customModel.value) {
+      fish.model = value;
+      save();
+    }
+  },
+});
+
 function onModelChange() {
   fish.model = fish.model.trim() || "s1";
   save();
 }
 
 function onBaseUrlChange() {
-  fish.baseUrl = fish.baseUrl.trim() || FISH_AUDIO_DEFAULT_BASE_URL;
+  // 貼了完整的 https://api.fish.audio/v1/tts 也整理成根位址
+  fish.baseUrl = normalizeFishAudioBaseUrl(fish.baseUrl);
+  save();
+}
+
+function onProxyChange() {
+  testResult.value = null;
+  voiceError.value = "";
   save();
 }
 
@@ -221,6 +244,31 @@ onUnmounted(saveApiKeyDraft);
       >
         {{ accountStatus.text }}
       </span>
+    </div>
+  </SettingsGroup>
+
+  <SettingsGroup
+    title="連線"
+    :footer="
+      fish.useProxy
+        ? '走 App 自己的代理 Worker 轉發到 Fish Audio，可以避開瀏覽器跨域限制，大陸網路也比較連得上。'
+        : '一直顯示「測試中」或出現連不上、逾時，就打開「透過代理連線」。API 位址填到 https://api.fish.audio 就好，不用加 /v1/tts。'
+    "
+  >
+    <SettingsSwitchRow v-model="fish.useProxy" label="透過代理連線" @change="onProxyChange" />
+    <div v-if="!fish.useProxy" class="st-pad">
+      <div class="st-field">
+        <label for="fish-base" class="st-field__label">API 位址</label>
+        <input
+          id="fish-base"
+          v-model="fish.baseUrl"
+          type="url"
+          class="st-input"
+          :placeholder="FISH_AUDIO_DEFAULT_BASE_URL"
+          autocomplete="off"
+          @change="onBaseUrlChange"
+        />
+      </div>
     </div>
   </SettingsGroup>
 
@@ -327,26 +375,23 @@ onUnmounted(saveApiKeyDraft);
         : 'speech-1.x 模型不支援情緒標記，只會念純文字。'
     "
   >
-    <div class="st-pad">
+    <SettingsSelectRow v-model="modelChoice" label="模型" :options="modelOptions" />
+    <div v-if="customModel" class="st-pad">
       <div class="st-field">
-        <label for="fish-model" class="st-field__label">模型</label>
+        <label for="fish-model" class="st-field__label">模型名稱</label>
         <input
           id="fish-model"
           v-model="fish.model"
           type="text"
           class="st-input"
-          list="fish-model-options"
-          placeholder="s1"
+          placeholder="例如 s1"
           autocomplete="off"
           autocorrect="off"
           autocapitalize="none"
           spellcheck="false"
           @change="onModelChange"
         />
-        <datalist id="fish-model-options">
-          <option v-for="m in FISH_AUDIO_MODELS" :key="m.value" :value="m.value">{{ m.label }}</option>
-        </datalist>
-        <p class="st-hint">可以從建議中選，也可以直接輸入 Fish Audio 新出的模型名稱</p>
+        <p class="st-hint">填 Fish Audio 文件上的模型名稱，會放在請求的 model 標頭</p>
       </div>
     </div>
     <SettingsSwitchRow
@@ -390,26 +435,6 @@ onUnmounted(saveApiKeyDraft);
       ]"
       @change="save"
     />
-  </SettingsGroup>
-
-  <SettingsGroup
-    title="連線"
-    footer="測試連線出現「連不上」或跨域錯誤時，改填自己的代理，例如部署 cloudflare-worker/nai-proxy.js 後填 https://你的網域/proxy/api.fish.audio"
-  >
-    <div class="st-pad">
-      <div class="st-field">
-        <label for="fish-base" class="st-field__label">API 位址</label>
-        <input
-          id="fish-base"
-          v-model="fish.baseUrl"
-          type="url"
-          class="st-input"
-          :placeholder="FISH_AUDIO_DEFAULT_BASE_URL"
-          autocomplete="off"
-          @change="onBaseUrlChange"
-        />
-      </div>
-    </div>
   </SettingsGroup>
 
   <SettingsSheet :open="showVoicePicker" title="選擇預設音色" done-label="完成" @close="showVoicePicker = false">

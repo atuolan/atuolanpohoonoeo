@@ -9,6 +9,9 @@
  * - 情緒、語氣用寫在文字裡的標記，例如 (happy)、(laughing)、(break)
  */
 
+import { CapacitorHttp } from '@capacitor/core';
+import { aiProxyHost, isNativeApp } from '@/native/platform';
+
 // ── 類型定義 ──────────────────────────────────────────────────
 
 export type FishAudioFormat = 'mp3' | 'wav' | 'opus';
@@ -21,8 +24,10 @@ export interface FishAudioTTSSettings {
   model: string;
   /** 預設音色 reference_id，留空由 Fish Audio 決定 */
   referenceId: string;
-  /** API 位址；被 CORS 擋時改填自己的代理，如 https://xxx.workers.dev/proxy/api.fish.audio */
+  /** API 位址（沒開代理時用），預設 https://api.fish.audio */
   baseUrl: string;
+  /** 透過 App 的代理 Worker 連線（連不上、被擋時用） */
+  useProxy: boolean;
   /** 輸出格式 */
   format: FishAudioFormat;
   /** normal＝品質優先、balanced＝速度優先 */
@@ -66,6 +71,7 @@ export function createDefaultFishAudioSettings(): FishAudioTTSSettings {
     model: 's1',
     referenceId: '',
     baseUrl: FISH_AUDIO_DEFAULT_BASE_URL,
+    useProxy: false,
     format: 'mp3',
     latency: 'normal',
     emotionTags: true,
@@ -143,11 +149,149 @@ export function toFishAudioText(
   return emotion ? `(${emotion}) ${body}` : body;
 }
 
-// ── 工具函數 ──────────────────────────────────────────────────
+// ── 連線 ──────────────────────────────────────────────────────
 
-function getBaseUrl(settings: Pick<FishAudioTTSSettings, 'baseUrl'>): string {
-  return (settings.baseUrl?.trim() || FISH_AUDIO_DEFAULT_BASE_URL).replace(/\/+$/, '');
+/** 代理 Worker 上轉發到 Fish Audio 的路徑 */
+const PROXY_PATH = '/proxy/api.fish.audio';
+
+/**
+ * 實際打的 API 位址：
+ * - 開了代理：走 App 自己的代理 Worker（App 用大陸也連得到的自訂網域）
+ * - 沒開：用使用者填的位址；貼了完整的 .../v1/tts 也認得
+ */
+export function getFishAudioBaseUrl(settings: Pick<FishAudioTTSSettings, 'baseUrl' | 'useProxy'>): string {
+  if (settings.useProxy) return `${aiProxyHost()}${PROXY_PATH}`;
+  return normalizeFishAudioBaseUrl(settings.baseUrl);
 }
+
+/** 把使用者貼的位址整理成 API 根位址：去掉結尾斜線和 /v1/tts、/v1 */
+export function normalizeFishAudioBaseUrl(raw: string | undefined): string {
+  const url = (raw?.trim() || FISH_AUDIO_DEFAULT_BASE_URL)
+    .replace(/\/+$/, '')
+    .replace(/\/v1(\/tts)?$/i, '');
+  return url || FISH_AUDIO_DEFAULT_BASE_URL;
+}
+
+/** 測試連線、取音色等小請求的逾時；合成長句要比較久 */
+const SHORT_TIMEOUT_MS = 20_000;
+const TTS_TIMEOUT_MS = 90_000;
+
+interface FishResponse {
+  status: number;
+  ok: boolean;
+  /** 回應內容：json 模式是解析好的物件，audio 模式是 data URL，失敗時是原文 */
+  data: unknown;
+  text: string;
+}
+
+class FishTimeoutError extends Error {}
+
+function base64ToText(b64: string): string {
+  try {
+    const bin = atob(b64);
+    const bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0));
+    return new TextDecoder().decode(bytes);
+  } catch {
+    return b64;
+  }
+}
+
+/**
+ * 發請求。App 裡走原生連線（沒有瀏覽器的跨域限制），網頁版用 fetch。
+ * 都有逾時，連不上時不會一直卡在「測試中」。
+ */
+async function fishRequest(
+  url: string,
+  init: {
+    method?: 'GET' | 'POST';
+    headers: Record<string, string>;
+    body?: unknown;
+    expect: 'json' | 'audio';
+    audioMime?: string;
+    timeoutMs: number;
+    signal?: AbortSignal;
+  },
+): Promise<FishResponse> {
+  const method = init.method ?? 'GET';
+
+  if (isNativeApp()) {
+    const request = CapacitorHttp.request({
+      url,
+      method,
+      headers: init.headers,
+      data: init.body,
+      responseType: init.expect === 'audio' ? 'blob' : 'text',
+      connectTimeout: init.timeoutMs,
+      readTimeout: init.timeoutMs,
+    });
+    const res = await withTimeout(request, init.timeoutMs + 2_000, init.signal);
+    const ok = res.status >= 200 && res.status < 300;
+    const raw = typeof res.data === 'string' ? res.data : JSON.stringify(res.data ?? '');
+    if (init.expect === 'audio') {
+      // blob 模式回傳 base64；失敗時裡面是錯誤訊息
+      if (!ok) return { status: res.status, ok, data: null, text: base64ToText(raw) };
+      return { status: res.status, ok, data: raw ? `data:${init.audioMime};base64,${raw}` : '', text: '' };
+    }
+    return { status: res.status, ok, data: safeJson(raw), text: raw };
+  }
+
+  const controller = new AbortController();
+  const onAbort = () => controller.abort();
+  init.signal?.addEventListener('abort', onAbort);
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, init.timeoutMs);
+  try {
+    const resp = await fetch(url, {
+      method,
+      headers: init.headers,
+      body: init.body === undefined ? undefined : JSON.stringify(init.body),
+      signal: controller.signal,
+    });
+    if (!resp.ok) {
+      const text = await resp.text().catch(() => '');
+      return { status: resp.status, ok: false, data: safeJson(text), text };
+    }
+    if (init.expect === 'audio') {
+      const blob = await resp.blob();
+      // 有些代理會把 Content-Type 弄丟，補上正確的類型才播得出來
+      const typed = blob.type.startsWith('audio/') ? blob : new Blob([blob], { type: init.audioMime });
+      return { status: resp.status, ok: true, data: blob.size ? await blobToDataUrl(typed) : '', text: '' };
+    }
+    const text = await resp.text();
+    return { status: resp.status, ok: true, data: safeJson(text), text };
+  } catch (error) {
+    if (timedOut) throw new FishTimeoutError();
+    throw error;
+  } finally {
+    clearTimeout(timer);
+    init.signal?.removeEventListener('abort', onAbort);
+  }
+}
+
+function withTimeout<T>(promise: Promise<T>, ms: number, signal?: AbortSignal): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new FishTimeoutError()), ms);
+    const onAbort = () => reject(new DOMException('Aborted', 'AbortError'));
+    signal?.addEventListener('abort', onAbort, { once: true });
+    promise.then(resolve, reject).finally(() => {
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', onAbort);
+    });
+  });
+}
+
+function safeJson(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+}
+
+// ── 工具函數 ──────────────────────────────────────────────────
 
 function clamp(value: number, min: number, max: number, fallback: number): number {
   return Number.isFinite(value) ? Math.min(max, Math.max(min, value)) : fallback;
@@ -157,36 +301,31 @@ function clamp(value: number, min: number, max: number, fallback: number): numbe
 const HTTP_HINTS: Record<number, string> = {
   401: 'API Key 不對或沒帶到',
   402: 'Fish Audio 帳戶餘額不足',
-  404: '找不到這個音色或模型',
+  403: '被拒絕存取，可能是 API Key 沒有權限，或代理不允許這個來源',
+  404: '找不到這個網址、音色或模型，檢查「API 位址」是不是只填到 https://api.fish.audio',
   422: '參數不對，常見原因：reference_id 或模型名稱填錯',
   429: '請求太頻繁，稍等一下再試',
 };
 
-async function describeHttpError(resp: Response): Promise<string> {
-  let detail = '';
-  try {
-    const text = await resp.text();
-    try {
-      const data = JSON.parse(text);
-      const msg = data?.message ?? data?.detail ?? data?.error;
-      detail = typeof msg === 'string' ? msg : msg ? JSON.stringify(msg) : text;
-    } catch {
-      detail = text;
-    }
-  } catch {
-    detail = '';
-  }
-  detail = detail.slice(0, 200);
-  const hint = HTTP_HINTS[resp.status];
-  if (hint) return detail ? `${hint}（${resp.status}：${detail}）` : `${hint}（${resp.status}）`;
-  return detail ? `HTTP ${resp.status}：${detail}` : `HTTP ${resp.status}`;
+function describeHttpError(res: FishResponse): string {
+  const data = res.data as any;
+  const msg = data?.message ?? data?.detail ?? data?.error;
+  let detail = typeof msg === 'string' ? msg : msg ? JSON.stringify(msg) : res.text;
+  detail = (detail || '').slice(0, 200);
+  const hint = HTTP_HINTS[res.status];
+  if (hint) return detail ? `${hint}（${res.status}：${detail}）` : `${hint}（${res.status}）`;
+  return detail ? `HTTP ${res.status}：${detail}` : `HTTP ${res.status}`;
 }
 
-function describeFetchError(error: unknown): string {
-  const msg = error instanceof Error ? error.message : '未知錯誤';
-  // 瀏覽器被 CORS 擋下時只會看到 Failed to fetch / Load failed
-  if (/failed to fetch|load failed|networkerror/i.test(msg)) {
-    return `${msg}（連不上 Fish Audio，可能被瀏覽器的跨域限制擋下，可以在「API 位址」改用代理）`;
+function describeFetchError(error: unknown, settings: Pick<FishAudioTTSSettings, 'useProxy'>): string {
+  const fix = settings.useProxy ? '檢查代理 Worker 是否正常' : '可以打開「透過代理連線」再試';
+  if (error instanceof FishTimeoutError) {
+    return `連線逾時，一直等不到 Fish Audio 回應（網路不通或被擋），${fix}`;
+  }
+  const msg = error instanceof Error ? error.message : String(error ?? '未知錯誤');
+  // 瀏覽器被 CORS 擋下或網路不通時只會看到 Failed to fetch / Load failed
+  if (/failed to fetch|load failed|networkerror|network|timed? ?out|unable to resolve|connect/i.test(msg)) {
+    return `連不上 Fish Audio（${msg}），${fix}`;
   }
   return msg;
 }
@@ -250,31 +389,27 @@ export async function synthesizeFishAudio(
   if (referenceId) body.reference_id = referenceId;
 
   try {
-    const resp = await fetch(`${getBaseUrl(settings)}/v1/tts`, {
+    const res = await fishRequest(`${getFishAudioBaseUrl(settings)}/v1/tts`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${settings.apiKey}`,
         'Content-Type': 'application/json',
         model,
       },
-      body: JSON.stringify(body),
+      body,
+      expect: 'audio',
+      audioMime: MIME[format],
+      timeoutMs: TTS_TIMEOUT_MS,
       signal: options?.signal,
     });
-    if (!resp.ok) {
-      return { success: false, error: await describeHttpError(resp) };
-    }
-    const blob = await resp.blob();
-    if (!blob.size) {
-      return { success: false, error: 'Fish Audio 回傳了空的音頻' };
-    }
-    // 有些代理會把 Content-Type 弄丟，補上正確的類型才播得出來
-    const typed = blob.type.startsWith('audio/') ? blob : new Blob([blob], { type: MIME[format] });
-    return { success: true, audioUrl: await blobToDataUrl(typed) };
+    if (!res.ok) return { success: false, error: describeHttpError(res) };
+    if (!res.data) return { success: false, error: 'Fish Audio 回傳了空的音頻' };
+    return { success: true, audioUrl: res.data as string };
   } catch (error) {
     if (error instanceof DOMException && error.name === 'AbortError') {
       return { success: false, error: '已取消' };
     }
-    return { success: false, error: describeFetchError(error) };
+    return { success: false, error: describeFetchError(error, settings) };
   }
 }
 
@@ -286,18 +421,19 @@ export async function testFishAudioConnection(
 ): Promise<{ success: boolean; credit?: string; error?: string }> {
   if (!settings.apiKey) return { success: false, error: '缺少 API Key' };
   try {
-    const resp = await fetch(`${getBaseUrl(settings)}/wallet/self/api-credit`, {
+    const res = await fishRequest(`${getFishAudioBaseUrl(settings)}/wallet/self/api-credit`, {
       headers: { Authorization: `Bearer ${settings.apiKey}` },
+      expect: 'json',
+      timeoutMs: SHORT_TIMEOUT_MS,
     });
-    if (!resp.ok) return { success: false, error: await describeHttpError(resp) };
-    const data = await resp.json().catch(() => ({}));
-    const credit = data?.credit;
+    if (!res.ok) return { success: false, error: describeHttpError(res) };
+    const credit = (res.data as any)?.credit;
     return {
       success: true,
       credit: credit !== undefined && credit !== null ? String(credit) : undefined,
     };
   } catch (error) {
-    return { success: false, error: describeFetchError(error) };
+    return { success: false, error: describeFetchError(error, settings) };
   }
 }
 
@@ -336,17 +472,18 @@ export async function fetchFishAudioVoices(
     params.set('self', 'true');
   }
   try {
-    const resp = await fetch(`${getBaseUrl(settings)}/model?${params}`, {
+    const res = await fishRequest(`${getFishAudioBaseUrl(settings)}/model?${params}`, {
       headers: { Authorization: `Bearer ${settings.apiKey}` },
+      expect: 'json',
+      timeoutMs: SHORT_TIMEOUT_MS,
     });
-    if (!resp.ok) return { success: false, voices: [], error: await describeHttpError(resp) };
-    const data = await resp.json();
-    const items: unknown[] = Array.isArray(data?.items) ? data.items : [];
+    if (!res.ok) return { success: false, voices: [], error: describeHttpError(res) };
+    const items: unknown[] = Array.isArray((res.data as any)?.items) ? (res.data as any).items : [];
     const voices = items
       .map((item) => mapVoice(item, !query))
       .filter((v): v is FishAudioVoice => !!v);
     return { success: true, voices };
   } catch (error) {
-    return { success: false, voices: [], error: describeFetchError(error) };
+    return { success: false, voices: [], error: describeFetchError(error, settings) };
   }
 }
