@@ -15,6 +15,7 @@ import {
   getOverrideVoice,
   isTTSConfigured,
 } from "@/api/ttsProvider";
+import { isMessageAudioRef, messageAudioExists, storeMessageAudio } from "@/db/messageAudio";
 import {
   convertTTSContentToSimplified,
   prepareTTSContent,
@@ -93,10 +94,20 @@ export function useChatTTS(context: {
     showMinimaxTTSSettingsModal.value = false;
   }
 
-  /** MiniMax 回傳的是 Aliyun OSS 簽名 URL（約 24h 後過期），下載轉成 base64 data URL 保存 */
+  /**
+   * 音檔存進 audio-blobs，訊息裡只留引用（audioblob_…）。
+   * 以前轉成 base64 直接放在訊息裡，語音多的聊天每次回覆都把全部語音讀進記憶體，手機會閃退。
+   * MiniMax 回傳的是 Aliyun OSS 簽名 URL（約 24h 後過期），要先下載；Fish Audio 直接回傳 data URL。
+   */
   async function persistAudioUrl(audioUrl: string): Promise<string> {
-    // Fish Audio 直接回傳音頻，已經是 data URL
-    if (audioUrl.startsWith("data:")) return audioUrl;
+    if (audioUrl.startsWith("data:")) {
+      try {
+        return await storeMessageAudio(audioUrl);
+      } catch (err) {
+        console.warn("[TTS] 語音存檔失敗，先放在訊息裡：", err);
+        return audioUrl;
+      }
+    }
     try {
       const audioResp = await fetch(audioUrl);
       if (!audioResp.ok) {
@@ -106,18 +117,9 @@ export function useChatTTS(context: {
         return audioUrl;
       }
       const blob = await audioResp.blob();
-      return await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onloadend = () => {
-          const r = reader.result;
-          if (typeof r === "string") resolve(r);
-          else reject(new Error("FileReader 結果非字串"));
-        };
-        reader.onerror = () => reject(reader.error);
-        reader.readAsDataURL(blob);
-      });
+      return await storeMessageAudio(blob, blob.type || "audio/mpeg");
     } catch (fetchErr) {
-      console.warn("[MiniMax TTS] 下載音頻失敗，仍使用臨時 URL：", fetchErr);
+      console.warn("[MiniMax TTS] 下載或保存音頻失敗，仍使用臨時 URL：", fetchErr);
       return audioUrl;
     }
   }
@@ -279,7 +281,14 @@ export function useChatTTS(context: {
     const message = context.messages.value.find((m) => m.id === messageId);
     const segment = message?.ttsSegments?.[index];
     if (!message || !segment) return { success: false, reason: "not-found" };
-    if (segment.audioUrl) return { success: true, audioUrl: segment.audioUrl };
+    if (segment.audioUrl) {
+      // 從別台裝置同步過來的語音只有引用、音檔不在這台：當成還沒生成
+      if (!isMessageAudioRef(segment.audioUrl) || (await messageAudioExists(segment.audioUrl))) {
+        return { success: true, audioUrl: segment.audioUrl };
+      }
+      segment.audioUrl = undefined;
+      if (index === 0) message.ttsAudioUrl = undefined;
+    }
     if (!isTTSConfigured(context.settingsStore.minimaxTTS)) {
       return { success: false, reason: "missing-api-key" };
     }

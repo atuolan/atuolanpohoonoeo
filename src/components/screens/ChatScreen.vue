@@ -365,6 +365,7 @@ import {
   loadAndRepairChatMessages,
   repairSystemSenderRegressionIfNeeded,
 } from "@/utils/chatMessageLoading";
+import { ensureChatAudioMigrated } from "@/db/messageAudio";
 import { chatPerfEnabled, chatPerfMark } from "@/utils/chatPerformanceDebug";
 import { shouldReloadAfterGeneration } from "@/utils/chatGenerationReload";
 import { resolveBarStyle } from "@/utils/chatAppearanceVars";
@@ -1357,6 +1358,8 @@ async function ensureAllMessagesLoaded(): Promise<void> {
   const chat = currentChatData.value;
   if (!chat) return;
   fullHistoryLoadPromise = (async () => {
+    // 舊訊息裡內嵌的語音先搬到 audio-blobs，不然整個聊天的語音都會讀進記憶體（語音多的聊天會閃退）
+    await ensureChatAudioMigrated(chat.id);
     const rawMessages = await loadAndRepairChatMessages(chat);
     const historyById = new Map<string, Message>();
     for (const rawMessage of rawMessages) {
@@ -1401,6 +1404,7 @@ async function loadCompleteMessagesSnapshot(): Promise<Message[]> {
     // 已載入的視窗已涵蓋全部訊息時不必再讀 IDB
     return messages.value;
   } else {
+    await ensureChatAudioMigrated(chat.id);
     const rawMessages = await loadAndRepairChatMessages(chat);
     history = rawMessages.map((m) => convertStoredMessageToUiMessage(m, chat));
   }
