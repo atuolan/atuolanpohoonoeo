@@ -1,6 +1,13 @@
 <script setup lang="ts">
 import { getActiveTimbreWeights, MINIMAX_LANGUAGES } from "@/api/MiniMaxTTSApi";
 import {
+  getDefaultTTSVoice,
+  getTTSProvider,
+  getTTSProviderName,
+  getVoiceOverrideKeys,
+  isTTSConfigured,
+} from "@/api/ttsProvider";
+import {
   applySavedNovelAIImageSettings,
   AVAILABLE_MODELS as novelAIModels,
   AVAILABLE_SAMPLERS as novelAISamplers,
@@ -2849,11 +2856,11 @@ const onMessageReadImageNote = (...args: any[]) => handleReadImageNote(args[0] a
 const onMessageRegenerateVoice = async (...args: any[]) => {
   const messageId = args[0] as string;
   if (!chatMinimaxTTSEnabled.value) {
-    showToast("請先開啟 MiniMax 語音生成");
+    showToast("請先開啟語音合成");
     return;
   }
-  if (!settingsStore.minimaxTTS.apiKey) {
-    showToast("請先設定 MiniMax API Key");
+  if (!isTTSConfigured(settingsStore.minimaxTTS)) {
+    showToast(`請先設定 ${ttsProviderName.value} API Key`);
     return;
   }
   pendingTTSRegenerationMessageId.value = messageId;
@@ -2877,11 +2884,11 @@ const confirmTTSRegeneration = async (languageMode: TTSLanguageMode) => {
   }
   if (result.reason === "duplicate") return;
   if (result.reason === "disabled") {
-    showToast("請先開啟 MiniMax 語音生成");
+    showToast("請先開啟語音合成");
     return;
   }
   if (result.reason === "missing-api-key") {
-    showToast("請先設定 MiniMax API Key");
+    showToast(`請先設定 ${ttsProviderName.value} API Key`);
     return;
   }
   showToast("語音生成失敗，請重試");
@@ -3735,13 +3742,20 @@ const {
 async function requestTtsSegment(messageId: string, index: number) {
   const result = await synthesizeMessageTTSSegment(messageId, index);
   if (result.success) return result.audioUrl;
-  if (result.reason === "missing-api-key") showToast("請先設定 MiniMax API Key");
+  if (result.reason === "missing-api-key") showToast(`請先設定 ${ttsProviderName.value} API Key`);
   else if (result.reason === "synthesis-failed") showToast("語音生成失敗，請重試");
   return undefined;
 }
-/** 全域音色混合實際會送出的音色數（0 表示沒在用混合） */
-const globalTimbreMixCount = computed(
-  () => getActiveTimbreWeights(settingsStore.minimaxTTS).length,
+/** 目前用的語音合成服務商 */
+const ttsProvider = computed(() => getTTSProvider(settingsStore.minimaxTTS));
+const ttsProviderName = computed(() => getTTSProviderName(settingsStore.minimaxTTS));
+/** 覆蓋設定裡這家服務商的音色欄位（MiniMax：voiceId／memberVoices，Fish Audio：fishVoiceId／fishMemberVoices） */
+const ttsVoiceKeys = computed(() => getVoiceOverrideKeys(settingsStore.minimaxTTS));
+const globalTTSVoice = computed(() => getDefaultTTSVoice(settingsStore.minimaxTTS));
+const ttsVoiceIdLabel = computed(() => (ttsProvider.value === "fishaudio" ? "reference_id" : "voice_id"));
+/** 全域音色混合實際會送出的音色數（0 表示沒在用混合；Fish Audio 沒有混合） */
+const globalTimbreMixCount = computed(() =>
+  ttsProvider.value === "fishaudio" ? 0 : getActiveTimbreWeights(settingsStore.minimaxTTS).length,
 );
 /** 群聊語音設定的成員清單（id 對應訊息的 senderCharacterId） */
 const ttsVoiceMembers = computed(() =>
@@ -3753,10 +3767,10 @@ const ttsVoiceMembers = computed(() =>
 );
 /** 沒設成員音色的人實際會用的聲音 */
 const memberVoiceFallbackLabel = computed(() => {
-  const groupVoice = chatMinimaxTTSOverride.value.voiceId;
+  const groupVoice = chatMinimaxTTSOverride.value[ttsVoiceKeys.value.voice];
   if (groupVoice) return `群組預設音色（${groupVoice}）`;
   if (globalTimbreMixCount.value) return "全域的音色混合";
-  return `全域預設音色（${settingsStore.minimaxTTS.voiceId}）`;
+  return globalTTSVoice.value ? `全域預設音色（${globalTTSVoice.value}）` : "全域預設音色";
 });
 
 // ===== 快速輸入助手 composable =====
@@ -15357,7 +15371,7 @@ useChatCleanup({
                     d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.91-3c-.49 0-.9.36-.98.85C16.52 14.2 14.47 16 12 16s-4.52-1.8-4.93-4.15c-.08-.49-.49-.85-.98-.85-.61 0-1.09.54-1 1.14.49 3 2.89 5.35 5.91 5.78V20c0 .55.45 1 1 1s1-.45 1-1v-2.08c3.02-.43 5.42-2.78 5.91-5.78.1-.6-.39-1.14-1-1.14z"
                   />
                 </svg>
-                MiniMax 語音設定（此聊天）
+                {{ ttsProviderName }} 語音設定（此聊天）
               </h3>
               <button class="close-btn" @click="closeMinimaxTTSSettings">
                 ✕
@@ -15369,22 +15383,22 @@ useChatCleanup({
                 覆蓋此聊天的語音參數。留空則使用設定 App 中的全域預設值。
               </p>
 
-              <!-- 音色 voice_id -->
+              <!-- 音色 voice_id（Fish Audio 是 reference_id，兩家分開存） -->
               <div class="setting-group">
                 <label class="setting-label">{{
-                  isGroupChat ? "群組預設音色 (voice_id)" : "音色 (voice_id)"
+                  isGroupChat ? `群組預設音色 (${ttsVoiceIdLabel})` : `音色 (${ttsVoiceIdLabel})`
                 }}</label>
                 <input
                   type="text"
                   class="setting-input"
-                  :value="chatMinimaxTTSOverride.voiceId ?? ''"
+                  :value="chatMinimaxTTSOverride[ttsVoiceKeys.voice] ?? ''"
                   :placeholder="
                     globalTimbreMixCount
                       ? '使用全域音色混合'
-                      : settingsStore.minimaxTTS.voiceId || '使用全域預設'
+                      : globalTTSVoice || '使用全域預設'
                   "
                   @input="
-                    chatMinimaxTTSOverride.voiceId =
+                    chatMinimaxTTSOverride[ttsVoiceKeys.voice] =
                       ($event.target as HTMLInputElement).value.trim() || undefined
                   "
                 />
@@ -15392,14 +15406,15 @@ useChatCleanup({
                   >留空使用全域的音色混合（{{ globalTimbreMixCount }} 種）；填了就只用這個音色</span
                 >
                 <span v-else class="setting-hint"
-                  >留空使用全域：{{ settingsStore.minimaxTTS.voiceId }}</span
+                  >留空使用全域：{{ globalTTSVoice || "未設定" }}<template v-if="ttsProvider === 'fishaudio'">。Fish Audio 和 MiniMax 的音色分開存，切換服務商不會互相蓋掉</template></span
                 >
               </div>
 
               <!-- 群聊：每個成員各自的音色 -->
               <template v-if="isGroupChat && ttsVoiceMembers.length">
                 <GroupMemberVoices
-                  v-model="chatMinimaxTTSOverride.memberVoices"
+                  :key="ttsProvider"
+                  v-model="chatMinimaxTTSOverride[ttsVoiceKeys.members]"
                   :members="ttsVoiceMembers"
                   :fallback-label="memberVoiceFallbackLabel"
                   :tts-settings="settingsStore.minimaxTTS"
@@ -15409,7 +15424,7 @@ useChatCleanup({
                 >
               </template>
 
-              <div class="setting-group">
+              <div v-if="ttsProvider === 'minimax'" class="setting-group">
                 <label class="setting-label" for="chat-tts-language">語言增強</label>
                 <select
                   id="chat-tts-language"
@@ -15482,8 +15497,8 @@ useChatCleanup({
                 />
               </div>
 
-              <!-- 音調 -->
-              <div class="setting-group">
+              <!-- 音調（Fish Audio 沒有音調參數） -->
+              <div v-if="ttsProvider === 'minimax'" class="setting-group">
                 <label class="setting-label"
                   >音調:
                   {{
@@ -15540,6 +15555,9 @@ useChatCleanup({
                     ...(chatMinimaxTTSOverride.callBilingual && { callBilingual: true }),
                     ...(chatMinimaxTTSOverride.memberVoices && {
                       memberVoices: chatMinimaxTTSOverride.memberVoices,
+                    }),
+                    ...(chatMinimaxTTSOverride.fishMemberVoices && {
+                      fishMemberVoices: chatMinimaxTTSOverride.fishMemberVoices,
                     }),
                   }
                 "
