@@ -52,29 +52,48 @@ enum ScreenWatchProbe {
     static let extensionCountKey = "screenWatch.extensionCount"
     static let extensionInfoKey = "screenWatch.extensionInfo"
 
-    /// 實際能用的 App Group（容器打得開的那個）；都不行是 nil
-    static let groupId: String? = SignedAppGroups.resolve()
+    /// 能用的 App Group（全部）
+    static let groupIds: [String] = SignedAppGroups.usable()
 
+    /// 寫進每一個能用的 App Group
     static func writeAppValue() {
-        guard let id = groupId else { return }
         let formatter = DateFormatter()
         formatter.dateFormat = "MM/dd HH:mm:ss"
-        UserDefaults(suiteName: id)?.set("App 寫入：\(formatter.string(from: Date()))", forKey: appWroteKey)
+        let value = "App 寫入：\(formatter.string(from: Date()))"
+        for id in groupIds {
+            UserDefaults(suiteName: id)?.set(value, forKey: appWroteKey)
+        }
     }
 
-    /// 回到 App 時跳出來的檢查報告
+    /// 回到 App 時跳出來的檢查報告：從每一個 App Group 找擴充元件寫的東西
     static func report() -> String {
         var lines = [
             "App Bundle ID：\(Bundle.main.bundleIdentifier ?? "?")",
             "簽名裡的 App Group：\(SignedAppGroups.describeSignature())",
         ]
-        guard let id = groupId, let defaults = UserDefaults(suiteName: id) else {
+        guard !groupIds.isEmpty else {
             lines.append("能用的 App Group：沒有（容器打不開）")
             return lines.joined(separator: "\n")
         }
-        lines.append("能用的 App Group：\(id)")
-        lines.append("擴充元件寫入：第 \(defaults.integer(forKey: extensionCountKey)) 次")
-        lines.append("擴充元件那邊：\(defaults.string(forKey: extensionInfoKey) ?? "還沒寫過（還沒開始廣播，或兩邊不是同一個 App Group）")")
+        lines.append("能用的 App Group：\(groupIds.count) 個")
+
+        var count = 0
+        var info: String?
+        var foundIn: String?
+        for id in groupIds {
+            guard let defaults = UserDefaults(suiteName: id) else { continue }
+            count = max(count, defaults.integer(forKey: extensionCountKey))
+            if info == nil, let value = defaults.string(forKey: extensionInfoKey) {
+                info = value
+                foundIn = id
+            }
+        }
+        lines.append("擴充元件寫入：第 \(count) 次")
+        if let info = info, let foundIn = foundIn {
+            lines.append("在 \(foundIn) 讀到擴充元件：\(info)")
+        } else {
+            lines.append("擴充元件那邊：\(groupIds.count) 個 App Group 都還沒讀到（還沒開始廣播，或兩邊沒有共同的 App Group）")
+        }
         return lines.joined(separator: "\n")
     }
 }
@@ -103,13 +122,17 @@ enum SignedAppGroups {
         return groups.isEmpty ? "沒有" : groups.joined(separator: "、")
     }
 
-    /// 要用的 App Group：原本的名字優先，再來是簽名裡的、AltStore 類工具寫在 Info.plist 的；容器打得開才算
-    static func resolve() -> String? {
+    /// 容器打得開的 App Group 全部列出來（原本的名字、簽名裡的、AltStore 類工具寫在 Info.plist 的，去掉重複）。
+    /// Sideloadly 會給好幾個，而且 App 和擴充元件簽名裡的順序可能不一樣，
+    /// 所以不能各挑「第一個」：兩邊都要寫進全部、從全部讀。
+    static func usable() -> [String] {
         var candidates = [preferredId]
         candidates += fromSignature() ?? []
         candidates += Bundle.main.object(forInfoDictionaryKey: "ALTAppGroups") as? [String] ?? []
-        return candidates.first {
-            FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: $0) != nil
+        var seen = Set<String>()
+        return candidates.filter { id in
+            guard seen.insert(id).inserted else { return false }
+            return FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: id) != nil
         }
     }
 

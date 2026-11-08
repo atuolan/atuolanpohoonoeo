@@ -16,25 +16,33 @@ class SampleHandler: RPBroadcastSampleHandler {
     private var lastSampleAt = Date.distantPast
     private let ciContext = CIContext(options: [.cacheIntermediates: false])
 
-    /// 實際能用的 App Group（容器打得開的那個）；都不行是 nil
-    private lazy var groupId: String? = SignedAppGroups.resolve()
+    /// 能用的 App Group（全部）
+    private lazy var groupIds: [String] = SignedAppGroups.usable()
 
-    private var sharedDefaults: UserDefaults? {
-        guard let id = groupId else { return nil }
-        return UserDefaults(suiteName: id)
+    /// 寫進每一個能用的 App Group（App 那邊挑哪個都讀得到）
+    private func writeShared(_ value: Any, forKey key: String) {
+        for id in groupIds {
+            UserDefaults(suiteName: id)?.set(value, forKey: key)
+        }
     }
 
+    /// 從每一個 App Group 找 App 寫的值
     private func appGroupValue() -> String {
-        guard let defaults = sharedDefaults else { return "打不開（簽名裡：\(SignedAppGroups.describeSignature())）" }
-        return defaults.string(forKey: SampleHandler.appWroteKey) ?? "讀不到 App 寫的值（\(groupId ?? "?")）"
+        guard !groupIds.isEmpty else { return "打不開（簽名裡：\(SignedAppGroups.describeSignature())）" }
+        for id in groupIds {
+            if let value = UserDefaults(suiteName: id)?.string(forKey: SampleHandler.appWroteKey) {
+                return "\(value)（在 \(id)）"
+            }
+        }
+        return "\(groupIds.count) 個都讀不到 App 寫的值"
     }
 
     override func broadcastStarted(withSetupInfo setupInfo: [String: NSObject]?) {
         frameCount = 0
         reportCount = 0
         lastSampleAt = Date()
-        let info = "Bundle ID：\(Bundle.main.bundleIdentifier ?? "?")｜簽名裡：\(SignedAppGroups.describeSignature())｜用：\(groupId ?? "沒有")"
-        sharedDefaults?.set(info, forKey: SampleHandler.extensionInfoKey)
+        let info = "Bundle ID：\(Bundle.main.bundleIdentifier ?? "?")｜簽名裡：\(SignedAppGroups.describeSignature())｜能用：\(groupIds.count) 個"
+        writeShared(info, forKey: SampleHandler.extensionInfoKey)
         notify(title: "看螢幕測試：開始了", body: "App Group：\(appGroupValue())\n\(info)")
     }
 
@@ -53,7 +61,7 @@ class SampleHandler: RPBroadcastSampleHandler {
         }
 
         reportCount += 1
-        sharedDefaults?.set(reportCount, forKey: SampleHandler.extensionCountKey)
+        writeShared(reportCount, forKey: SampleHandler.extensionCountKey)
 
         let sizeText = kb >= 0 ? "\(kb) KB" : "縮圖失敗"
         notify(
@@ -115,13 +123,17 @@ enum SignedAppGroups {
         return groups.isEmpty ? "沒有" : groups.joined(separator: "、")
     }
 
-    /// 要用的 App Group：原本的名字優先，再來是簽名裡的、AltStore 類工具寫在 Info.plist 的；容器打得開才算
-    static func resolve() -> String? {
+    /// 容器打得開的 App Group 全部列出來（原本的名字、簽名裡的、AltStore 類工具寫在 Info.plist 的，去掉重複）。
+    /// Sideloadly 會給好幾個，而且 App 和擴充元件簽名裡的順序可能不一樣，
+    /// 所以不能各挑「第一個」：兩邊都要寫進全部、從全部讀。
+    static func usable() -> [String] {
         var candidates = [preferredId]
         candidates += fromSignature() ?? []
         candidates += Bundle.main.object(forInfoDictionaryKey: "ALTAppGroups") as? [String] ?? []
-        return candidates.first {
-            FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: $0) != nil
+        var seen = Set<String>()
+        return candidates.filter { id in
+            guard seen.insert(id).inserted else { return false }
+            return FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: id) != nil
         }
     }
 
