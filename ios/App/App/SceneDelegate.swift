@@ -22,15 +22,14 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         SceneDelegateProxy.shared.scene(scene, continue: userActivity)
     }
 
-    // 看螢幕模式 第 0 步（只在測試分支）：回到前景時顯示擴充元件寫了幾次
+    // 看螢幕模式 第 0 步（只在測試分支）：回到前景時顯示 App Group 檢查報告；內容跟上次一樣就不再跳
+    private var lastScreenWatchReport: String?
+
     func sceneDidBecomeActive(_ scene: UIScene) {
         guard let root = window?.rootViewController, root.presentedViewController == nil else { return }
-        let message: String
-        if let count = ScreenWatchProbe.readExtensionCount() {
-            message = "擴充元件寫入：第 \(count) 次"
-        } else {
-            message = "App Group 打不開"
-        }
+        let message = ScreenWatchProbe.report()
+        guard message != lastScreenWatchReport else { return }
+        lastScreenWatchReport = message
         let alert = UIAlertController(title: "看螢幕測試", message: message, preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: "好", style: .default))
         root.present(alert, animated: true)
