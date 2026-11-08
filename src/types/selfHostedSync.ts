@@ -301,7 +301,16 @@ export interface PeerErrorMessage {
   endpoint?: "source" | "target" | "relay";
 }
 
+/** 對方已接受這個請求（使用者按了接受，或同一次傳輸自動放行），開始處理 */
+export interface PeerAcceptedMessage {
+  type: "peer:accepted";
+  requestId: string;
+  sourceDeviceId: string;
+  targetDeviceId?: string;
+}
+
 export type PeerMessage =
+  | PeerAcceptedMessage
   | PeerSessionOffer
   | PeerSessionAnswer
   | PeerHashRequest

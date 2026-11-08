@@ -1,6 +1,13 @@
 <script setup lang="ts">
 import { getActiveTimbreWeights, MINIMAX_LANGUAGES } from "@/api/MiniMaxTTSApi";
 import {
+  getDefaultTTSVoice,
+  getTTSProvider,
+  getTTSProviderName,
+  getVoiceOverrideKeys,
+  isTTSConfigured,
+} from "@/api/ttsProvider";
+import {
   applySavedNovelAIImageSettings,
   AVAILABLE_MODELS as novelAIModels,
   AVAILABLE_SAMPLERS as novelAISamplers,
@@ -14,6 +21,14 @@ import {
   resolveUcPresetId,
   supportsVarietyBoost,
 } from "@/api/NovelAIImageApi";
+import {
+  BANANA_MODEL_SUGGESTIONS,
+  fetchImageProviderModels,
+  GPT_IMAGE_MODEL_SUGGESTIONS,
+  IMAGE_PROVIDERS,
+  MJ_VERSION_OPTIONS,
+  NIJI_VERSION_OPTIONS,
+} from "@/api/ImageGenApi";
 import {
   createImageMessage,
   OpenAICompatibleClient,
@@ -39,7 +54,8 @@ import {
   savePendingDollTouches,
   type DollTouch,
 } from "@/services/empathyDoll";
-import { GIFT_ITEMS } from "@/data/shopItems";
+import { GIFT_ITEMS, getShopItemById } from "@/data/shopItems";
+import { careItemNotice } from "@/services/careItems";
 import {
   addGiftMemory,
   updateGiftMemory,
@@ -270,6 +286,13 @@ import { useRegexScriptsStore } from "@/stores/regexScripts";
 import { useUserStore } from "@/stores/user";
 import { useFitnessStore } from "@/stores/fitness";
 import { settleUserTransfers, unsettleUserTransfers } from "@/utils/transferSettlement";
+import { useChatCharWallet } from "@/composables/useChatCharWallet";
+import { useChatDate } from "@/composables/useChatDate";
+import DateCard from "@/components/date/DateCard.vue";
+import DateSpotPicker from "@/components/date/DateSpotPicker.vue";
+import { parseDateTags } from "@/utils/dateTags";
+import { DATE_REQUEST_GUIDE, formatDuration } from "@/utils/dateLogic";
+import { buildCharWalletPromptNote, creditCharWallet } from "@/services/charWallet";
 import type {
   Chat,
   ChatAppearance,
@@ -342,6 +365,7 @@ import {
   loadAndRepairChatMessages,
   repairSystemSenderRegressionIfNeeded,
 } from "@/utils/chatMessageLoading";
+import { ensureChatAudioMigrated } from "@/db/messageAudio";
 import { chatPerfEnabled, chatPerfMark } from "@/utils/chatPerformanceDebug";
 import { shouldReloadAfterGeneration } from "@/utils/chatGenerationReload";
 import { resolveBarStyle } from "@/utils/chatAppearanceVars";
@@ -375,6 +399,7 @@ const props = withDefaults(defineProps<ChatProps>(), {
   pendingAppearance: undefined,
   pendingMessage: "",
   startPhoneCall: false,
+  openDatePicker: false,
   incomingCallReason: "",
 });
 
@@ -392,6 +417,7 @@ const emit = defineEmits<{
   (e: "appearanceApplied"): void;
   (e: "pendingMessageConsumed"): void;
   (e: "phoneCallStarted"): void;
+  (e: "datePickerOpened"): void;
   (e: "incomingCallConsumed"): void;
   (e: "openChat", chatId: string, characterId: string): void;
   (e: "chatSwitched", chatId: string): void;
@@ -1332,6 +1358,8 @@ async function ensureAllMessagesLoaded(): Promise<void> {
   const chat = currentChatData.value;
   if (!chat) return;
   fullHistoryLoadPromise = (async () => {
+    // 舊訊息裡內嵌的語音先搬到 audio-blobs，不然整個聊天的語音都會讀進記憶體（語音多的聊天會閃退）
+    await ensureChatAudioMigrated(chat.id);
     const rawMessages = await loadAndRepairChatMessages(chat);
     const historyById = new Map<string, Message>();
     for (const rawMessage of rawMessages) {
@@ -1376,6 +1404,7 @@ async function loadCompleteMessagesSnapshot(): Promise<Message[]> {
     // 已載入的視窗已涵蓋全部訊息時不必再讀 IDB
     return messages.value;
   } else {
+    await ensureChatAudioMigrated(chat.id);
     const rawMessages = await loadAndRepairChatMessages(chat);
     history = rawMessages.map((m) => convertStoredMessageToUiMessage(m, chat));
   }
@@ -1842,6 +1871,12 @@ import {
   createImportantEvent,
   ImportantEventsLog,
 } from "@/types";
+import {
+  buildEventScanText,
+  isPinnedGiftName,
+  selectImportantEventsForPrompt,
+  type ImportantEventSelectOptions,
+} from "@/utils/importantEventSelection";
 import {
   createDefaultSummarySettings,
   type SummarySettings,
@@ -2825,11 +2860,11 @@ const onMessageReadImageNote = (...args: any[]) => handleReadImageNote(args[0] a
 const onMessageRegenerateVoice = async (...args: any[]) => {
   const messageId = args[0] as string;
   if (!chatMinimaxTTSEnabled.value) {
-    showToast("請先開啟 MiniMax 語音生成");
+    showToast("請先開啟語音合成");
     return;
   }
-  if (!settingsStore.minimaxTTS.apiKey) {
-    showToast("請先設定 MiniMax API Key");
+  if (!isTTSConfigured(settingsStore.minimaxTTS)) {
+    showToast(`請先設定 ${ttsProviderName.value} API Key`);
     return;
   }
   pendingTTSRegenerationMessageId.value = messageId;
@@ -2853,11 +2888,11 @@ const confirmTTSRegeneration = async (languageMode: TTSLanguageMode) => {
   }
   if (result.reason === "duplicate") return;
   if (result.reason === "disabled") {
-    showToast("請先開啟 MiniMax 語音生成");
+    showToast("請先開啟語音合成");
     return;
   }
   if (result.reason === "missing-api-key") {
-    showToast("請先設定 MiniMax API Key");
+    showToast(`請先設定 ${ttsProviderName.value} API Key`);
     return;
   }
   showToast("語音生成失敗，請重試");
@@ -2950,6 +2985,27 @@ const onMessageFavoriteAudio = async (...args: any[]) => {
   }
 };
 
+// ===== 角色帳戶 =====
+// 收下角色的轉帳、領角色的紅包從他的帳戶扣；他收下使用者的轉帳入他的帳戶
+const charWallet = useChatCharWallet({
+  chatId: () => currentChatId.value || props.chatId,
+  characterIdOf: (msg) => {
+    if (msg.role === "user") return null;
+    if (!isGroupChat.value) return props.characterId || currentCharacter.value?.id || null;
+    if (groupMetadata.value?.isMultiCharCard || !msg.senderCharacterName) return null;
+    const id = resolveGroupMemberByName(msg.senderCharacterName, true).characterId;
+    return id && charactersStore.getCharacterById(id) ? id : null;
+  },
+  storyNow: () => walletStoryNow(),
+  userTransferTargetId: () =>
+    isGroupChat.value ? null : props.characterId || currentCharacter.value?.id || null,
+});
+
+/** 角色帳戶算收入用的劇情時間；輪迴時間會一直回到同幾天，改用現實時間 */
+function walletStoryNow(): number {
+  return fakeTime.fakeTimeMode.value === "loop" ? Date.now() : fakeTime.getChatNow().getTime();
+}
+
 // ===== 紅包 composable =====
 const {
   voiceClaimModalState,
@@ -2971,7 +3027,62 @@ const {
   charactersStore,
   saveChatImmediate,
   showToast,
+  chargeCharacter: (msg, amount) =>
+    charWallet.chargeCharacter(msg, amount, "redpacket", "紅包被領走"),
 });
+
+// ===== 約會出門 =====
+const dateCtl = useChatDate({
+  messages,
+  chatId: () => currentChatId.value || props.chatId,
+  characterId: () => props.characterId || currentCharacter.value?.id,
+  names: () => ({
+    userName: getUserDisplayName(),
+    charName: currentCharacter.value?.data?.name || props.characterName || "角色",
+  }),
+  isGroupChat: () => isGroupChat.value,
+  chatFaceToFaceMode,
+  saveChatImmediate,
+  showToast,
+  storyNow: () => walletStoryNow(),
+  advanceStory: (minutes) => fakeTime.advanceBy(minutes),
+  spendUserMoney: async (amount, description) => {
+    const result = gameEconomyStore.spendMoney(GLOBAL_WALLET_ID, amount, "other", description);
+    if (result.success) await gameEconomyStore.saveState(GLOBAL_WALLET_ID);
+    return result.success;
+  },
+  onReturnedOnline: () => promptStoryClockReturn(),
+});
+watch(
+  () => currentChatId.value || props.chatId,
+  () => void dateCtl.load().catch((e) => console.warn("[約會] 載入失敗:", e)),
+  { immediate: true },
+);
+
+// 從主畫面「約會」進來：等約會狀態載入完再打開選地點
+watch(
+  () => props.openDatePicker,
+  async (open) => {
+    if (!open) return;
+    emit("datePickerOpened");
+    await dateCtl.load().catch(() => undefined);
+    dateCtl.openPicker();
+  },
+  { immediate: true },
+);
+
+/** 約會橫幅上的「已經 1 小時 20 分」：跟著畫面上的時鐘更新 */
+const dateBannerElapsed = computed(() => {
+  void fakeTime.formattedFakeTime.value;
+  if (!dateCtl.isOngoing.value) return "";
+  const minutes = dateCtl.elapsedMinutes();
+  return minutes > 0 ? `已經 ${formatDuration(minutes)}` : "";
+});
+
+function endDateFromBanner(): void {
+  if (!confirm("結束這次約會？會整理成回憶，然後回到線上聊天。")) return;
+  void dateCtl.end().catch((e) => console.error("[約會] 結束失敗:", e));
+}
 
 // ===== 來電功能 composable =====
 const {
@@ -3355,8 +3466,11 @@ const subcharCharacterSources = computed(() =>
 const subcharMultiCharSources = computed(() =>
   allSubcharMultiCharSources.value.filter((s) => !groupSourceIds.value.has(s.member.id)),
 );
+// 你在這個群正在用的人設不能再加成代演成員，不然 AI 會替你本人說話
 const subcharPersonaSources = computed(() =>
-  allSubcharPersonaSources.value.filter((p) => !groupSourceIds.value.has(p.id)),
+  allSubcharPersonaSources.value.filter(
+    (p) => !groupSourceIds.value.has(p.id) && p.id !== effectivePersona.value?.id,
+  ),
 );
 
 // 新增子角色（多人卡，即時儲存，支援多來源 + 關係綁定 + 好感度唯讀引入）
@@ -3593,6 +3707,7 @@ const {
   openChatFilesPanel,
   startGroupCall,
   onShareMusic: handleShareMusicToChat,
+  openDatePicker: () => dateCtl.openPicker(),
   emit: emit as (e: string, ...args: any[]) => void,
 });
 
@@ -3617,6 +3732,7 @@ const {
   closeMinimaxTTSSettings,
   saveMinimaxTTSSettings,
   processMessageTTS,
+  synthesizeMessageTTSSegment,
   regenerateMessageTTS,
 } = useChatTTS({
   messages,
@@ -3626,9 +3742,24 @@ const {
   saveChat,
   resolveSpeakerId: (name) => resolveGroupMemberByName(name).characterId,
 });
-/** 全域音色混合實際會送出的音色數（0 表示沒在用混合） */
-const globalTimbreMixCount = computed(
-  () => getActiveTimbreWeights(settingsStore.minimaxTTS).length,
+/** 訊息的語音按鈕被點了、那段還沒生成：現在才生成（沒聽的句子不花錢） */
+async function requestTtsSegment(messageId: string, index: number) {
+  const result = await synthesizeMessageTTSSegment(messageId, index);
+  if (result.success) return result.audioUrl;
+  if (result.reason === "missing-api-key") showToast(`請先設定 ${ttsProviderName.value} API Key`);
+  else if (result.reason === "synthesis-failed") showToast("語音生成失敗，請重試");
+  return undefined;
+}
+/** 目前用的語音合成服務商 */
+const ttsProvider = computed(() => getTTSProvider(settingsStore.minimaxTTS));
+const ttsProviderName = computed(() => getTTSProviderName(settingsStore.minimaxTTS));
+/** 覆蓋設定裡這家服務商的音色欄位（MiniMax：voiceId／memberVoices，Fish Audio：fishVoiceId／fishMemberVoices） */
+const ttsVoiceKeys = computed(() => getVoiceOverrideKeys(settingsStore.minimaxTTS));
+const globalTTSVoice = computed(() => getDefaultTTSVoice(settingsStore.minimaxTTS));
+const ttsVoiceIdLabel = computed(() => (ttsProvider.value === "fishaudio" ? "reference_id" : "voice_id"));
+/** 全域音色混合實際會送出的音色數（0 表示沒在用混合；Fish Audio 沒有混合） */
+const globalTimbreMixCount = computed(() =>
+  ttsProvider.value === "fishaudio" ? 0 : getActiveTimbreWeights(settingsStore.minimaxTTS).length,
 );
 /** 群聊語音設定的成員清單（id 對應訊息的 senderCharacterId） */
 const ttsVoiceMembers = computed(() =>
@@ -3640,10 +3771,10 @@ const ttsVoiceMembers = computed(() =>
 );
 /** 沒設成員音色的人實際會用的聲音 */
 const memberVoiceFallbackLabel = computed(() => {
-  const groupVoice = chatMinimaxTTSOverride.value.voiceId;
+  const groupVoice = chatMinimaxTTSOverride.value[ttsVoiceKeys.value.voice];
   if (groupVoice) return `群組預設音色（${groupVoice}）`;
   if (globalTimbreMixCount.value) return "全域的音色混合";
-  return `全域預設音色（${settingsStore.minimaxTTS.voiceId}）`;
+  return globalTTSVoice.value ? `全域預設音色（${globalTTSVoice.value}）` : "全域預設音色";
 });
 
 // ===== 快速輸入助手 composable =====
@@ -4628,6 +4759,24 @@ async function handleAcceptTransfer(messageId: string) {
   const msg = messages.value[msgIndex];
   if (!msg.isTransfer || msg.transferStatus !== "pending") return;
 
+  // 從角色帳戶扣；不夠就收不下（之後他有錢了還能再按一次）
+  if (msg.transferAmount) {
+    const payerName = getCharacterDisplayNameFromMessage(msg);
+    const charged = await charWallet.chargeCharacter(msg, msg.transferAmount, "to_user", "轉帳給你");
+    if (!charged.ok) {
+      showToast(`${payerName} 的帳戶只剩 $${charged.balance}，轉帳沒有成功`);
+      messages.value.push({
+        id: `msg_claim_${Date.now()}_wallet_short`,
+        role: "user",
+        content: `${payerName} 想轉 $${msg.transferAmount}，但帳戶只剩 $${charged.balance}，轉帳沒有成功`,
+        timestamp: Date.now(),
+        isTransactionClaimNotice: true,
+      });
+      await saveChatImmediate();
+      return;
+    }
+  }
+
   // 更新狀態為已收款
   messages.value[msgIndex].transferStatus = "received";
 
@@ -4681,7 +4830,8 @@ async function handleUpdateTranscript(messageId: string, transcript: string) {
 async function settleTransfersAfterReply() {
   await expireOldRedpackets();
   const { refunds, changed } = settleUserTransfers(messages.value);
-  if (!changed) return;
+  const walletChanged = await charWallet.syncUserTransfers(messages.value);
+  if (!changed && !walletChanged) return;
   for (const { amount } of refunds) {
     gameEconomyStore.earnMoney(
       GLOBAL_WALLET_ID,
@@ -4699,6 +4849,8 @@ async function syncRoundTransfers(removed: Message[], restored: Message[]): Prom
   const restoredIds = new Set(restored.map((m) => m.id));
   const removedIds = new Set(removed.map((m) => m.id).filter((id) => !restoredIds.has(id)));
   const takeBack = unsettleUserTransfers(messages.value, removedIds);
+  // 改回還沒收的轉帳，從角色帳戶還原
+  if (await charWallet.syncUserTransfers(messages.value)) await saveChatImmediate();
   for (const { amount } of takeBack) {
     gameEconomyStore.spendMoney(GLOBAL_WALLET_ID, amount, "transfer", `收回 ${props.characterName} 的退款（換掉了那一輪回覆）`);
   }
@@ -4722,6 +4874,30 @@ function handleSendGift(_giftItemId: string, giftName: string, cardText = "") {
   scrollToBottom();
   saveChat();
   // 不自動觸發 AI 回覆，讓用戶可以繼續發送其他訊息
+}
+
+// 照顧他的道具（咖啡、鬧鐘、早餐、香氛）：扣背包、聊天裡留一行，他接著回一則
+async function handleUseCareItem(itemId: string) {
+  const item = getShopItemById(itemId);
+  if (!item?.careUse) return;
+  const status = charAwayCtl.careItemStatusFor(item);
+  if (!status.ok) {
+    showToast(status.reason);
+    return;
+  }
+  const used = await charAwayCtl.applyCareItem(item, async () => {
+    if (!gameEconomyStore.consumeInventoryItem(GLOBAL_WALLET_ID, itemId)) return;
+    await gameEconomyStore.saveState(GLOBAL_WALLET_ID);
+    messages.value.push({
+      id: `msg_care_${Date.now()}`,
+      role: "system",
+      content: careItemNotice(item, displayCharacterName.value),
+      timestamp: Date.now(),
+    });
+    scrollToBottom();
+    saveChat();
+  });
+  if (!used) showToast("現在不能用這個道具");
 }
 
 // 處理 Pixabay 圖片搜尋選擇：建立 image-url 訊息並加入聊天
@@ -5014,7 +5190,8 @@ async function recordGiftToImportantEvents(
         : `${charName} 送了「${giftName}」給 ${userName}`,
       {
         category: "relationship",
-        priority: 2,
+        // 戒指、求婚這類禮物常駐，每輪都記得；其他禮物聊到才想起
+        priority: isPinnedGiftName(giftName) ? 1 : 2,
         source: "system",
         tags: ["禮物", giftName],
       },
@@ -6058,7 +6235,7 @@ async function runAIResponseOnce(
       id: m.id,
       // 「已記錄」飲食通知當系統訊息送，講明已經記好了，角色才不會每輪又記一次
       // 骰子結果也當系統訊息：當成角色說的話，模型會學著自己寫 🎲 結果（畫面變成角色泡泡、點數也是編的）
-      sender: (m.isFoodRecord && m.foodRecordData) || m.isDiceRoll
+      sender: (m.isFoodRecord && m.foodRecordData) || m.isDiceRoll || m.dateCard
         ? ("system" as const)
         : m.role === "user"
           ? ("user" as const)
@@ -6066,7 +6243,7 @@ async function runAIResponseOnce(
             ? ("system" as const)
             : ("assistant" as const),
       name:
-        (m.isFoodRecord && m.foodRecordData) || m.isDiceRoll
+        (m.isFoodRecord && m.foodRecordData) || m.isDiceRoll || m.dateCard
           ? "system"
           : m.role === "user"
             ? "User"
@@ -6218,51 +6395,20 @@ async function runAIResponseOnce(
       console.log("[向量記憶] ℹ️ 總結讀取模式為「全部」，向量檢索不適用，跳過");
     }
 
-    // 準備重要事件數據（向量記憶啟用時，從檢索結果中分離事件類型）
-    let eventsToSend: Array<{
-      id: string;
-      content: string;
-      category?: string;
-      priority?: number;
-    }> = [];
-
-    if (
-      settingsStore.vectorMemoryEnabled &&
-      vectorMemories &&
-      vectorMemories.length > 0
-    ) {
-      // 從向量檢索結果中提取 event 類型的記憶
-      const vectorEvents = vectorMemories.filter(
-        (m) => m.sourceType === "event",
-      );
-      // 非 event 類型的保留在 vectorMemories 中（總結/日記）
+    // 準備重要事件：常駐（優先級 1）每輪都送，其他聊到關鍵詞或向量記憶找到才送
+    let vectorEventIds: string[] = [];
+    if (vectorMemories && vectorMemories.length > 0) {
+      // 向量找到的事件交給重要事件區塊送，總結／日記留在向量記憶裡
+      vectorEventIds = vectorMemories
+        .filter((m) => m.sourceType === "event")
+        .map((m) => m.sourceId);
       vectorMemories = vectorMemories.filter((m) => m.sourceType !== "event");
-
-      if (vectorEvents.length > 0) {
-        eventsToSend = vectorEvents.map((m) => ({
-          id: m.sourceId,
-          content: m.content,
-        }));
-        console.log(
-          `[向量記憶] 📋 從檢索結果分離出 ${vectorEvents.length} 條重要事件`,
-        );
-      }
-
-      // 補充：始終注入高優先級事件（priority=1），即使向量未命中
-      const allEvents = await loadImportantEventsForPrompt();
-      const highPriorityEvents = allEvents.filter(
-        (e) => e.priority === 1 && !eventsToSend.some((ve) => ve.id === e.id),
-      );
-      if (highPriorityEvents.length > 0) {
-        eventsToSend.push(...highPriorityEvents);
-        console.log(
-          `[向量記憶] ⭐ 補充 ${highPriorityEvents.length} 條高優先級事件`,
-        );
-      }
-    } else {
-      // 向量記憶未啟用，使用全量載入（原有行為）
-      eventsToSend = await loadImportantEventsForPrompt();
     }
+    const eventsToSend = await loadImportantEventsForPrompt({
+      scanText: buildEventScanText(messagesToUse),
+      vectorHitIds: vectorEventIds,
+      excludeNames: [char.data.name, userStore.currentPersona?.name ?? ""],
+    });
 
     // 準備天氣數據（優先使用聊天專屬位置覆蓋，回退至全域天氣）
     let weatherInfoToSend: typeof weatherStore.weatherData extends null
@@ -6537,6 +6683,23 @@ async function runAIResponseOnce(
           })
         : "";
 
+    // 角色帳戶餘額（{{charWallet}}，接在轉帳說明後面）；多人卡的子角色沒有帳戶
+    const charWalletNote = await buildCharWalletPromptNote(
+      isGroupChat.value
+        ? groupMetadata.value?.isMultiCharCard
+          ? []
+          : (groupMetadata.value?.members ?? [])
+              .filter((m) => !m.isVirtual && m.characterId && charactersStore.getCharacterById(m.characterId))
+              .map((m) => {
+                const c = charactersStore.getCharacterById(m.characterId)!;
+                return { characterId: m.characterId, name: m.nickname || c.nickname || c.data?.name || "角色" };
+              })
+        : char
+          ? [{ characterId: char.id, name: char.data?.name || props.characterName || "角色" }]
+          : [],
+      walletStoryNow(),
+    );
+
     // 回送提示：只在單人線上聊天，節日／提到禮物／很久沒送時那一輪帶
     const giftNudgeNote =
       !isGroupChat.value && !chatFaceToFaceMode.value
@@ -6626,6 +6789,12 @@ async function runAIResponseOnce(
       giftNudgeNote,
       // 噗文分享：可以留言的噗、可以傳的噗（{{plurkShareGuide}}）
       plurkShareGuide,
+      charWallet: charWalletNote,
+      // 約會：邀請等回覆、約會中的地點／付錢／事件（插在聊天紀錄最後面）
+      dateNote: await dateCtl.promptNote(),
+      // 角色主動約出門的標籤說明：只在單人線上、沒有約會進行中時
+      dateGuide:
+        !isGroupChat.value && !chatFaceToFaceMode.value && !dateCtl.isActive.value ? DATE_REQUEST_GUIDE : "",
       // 傳入這個角色上一張紙條（{{charStickyNote}}）與 user 的心情（{{userMoodNote}}）
       charStickyNote: noteBoardContext.charStickyNote,
       userMoodNote: noteBoardContext.moodNote,
@@ -7873,6 +8042,18 @@ async function runAIResponseOnce(
                     ...target.redpacketState!,
                     claims: [...target.redpacketState!.claims],
                   };
+                  // 使用者發的紅包被角色領走，入那個角色的帳戶
+                  if (target.role === "user" && senderCharId && charactersStore.getCharacterById(senderCharId)) {
+                    void creditCharWallet({
+                      characterId: senderCharId,
+                      amount: cents / 100,
+                      kind: "from_user",
+                      description: "領到你的紅包",
+                      storyNowMs: walletStoryNow(),
+                      chatId: currentChatId.value || props.chatId,
+                      messageId: target.id,
+                    }).catch((e) => console.warn("[角色帳戶] 紅包入帳失敗:", e));
+                  }
                   await _gcDelayIfNeeded(parsedMsg);
                   messages.value.push(
                     createTransactionClaimNoticeMessage({
@@ -8119,6 +8300,11 @@ async function runAIResponseOnce(
             if (parsed.hasStickyNote && parsed.stickyNoteData) {
               await handleStickyNote(parsed.stickyNoteData.text);
             }
+
+            // 約會：邀請、回覆、付錢、結束（結束要寫回顧，不卡住這一輪的其他處理）
+            void dateCtl
+              .handleAiReply(parseDateTags(finalContent))
+              .catch((e) => console.error("[約會] 處理標籤失敗:", e));
 
             // 處理回覆心情標籤
             if (parsed.hasMoodReply && parsed.moodReplyData) {
@@ -9960,6 +10146,10 @@ function exportNovelAIConfig() {
     apiSource: settingsStore.novelAIImage.apiSource,
     customBaseUrl: settingsStore.novelAIImage.customBaseUrl,
     openaiModel: settingsStore.novelAIImage.openaiModel,
+    provider: settingsStore.novelAIImage.provider,
+    gpt: settingsStore.novelAIImage.gpt,
+    banana: settingsStore.novelAIImage.banana,
+    midjourney: settingsStore.novelAIImage.midjourney,
   };
 
   const json = JSON.stringify(config, null, 2);
@@ -9974,15 +10164,81 @@ function exportNovelAIConfig() {
   URL.revokeObjectURL(url);
 }
 
+// 文生圖設定畫面：目前選的生圖服務（NovelAI / GPT / Banana / MJ / Niji）
+const imgProvider = computed(
+  () => settingsStore.novelAIImage.provider ?? "novelai",
+);
+const imgIsNovelAI = computed(() => imgProvider.value === "novelai");
+const imgIsMidjourney = computed(
+  () => imgProvider.value === "midjourney" || imgProvider.value === "niji",
+);
+// 舊資料或匯入檔可能沒有各服務的子設定，畫面綁定前先補上
+watch(
+  imgProvider,
+  () => {
+    const nai = settingsStore.novelAIImage;
+    if (!nai.gpt || !nai.banana || !nai.midjourney) {
+      applySavedNovelAIImageSettings(nai, { ...nai });
+    }
+  },
+  { immediate: true },
+);
+const gptImg = computed(() => settingsStore.novelAIImage.gpt!);
+const bananaImg = computed(() => settingsStore.novelAIImage.banana!);
+const mjImg = computed(() => settingsStore.novelAIImage.midjourney!);
+// MJ 的 stylize 用文字框，空字串存成 null（不指定）
+const mjStylizeInput = computed({
+  get: () => mjImg.value.stylize ?? "",
+  set: (v: string | number) => {
+    const n = Number(v);
+    mjImg.value.stylize = v === "" || v == null || Number.isNaN(n) ? null : n;
+  },
+});
+const imgModelSuggestions = computed(() =>
+  imgProvider.value === "gpt"
+    ? GPT_IMAGE_MODEL_SUGGESTIONS
+    : BANANA_MODEL_SUGGESTIONS,
+);
+const imgProviderModels = ref<string[]>([]);
+const imgProviderModelsLoading = ref(false);
+const imgProviderModelsMessage = ref("");
+watch(imgProvider, () => {
+  imgProviderModels.value = [];
+  imgProviderModelsMessage.value = "";
+});
+async function loadImageProviderModels() {
+  imgProviderModelsLoading.value = true;
+  imgProviderModelsMessage.value = "";
+  try {
+    const models = await fetchImageProviderModels(settingsStore.novelAIImage);
+    imgProviderModels.value = models;
+    imgProviderModelsMessage.value = models.length
+      ? `連線成功，共 ${models.length} 個生圖模型`
+      : "連線成功，但沒有列出生圖模型，請手動填寫";
+  } catch (e) {
+    imgProviderModels.value = [];
+    imgProviderModelsMessage.value =
+      e instanceof Error ? e.message : "取得模型失敗";
+  } finally {
+    imgProviderModelsLoading.value = false;
+  }
+}
+
 // NAI 設定畫面：依模型決定能選哪些預設、哪些進階選項
 const naiIsOpenAIFormat = computed(
   () => settingsStore.novelAIImage.apiSource === "openai",
 );
-// 套用官方預設要看的模型：OpenAI 格式看填的模型名稱（不是 NAI 模型就不套）
+// 步數、CFG、採樣器等 NovelAI 參數：只有 NovelAI 原生格式才有
+const naiShowNaiParams = computed(
+  () => imgIsNovelAI.value && !naiIsOpenAIFormat.value,
+);
+// 套用官方預設要看的模型：OpenAI 格式看填的模型名稱（不是 NAI 模型就不套）；其他服務不套
 const naiPresetModel = computed(() =>
-  naiIsOpenAIFormat.value
-    ? settingsStore.novelAIImage.openaiModel?.trim() || ""
-    : settingsStore.novelAIImage.model,
+  !imgIsNovelAI.value
+    ? ""
+    : naiIsOpenAIFormat.value
+      ? settingsStore.novelAIImage.openaiModel?.trim() || ""
+      : settingsStore.novelAIImage.model,
 );
 const naiUcPresetOptions = computed(() =>
   getUcPresetOptions(naiPresetModel.value),
@@ -10607,8 +10863,10 @@ async function loadSummariesAndDiaries() {
   }
 }
 
-// 載入重要事件用於 prompt
-async function loadImportantEventsForPrompt(): Promise<
+// 載入重要事件用於 prompt：依記錄本設定挑常駐＋聊到的（或全部）
+async function loadImportantEventsForPrompt(
+  selectOptions: Omit<ImportantEventSelectOptions, "mode" | "limit"> = {},
+): Promise<
   Array<{
     id: string;
     content: string;
@@ -10623,27 +10881,25 @@ async function loadImportantEventsForPrompt(): Promise<
 
   try {
     const id = chatId || charId;
-    const eventsLog = await db.get<{
-      events: Array<{
-        id: string;
-        content: string;
-        category?: string;
-        priority?: number;
-      }>;
-      settings: { enabled: boolean; maxEvents?: number };
-    }>(DB_STORES.IMPORTANT_EVENTS, id!);
+    const eventsLog = await db.get<ImportantEventsLog>(
+      DB_STORES.IMPORTANT_EVENTS,
+      id!,
+    );
 
     if (
       eventsLog &&
       eventsLog.settings?.enabled &&
       eventsLog.events?.length > 0
     ) {
-      // 按優先級排序後截取 maxEvents 數量
-      const maxEvents = eventsLog.settings?.maxEvents ?? 50;
-      return eventsLog.events
-        .slice()
-        .sort((a, b) => (a.priority || 3) - (b.priority || 3))
-        .slice(0, maxEvents);
+      const picked = selectImportantEventsForPrompt(eventsLog.events, {
+        ...selectOptions,
+        mode: eventsLog.settings.injectMode,
+        limit: eventsLog.settings.maxEvents ?? 50,
+      });
+      console.log(
+        `[重要事件] 送出 ${picked.length}/${eventsLog.events.length} 條（模式：${eventsLog.settings.injectMode ?? "triggered"}）`,
+      );
+      return picked;
     }
   } catch (e) {
     console.error("載入重要事件失敗:", e);
@@ -12281,6 +12537,8 @@ useChatCleanup({
             message.roundTableModel,
             message.whisperWith,
             message.roundTableCard?.redpacketSent,
+            message.dateCard,
+            dateCtl.session.value?.inviteMessageId === message.id,
             roundTableOn,
             readingImageNoteId === message.id,
             groupMemberAvatarVersion,
@@ -12426,6 +12684,24 @@ useChatCleanup({
             </svg>
             <span class="system-notification-text">你撤回了一條訊息</span>
             <button class="recall-undo-btn" @click.stop="handleUndoRecall(message.id)">取消</button>
+          </div>
+
+          <!-- 約會卡片：邀請、請求、出發、回憶 -->
+          <div
+            v-else-if="message.dateCard"
+            class="date-card-row"
+            @click="isSelectingMessages ? toggleMessageSelection(message.id) : undefined"
+            @contextmenu.prevent="handleMessageDelete(message.id)"
+          >
+            <DateCard
+              :card="message.dateCard"
+              :user-name="getUserDisplayName()"
+              :char-name="currentCharacter?.data?.name || props.characterName || '角色'"
+              :actionable="dateCtl.session.value?.inviteMessageId === message.id"
+              @accept="dateCtl.acceptRequest(message.id)"
+              @decline="dateCtl.declineRequest(message.id)"
+              @cancel="dateCtl.cancelInvite(message.id)"
+            />
           </div>
 
           <div
@@ -12593,6 +12869,7 @@ useChatCleanup({
             :disabled-regex-ids="chatDisabledRegexIds"
             :tts-audio-url="message.ttsAudioUrl"
             :tts-segments="message.ttsSegments"
+            :request-tts-segment="requestTtsSegment"
             :audio-blob="message._audioBlob || null"
             :audio-blob-id="message.audioBlobId"
             :audio-duration="message.audioDuration"
@@ -12822,6 +13099,22 @@ useChatCleanup({
         </div>
       </div>
     </Teleport>
+
+    <!-- 約會中：地點、過了多久、結束約會 -->
+    <div v-if="dateCtl.isOngoing.value && dateCtl.session.value" class="date-banner" role="status">
+      <span class="date-banner-text">
+        {{ dateCtl.session.value.emoji }} {{ dateCtl.session.value.place }}約會中<template v-if="dateBannerElapsed">・{{ dateBannerElapsed }}</template>
+      </span>
+      <button type="button" class="date-banner-end" :disabled="dateCtl.ending.value" @click="endDateFromBanner">
+        {{ dateCtl.ending.value ? "整理回憶中…" : "結束約會" }}
+      </button>
+    </div>
+    <DateSpotPicker
+      :visible="dateCtl.showPicker.value"
+      :char-name="currentCharacter?.data?.name || props.characterName || '角色'"
+      @close="dateCtl.showPicker.value = false"
+      @pick="(pick) => dateCtl.inviteFromUser(pick)"
+    />
 
     <ChatScreenInputArea
       ref="inputAreaRef"
@@ -13074,10 +13367,12 @@ useChatCleanup({
         :character-avatar="characterAvatar"
         :is-group="isGroupChat"
         :group-member-names="giftDrawerMemberNames"
+        :care-status="charAwayCtl.careItemStatusFor"
         @close="showGiftDrawer = false"
         @open-shop="handleOpenShop"
         @transfer="handleTransfer"
         @send-gift="handleSendGift"
+        @use-care="handleUseCareItem"
         @redpacket="handleSendRedpacket"
       />
 
@@ -14166,7 +14461,7 @@ useChatCleanup({
         </div>
       </Transition>
 
-      <!-- NovelAI 文生圖設定 Modal -->
+      <!-- 文生圖設定 Modal（NovelAI / GPT / Banana / Midjourney / Niji） -->
       <Transition name="fade">
         <div
           v-if="showNovelAISettingsModal"
@@ -14181,7 +14476,7 @@ useChatCleanup({
                     d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"
                   />
                 </svg>
-                NovelAI 文生圖設定
+                AI 文生圖設定
               </h3>
               <button class="close-btn" @click="closeNovelAISettings">
                 <svg viewBox="0 0 24 24" fill="currentColor">
@@ -14208,6 +14503,303 @@ useChatCleanup({
                 </label>
               </div>
 
+              <div class="setting-group">
+                <label class="setting-label">生圖服務</label>
+                <select
+                  class="setting-select"
+                  v-model="settingsStore.novelAIImage.provider"
+                >
+                  <option
+                    v-for="p in IMAGE_PROVIDERS"
+                    :key="p.value"
+                    :value="p.value"
+                  >
+                    {{ p.label }}
+                  </option>
+                </select>
+                <span class="setting-hint">
+                  各服務的 Key 和地址分開存，切換不會弄丟
+                </span>
+              </div>
+
+              <!-- ── 非 NovelAI 服務的連線設定 ── -->
+              <template v-if="!imgIsNovelAI">
+                <div class="setting-divider">連線</div>
+
+                <!-- GPT Image -->
+                <template v-if="imgProvider === 'gpt'">
+                  <div class="setting-group">
+                    <label class="setting-label">請求格式</label>
+                    <select class="setting-select" v-model="gptImg.requestFormat">
+                      <option value="images">圖片 API（/images/generations）</option>
+                      <option value="chat">聊天 API（/chat/completions）</option>
+                    </select>
+                    <span class="setting-hint">
+                      官方和大部分中轉站選圖片 API；只給聊天格式的（例如 gpt-4o-image）才選聊天 API
+                    </span>
+                  </div>
+                  <div class="setting-group">
+                    <label class="setting-label">API 地址</label>
+                    <input
+                      type="text"
+                      class="setting-input"
+                      v-model="gptImg.baseUrl"
+                      placeholder="https://api.openai.com/v1"
+                      autocomplete="off"
+                      autocorrect="off"
+                      autocapitalize="off"
+                      spellcheck="false"
+                    />
+                    <span class="setting-hint">官方填 https://api.openai.com/v1；中轉站填到 /v1</span>
+                  </div>
+                  <div class="setting-group">
+                    <label class="setting-label">API Key</label>
+                    <input
+                      type="text"
+                      class="setting-input api-key-field masked"
+                      v-model="gptImg.apiKey"
+                      placeholder="sk-xxxx..."
+                      autocomplete="off"
+                      autocorrect="off"
+                      autocapitalize="off"
+                      spellcheck="false"
+                    />
+                  </div>
+                </template>
+
+                <!-- Nano Banana -->
+                <template v-else-if="imgProvider === 'banana'">
+                  <div class="setting-group">
+                    <label class="setting-label">API 格式</label>
+                    <select class="setting-select" v-model="bananaImg.apiFormat">
+                      <option value="gemini">Gemini 原生（Google 官方）</option>
+                      <option value="openai">OpenAI 格式（中轉站 /chat/completions）</option>
+                    </select>
+                  </div>
+                  <div class="setting-group">
+                    <label class="setting-label">API 地址</label>
+                    <input
+                      type="text"
+                      class="setting-input"
+                      v-model="bananaImg.baseUrl"
+                      :placeholder="
+                        bananaImg.apiFormat === 'gemini'
+                          ? 'https://generativelanguage.googleapis.com'
+                          : 'https://example.com/v1'
+                      "
+                      autocomplete="off"
+                      autocorrect="off"
+                      autocapitalize="off"
+                      spellcheck="false"
+                    />
+                    <span class="setting-hint">{{
+                      bananaImg.apiFormat === "gemini"
+                        ? "官方填 https://generativelanguage.googleapis.com；支援 Gemini 格式的中轉站填它的網域"
+                        : "中轉站（New API、OpenRouter 等）填到 /v1"
+                    }}</span>
+                  </div>
+                  <div class="setting-group">
+                    <label class="setting-label">API Key</label>
+                    <input
+                      type="text"
+                      class="setting-input api-key-field masked"
+                      v-model="bananaImg.apiKey"
+                      :placeholder="bananaImg.apiFormat === 'gemini' ? 'AIza...' : 'sk-xxxx...'"
+                      autocomplete="off"
+                      autocorrect="off"
+                      autocapitalize="off"
+                      spellcheck="false"
+                    />
+                    <span class="setting-hint" v-if="bananaImg.apiFormat === 'gemini'">
+                      從 Google AI Studio 取得
+                    </span>
+                  </div>
+                </template>
+
+                <!-- Midjourney / Niji -->
+                <template v-else-if="imgIsMidjourney">
+                  <div class="setting-group">
+                    <label class="setting-label">API 地址</label>
+                    <input
+                      type="text"
+                      class="setting-input"
+                      v-model="mjImg.baseUrl"
+                      placeholder="https://example.com"
+                      autocomplete="off"
+                      autocorrect="off"
+                      autocapitalize="off"
+                      spellcheck="false"
+                    />
+                    <span class="setting-hint">
+                      Midjourney 沒有官方 API，要用支援 midjourney-proxy 格式的中轉站或自架服務；會送到「地址/mj/submit/imagine」。Midjourney 和 Niji 共用這組設定
+                    </span>
+                  </div>
+                  <div class="setting-group">
+                    <label class="setting-label">API Key</label>
+                    <input
+                      type="text"
+                      class="setting-input api-key-field masked"
+                      v-model="mjImg.apiKey"
+                      placeholder="sk-xxxx... 或 mj-api-secret"
+                      autocomplete="off"
+                      autocorrect="off"
+                      autocapitalize="off"
+                      spellcheck="false"
+                    />
+                  </div>
+                </template>
+
+                <div class="setting-divider">生成</div>
+
+                <!-- GPT / Banana 模型 -->
+                <div
+                  class="setting-group"
+                  v-if="imgProvider === 'gpt' || imgProvider === 'banana'"
+                >
+                  <label class="setting-label">模型</label>
+                  <div class="nai-model-row" v-if="imgProvider === 'gpt'">
+                    <input
+                      type="text"
+                      class="setting-input"
+                      v-model="gptImg.model"
+                      list="img-provider-models"
+                      placeholder="gpt-image-2"
+                      autocomplete="off"
+                      autocorrect="off"
+                      autocapitalize="off"
+                      spellcheck="false"
+                    />
+                    <button
+                      class="nai-fetch-models-btn"
+                      :disabled="imgProviderModelsLoading"
+                      @click="loadImageProviderModels"
+                    >
+                      {{ imgProviderModelsLoading ? "讀取中…" : "取得模型" }}
+                    </button>
+                  </div>
+                  <div class="nai-model-row" v-else>
+                    <input
+                      type="text"
+                      class="setting-input"
+                      v-model="bananaImg.model"
+                      list="img-provider-models"
+                      placeholder="gemini-2.5-flash-image"
+                      autocomplete="off"
+                      autocorrect="off"
+                      autocapitalize="off"
+                      spellcheck="false"
+                    />
+                    <button
+                      class="nai-fetch-models-btn"
+                      :disabled="imgProviderModelsLoading"
+                      @click="loadImageProviderModels"
+                    >
+                      {{ imgProviderModelsLoading ? "讀取中…" : "取得模型" }}
+                    </button>
+                  </div>
+                  <datalist id="img-provider-models">
+                    <option
+                      v-for="m in imgProviderModels.length
+                        ? imgProviderModels
+                        : imgModelSuggestions"
+                      :key="m"
+                      :value="m"
+                    />
+                  </datalist>
+                  <span class="setting-hint">
+                    {{
+                      imgProviderModelsMessage ||
+                      (imgProvider === "gpt"
+                        ? "gpt-image-2 最新；gpt-image-1-mini 最便宜。中轉站的名稱可能不同，按「取得模型」看清單"
+                        : "gemini-2.5-flash-image＝Nano Banana；gemini-3-pro-image-preview＝Nano Banana Pro")
+                    }}
+                  </span>
+                </div>
+
+                <div class="setting-group" v-if="imgProvider === 'gpt' && gptImg.requestFormat === 'images'">
+                  <label class="setting-label">畫質</label>
+                  <select class="setting-select" v-model="gptImg.quality">
+                    <option value="low">低（最便宜、最快）</option>
+                    <option value="medium">中</option>
+                    <option value="high">高（最貴、最慢）</option>
+                    <option value="auto">自動</option>
+                  </select>
+                </div>
+
+                <div
+                  class="setting-group"
+                  v-if="imgProvider === 'banana' && bananaImg.apiFormat === 'gemini' && !bananaImg.model.includes('2.5')"
+                >
+                  <label class="setting-label">解析度</label>
+                  <select class="setting-select" v-model="bananaImg.imageSize">
+                    <option value="1K">1K</option>
+                    <option value="2K">2K</option>
+                    <option value="4K">4K（較貴）</option>
+                  </select>
+                </div>
+
+                <!-- Midjourney / Niji 參數 -->
+                <template v-if="imgIsMidjourney">
+                  <div class="setting-group" v-if="imgProvider === 'niji'">
+                    <label class="setting-label">Niji 版本</label>
+                    <select class="setting-select" v-model="mjImg.nijiVersion">
+                      <option
+                        v-for="v in NIJI_VERSION_OPTIONS"
+                        :key="v.value"
+                        :value="v.value"
+                      >
+                        {{ v.label }}
+                      </option>
+                    </select>
+                  </div>
+                  <div class="setting-group" v-else>
+                    <label class="setting-label">Midjourney 版本</label>
+                    <select class="setting-select" v-model="mjImg.mjVersion">
+                      <option
+                        v-for="v in MJ_VERSION_OPTIONS"
+                        :key="v.value"
+                        :value="v.value"
+                      >
+                        {{ v.label }}
+                      </option>
+                    </select>
+                  </div>
+                  <div class="setting-group">
+                    <label class="setting-label">出圖方式</label>
+                    <select class="setting-select" v-model="mjImg.resultMode">
+                      <option value="single">切出第一張（推薦，不另外花錢）</option>
+                      <option value="upscale">自動放大 U1（多一次任務）</option>
+                      <option value="grid">保留四宮格</option>
+                    </select>
+                  </div>
+                  <div class="setting-group">
+                    <label class="setting-label">速度</label>
+                    <select class="setting-select" v-model="mjImg.speed">
+                      <option value="default">不指定</option>
+                      <option value="fast">Fast</option>
+                      <option value="relax">Relax（可能要排隊很久）</option>
+                      <option value="turbo">Turbo</option>
+                    </select>
+                  </div>
+                  <div class="setting-group">
+                    <label class="setting-label">Stylize（--s，留空不指定）</label>
+                    <input
+                      type="number"
+                      class="setting-input"
+                      v-model="mjStylizeInput"
+                      min="0"
+                      max="1000"
+                      placeholder="例如 100"
+                    />
+                    <span class="setting-hint">
+                      比例會照下面的圖片尺寸自動加 --ar；其他參數（--sref 等）可以寫在提示詞後綴
+                    </span>
+                  </div>
+                </template>
+              </template>
+
+              <!-- ── NovelAI 的連線設定 ── -->
+              <template v-else>
               <!-- 代理設定 -->
               <div class="setting-divider">連線/代理</div>
 
@@ -14402,6 +14994,8 @@ useChatCleanup({
                 </span>
               </div>
 
+              </template>
+
               <!-- 尺寸選擇 -->
               <div class="setting-group">
                 <label class="setting-label">圖片尺寸</label>
@@ -14423,10 +15017,16 @@ useChatCleanup({
                     {{ size.label }}
                   </button>
                 </div>
+                <span class="setting-hint" v-if="imgProvider === 'gpt'">
+                  GPT 只看直式／橫式／正方形，會換成 1024×1536、1536×1024 或 1024×1024
+                </span>
+                <span class="setting-hint" v-else-if="!imgIsNovelAI">
+                  只看比例，解析度由服務決定
+                </span>
               </div>
 
               <!-- 生成步數 -->
-              <div class="setting-group" v-if="!naiIsOpenAIFormat">
+              <div class="setting-group" v-if="naiShowNaiParams">
                 <label class="setting-label"
                   >生成步數:
                   {{
@@ -14450,7 +15050,7 @@ useChatCleanup({
               </div>
 
               <!-- CFG Scale -->
-              <div class="setting-group" v-if="!naiIsOpenAIFormat">
+              <div class="setting-group" v-if="naiShowNaiParams">
                 <label class="setting-label"
                   >CFG Scale: {{ settingsStore.novelAIImage.scale }}</label
                 >
@@ -14467,7 +15067,7 @@ useChatCleanup({
               <!-- 採樣器 -->
               <div
                 class="setting-group"
-                v-if="!naiIsOpenAIFormat && !naiIsMediumModel"
+                v-if="naiShowNaiParams && !naiIsMediumModel"
               >
                 <label class="setting-label">採樣器</label>
                 <select
@@ -14495,6 +15095,12 @@ useChatCleanup({
                 ></textarea>
                 <span class="setting-hint" v-if="naiUcPresetOptions.length"
                   >會接在下面「負面提示詞預設」的後面</span
+                >
+                <span class="setting-hint" v-else-if="imgIsMidjourney"
+                  >會變成 --no 參數</span
+                >
+                <span class="setting-hint" v-else-if="!imgIsNovelAI"
+                  >這個服務沒有負面提示詞欄位，會以「Avoid: …」接在提示詞最後</span
                 >
               </div>
 
@@ -14571,7 +15177,7 @@ useChatCleanup({
                 >
               </div>
 
-              <template v-if="!naiIsOpenAIFormat">
+              <template v-if="naiShowNaiParams">
               <!-- 進階設定分隔線 -->
               <div class="setting-divider">進階設定</div>
 
@@ -14769,7 +15375,7 @@ useChatCleanup({
                     d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.91-3c-.49 0-.9.36-.98.85C16.52 14.2 14.47 16 12 16s-4.52-1.8-4.93-4.15c-.08-.49-.49-.85-.98-.85-.61 0-1.09.54-1 1.14.49 3 2.89 5.35 5.91 5.78V20c0 .55.45 1 1 1s1-.45 1-1v-2.08c3.02-.43 5.42-2.78 5.91-5.78.1-.6-.39-1.14-1-1.14z"
                   />
                 </svg>
-                MiniMax 語音設定（此聊天）
+                {{ ttsProviderName }} 語音設定（此聊天）
               </h3>
               <button class="close-btn" @click="closeMinimaxTTSSettings">
                 ✕
@@ -14781,22 +15387,22 @@ useChatCleanup({
                 覆蓋此聊天的語音參數。留空則使用設定 App 中的全域預設值。
               </p>
 
-              <!-- 音色 voice_id -->
+              <!-- 音色 voice_id（Fish Audio 是 reference_id，兩家分開存） -->
               <div class="setting-group">
                 <label class="setting-label">{{
-                  isGroupChat ? "群組預設音色 (voice_id)" : "音色 (voice_id)"
+                  isGroupChat ? `群組預設音色 (${ttsVoiceIdLabel})` : `音色 (${ttsVoiceIdLabel})`
                 }}</label>
                 <input
                   type="text"
                   class="setting-input"
-                  :value="chatMinimaxTTSOverride.voiceId ?? ''"
+                  :value="chatMinimaxTTSOverride[ttsVoiceKeys.voice] ?? ''"
                   :placeholder="
                     globalTimbreMixCount
                       ? '使用全域音色混合'
-                      : settingsStore.minimaxTTS.voiceId || '使用全域預設'
+                      : globalTTSVoice || '使用全域預設'
                   "
                   @input="
-                    chatMinimaxTTSOverride.voiceId =
+                    chatMinimaxTTSOverride[ttsVoiceKeys.voice] =
                       ($event.target as HTMLInputElement).value.trim() || undefined
                   "
                 />
@@ -14804,14 +15410,15 @@ useChatCleanup({
                   >留空使用全域的音色混合（{{ globalTimbreMixCount }} 種）；填了就只用這個音色</span
                 >
                 <span v-else class="setting-hint"
-                  >留空使用全域：{{ settingsStore.minimaxTTS.voiceId }}</span
+                  >留空使用全域：{{ globalTTSVoice || "未設定" }}<template v-if="ttsProvider === 'fishaudio'">。Fish Audio 和 MiniMax 的音色分開存，切換服務商不會互相蓋掉</template></span
                 >
               </div>
 
               <!-- 群聊：每個成員各自的音色 -->
               <template v-if="isGroupChat && ttsVoiceMembers.length">
                 <GroupMemberVoices
-                  v-model="chatMinimaxTTSOverride.memberVoices"
+                  :key="ttsProvider"
+                  v-model="chatMinimaxTTSOverride[ttsVoiceKeys.members]"
                   :members="ttsVoiceMembers"
                   :fallback-label="memberVoiceFallbackLabel"
                   :tts-settings="settingsStore.minimaxTTS"
@@ -14821,7 +15428,7 @@ useChatCleanup({
                 >
               </template>
 
-              <div class="setting-group">
+              <div v-if="ttsProvider === 'minimax'" class="setting-group">
                 <label class="setting-label" for="chat-tts-language">語言增強</label>
                 <select
                   id="chat-tts-language"
@@ -14894,8 +15501,8 @@ useChatCleanup({
                 />
               </div>
 
-              <!-- 音調 -->
-              <div class="setting-group">
+              <!-- 音調（Fish Audio 沒有音調參數） -->
+              <div v-if="ttsProvider === 'minimax'" class="setting-group">
                 <label class="setting-label"
                   >音調:
                   {{
@@ -14952,6 +15559,9 @@ useChatCleanup({
                     ...(chatMinimaxTTSOverride.callBilingual && { callBilingual: true }),
                     ...(chatMinimaxTTSOverride.memberVoices && {
                       memberVoices: chatMinimaxTTSOverride.memberVoices,
+                    }),
+                    ...(chatMinimaxTTSOverride.fishMemberVoices && {
+                      fishMemberVoices: chatMinimaxTTSOverride.fishMemberVoices,
                     }),
                   }
                 "
@@ -16408,6 +17018,45 @@ useChatCleanup({
 }
 
 // 日期分隔符
+.date-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 0 12px 6px;
+  padding: 8px 12px;
+  border-radius: 14px;
+  background: var(--color-surface, #fff);
+  border: 1px solid var(--color-border, #e5e7eb);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  font-size: 13px;
+  color: var(--color-text-primary, #1f2937);
+}
+
+.date-banner-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.date-banner-end {
+  flex-shrink: 0;
+  padding: 5px 12px;
+  border: none;
+  border-radius: 999px;
+  background: var(--color-primary, #7dd3a8);
+  color: var(--color-on-primary-contrast, #fff);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+
+  &:disabled {
+    opacity: 0.6;
+    cursor: default;
+  }
+}
+
 .date-separator {
   display: flex;
   justify-content: center;

@@ -2,19 +2,20 @@ import { ref } from "vue";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { synthesizeSpeech } from "@/api/MiniMaxTTSApi";
 import { useChatTTS } from "./useChatTTS";
+import type { ChatScreenMessage as ChatMessage } from "@/types/chatScreen";
 
 vi.mock("@/api/MiniMaxTTSApi", () => ({
   synthesizeSpeech: vi.fn(),
 }));
 
-const aiMessage = {
+const aiMessage: ChatMessage = {
   id: "ai-1",
-  role: "ai" as const,
+  role: "ai",
   content: "沒有標記的句子",
   timestamp: Date.now(),
 };
 
-function createContext(messages = [aiMessage]) {
+function createContext(messages: ChatMessage[] = [aiMessage]) {
   return {
     messages: ref(messages),
     chatMinimaxTTSEnabled: ref(true),
@@ -30,8 +31,10 @@ function createContext(messages = [aiMessage]) {
         format: "mp3",
         sampleRate: 32000,
         languageBoost: "",
-        timberWeights: [],
+        timberWeights: [] as unknown[],
         timberWeightsEnabled: false,
+        // 這裡大多是測合成內容，預設照「回覆就生成」；點了才生成的行為在下面另外測
+        autoGenerate: true as boolean,
       },
     },
     saveChat: vi.fn().mockResolvedValue(undefined),
@@ -347,5 +350,131 @@ describe("useChatTTS manual regeneration", () => {
       reason: "synthesis-failed",
     });
     expect(message.ttsAudioUrl).toBe("data:audio/mp3;base64,old");
+  });
+});
+
+describe("useChatTTS 點了才生成", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: false, status: 500 }),
+    );
+  });
+
+  function createLazyContext(messages: ChatMessage[] = [{ ...aiMessage }]) {
+    const context = createContext(messages);
+    context.settingsStore.minimaxTTS.autoGenerate = false;
+    return context;
+  }
+
+  it("回覆進來時只切段落、不呼叫 MiniMax", async () => {
+    const context = createLazyContext();
+    const { processMessageTTS } = useChatTTS(context);
+
+    await expect(
+      processMessageTTS(aiMessage.id, "「你好[emotion=happy]」「再見[emotion=sad]」"),
+    ).resolves.toBe(true);
+
+    expect(synthesizeSpeech).not.toHaveBeenCalled();
+    const segments = context.messages.value[0].ttsSegments;
+    expect(segments?.map((s) => s.text)).toEqual(["你好", "再見"].map((t) => expect.stringContaining(t)));
+    expect(segments?.every((s) => !s.audioUrl)).toBe(true);
+    expect(context.saveChat).toHaveBeenCalled();
+  });
+
+  it("點哪一段就只生成那一段，生成過的不再扣費", async () => {
+    vi.mocked(synthesizeSpeech).mockResolvedValue({
+      success: true,
+      audioUrl: "https://oss.example/seg.mp3",
+    });
+    const context = createLazyContext();
+    const { processMessageTTS, synthesizeMessageTTSSegment } = useChatTTS(context);
+    await processMessageTTS(aiMessage.id, "「你好[emotion=happy]」「再見[emotion=sad]」");
+
+    await expect(synthesizeMessageTTSSegment(aiMessage.id, 1)).resolves.toEqual({
+      success: true,
+      audioUrl: "https://oss.example/seg.mp3",
+    });
+    expect(synthesizeSpeech).toHaveBeenCalledTimes(1);
+    expect(synthesizeSpeech).toHaveBeenCalledWith(
+      expect.stringContaining("再见"),
+      expect.anything(),
+      { emotion: "sad" },
+    );
+    const segments = context.messages.value[0].ttsSegments!;
+    expect(segments[0].audioUrl).toBeUndefined();
+    expect(segments[1].audioUrl).toBe("https://oss.example/seg.mp3");
+
+    await synthesizeMessageTTSSegment(aiMessage.id, 1);
+    expect(synthesizeSpeech).toHaveBeenCalledTimes(1);
+  });
+
+  it("同一段連點只打一次 API", async () => {
+    let resolveSynth!: (v: { success: true; audioUrl: string }) => void;
+    vi.mocked(synthesizeSpeech).mockImplementation(
+      () => new Promise((resolve) => { resolveSynth = resolve; }),
+    );
+    const context = createLazyContext();
+    const { processMessageTTS, synthesizeMessageTTSSegment } = useChatTTS(context);
+    await processMessageTTS(aiMessage.id, "你好[emotion=happy]");
+
+    const first = synthesizeMessageTTSSegment(aiMessage.id, 0);
+    const second = synthesizeMessageTTSSegment(aiMessage.id, 0);
+    await vi.waitFor(() => expect(synthesizeSpeech).toHaveBeenCalledTimes(1));
+    resolveSynth({ success: true, audioUrl: "https://oss.example/a.mp3" });
+
+    await expect(first).resolves.toMatchObject({ success: true });
+    await expect(second).resolves.toMatchObject({ success: true });
+    expect(synthesizeSpeech).toHaveBeenCalledTimes(1);
+    expect(context.messages.value[0].ttsAudioUrl).toBe("https://oss.example/a.mp3");
+  });
+
+  it("點的時候才挑多人卡的說話者音色", async () => {
+    vi.mocked(synthesizeSpeech).mockResolvedValue({ success: false, error: "test" });
+    const context = {
+      ...createLazyContext(),
+      resolveSpeakerId: (name: string) => (name === "阿明" ? "char-a" : undefined),
+    };
+    const { chatMinimaxTTSOverride, processMessageTTS, synthesizeMessageTTSSegment } =
+      useChatTTS(context);
+    chatMinimaxTTSOverride.value = { voiceId: "group", memberVoices: { "char-a": "voice-a" } };
+    await processMessageTTS(aiMessage.id, "「嗨」[emotion=happy;speaker=阿明]");
+
+    await expect(synthesizeMessageTTSSegment(aiMessage.id, 0)).resolves.toEqual({
+      success: false,
+      reason: "synthesis-failed",
+    });
+    expect(synthesizeSpeech).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ voiceId: "voice-a" }),
+      expect.anything(),
+    );
+  });
+
+  it("手動重新生成還是馬上合成整則", async () => {
+    vi.mocked(synthesizeSpeech).mockResolvedValue({
+      success: true,
+      audioUrl: "https://oss.example/r.mp3",
+    });
+    const context = createLazyContext();
+    const { regenerateMessageTTS } = useChatTTS(context);
+
+    await expect(regenerateMessageTTS(aiMessage.id)).resolves.toEqual({ success: true });
+    expect(synthesizeSpeech).toHaveBeenCalledTimes(1);
+  });
+
+  it("沒有 API Key 時回報 missing-api-key", async () => {
+    const context = createLazyContext([
+      { ...aiMessage, ttsSegments: [{ emotion: "neutral", speed: 1, text: "嗨", clean: "嗨" }] },
+    ]);
+    context.settingsStore.minimaxTTS.apiKey = "";
+    const { synthesizeMessageTTSSegment } = useChatTTS(context);
+
+    await expect(synthesizeMessageTTSSegment(aiMessage.id, 0)).resolves.toEqual({
+      success: false,
+      reason: "missing-api-key",
+    });
+    expect(synthesizeSpeech).not.toHaveBeenCalled();
   });
 });

@@ -306,6 +306,39 @@
                 </button>
               </div>
             </div>
+
+            <!-- 道具分頁：照顧他 -->
+            <div v-if="activeTab === 'care'" class="care-tab">
+              <p class="care-tip">他在忙、在睡，或晚上還醒著時，可以用道具照顧他</p>
+              <div v-if="ownedCareItems.length > 0" class="care-list">
+                <div v-for="care in ownedCareItems" :key="care.itemId" class="care-row">
+                  <div class="care-icon">
+                    <component :is="getCareIcon(care.itemId)" :size="22" />
+                  </div>
+                  <div class="care-info">
+                    <div class="care-name">
+                      {{ care.name }}<span class="care-qty">x{{ care.quantity }}</span>
+                    </div>
+                    <div class="care-desc">{{ care.description }}</div>
+                    <div v-if="!care.status.ok" class="care-reason">{{ care.status.reason }}</div>
+                  </div>
+                  <button
+                    class="care-use-btn"
+                    :disabled="!care.status.ok"
+                    @click="handleUseCare(care.itemId)"
+                  >
+                    用
+                  </button>
+                </div>
+              </div>
+              <div v-else class="empty-state">
+                <Package :size="48" />
+                <span>還沒有道具</span>
+                <button class="go-shop-btn" @click="emit('openShop')">
+                  去商城買（照顧他）
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -314,7 +347,9 @@
 </template>
 
 <script setup lang="ts">
-import { getShopItemById } from "@/data/shopItems";
+import { getShopItemById, type ShopItem } from "@/data/shopItems";
+import type { CareItemStatus } from "@/services/careItems";
+import { getCareIcon } from "@/utils/careIcon";
 import type { Transaction } from "@/schemas/gameEconomy";
 import { useGameEconomyStore } from "@/stores/gameEconomy";
 import {
@@ -324,6 +359,7 @@ import {
     Heart,
     History,
     Mail,
+    Package,
     Receipt,
     Send,
     ShoppingBag,
@@ -335,7 +371,7 @@ import {
 } from "lucide-vue-next";
 import { computed, ref, watch } from "vue";
 
-type TabId = "wallet" | "transfer" | "redpacket" | "gift";
+type TabId = "wallet" | "transfer" | "redpacket" | "gift" | "care";
 
 interface OwnedGift {
   id: string;
@@ -356,6 +392,8 @@ const props = defineProps<{
   isGroup?: boolean;
   /** 群成員名字，專屬紅包挑領取者用 */
   groupMemberNames?: string[];
+  /** 照顧他的道具現在能不能用（私聊才有道具分頁） */
+  careStatus?: (item: ShopItem) => CareItemStatus;
 }>();
 
 const emit = defineEmits<{
@@ -363,6 +401,7 @@ const emit = defineEmits<{
   openShop: [];
   transfer: [amount: number, note: string];
   sendGift: [giftItemId: string, giftName: string, cardText: string];
+  useCare: [itemId: string];
   redpacket: [
     data: {
       type: "lucky" | "split" | "exclusive";
@@ -393,6 +432,9 @@ const tabs = computed(() => {
     base.push({ id: "redpacket" as TabId, label: "紅包", icon: Mail });
   }
   base.push({ id: "gift" as TabId, label: "禮物", icon: Gift });
+  if (!props.isGroup && props.careStatus) {
+    base.push({ id: "care" as TabId, label: "道具", icon: Package });
+  }
   return base;
 });
 
@@ -401,6 +443,7 @@ const tabTitles: Record<TabId, string> = {
   transfer: "轉帳",
   redpacket: "發紅包",
   gift: "送禮物",
+  care: "照顧他",
 };
 
 // 錢包數據
@@ -472,6 +515,30 @@ const ownedGifts = computed<OwnedGift[]>(() => {
       };
     });
 });
+
+// 照顧他的道具（背包裡有的）
+const ownedCareItems = computed(() => {
+  // 打開抽屜時重算一次（能不能用跟時間有關）
+  void props.visible;
+  const inventory = gameEconomyStore.getInventory(GLOBAL_WALLET_ID);
+  return inventory
+    .map((item) => ({ item, shopItem: getShopItemById(item.itemId) }))
+    .filter(({ item, shopItem }) => item.quantity > 0 && !!shopItem?.careUse)
+    .map(({ item, shopItem }) => ({
+      itemId: item.itemId,
+      name: shopItem!.name,
+      description: shopItem!.description,
+      quantity: item.quantity,
+      status: props.careStatus
+        ? props.careStatus(shopItem!)
+        : ({ ok: false, reason: "這裡不能用" } as CareItemStatus),
+    }));
+});
+
+function handleUseCare(itemId: string) {
+  emit("useCare", itemId);
+  handleClose();
+}
 
 // 方法
 function handleClose() {
@@ -1306,6 +1373,96 @@ watch(
 
     &:disabled {
       opacity: 0.5;
+      cursor: not-allowed;
+    }
+  }
+}
+
+// ===== 道具分頁 =====
+.care-tab {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+
+  .care-tip {
+    margin: 0;
+    font-size: 13px;
+    color: #6b7280;
+  }
+
+  .care-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .care-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px;
+    background: #f9fafb;
+    border-radius: 12px;
+  }
+
+  .care-icon {
+    flex-shrink: 0;
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #fde68a;
+    color: #92400e;
+  }
+
+  .care-info {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .care-name {
+    font-size: 15px;
+    font-weight: 600;
+    color: #1f2937;
+  }
+
+  .care-qty {
+    margin-left: 6px;
+    font-size: 12px;
+    font-weight: 500;
+    color: #9ca3af;
+  }
+
+  .care-desc {
+    margin-top: 2px;
+    font-size: 12px;
+    line-height: 1.5;
+    color: #6b7280;
+  }
+
+  .care-reason {
+    margin-top: 4px;
+    font-size: 12px;
+    color: #f97316;
+  }
+
+  .care-use-btn {
+    flex-shrink: 0;
+    min-width: 52px;
+    padding: 8px 14px;
+    background: #f472b6;
+    border: none;
+    border-radius: 18px;
+    font-size: 14px;
+    font-weight: 600;
+    color: white;
+    cursor: pointer;
+
+    &:disabled {
+      background: #e5e7eb;
+      color: #9ca3af;
       cursor: not-allowed;
     }
   }

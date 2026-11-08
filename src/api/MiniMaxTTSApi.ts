@@ -3,6 +3,9 @@
  * 文檔: https://platform.minimaxi.com/document/T2A%20V2
  */
 
+import type { FishAudioTTSSettings } from './FishAudioTTSApi';
+import type { TTSProvider } from './ttsProvider';
+
 // ── 類型定義 ──────────────────────────────────────────────────
 
 export type MiniMaxPlatform = 'io' | 'cn';
@@ -49,6 +52,15 @@ export interface MiniMaxTTSSettings {
   timberWeights: TimberWeight[];
   /** 是否啟用音色混合 */
   timberWeightsEnabled: boolean;
+  /**
+   * 聊天訊息一回覆就把所有段落的語音都生成好。
+   * 關掉（預設）時只在點播放按鈕時才生成那一段，沒聽的句子不花錢；通話不受影響。
+   */
+  autoGenerate?: boolean;
+  /** 用哪家合成；沒設（舊資料）就是 MiniMax */
+  provider?: TTSProvider;
+  /** Fish Audio 的設定；provider 是 fishaudio 時才會用到 */
+  fishAudio?: FishAudioTTSSettings;
 }
 
 export interface MiniMaxTTSResponse {
@@ -180,6 +192,8 @@ export function createDefaultMiniMaxTTSSettings(): MiniMaxTTSSettings {
     sampleRate: 32000,
     timberWeights: [],
     timberWeightsEnabled: false,
+    autoGenerate: false,
+    provider: 'minimax',
   };
 }
 
@@ -246,6 +260,16 @@ export async function synthesizeSpeech(
     signal?: AbortSignal;
   },
 ): Promise<MiniMaxTTSResponse> {
+  // 服務商是 Fish Audio：音色、語速沿用呼叫端合併好的設定（見 ttsProvider.applyTTSVoiceOverride）
+  if (settings.provider === 'fishaudio') {
+    const { synthesizeFishAudio, createDefaultFishAudioSettings } = await import('./FishAudioTTSApi');
+    const fish = { ...createDefaultFishAudioSettings(), ...settings.fishAudio };
+    return synthesizeFishAudio(text, fish, {
+      speed: settings.speed,
+      emotion: options?.emotion,
+      signal: options?.signal,
+    });
+  }
   if (!settings.apiKey) {
     return { success: false, error: '缺少 MiniMax API Key' };
   }
@@ -380,6 +404,21 @@ export interface MiniMaxVoice {
 export async function fetchVoiceList(
   settings: MiniMaxTTSSettings,
 ): Promise<{ success: boolean; voices: MiniMaxVoice[]; error?: string }> {
+  // Fish Audio：列出自己建立的音色，轉成同樣的格式給群聊成員音色的選單用
+  if (settings.provider === 'fishaudio') {
+    const { fetchFishAudioVoices, createDefaultFishAudioSettings } = await import('./FishAudioTTSApi');
+    const result = await fetchFishAudioVoices({ ...createDefaultFishAudioSettings(), ...settings.fishAudio });
+    return {
+      success: result.success,
+      error: result.error,
+      voices: result.voices.map((v) => ({
+        voice_id: v.id,
+        name: v.title,
+        voice_type: 'cloning' as const,
+        created_time: v.createdAt,
+      })),
+    };
+  }
   if (!settings.apiKey) {
     return { success: false, voices: [], error: '缺少 API Key' };
   }

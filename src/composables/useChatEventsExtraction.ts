@@ -166,7 +166,8 @@ export function useChatEventsExtraction(deps: {
       title?: string;
       description?: string;
       emotion?: string;
-      importance?: number;
+      importance?: number | string;
+      pinned?: boolean | string;
     }>;
 
     try {
@@ -199,10 +200,12 @@ export function useChatEventsExtraction(deps: {
         : pe.description || "";
       if (!content) continue;
 
+      // 常駐（優先級 1）只給 AI 標 pinned 的；其他依重要程度（5 最重要）分 2、3，聊到才送
+      const pinned = pe.pinned === true || pe.pinned === "true";
+      const importance = Number(pe.importance);
       const event = createImportantEvent(content, {
         category: "custom",
-        priority:
-          pe.importance && pe.importance <= 2 ? 1 : pe.importance === 3 ? 2 : 3,
+        priority: pinned ? 1 : importance >= 4 ? 2 : 3,
         source: "ai",
         tags: pe.emotion ? [pe.emotion] : [],
       });

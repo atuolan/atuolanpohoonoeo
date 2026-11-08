@@ -354,6 +354,7 @@ const LIGHT_LOADERS: Array<{ key: string; load: () => Promise<unknown> }> = [
     load: () => db.getAll(DB_STORES.FAVORITE_AUDIO_GROUPS),
   },
   { key: "peekPhoneData", load: () => db.getAll(DB_STORES.PEEK_PHONE_DATA) },
+  { key: "charWallets", load: () => db.getAll(DB_STORES.CHAR_WALLETS) },
   {
     key: "imageGallery",
     load: () => loadRecordsByKey(DB_STORES.IMAGE_CACHE, (id) => !isChatImageRef(id)),

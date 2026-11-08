@@ -1,7 +1,7 @@
 /**
  * 刪除角色時一併刪掉屬於這個角色的資料：
  * 私聊與多人卡的聊天（含訊息、總結、日記、重要事件、好感度狀態…）、
- * 好感度設定、來電與通話紀錄、噗浪貼文。
+ * 好感度設定、角色帳戶、來電與通話紀錄、噗浪貼文。
  *
  * - 普通群聊不刪：群裡還有其他人，群聊本身會略過已刪除的成員
  * - 鎖定的聊天不刪：鎖定就是要防止被刪
@@ -12,6 +12,7 @@ import { deleteChatCascade, loadChatsByCharacter } from "@/storage/chatStorage";
 import { deleteDiaryBook } from "@/services/diaryBook";
 import { deleteGiftDiaryMeta } from "@/services/giftDiary";
 import { deleteGiftMemories } from "@/services/giftMemories";
+import { deleteDateMemories } from "@/services/dateOuting";
 
 /** 角色庫和編輯頁共用的刪除確認文字 */
 export const CHARACTER_DELETE_CONFIRM =
@@ -84,10 +85,12 @@ export async function deleteCharacterRelatedData(
     (r) => r.authorId === characterId,
   );
   await db.delete(DB_STORES.CHARACTER_AFFECTIONS, characterId);
+  await db.delete(DB_STORES.CHAR_WALLETS, characterId);
   await db.delete(DB_STORES.SETTINGS, `lastActiveChatId_${characterId}`);
   await deleteDiaryBook(characterId);
   await deleteGiftMemories(characterId);
   await deleteGiftDiaryMeta(characterId);
+  await deleteDateMemories(characterId);
 
   return {
     deletedChatCount: targetChats.length,

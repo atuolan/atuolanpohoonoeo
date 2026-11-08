@@ -23,6 +23,7 @@
             <template v-if="efficiencyMultiplier > 1"> ×{{ efficiencyMultiplier.toFixed(1) }}</template>
           </div>
         </div>
+        <div v-if="toolsLeftText" class="tools-left">{{ toolsLeftText }}</div>
 
         <div class="sink">
           <div class="sink-inner">
@@ -69,6 +70,7 @@
 <script setup lang="ts">
 import { useGameEconomyStore } from "@/stores/gameEconomy";
 import { computed, ref, watch, onUnmounted } from "vue";
+import { getShopItemById } from "@/data/shopItems";
 
 const props = defineProps<{ visible: boolean; chatId?: string }>();
 const emit = defineEmits<{ close: []; reward: [amount: number] }>();
@@ -92,6 +94,14 @@ const workState = computed(() => gameEconomyStore.getWorkState(GLOBAL_WALLET_ID)
 const dailyLimit = computed(() => gameEconomyStore.getDishWashingConfig().DAILY_LIMIT);
 const canWash = computed(() => gameEconomyStore.canWashDish(GLOBAL_WALLET_ID));
 const efficiencyMultiplier = computed(() => gameEconomyStore.calculateWorkEfficiencyMultiplier(GLOBAL_WALLET_ID));
+/** 洗碗道具剩幾次（每洗一個盤子扣一次） */
+const toolsLeftText = computed(() =>
+    gameEconomyStore
+        .getInventory(GLOBAL_WALLET_ID)
+        .filter((item) => getShopItemById(item.itemId)?.consumableEffect?.type === "work_efficiency")
+        .map((item) => `${item.name}剩 ${gameEconomyStore.getConsumableUsesLeft(GLOBAL_WALLET_ID, item.itemId)} 次`)
+        .join("・"),
+);
 const rewardConfig = computed(() => {
     const config = gameEconomyStore.getDishWashingConfig();
     return { min: config.BASE_REWARD_MIN, max: config.BASE_REWARD_MAX };
@@ -217,6 +227,7 @@ onUnmounted(() => { if (rewardTimeout) clearTimeout(rewardTimeout); });
   .gs-round-btn { @include gs.round-btn; }
   .coin-capsule { height: 36px; padding: 0 12px 0 8px; border-radius: 18px; background: var(--g-surface); display: flex; align-items: center; gap: 6px; border: none; color: var(--g-text); .balance-text { font-family: var(--g-num); font-size: 14px; font-weight: 600; } }
   .header-row { display: flex; justify-content: space-between; align-items: baseline; }
+  .tools-left { margin-top: -6px; font-size: 12px; text-align: right; color: var(--g-text-muted, #8a8f8c); }
   .work-count { font-size: 22px; font-weight: 700; }
   .count-num { font-size: 22px; font-weight: 700; font-family: var(--g-num); }
   .limit-label { font-size: 14px; color: var(--g-text-2); }

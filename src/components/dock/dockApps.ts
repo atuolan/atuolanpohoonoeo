@@ -7,6 +7,7 @@ import {
   Dumbbell,
   Gamepad2,
   HardHat,
+  Heart,
   Library,
   MessageCircle,
   Moon,
@@ -55,6 +56,7 @@ export const DOCK_APP_CATALOG: DockApp[] = [
   { id: "note-board", icon: StickyNote, label: "留言板" },
   { id: "pomodoro", icon: Timer, label: "番茄鐘" },
   { id: "food-log", icon: Utensils, label: "食記" },
+  { id: "date", icon: Heart, label: "約會" },
 ];
 
 // 沒自訂過時的轉盤內容（跟原本寫死的一樣，去掉點了沒反應的錢包）

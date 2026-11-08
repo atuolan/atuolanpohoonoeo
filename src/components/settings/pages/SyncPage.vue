@@ -65,8 +65,18 @@ function shortDeviceId(id: string | null | undefined): string {
 
 function formatPeerSyncError(error: unknown): string {
   if (error && typeof error === "object") {
+    const timeout = error as { peerTimeout?: boolean; peerTimeoutMs?: number };
+    if (timeout.peerTimeout) {
+      const seconds = Math.round((timeout.peerTimeoutMs ?? 0) / 1000);
+      return `對方 ${seconds} 秒沒有回應。請讓兩台都開著小手機、停在前景，網路（或 VPN）穩定後再試`;
+    }
     const peerReason = (error as { peerReason?: string }).peerReason;
     switch (peerReason) {
+      case "responder-busy-applying":
+        return "對方還在寫入上一次收到的資料，等對方顯示「同步完成」再試";
+      case "responder-manifest-failed":
+      case "responder-hash-failed":
+        return "對方在比對資料時發生錯誤";
       case "peer-offline":
         return "目標裝置已離線";
       case "rejected-by-user":

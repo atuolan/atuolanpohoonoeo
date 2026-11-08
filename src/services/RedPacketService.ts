@@ -213,6 +213,16 @@ export function applyClaim(
   return cents;
 }
 
+/** 收回最後一筆領取（發紅包的角色帳戶不夠付時用） */
+export function undoLastClaim(msg: RedPacketMessageLike): void {
+  const state = msg.redpacketState;
+  const last = state?.claims.pop();
+  if (!state || !last) return;
+  state.remainingCents += last.cents;
+  state.remainingCount += 1;
+  state.fullyClaimed = state.remainingCount <= 0 || state.remainingCents <= 0;
+}
+
 /** 在訊息列表中尋找最近一個尚未領完、可被指定者領取的群聊紅包 */
 export function findClaimableRedPacket(
   messages: RedPacketMessageLike[],

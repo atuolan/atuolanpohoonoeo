@@ -176,7 +176,7 @@
           >
             <template v-if="isIdling">
               <span class="btn-main-text">領取收益</span>
-              <span class="btn-sub-text">掛機中 {{ idleDurationText }} · 預計 {{ idleRewards?.fishCount || 0 }} 條</span>
+              <span class="btn-sub-text">掛機中 {{ idleDurationText }} · 預計 {{ idleRewards?.fishCount || 0 }} 條<template v-if="idleRewards?.boostedMinutes"> · 釣魚器加成 {{ idleRewards.boostedMinutes }} 分</template></span>
             </template>
             <template v-else-if="gamePhase === 'idle'">
               <span class="btn-main-text">拋竿</span>
@@ -231,6 +231,9 @@
               <span class="result-weight">{{ caughtFish.weight.toFixed(2) }} kg</span>
             </div>
             <div class="result-price">+{{ caughtFish.finalPrice }}</div>
+          </div>
+          <div v-if="gamePhase === 'caught' && bonusFish" class="bonus-line">
+            魚餌加碼：多釣到一條{{ bonusFish.name }} +{{ bonusFish.finalPrice }}
           </div>
           <div v-else-if="gamePhase === 'trash' && trashResult" class="result-card trash-card">
             <div class="result-trash-icon">
@@ -370,6 +373,8 @@ const GLOBAL_WALLET_ID = "global";
 // 遊戲狀態
 const gamePhase = ref<GamePhase>("idle");
 const caughtFish = ref<CaughtFish | null>(null);
+/** 魚餌加碼多釣到的那條 */
+const bonusFish = ref<CaughtFish | null>(null);
 const trashResult = ref<{ name: string; cost: number } | null>(null);
 const showRodSelector = ref(false);
 const showGuide = ref(false);
@@ -647,6 +652,7 @@ async function reelIn() {
     }
   } else if (result.success && result.fish) {
     caughtFish.value = result.fish;
+    bonusFish.value = result.bonusFish ?? null;
     trashResult.value = null;
     gamePhase.value = "caught";
 
@@ -669,6 +675,7 @@ function resetGame() {
   clearTimers();
   gamePhase.value = "idle";
   caughtFish.value = null;
+  bonusFish.value = null;
   trashResult.value = null;
 }
 
@@ -1317,6 +1324,14 @@ onUnmounted(() => {
 }
 
 // d. 收穫卡
+.bonus-line {
+  margin-top: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: center;
+  color: var(--g-accent, #3b82f6);
+}
+
 .result-card {
   border: 1px solid var(--g-border);
   border-radius: 18px;

@@ -927,10 +927,10 @@ const isDarkBackground = computed(() =>
             <div class="dropdown-toggle-item">
               <div class="toggle-item-info">
                 <AudioLines :size="20" :stroke-width="1.75" />
-                <span>MiniMax 語音合成</span>
+                <span>語音合成</span>
               </div>
               <label class="toggle-switch-mini">
-                <input type="checkbox" aria-label="MiniMax 語音合成" :checked="chatMinimaxTTSEnabled" @change="emit('toggle-minimax-tts')" />
+                <input type="checkbox" aria-label="語音合成" :checked="chatMinimaxTTSEnabled" @change="emit('toggle-minimax-tts')" />
                 <span class="toggle-slider-mini"></span>
               </label>
             </div>

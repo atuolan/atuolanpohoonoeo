@@ -41,6 +41,7 @@ import {
   PLURK_POST_LANGUAGE_MODE,
   RETIRED_PLURK_COMMENT_PROMPT_IDS,
 } from "@/data/defaultPrompts/plurk";
+import { EVENTS_IMPORTANCE_AND_PINNED, LEGACY_EVENTS_IMPORTANCE } from "@/data/defaultPrompts/events";
 import { DEFAULT_F2F_PANEL_LAYOUT } from "@/data/faceToFacePanelLayout";
 import { parseF2FPanelLayout, type F2FPanelLayout } from "@/types/f2fPanel";
 import { clonePlain, reconcileLayout } from "@/utils/f2fPanelEngine";
@@ -188,9 +189,17 @@ const LOCKED_PROMPT_CONTENT_FIXES: Record<string, Array<[string, string]>> = {
   f2fSocialMedia: [["\n基拉祈：这是 {{char}}", "\n涅芙：这是 {{char}}"], PLURK_TRANSLATION_HINT_FIX, PLURK_LANGUAGE_HINT_FIX],
   socialMedia: [PLURK_TRANSLATION_HINT_FIX, PLURK_LANGUAGE_HINT_FIX],
   // 引用回覆只抄原訊息開頭幾個字，由程式找出原訊息（整句照抄費字又容易抄錯）
-  gcGroupXmlFormat: [["<reply-to>被引用的原文</reply-to>回覆內容</msg>", "<reply-to>原訊息開頭幾個字</reply-to>回覆內容</msg>　// reply-to 只照抄原訊息開頭 5～15 個字，不用抄整句"]],
+  gcGroupXmlFormat: [
+    // 轉帳行後面接各成員的帳戶餘額（{{charWallet}}）
+    ["（也可以只寫金額 <pay>520</pay>）\n", "（也可以只寫金額 <pay>520</pay>）{{charWallet}}\n"],
+    ["<reply-to>被引用的原文</reply-to>回覆內容</msg>", "<reply-to>原訊息開頭幾個字</reply-to>回覆內容</msg>　// reply-to 只照抄原訊息開頭 5～15 個字，不用抄整句"]],
   // 噗浪簡化格式：reactions 選填、<image> 寫在內文、可帶限定詞，並說明何時適合發噗
-  onlineModeFeatures: [["【噗浪】放在 <content> 內：\n<plurk>\n  <post>發文內容</post>\n  <image>中文描述｜英文提示詞</image>（可選，有配圖時加）\n  <reactions>❤️:12,👍:8,😊:5</reactions>（必填，1-4個表情，數量1-99正整數，👍❤️😂😮😢😠🎉👏🤔😊）\n</plurk>\n", "【噗浪】想發動態時放在 <content> 內，一次最多一則：\n<plurk>發文內容</plurk>\n完整寫法：<plurk qualifier=\"覺得\" reactions=\"❤️12 😂5\">發文內容<image>配圖描述</image></plurk>\n（qualifier 是噗浪限定詞：說／想／愛／覺得／希望／喜歡；reactions 是 1-4 種表情和數量；<image> 是配圖。三者都可省略）\n適合發噗的時候：心情有起伏、剛發生值得分享的事、有些話想讓 {{user}} 看到卻不想當面說（暗示、炫耀、抱怨、曬日常）。不必每輪都發，也別重複最近發過的內容。\n"], ["<reply-to>引用內容</reply-to>回覆內容", "<reply-to>原訊息開頭幾個字</reply-to>回覆內容（只照抄原訊息開頭 5～15 個字，不用抄整句）"]],
+  onlineModeFeatures: [
+    // 角色主動約出門的標籤說明（{{dateGuide}}）接在忙碌說明後面
+    ["{{charBusyGuide}}\n- 封鎖", "{{charBusyGuide}}\n{{dateGuide}}\n- 封鎖"],
+    // 轉帳行後面接角色帳戶餘額（{{charWallet}}）
+    ["- 轉帳：<pay>金額</pay> 或 <pay>金額:備註</pay>\n", "- 轉帳：<pay>金額</pay> 或 <pay>金額:備註</pay>{{charWallet}}\n"],
+    ["【噗浪】放在 <content> 內：\n<plurk>\n  <post>發文內容</post>\n  <image>中文描述｜英文提示詞</image>（可選，有配圖時加）\n  <reactions>❤️:12,👍:8,😊:5</reactions>（必填，1-4個表情，數量1-99正整數，👍❤️😂😮😢😠🎉👏🤔😊）\n</plurk>\n", "【噗浪】想發動態時放在 <content> 內，一次最多一則：\n<plurk>發文內容</plurk>\n完整寫法：<plurk qualifier=\"覺得\" reactions=\"❤️12 😂5\">發文內容<image>配圖描述</image></plurk>\n（qualifier 是噗浪限定詞：說／想／愛／覺得／希望／喜歡；reactions 是 1-4 種表情和數量；<image> 是配圖。三者都可省略）\n適合發噗的時候：心情有起伏、剛發生值得分享的事、有些話想讓 {{user}} 看到卻不想當面說（暗示、炫耀、抱怨、曬日常）。不必每輪都發，也別重複最近發過的內容。\n"], ["<reply-to>引用內容</reply-to>回覆內容", "<reply-to>原訊息開頭幾個字</reply-to>回覆內容（只照抄原訊息開頭 5～15 個字，不用抄整句）"]],
   f2fFormatRules: [["- 噗浪格式：\n  <plurk>\n    <post>發文內容</post>\n    <image>中文描述｜英文提示詞</image>（可選）\n    <reactions>❤️:12,👍:8,😊:5</reactions>（必填，1-4個，數量1-99，👍❤️😂😮😢😠🎉👏🤔😊）\n  </plurk>\n", "- 噗浪（想發動態時，一次最多一則）：<plurk>發文內容</plurk>\n  完整寫法：<plurk qualifier=\"覺得\" reactions=\"❤️12 😂5\">發文內容<image>配圖描述</image></plurk>，qualifier（噗浪限定詞）、reactions（1-4 種表情和數量）、<image>（配圖）都可省略\n  適合發噗的時候：心情有起伏、剛發生值得分享的事、有些話想讓 {{user}} 看到卻不想當面說。不必每輪都發，也別重複最近發過的內容\n"]],
   plurkPostSystemPrompt: [["輸出格式：\n<plurk>\n  <post>發文內容</post>\n  <image>中文描述｜英文提示詞</image>（有配圖時加，否則省略）\n  <reactions>❤️:12,👍:8</reactions>（必填，1-4個表情，數量1-99，👍❤️😂😮😢😠🎉👏🤔😊）\n</plurk>", "輸出格式：\n<plurk>發文內容</plurk>\n完整寫法：<plurk qualifier=\"覺得\" reactions=\"❤️12 😂5\">發文內容<image>配圖描述</image></plurk>\n（qualifier 是噗浪限定詞：說／想／愛／覺得／希望／喜歡；reactions 是 1-4 種表情和數量；配圖用 <image> 寫在內文裡。三者都可省略）"], ["\n6. 使用繁體中文\n", `\n\n${PLURK_POST_LANGUAGE_MODE}\n`]],
   // 噗浪評論改為批量評論的風格要求（多角色同時留言）；翻譯格式統一成聊天用的「外語<br>中文翻譯」
@@ -203,6 +212,8 @@ const LOCKED_PROMPT_CONTENT_FIXES: Record<string, Array<[string, string]>> = {
   // 只有內容跟舊預設一字不差才會整段換掉，改過的保留
   custom_1780660237892: [[LEGACY_CHAR_LANGUAGE_CONTENT, defaultContent(DEFAULT_PROMPT_DEFINITIONS, "custom_1780660237892")]],
   gc_custom_1792300000851: [[LEGACY_GROUP_CHAR_LANGUAGE_CONTENT, defaultContent(GROUP_CHAT_PROMPT_DEFINITIONS, "gc_custom_1792300000851")]],
+  // 重要事件提取：重要程度講清楚 5 最重要，並讓 AI 標出要常駐的事件
+  eventsSystemPrompt: [[LEGACY_EVENTS_IMPORTANCE, EVENTS_IMPORTANCE_AND_PINNED]],
   batchCommentsSystemPrompt: [
     ["5. 如果角色使用外語，只在外語部分後加括號翻譯", "5. 如果角色使用外語，只在外語部分後面附上中文翻譯，格式是「外語<br>中文翻譯」"],
     [
@@ -1108,6 +1119,7 @@ export const usePromptManagerStore = defineStore("promptManager", () => {
     fixLockedPromptContent(stored.plurkPostPrompts);
     fixLockedPromptContent(stored.plurkCommentPrompts);
     fixLockedPromptContent(stored.batchCommentsPrompts);
+    fixLockedPromptContent(stored.eventsPrompts);
 
     // 噗浪評論：移除舊版逐則回覆的條目，舊預設名稱改成新名稱
     removeRetiredPrompts(stored.plurkCommentPrompts, RETIRED_PLURK_COMMENT_IDS);

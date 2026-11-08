@@ -458,6 +458,12 @@ export interface ChatMessage {
   transferSettledBy?: string;
   /** 角色的退款：退的是哪一則使用者轉帳 */
   refundOfMessageId?: string;
+  /** 使用者轉給角色、角色收下時，記在角色帳戶的哪一筆 */
+  charWalletEntryId?: string;
+  /** 約會卡片（邀請、請求、出發、回憶） */
+  dateCard?: import("@/types/date").DateCardData;
+  /** 使用者轉給角色時，入的是哪個角色的帳戶 */
+  charWalletCharacterId?: string;
 
   // --- 外賣/商城（MVP） ---
   /** 是否為商品分享卡 */
@@ -543,6 +549,8 @@ export interface ChatMessage {
     speed: number;
     text: string;
     clean: string;
+    /** 多人卡面對面：這句是誰說的（點播放時才生成，要存下來挑成員音色） */
+    speaker?: string;
     audioUrl?: string;
   }>;
 
@@ -1256,6 +1264,10 @@ export interface Chat {
     callBilingual?: boolean;
     /** 群聊成員各自的音色：key 是訊息的 senderCharacterId，value 是 voice_id */
     memberVoices?: Record<string, string>;
+    /** Fish Audio 的音色（reference_id）；跟 MiniMax 的 voice_id 不通用，分開存 */
+    fishVoiceId?: string;
+    /** Fish Audio 的群聊成員音色 */
+    fishMemberVoices?: Record<string, string>;
   };
 
   /** 是否為分支聊天（不顯示在主列表，只在角色卡聊天檔案中顯示） */
@@ -1372,7 +1384,8 @@ export interface CharAway {
   lastHangUpAt?: number;    // 忙碌：上次掛電話的時間
   hangUpPeek?: boolean;     // 下次看手機是掛電話後傳訊息
   earlyEndPending?: boolean; // 這一輪擲骰成功：回覆成功後就忙完
-  sneakReason?: "urge" | "peek" | "hangUp"; // 這次為什麼回（面板上的催促／定時看手機／掛電話）
+  sneakReason?: "urge" | "peek" | "hangUp" | "item"; // 這次為什麼回（面板上的催促／定時看手機／掛電話／用了道具）
+  careItemId?: string;      // sneakReason 是 item 時：用了哪個道具
 }
 
 /** 劇情時鐘的狀態：offset 是線上的偏移量，pausedAt 有值代表面對面暫停中 */

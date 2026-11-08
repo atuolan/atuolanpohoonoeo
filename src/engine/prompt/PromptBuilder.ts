@@ -292,6 +292,12 @@ export interface PromptBuilderOptions {
   charBusyGuide?: string;
   /** 噗文分享的標籤說明與最近的噗（{{plurkShareGuide}} 宏）；沒有時是空字串或不傳 */
   plurkShareGuide?: string;
+  /** 角色帳戶餘額（{{charWallet}} 宏，接在轉帳說明後面）；沒有時是空字串或不傳 */
+  charWallet?: string;
+  /** 約會說明（邀請等回覆、約會中），插在聊天紀錄最後一則之前；沒有時不傳 */
+  dateNote?: string;
+  /** 角色主動約出門的標籤說明（{{dateGuide}} 宏）；不能用時是空字串或不傳 */
+  dateGuide?: string;
   /** 角色剛暫離回來那一輪的說明（[剛忙完回來]／[被催回來]），附加在 timeInfo 後面 */
   charAwayReturnNote?: string;
   /** 回送禮物的說明（只在節日、提到禮物、很久沒送時那一輪帶），附加在 timeInfo 後面 */
@@ -684,6 +690,8 @@ export class PromptBuilder {
         charSleepGuide: options.charSleepGuide || "",
         charBusyGuide: options.charBusyGuide || "",
         plurkShareGuide: options.plurkShareGuide || "",
+        charWallet: options.charWallet || "",
+        dateGuide: options.dateGuide || "",
         userMoodNote: options.userMoodNote || "",
         charPlanner: options.charPlanner || "",
         userCalendar: options.userCalendar || "",
@@ -846,6 +854,8 @@ export class PromptBuilder {
         charSleepGuide: options.charSleepGuide || "",
         charBusyGuide: options.charBusyGuide || "",
         plurkShareGuide: options.plurkShareGuide || "",
+        charWallet: options.charWallet || "",
+        dateGuide: options.dateGuide || "",
         userMoodNote: options.userMoodNote || "",
         charPlanner: options.charPlanner || "",
         userCalendar: options.userCalendar || "",
@@ -1517,6 +1527,18 @@ export class PromptBuilder {
       includedMessageCount: 0,
       strippedLastUserTurnCount: 0,
     };
+
+    // 約會說明：插在聊天紀錄最後一則之前，線上和面對面都看得到
+    if (this.options.dateNote) {
+      pendingDepthPrompts.push({
+        role: "system",
+        content: this.options.dateNote,
+        identifier: "dateNote",
+        name: "約會",
+        depth: 1,
+        order: 100,
+      });
+    }
 
     const isChatHistoryEnabled = enabledPrompts.some(
       (e) =>

@@ -16,6 +16,7 @@ const PAGE_BY_LABEL: Record<string, string> = {
   書架: "bookshelf",
   行事曆: "calendar",
   占卜: "fate",
+  約會: "date",
 };
 
 /** 沒對照的標籤直接當頁面 id（handleNavigate 也認中文名稱） */

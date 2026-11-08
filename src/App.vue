@@ -36,6 +36,7 @@ import {
   isPeerMessageType,
   setPeerSyncSocket,
 } from "@/services/peerSyncSocket";
+import { isPongMessage, startSocketHeartbeat, type SocketHeartbeat } from "@/services/syncSocketHeartbeat";
 import { startPeerSyncResponder } from "@/services/PeerSyncSecureResponder";
 import type { PeerMessage } from "@/types/selfHostedSync";
 import {
@@ -205,6 +206,7 @@ let lastSelfHostedForegroundPullAt = 0;
 const SELF_HOSTED_WS_RECONNECT_BASE_MS = 3000;
 const SELF_HOSTED_WS_RECONNECT_MAX_MS = 30000;
 let selfHostedSyncSocket: WebSocket | null = null;
+let selfHostedSyncHeartbeat: SocketHeartbeat | null = null;
 let selfHostedSyncSocketToken: string | null = null;
 let lastRefreshedAccessToken: string | null = null;
 let lastSessionRefreshAt = 0;
@@ -261,8 +263,34 @@ function clearSelfHostedSyncSocketReconnectTimer() {
   }
 }
 
+function stopSelfHostedSyncHeartbeat() {
+  selfHostedSyncHeartbeat?.stop();
+  selfHostedSyncHeartbeat = null;
+}
+
+/** 心跳判定連線已死：不等瀏覽器的 onclose（半死的連線可能很久才觸發），直接丟掉重連 */
+function dropDeadSelfHostedSyncSocket(socket: WebSocket, waitedMs: number) {
+  if (selfHostedSyncSocket !== socket) return;
+  recordSelfHostedSyncDiagnostic("Self-hosted sync WebSocket heartbeat timeout", { waitedMs });
+  console.warn("[App] 同步 WebSocket 沒有回應，重新連線", { waitedMs });
+  stopSelfHostedSyncHeartbeat();
+  socket.onopen = null;
+  socket.onmessage = null;
+  socket.onerror = null;
+  socket.onclose = null;
+  try {
+    socket.close();
+  } catch {
+    // 已經在關了
+  }
+  selfHostedSyncSocket = null;
+  setPeerSyncSocket(null);
+  scheduleSelfHostedSyncSocketReconnect();
+}
+
 function closeSelfHostedSyncSocket() {
   clearSelfHostedSyncSocketReconnectTimer();
+  stopSelfHostedSyncHeartbeat();
   if (selfHostedSyncSocket) {
     selfHostedSyncSocket.onopen = null;
     selfHostedSyncSocket.onmessage = null;
@@ -535,6 +563,11 @@ async function ensureSelfHostedSyncSocketConnected() {
       clearSelfHostedSyncSocketReconnectTimer();
       setPeerSyncSocket(socket);
       startPeerSyncResponder();
+      stopSelfHostedSyncHeartbeat();
+      selfHostedSyncHeartbeat = startSocketHeartbeat({
+        send: (text) => socket.send(text),
+        onDead: ({ waitedMs }) => dropDeadSelfHostedSyncSocket(socket, waitedMs),
+      });
       console.log("[App] Peer sync WebSocket connected, responder started");
       recordSelfHostedSyncDiagnostic("Self-hosted sync WebSocket opened", {
         reconnectAttempt: selfHostedSyncSocketReconnectAttempt,
@@ -545,6 +578,9 @@ async function ensureSelfHostedSyncSocketConnected() {
     };
 
     socket.onmessage = (event) => {
+      const isPong = isPongMessage(String(event.data));
+      if (selfHostedSyncSocket === socket) selfHostedSyncHeartbeat?.markAlive(isPong);
+      if (isPong) return;
       try {
         recordSelfHostedSyncDiagnostic("Self-hosted sync WebSocket message received", {
           rawLength: String(event.data).length,
@@ -691,6 +727,9 @@ async function ensureSelfHostedSyncSocketConnected() {
       }
       if (selfHostedSyncSocket === socket) {
         selfHostedSyncSocket = null;
+        stopSelfHostedSyncHeartbeat();
+        // 馬上告訴 peer sync：還在等回應的請求直接失敗重試，不用乾等到逾時
+        setPeerSyncSocket(null);
         scheduleSelfHostedSyncSocketReconnect();
       }
     };
@@ -930,6 +969,9 @@ const showFoodLogManager = ref(false);
 // 電話聯絡人選擇彈窗
 const showPhoneContactPicker = ref(false);
 const startPhoneCallFlag = ref(false);
+// 主畫面「約會」：選角色 → 打開聊天並跳出選地點
+const showDateContactPicker = ref(false);
+const openDatePickerFlag = ref(false);
 const pendingIncomingCallReason = ref("");
 
 // 多人卡模式設定彈窗
@@ -1601,6 +1643,14 @@ async function loadAppData() {
     }
   }
 
+  // 舊訊息裡內嵌的 base64 語音搬到 audio-blobs（一筆一筆、分批做），之後讀聊天不會把語音全讀進記憶體。
+  // 搬完一次就不再掃；新寫進去的語音都會在 chatMessageStore 轉成引用。
+  setTimeout(() => {
+    import("@/db/messageAudio")
+      .then(({ migrateInlineMessageAudio }) => migrateInlineMessageAudio())
+      .catch((err) => console.warn("[App] 搬移舊語音失敗:", err));
+  }, 5000);
+
   // 載入全局遊戲經濟狀態（錢包、裝飾品等）
   const gameEconomyStore = useGameEconomyStore();
   await gameEconomyStore.loadState("global");
@@ -1907,6 +1957,9 @@ function handleNavigate(page: string) {
   } else if (page === "phone") {
     // 電話：打開聯絡人選擇
     showPhoneContactPicker.value = true;
+  } else if (page === "date" || page === "約會") {
+    // 約會：選角色後打開聊天的選地點
+    showDateContactPicker.value = true;
   } else if (
     page === "peek-phone" ||
     page === "偷窺" ||
@@ -2254,6 +2307,26 @@ async function startPhoneCall(characterId: string) {
     navigationHistory.value.push(currentPage.value);
     navigateToPage("chat");
   }
+}
+
+// 從主畫面「約會」選了角色：打開他最近的私聊，跳出選地點
+async function startDateFromHome(characterId: string) {
+  showDateContactPicker.value = false;
+  const character = charactersStore.characters.find((c) => c.id === characterId);
+  if (!character) return;
+  chatCharacterName.value = character.nickname || character.data?.name || "角色";
+  chatCharacterAvatar.value = character.avatar || "";
+  currentChatCharacterId.value = characterId;
+  try {
+    const preferredChat = await resolvePreferredDirectChat(characterId);
+    currentChatId.value = preferredChat?.id || null;
+  } catch (e) {
+    console.warn("[App] 查找現有聊天失敗:", e);
+    currentChatId.value = null;
+  }
+  openDatePickerFlag.value = true;
+  navigationHistory.value.push(currentPage.value);
+  navigateToPage("chat");
 }
 
 // ===== 通話恢復處理 =====
@@ -3182,6 +3255,8 @@ useSwipeBack(handleGlobalSwipeBack, swipeBackEnabled);
       :pending-appearance="pendingChatAppearance"
       :pending-message="pendingChatMessage"
       :start-phone-call="startPhoneCallFlag"
+      :open-date-picker="openDatePickerFlag"
+      @date-picker-opened="openDatePickerFlag = false"
       :incoming-call-reason="pendingIncomingCallReason"
       @appearance-applied="pendingChatAppearance = undefined"
       @pending-message-consumed="pendingChatMessage = ''"
@@ -3422,6 +3497,12 @@ useSwipeBack(handleGlobalSwipeBack, swipeBackEnabled);
       v-if="showPhoneContactPicker"
       @close="showPhoneContactPicker = false"
       @call="startPhoneCall"
+    />
+    <PhoneContactPickerModal
+      v-if="showDateContactPicker"
+      purpose="date"
+      @close="showDateContactPicker = false"
+      @call="startDateFromHome"
     />
 
     <!-- 番茄鐘完成證書 -->

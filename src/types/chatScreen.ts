@@ -108,6 +108,9 @@ export interface ChatScreenMessage {
   transferStatus?: "sent" | "pending" | "received" | "refunded";
   transferSettledBy?: string;
   refundOfMessageId?: string;
+  charWalletEntryId?: string;
+  charWalletCharacterId?: string;
+  dateCard?: import("@/types/date").DateCardData;
   isWaimaiShare?: boolean;
   isWaimaiPaymentRequest?: boolean;
   isWaimaiPaymentConfirm?: boolean;
@@ -213,6 +216,8 @@ export interface ChatScreenMessage {
     speed: number;
     text: string;
     clean: string;
+    /** 多人卡面對面：這句是誰說的（點播放時才生成，要存下來挑成員音色） */
+    speaker?: string;
     audioUrl?: string;
   }>;
   isUserRecalled?: boolean;
@@ -298,5 +303,7 @@ export interface ChatScreenProps {
   pendingAppearance?: ChatAppearance;
   pendingMessage?: string | PendingInjectedMessage;
   startPhoneCall?: boolean;
+  /** 從主畫面「約會」進來：打開選地點 */
+  openDatePicker?: boolean;
   incomingCallReason?: string;
 }

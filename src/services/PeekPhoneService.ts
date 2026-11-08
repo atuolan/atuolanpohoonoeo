@@ -414,6 +414,8 @@ export interface PeekSources {
   firstChatDate?: string;
   /** 多人卡成員的手機：群組名和其他成員 */
   group?: { groupName: string; otherMembers: string[] };
+  /** 角色帳戶（多人卡成員沒有） */
+  wallet?: { balance: number; monthlyIncome: number; incomeNote?: string };
 }
 
 /**
@@ -444,6 +446,7 @@ export async function buildPromptContext(
     realPhotosText: sources.realPhotosText,
     firstChatDate: sources.firstChatDate,
     group: sources.group,
+    wallet: sources.wallet,
   };
 }
 

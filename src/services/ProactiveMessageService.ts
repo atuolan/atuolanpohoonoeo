@@ -28,6 +28,9 @@ import type { GroupMember, MultiCharMember } from "@/types/chat";
 import type { StoredCharacter } from "@/types/character";
 import type { Lorebook } from "@/types/worldinfo";
 import { resolveSummaryReadCount, selectSummariesForPrompt } from "@/utils/summarySelection";
+import { buildEventScanText, selectImportantEventsForPrompt } from "@/utils/importantEventSelection";
+import type { ImportantEventsLog } from "@/types/importantEvents";
+import { buildCharWalletPromptNote, storyNowForChat } from "@/services/charWallet";
 import {
   applyPromptRegexToHistory,
   applyWorldInfoRegexToLorebooks,
@@ -1244,26 +1247,22 @@ export class ProactiveMessageService {
         priority?: number;
       }> = [];
       try {
-        const eventsLog = await db.get<{
-          events: Array<{
-            id: string;
-            content: string;
-            category?: string;
-            priority?: number;
-          }>;
-          settings: { enabled: boolean; maxEvents?: number };
-        }>(DB_STORES.IMPORTANT_EVENTS, chat.id);
+        const eventsLog = await db.get<ImportantEventsLog>(
+          DB_STORES.IMPORTANT_EVENTS,
+          chat.id,
+        );
 
         if (
           eventsLog &&
           eventsLog.settings?.enabled &&
           eventsLog.events?.length > 0
         ) {
-          const maxEvents = eventsLog.settings?.maxEvents ?? 50;
-          eventsToSend = eventsLog.events
-            .slice()
-            .sort((a, b) => (a.priority || 3) - (b.priority || 3))
-            .slice(0, maxEvents);
+          // 常駐的每次都帶；其他看最近聊到什麼
+          eventsToSend = selectImportantEventsForPrompt(eventsLog.events, {
+            mode: eventsLog.settings.injectMode,
+            limit: eventsLog.settings.maxEvents ?? 50,
+            scanText: buildEventScanText(messagesToUse),
+          });
         }
         console.log(
           `[ProactiveMessage] Important events: sending=${eventsToSend.length}`,
@@ -1389,6 +1388,11 @@ export class ProactiveMessageService {
         userMoodNote: noteBoardContext.moodNote,
         charPlanner: charPlannerText,
         userCalendar: userCalendarText,
+        // 角色帳戶餘額（{{charWallet}}，接在轉帳說明後面）
+        charWallet: await buildCharWalletPromptNote(
+          [{ characterId: character.id, name: character.data?.name || character.nickname || "角色" }],
+          storyNowForChat(chat),
+        ),
         // 噗文分享：可以留言的噗＋（有開設定時）最近的噗；面對面模式不帶
         plurkShareGuide: chat.faceToFaceMode
           ? ""

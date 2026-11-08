@@ -26,6 +26,12 @@ import { loadChatById, refreshChatDerivedMetadata } from "@/storage/chatStorage"
 import { appendMessages } from "@/storage/chatMessageStorage";
 import { convertTTSContentToSimplified } from "@/utils/ttsTextSelector";
 import {
+  applyTTSVoiceOverride,
+  getOverrideVoice,
+  getTTSProviderName,
+  isTTSConfigured,
+} from "@/api/ttsProvider";
+import {
   formatCallLineForRecord,
   normalizeCallLine,
   parsePhoneCallOutput,
@@ -122,6 +128,8 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
   /** 聊天專屬 MiniMax 音色覆蓋（不設則用全域設定） */
   const ttsOverride = ref<{
     voiceId?: string;
+    /** Fish Audio 的音色（reference_id） */
+    fishVoiceId?: string;
     speed?: number;
     pitch?: number;
     emotion?: string;
@@ -317,7 +325,7 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
       const { useSettingsStore } = await import("@/stores");
       const settingsStore = useSettingsStore();
       const enabled =
-        !!(chat as any).minimaxTTSEnabled && !!settingsStore.minimaxTTS?.apiKey;
+        !!(chat as any).minimaxTTSEnabled && isTTSConfigured(settingsStore.minimaxTTS);
       ttsAvailable.value = enabled;
       ttsOverride.value = (chat as any).minimaxTTSOverride
         ? { ...(chat as any).minimaxTTSOverride }
@@ -332,14 +340,17 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
   /** 取得合併後的 MiniMax 設定（全域 + 聊天覆蓋） */
   function getMergedTTSSettings(settingsStore: any) {
     const override = ttsOverride.value;
-    return {
-      ...settingsStore.minimaxTTS,
-      // 聊天自己指定的音色優先於全域的音色混合
-      ...(override.voiceId && { voiceId: override.voiceId, timberWeightsEnabled: false }),
-      ...(override.pitch !== undefined && { pitch: override.pitch }),
-      ...(override.speed !== undefined && { speed: override.speed }),
-      ...(override.languageBoost !== undefined && { languageBoost: override.languageBoost }),
-    };
+    const global = settingsStore.minimaxTTS;
+    // 聊天自己指定的音色優先於全域的音色混合
+    return applyTTSVoiceOverride(
+      {
+        ...global,
+        ...(override.pitch !== undefined && { pitch: override.pitch }),
+        ...(override.speed !== undefined && { speed: override.speed }),
+        ...(override.languageBoost !== undefined && { languageBoost: override.languageBoost }),
+      },
+      getOverrideVoice(global, override),
+    );
   }
 
   /**
@@ -438,8 +449,8 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
     try {
       const { useSettingsStore } = await import("@/stores");
       const settingsStore = useSettingsStore();
-      if (!settingsStore.minimaxTTS?.apiKey) {
-        ttsError.value = "尚未設定 MiniMax API Key";
+      if (!isTTSConfigured(settingsStore.minimaxTTS)) {
+        ttsError.value = `尚未設定 ${getTTSProviderName(settingsStore.minimaxTTS)} API Key`;
         return null;
       }
       const { synthesizeSpeech, normalizeMiniMaxEmotion } = await import("@/api/MiniMaxTTSApi");
@@ -467,9 +478,10 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
       ttsError.value = null;
       // MiniMax 回傳的是簽名 URL（約 24h 後過期），立即下載轉 base64 保存
       let persistedUrl = result.audioUrl;
+      // Fish Audio 回傳的已經是 data URL，不用再下載
       try {
-        const resp = await fetch(result.audioUrl);
-        if (resp.ok) {
+        const resp = persistedUrl.startsWith("data:") ? null : await fetch(result.audioUrl);
+        if (resp?.ok) {
           const blob = await resp.blob();
           persistedUrl = await new Promise<string>((resolve, reject) => {
             const reader = new FileReader();

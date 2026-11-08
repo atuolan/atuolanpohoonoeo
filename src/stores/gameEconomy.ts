@@ -16,6 +16,7 @@ import {
 import { type ChatSkinSlot } from "@/data/chatSkins";
 import {
     FRAME_ITEMS,
+    consumableUnitUses,
     getShopItemById,
     type ShopCategory,
     type ShopItem,
@@ -135,6 +136,8 @@ export interface FishingResult {
   remainingDurability?: number;
   /** 魚竿是否損壞 */
   rodBroken?: boolean;
+  /** 魚餌加碼多釣到的一條 */
+  bonusFish?: CaughtFish;
 }
 
 /** 賣魚結果類型 */
@@ -169,6 +172,8 @@ export interface IdleRewardsResult {
   rodWillBreak: boolean;
   /** 剩餘耐久度 */
   remainingDurability: number;
+  /** 有自動釣魚器加成的分鐘數 */
+  boostedMinutes?: number;
 }
 
 /** 領取掛機收益結果類型 */
@@ -767,6 +772,59 @@ export const useGameEconomyStore = defineStore("gameEconomy", () => {
     return multiplier;
   }
 
+  /** 背包裡某種效果的消耗品（有次數的） */
+  function findConsumables(
+    chatId: string,
+    type: "work_efficiency" | "fishing_efficiency",
+    usageType: "count" | "duration",
+  ): { item: InventoryItem; shopItem: ShopItem; unit: number }[] {
+    const result: { item: InventoryItem; shopItem: ShopItem; unit: number }[] = [];
+    for (const item of getState(chatId).inventory) {
+      if (item.type !== "consumable" || item.quantity <= 0) continue;
+      const shopItem = getShopItemById(item.itemId);
+      const effect = shopItem?.consumableEffect;
+      if (!shopItem || effect?.type !== type || effect.usageType !== usageType) continue;
+      const unit = consumableUnitUses(shopItem);
+      if (unit && unit > 0) result.push({ item, shopItem, unit });
+    }
+    return result;
+  }
+
+  /** 這個消耗品總共還剩幾次（時間制是分鐘）：開封那份剩下的＋沒開封的 */
+  function getConsumableUsesLeft(chatId: string, itemId: string): number {
+    const item = getState(chatId).inventory.find((i) => i.itemId === itemId);
+    const shopItem = getShopItemById(itemId);
+    const unit = shopItem ? consumableUnitUses(shopItem) : null;
+    if (!item || !unit || item.quantity <= 0) return 0;
+    return (item.quantity - 1) * unit + (item.usesLeft ?? unit);
+  }
+
+  /** 扣掉消耗品的次數，一份用完就開下一份，全部用完從背包移除 */
+  function spendConsumableUses(
+    chatId: string,
+    item: InventoryItem,
+    unit: number,
+    amount: number,
+  ): void {
+    const state = getState(chatId);
+    let remaining = Math.max(0, Math.floor(amount));
+    while (remaining > 0 && item.quantity > 0) {
+      const left = item.usesLeft ?? unit;
+      const take = Math.min(left, remaining);
+      remaining -= take;
+      if (left - take <= 0) {
+        item.quantity -= 1;
+        delete item.usesLeft;
+      } else {
+        item.usesLeft = left - take;
+      }
+    }
+    if (item.quantity <= 0) {
+      const index = state.inventory.indexOf(item);
+      if (index !== -1) state.inventory.splice(index, 1);
+    }
+  }
+
   /**
    * 生成刷盤子基礎獎勵（10-25 金幣）
    * @returns 基礎獎勵金額
@@ -809,6 +867,11 @@ export const useGameEconomyStore = defineStore("gameEconomy", () => {
 
     // 計算最終獎勵（基礎獎勵 * 效率乘數，向下取整）
     const finalReward = Math.floor(baseReward * efficiencyMultiplier);
+
+    // 有加成的道具各用掉一次
+    for (const { item, unit } of findConsumables(chatId, "work_efficiency", "count")) {
+      spendConsumableUses(chatId, item, unit, 1);
+    }
 
     // 更新狀態
     state.workState.dishesWashedToday += 1;
@@ -954,6 +1017,7 @@ export const useGameEconomyStore = defineStore("gameEconomy", () => {
         return purchaseRod(chatId, item, quantity);
       case "gift":
       case "consumable":
+      case "care":
         return purchaseInventoryItem(chatId, item);
       default:
         return { success: false, error: "invalid_item" };
@@ -1473,12 +1537,28 @@ export const useGameEconomyStore = defineStore("gameEconomy", () => {
     state.fishInventory.push(fish);
     state.totalFishCaught += 1;
 
+    // 魚餌：用掉一次，有機會多釣一條（不扣耐久）
+    let bonusFish: CaughtFish | undefined;
+    const bait = findConsumables(chatId, "fishing_efficiency", "count")[0];
+    if (bait) {
+      spendConsumableUses(chatId, bait.item, bait.unit, 1);
+      const chance = (bait.shopItem.consumableEffect?.multiplier ?? 1) - 1;
+      if (Math.random() < chance) {
+        bonusFish = generateFish(rod);
+        if (bonusFish) {
+          state.fishInventory.push(bonusFish);
+          state.totalFishCaught += 1;
+        }
+      }
+    }
+
     _scheduleAutoSave(chatId);
     return {
       success: true,
       fish,
       remainingDurability: rod.durability,
       rodBroken,
+      ...(bonusFish ? { bonusFish } : {}),
     };
   }
 
@@ -1659,22 +1739,6 @@ export const useGameEconomyStore = defineStore("gameEconomy", () => {
     // 計算掛機分鐘數
     const idleMinutes = Math.floor(effectiveDuration / 60000);
 
-    // 計算可釣到的魚數量（每分鐘 6-20 條隨機，乘以效率係數）
-    // 使用固定種子來確保預覽和實際領取一致
-    const seed = session.startTime;
-    let fishCount = 0;
-    for (let i = 0; i < idleMinutes; i++) {
-      // 使用簡單的偽隨機，基於種子和分鐘數
-      const minuteSeed = (seed + i * 12345) % 2147483647;
-      const random = (minuteSeed % 1000) / 1000;
-      const fishThisMinute = Math.floor(
-        IDLE_CONFIG.FISH_PER_MINUTE_MIN +
-          random *
-            (IDLE_CONFIG.FISH_PER_MINUTE_MAX - IDLE_CONFIG.FISH_PER_MINUTE_MIN),
-      );
-      fishCount += Math.floor(fishThisMinute * session.efficiency);
-    }
-
     // 取得魚竿資訊
     const rod = state.fishingRods.find((r) => r.id === session.rodId);
     if (!rod) {
@@ -1688,6 +1752,32 @@ export const useGameEconomyStore = defineStore("gameEconomy", () => {
       };
     }
 
+    // 自動釣魚器：還剩幾分鐘的加成
+    const autoFish = findConsumables(chatId, "fishing_efficiency", "duration")[0];
+    const boostLeft = autoFish ? getConsumableUsesLeft(chatId, autoFish.item.itemId) : 0;
+    const boostMultiplier = autoFish?.shopItem.consumableEffect?.multiplier ?? 1;
+
+    // 每分鐘 0-2 條隨機，乘以效率係數；小數累加起來最後才取整，效率 1.x 的魚竿才有差
+    // 使用固定種子來確保預覽和實際領取一致；魚竿壞了就停，之後的時間不算加成
+    const seed = session.startTime;
+    let total = 0;
+    let boostedMinutes = 0;
+    for (let i = 0; i < idleMinutes; i++) {
+      if (Math.floor(total) >= rod.durability) break;
+      // 使用簡單的偽隨機，基於種子和分鐘數
+      const minuteSeed = (seed + i * 12345) % 2147483647;
+      const random = (minuteSeed % 1000) / 1000;
+      const fishThisMinute = Math.floor(
+        IDLE_CONFIG.FISH_PER_MINUTE_MIN +
+          random *
+            (IDLE_CONFIG.FISH_PER_MINUTE_MAX - IDLE_CONFIG.FISH_PER_MINUTE_MIN),
+      );
+      const boosted = boostedMinutes < boostLeft;
+      if (boosted) boostedMinutes += 1;
+      total += fishThisMinute * session.efficiency * (boosted ? boostMultiplier : 1);
+    }
+    const fishCount = Math.floor(total);
+
     // 計算魚竿是否會損壞（受耐久度限制）
     const actualFishCount = Math.min(fishCount, rod.durability);
     const remainingDurability = rod.durability - actualFishCount;
@@ -1700,6 +1790,7 @@ export const useGameEconomyStore = defineStore("gameEconomy", () => {
       fishCount: actualFishCount,
       rodWillBreak,
       remainingDurability: Math.max(0, remainingDurability),
+      boostedMinutes,
     };
   }
 
@@ -1732,6 +1823,12 @@ export const useGameEconomyStore = defineStore("gameEconomy", () => {
 
     // 記錄實際釣到的魚數量
     const actualFishCount = rewards.fishCount;
+
+    // 自動釣魚器：扣掉這次用到的加成時間
+    const autoFish = findConsumables(chatId, "fishing_efficiency", "duration")[0];
+    if (autoFish && rewards.boostedMinutes) {
+      spendConsumableUses(chatId, autoFish.item, autoFish.unit, rewards.boostedMinutes);
+    }
 
     // 生成魚（含垃圾判定）
     const caughtFish: CaughtFish[] = [];
@@ -2067,6 +2164,20 @@ export const useGameEconomyStore = defineStore("gameEconomy", () => {
    * @returns 送禮結果
    * @requirements 6.2
    */
+  /** 用掉背包裡的一個道具（照顧他的道具用）；沒有就回 false */
+  function consumeInventoryItem(chatId: string, itemId: string): boolean {
+    const state = getState(chatId);
+    const index = state.inventory.findIndex(
+      (item) => item.itemId === itemId && item.quantity > 0,
+    );
+    if (index === -1) return false;
+    const inventoryItem = state.inventory[index];
+    inventoryItem.quantity -= 1;
+    if (inventoryItem.quantity <= 0) state.inventory.splice(index, 1);
+    _scheduleAutoSave(chatId);
+    return true;
+  }
+
   function sendGiftByItemId(chatId: string, itemId: string): SendGiftResult {
     const state = getState(chatId);
 
@@ -2182,6 +2293,7 @@ export const useGameEconomyStore = defineStore("gameEconomy", () => {
     canWashDish,
     getDishWashingConfig,
     calculateWorkEfficiencyMultiplier,
+    getConsumableUsesLeft,
 
     // 商城購買
     purchaseItem,
@@ -2232,6 +2344,7 @@ export const useGameEconomyStore = defineStore("gameEconomy", () => {
     // 禮物和轉帳
     sendGift,
     sendGiftByItemId,
+    consumeInventoryItem,
     getGiftHistory,
     getRecentGifts,
     transfer,

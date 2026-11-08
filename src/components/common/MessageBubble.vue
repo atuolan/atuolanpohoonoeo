@@ -58,6 +58,11 @@ import {
   isAudioBlobRef,
   isChatImageRef,
 } from "@/db/operations";
+import {
+  peekPlayableAudioUrl,
+  prefetchPlayableAudioUrls,
+  resolvePlayableAudioUrl,
+} from "@/db/messageAudio";
 import { formatTime } from "@/services/AudioRecorder";
 import { getRegexedString, regex_placement } from "@/services/RegexEngine";
 import { filterChatDisabledScripts } from "@/services/promptRegex";
@@ -517,8 +522,15 @@ interface MessageBubbleProps {
     speed: number;
     text: string;
     clean: string;
+    /** 多人卡面對面：這句是誰說的（點播放時才生成，要存下來挑成員音色） */
+    speaker?: string;
     audioUrl?: string;
   }>;
+  /**
+   * 點了還沒生成的語音段落時呼叫：生成那一段並回傳音頻網址（失敗回 undefined）。
+   * 沒給就只能播已經生成好的段落。
+   */
+  requestTtsSegment?: (messageId: string, index: number) => Promise<string | undefined>;
   // 顯示層宏替換所需名稱
   userName?: string;
   characterName?: string;
@@ -2927,7 +2939,7 @@ function onBubbleTextClick(e: MouseEvent) {
   e.stopPropagation();
   const idx = parseInt((target as HTMLElement).dataset.ttsIdx ?? "-1", 10);
   if (idx >= 0) {
-    playTTSSegment(e, idx);
+    void playTTSSegment(e, idx, target as HTMLElement);
   }
 }
 
@@ -2940,7 +2952,7 @@ const hasAudioContent = computed(() => {
   return !!(
     props.audioBlobId || // 用戶錄音
     props.ttsAudioUrl || // TTS 語音（舊版）
-    props.ttsSegments?.length // TTS 語音（新版分段）
+    props.ttsSegments?.some((s) => s.audioUrl) // TTS 語音（新版分段，點了才生成，所以要真的有音頻）
   );
 });
 
@@ -3230,8 +3242,50 @@ const hasTTSLegacy = computed(() => {
   return !props.ttsSegments?.length && !!props.ttsAudioUrl;
 });
 
+/** 每次點播放就加一；等語音生成回來時若已經不是最新的點擊（點了別段或按停止），就不播 */
+let ttsRequestSeq = 0;
+
+/**
+ * 很短的無聲 WAV：點擊當下先播它，iOS 才允許等語音生成完後由同一個播放器出聲。
+ * 一定要用高取樣率：Safari 會讓播放器沿用第一次播放的取樣率，
+ * 以前用 8000 Hz、8 位元的檔案，後面的語音就被壓成電話音質，聽起來很糊。
+ */
+let silentWavUrl: string | null = null;
+function getSilentWav(): string {
+  if (silentWavUrl) return silentWavUrl;
+  const sampleRate = 48000;
+  const samples = 2400; // 0.05 秒
+  const dataSize = samples * 2; // 16 位元單聲道
+  const view = new DataView(new ArrayBuffer(44 + dataSize));
+  const ascii = (offset: number, text: string) => {
+    for (let i = 0; i < text.length; i++) view.setUint8(offset + i, text.charCodeAt(i));
+  };
+  ascii(0, "RIFF");
+  view.setUint32(4, 36 + dataSize, true);
+  ascii(8, "WAVE");
+  ascii(12, "fmt ");
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true); // PCM
+  view.setUint16(22, 1, true); // 單聲道
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * 2, true);
+  view.setUint16(32, 2, true);
+  view.setUint16(34, 16, true);
+  ascii(36, "data");
+  view.setUint32(40, dataSize, true);
+  // 16 位元 PCM 的無聲就是 0，ArrayBuffer 本來就是 0
+  let binary = "";
+  const bytes = new Uint8Array(view.buffer);
+  for (let i = 0; i < bytes.length; i += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  }
+  silentWavUrl = `data:audio/wav;base64,${btoa(binary)}`;
+  return silentWavUrl;
+}
+
 /** 停止當前播放 */
 function stopTTS() {
+  ttsRequestSeq++;
   if (ttsAudio.value) {
     ttsAudio.value.pause();
     ttsAudio.value = null;
@@ -3240,28 +3294,90 @@ function stopTTS() {
   ttsPlayingIndex.value = -1;
 }
 
-/** 播放單段 TTS */
-function playTTSSegment(e: Event, index: number) {
-  e.stopPropagation();
-  const seg = props.ttsSegments?.[index];
-  if (!seg?.audioUrl) return;
-
-  // 如果正在播放同一段，暫停
-  if (isTTSPlaying.value && ttsPlayingIndex.value === index) {
-    stopTTS();
-    return;
-  }
-
-  stopTTS();
-  const audio = new Audio(seg.audioUrl);
+/** 把播放器設成目前在播的這段（還不呼叫 play） */
+function attachTTSAudio(audio: HTMLAudioElement, index: number) {
   audio.addEventListener("ended", () => {
+    if (ttsAudio.value !== audio) return;
     isTTSPlaying.value = false;
     ttsPlayingIndex.value = -1;
   });
   ttsAudio.value = audio;
   ttsPlayingIndex.value = index;
   isTTSPlaying.value = true;
-  audio.play();
+}
+
+function startTTSAudio(audio: HTMLAudioElement, index: number) {
+  attachTTSAudio(audio, index);
+  audio.play().catch((err) => {
+    console.warn("[TTS] 播放失敗:", err);
+    if (ttsAudio.value !== audio) return;
+    isTTSPlaying.value = false;
+    ttsPlayingIndex.value = -1;
+  });
+}
+
+/** 播放單段 TTS；這段還沒生成的話先生成（點了才花錢） */
+async function playTTSSegment(e: Event, index: number, button?: HTMLElement) {
+  e.stopPropagation();
+  const seg = props.ttsSegments?.[index];
+  if (!seg) return;
+
+  // 如果正在播放（或正在生成）同一段，停止
+  if (ttsPlayingIndex.value === index && (isTTSPlaying.value || button?.classList.contains("tts-inline-btn--loading"))) {
+    stopTTS();
+    button?.classList.remove("tts-inline-btn--loading");
+    return;
+  }
+
+  stopTTS();
+  // 語音存在 audio-blobs，訊息裡是引用；讀過的話點擊當下就能播
+  const ready = peekPlayableAudioUrl(seg.audioUrl);
+  if (ready) {
+    startTTSAudio(new Audio(ready), index);
+    return;
+  }
+  if (!seg.audioUrl && !props.requestTtsSegment) return;
+
+  // 引用還沒讀過、或這段還沒生成：先用無聲檔解鎖播放器（iOS），等讀完或生成完再播
+  const seq = ttsRequestSeq;
+  const audio = new Audio(getSilentWav());
+  audio.play().catch(() => {});
+  ttsPlayingIndex.value = index;
+  button?.classList.add("tts-inline-btn--loading");
+  let url: string | null | undefined;
+  try {
+    url = seg.audioUrl ? await resolvePlayableAudioUrl(seg.audioUrl) : undefined;
+    // 還沒生成，或音檔不在這台裝置上（從別台同步過來）：生成這一段
+    if (!url && props.requestTtsSegment && seq === ttsRequestSeq) {
+      const generated = await props.requestTtsSegment(props.id, index);
+      url = generated ? await resolvePlayableAudioUrl(generated) : undefined;
+    }
+  } finally {
+    // 生成成功時段落會帶 audioUrl、按鈕整個重畫；失敗或被取消時要自己拿掉轉圈
+    button?.classList.remove("tts-inline-btn--loading");
+  }
+  if (seq !== ttsRequestSeq) return;
+  if (!url) {
+    ttsPlayingIndex.value = -1;
+    return;
+  }
+  audio.pause();
+  // 先用全新的播放器播，音質最乾淨；瀏覽器說不能自動播放（iOS）才改用點擊時解鎖的那個
+  const fresh = new Audio(url);
+  try {
+    await fresh.play();
+  } catch {
+    if (seq !== ttsRequestSeq) return;
+    audio.src = url;
+    startTTSAudio(audio, index);
+    return;
+  }
+  // 播放開始前使用者可能已經按了停止或點了別段
+  if (seq !== ttsRequestSeq) {
+    fresh.pause();
+    return;
+  }
+  attachTTSAudio(fresh, index);
 }
 
 /** 全部播放（逐段串接） */
@@ -3286,8 +3402,11 @@ async function playAllTTS(e: Event) {
     if (!isTTSPlaying.value) break; // 被手動停止
 
     ttsPlayingIndex.value = i;
+    const url = peekPlayableAudioUrl(seg.audioUrl) ?? (await resolvePlayableAudioUrl(seg.audioUrl));
+    if (!url) continue;
+    if (!isTTSPlaying.value) break;
     await new Promise<void>((resolve) => {
-      const audio = new Audio(seg.audioUrl);
+      const audio = new Audio(url);
       audio.addEventListener("ended", () => resolve());
       audio.addEventListener("error", () => resolve());
       ttsAudio.value = audio;
@@ -3299,7 +3418,7 @@ async function playAllTTS(e: Event) {
 }
 
 /** 向下相容：播放舊版單段 */
-function toggleTTSLegacy(e: Event) {
+async function toggleTTSLegacy(e: Event) {
   e.stopPropagation();
   if (!props.ttsAudioUrl) return;
 
@@ -3313,7 +3432,10 @@ function toggleTTSLegacy(e: Event) {
     return;
   }
 
-  const audio = new Audio(props.ttsAudioUrl);
+  const url =
+    peekPlayableAudioUrl(props.ttsAudioUrl) ?? (await resolvePlayableAudioUrl(props.ttsAudioUrl));
+  if (!url || ttsAudio.value) return;
+  const audio = new Audio(url);
   audio.addEventListener("ended", () => {
     isTTSPlaying.value = false;
   });
@@ -3321,6 +3443,13 @@ function toggleTTSLegacy(e: Event) {
   isTTSPlaying.value = true;
   audio.play();
 }
+
+// 語音是 audio-blobs 的引用：先換成 blob: 網址，點下去才能馬上出聲（iOS 要在點擊當下播放）
+watch(
+  () => [props.ttsAudioUrl, ...(props.ttsSegments?.map((s) => s.audioUrl) ?? [])],
+  (urls) => prefetchPlayableAudioUrls(urls),
+  { immediate: true },
+);
 
 onUnmounted(() => {
   stopTTS();
@@ -9070,6 +9199,25 @@ body.is-night-mode .pixel-gift-wrapper .gift-card-note {
   margin-left: 0.08em;
   fill: currentColor;
   pointer-events: none;
+}
+
+// 點了才生成：生成中轉圈
+:deep(.tts-inline-btn--loading) {
+  opacity: 1;
+  box-shadow: none;
+  background:
+    conic-gradient(from 0deg, var(--color-primary, #7dd3a8) 0 25%, rgba(125, 211, 168, 0.18) 25% 100%);
+  animation: tts-inline-spin 0.8s linear infinite;
+
+  .tts-inline-btn__icon {
+    visibility: hidden;
+  }
+}
+
+@keyframes tts-inline-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 // ===== 撤回選擇彈窗（Teleport 到 body，需要 :global） =====

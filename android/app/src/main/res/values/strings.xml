@@ -4,4 +4,9 @@
     <string name="title_activity_main">203 Phone</string>
     <string name="package_name">uk.aguacloud.aguaphone</string>
     <string name="custom_url_scheme">uk.aguacloud.aguaphone</string>
+    <!-- 網頁程序短時間內一直當掉時的提示（MainActivity） -->
+    <string name="webview_crash_loop_title">畫面一直載入失敗</string>
+    <string name="webview_crash_loop_message">畫面在一分鐘內當掉好幾次了，通常是手機記憶體不夠。可以先關掉其他 App 再試一次；資料都還在，不會因為這樣消失。</string>
+    <string name="webview_crash_loop_retry">再試一次</string>
+    <string name="webview_crash_loop_close">關閉 App</string>
 </resources>

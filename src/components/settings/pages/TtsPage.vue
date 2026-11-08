@@ -1,6 +1,7 @@
 <script setup lang="ts">
 /**
- * 語音合成（MiniMax）：帳號、基本設定 / 音色混合 / 音色複刻。
+ * 語音合成：上方選服務商（MiniMax / Fish Audio）。
+ * MiniMax：帳號、基本設定 / 音色混合 / 音色複刻；Fish Audio 在 FishAudioTtsSection。
  * API Key 先存在草稿，離開欄位或離開這頁才寫回，避免打字到一半被別處的保存覆蓋。
  */
 import {
@@ -18,6 +19,7 @@ import { convertTTSContentToSimplified } from "@/utils/ttsTextSelector";
 import { Check, ChevronRight, Music, Plus, Upload, X } from "lucide-vue-next";
 import { computed, onDeactivated, onMounted, onUnmounted, ref, watch } from "vue";
 import { MINIMAX_MODEL_OPTIONS } from "../settingsOptions";
+import FishAudioTtsSection from "./FishAudioTtsSection.vue";
 import SettingsGroup from "../ui/SettingsGroup.vue";
 import SettingsRow from "../ui/SettingsRow.vue";
 import SettingsSegmented from "../ui/SettingsSegmented.vue";
@@ -33,6 +35,16 @@ function save() {
 }
 
 const tab = ref<"basic" | "timberMix" | "voiceClone">("basic");
+
+// ===== 服務商 =====
+const provider = computed({
+  get: (): string => (tts.provider === "fishaudio" ? "fishaudio" : "minimax"),
+  set: (value: string) => {
+    saveApiKeyDraft();
+    tts.provider = value === "fishaudio" ? "fishaudio" : "minimax";
+    save();
+  },
+});
 
 // ===== API Key 草稿 =====
 const apiKeyDraft = ref("");
@@ -279,6 +291,25 @@ onUnmounted(saveApiKeyDraft);
 
 <template>
   <div class="st-page">
+    <SettingsGroup
+      title="服務商"
+      footer="切換後所有聊天和通話都改用這家合成。兩家的設定和每個聊天指定的音色都分開保存，切回來不用重填。"
+    >
+      <div class="st-pad">
+        <SettingsSegmented
+          v-model="provider"
+          label="語音合成服務商"
+          :options="[
+            { value: 'minimax', label: 'MiniMax' },
+            { value: 'fishaudio', label: 'Fish Audio' },
+          ]"
+        />
+      </div>
+    </SettingsGroup>
+
+    <FishAudioTtsSection v-if="provider === 'fishaudio'" />
+
+    <template v-else>
     <SettingsGroup title="MiniMax 帳號" footer="每個聊天要不要用語音念出來，在聊天的設定選單裡開關（AI 繪圖下方）。">
       <div class="st-pad">
         <div class="st-field">
@@ -360,6 +391,19 @@ onUnmounted(saveApiKeyDraft);
         />
         <SettingsSelectRow v-model="tts.model" label="模型" :options="MINIMAX_MODEL_OPTIONS" @change="save" />
         <SettingsSelectRow v-model="tts.languageBoost" label="語言增強" :options="MINIMAX_LANGUAGES" @change="save" />
+      </SettingsGroup>
+
+      <SettingsGroup
+        title="生成時機"
+        footer="關掉時，聊天訊息只會在你點播放按鈕的那一句才生成語音，沒聽的句子不花錢；已生成的會存起來，重聽不再扣費。通話一律即時生成，不受影響。"
+      >
+        <SettingsSwitchRow
+          :model-value="!!tts.autoGenerate"
+      @update:model-value="tts.autoGenerate = $event"
+          label="回覆後自動生成全部語音"
+          description="開啟後每則回覆一到就把所有句子都生成好，點了馬上播，但會比較花錢"
+          @change="save"
+        />
       </SettingsGroup>
 
       <SettingsGroup title="輸出">
@@ -632,6 +676,7 @@ onUnmounted(saveApiKeyDraft);
         </SettingsRow>
       </SettingsGroup>
     </SettingsSheet>
+    </template>
   </div>
 </template>
 

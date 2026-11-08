@@ -4,6 +4,7 @@ import {
   applyClaim as applyRedpacketClaim,
   canClaim as canClaimRedpacket,
   expireRedPackets,
+  undoLastClaim,
 } from "@/services/RedPacketService";
 import { useGameEconomyStore } from "@/stores/gameEconomy";
 import { ref, type Ref } from "vue";
@@ -20,6 +21,8 @@ export function useChatRedpacket(context: {
   charactersStore: any;
   saveChatImmediate: () => Promise<void>;
   showToast?: (msg: string) => void;
+  /** 角色發的紅包被使用者領走：從角色帳戶扣，不夠就 ok = false */
+  chargeCharacter?: (msg: any, amount: number) => Promise<{ ok: boolean; balance: number }>;
 }) {
   const gameEconomyStore = useGameEconomyStore();
 
@@ -75,8 +78,16 @@ export function useChatRedpacket(context: {
   async function executeUserRedpacketClaim(msg: any, claimerDisplayName: string) {
     const cents = applyRedpacketClaim(msg, claimerDisplayName, undefined, true);
     if (cents <= 0) return;
-    msg.redpacketState = { ...msg.redpacketState!, claims: [...msg.redpacketState!.claims] };
     const yuan = cents / 100;
+    if (msg.role !== "user" && context.chargeCharacter) {
+      const charged = await context.chargeCharacter(msg, yuan);
+      if (!charged.ok) {
+        undoLastClaim(msg);
+        context.showToast?.(`${getRedpacketPayerName(msg)} 的帳戶沒錢了，紅包領不到`);
+        return;
+      }
+    }
+    msg.redpacketState = { ...msg.redpacketState!, claims: [...msg.redpacketState!.claims] };
     gameEconomyStore.earnMoney(
       GLOBAL_WALLET_ID,
       yuan,

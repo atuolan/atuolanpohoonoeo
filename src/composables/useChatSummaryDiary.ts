@@ -273,22 +273,49 @@ export function useChatSummaryDiary(deps: {
     const groupName =
       chatData?.groupMetadata?.groupName || chatData?.name || "這個群聊";
     const characters = useCharactersStore().characters;
-    const memberNames = [
-      ...(chatData?.groupMetadata?.members?.map((m: GroupMember) =>
-        getGroupMemberDisplayName(m, characters),
-      ) || []),
-      ...(chatData?.groupMetadata?.multiCharMembers?.map((m: MultiCharMember) => m.name) || []),
-    ].filter(Boolean);
+    // 標出誰是使用者：代演的使用者角色和真實使用者不能被當成一般 AI 角色
+    const aiNames: string[] = [];
+    const personaNames: string[] = [];
+    const addMember = (name: string | undefined, isPersonaMember?: boolean) => {
+      if (!name) return;
+      (isPersonaMember ? personaNames : aiNames).push(name);
+    };
+    for (const m of (chatData?.groupMetadata?.members || []) as GroupMember[]) {
+      addMember(getGroupMemberDisplayName(m, characters), m.isPersonaMember);
+    }
+    for (const m of (chatData?.groupMetadata?.multiCharMembers || []) as MultiCharMember[]) {
+      addMember(m.name, m.isPersonaMember);
+    }
+    const userName = String(deps.effectivePersona.value?.name || "").trim();
+
+    const labeled = [
+      ...aiNames,
+      ...personaNames.map((n) => `${n}（使用者角色，AI 代演）`),
+      ...(userName ? [`${userName}（真實使用者）`] : []),
+    ];
 
     return {
       groupName,
-      memberNamesText:
-        memberNames.length > 0 ? memberNames.join("、") : "群裡的大家",
+      memberNamesText: labeled.length > 0 ? labeled.join("、") : "群裡的大家",
+      /** 可以當主筆的 AI 角色 */
+      writerNamesText: aiNames.join("、"),
     };
   }
 
-  function buildGroupSummaryPrompts(sourceText: string) {
-    const { groupName, memberNamesText } = getGroupSummaryContext();
+  function buildGroupSummaryPrompts(
+    sourceText: string,
+    options: { merging?: boolean } = {},
+  ) {
+    const { groupName, memberNamesText, writerNamesText } = getGroupSummaryContext();
+    const writerRule = writerNamesText
+      ? `主筆只能從這些 AI 角色裡選：${writerNamesText}。標著「使用者角色」或「真實使用者」的是使用者，不能當主筆，也不要把他們彼此搞混`
+      : "主筆只能選 AI 角色，標著「使用者角色」或「真實使用者」的是使用者，不能當主筆";
+    const sourceLabel = options.merging
+      ? "以下是要合併成一篇的多段群聊總結（依時間排序）"
+      : "以下是這段時間的群聊內容";
+    const mergingRule = options.merging
+      ? "\n9. 這是把多段總結合併成一篇：一定要保留大家怎麼認識、群裡的重要轉折和約定，照時間順序寫，不要因為比較舊就省略；字數可以放寬到 300～800 字"
+      : "";
     return [
       {
         role: "system" as const,
@@ -301,17 +328,18 @@ export function useChatSummaryDiary(deps: {
 4. 重點保留群聊的關鍵事件、互動細節、氣氛與角色間的關係變化
 5. 文風像是這個角色私下寫給自己的備忘或感想，自然、有性格
 6. 字數控制在 100～300 字之間
-7. 直接輸出「角色名：正文」，不要加標題、額外說明或清單`,
+7. 直接輸出「角色名：正文」，不要加標題、額外說明或清單
+8. ${writerRule}${mergingRule}`,
       },
       {
         role: "user" as const,
         content: `請為群聊「${groupName}」寫一篇主筆總結。群成員包含：${memberNamesText}。
 
-以下是這段時間的群聊內容：
+${sourceLabel}：
 
 ${sourceText}
 
-請先從群成員中選出最適合當主筆的角色，然後直接以「角色名：正文」的格式輸出約 100～300 字的總結。`,
+請先從群成員中選出最適合當主筆的 AI 角色，然後直接以「角色名：正文」的格式輸出總結。`,
       },
     ];
   }
@@ -1477,20 +1505,24 @@ ${recentMessagesText}
       const client = new OpenAICompatibleClient(taskConfig.api);
 
       const userName = deps.effectivePersona.value?.name || "User";
+      const userPersonaText = String(deps.effectivePersona.value?.description || "").trim();
       const metaPrompt = isGroupSummaryMode()
-        ? buildGroupSummaryPrompts(combinedContent)
+        ? buildGroupSummaryPrompts(combinedContent, { merging: true })
         : [
             {
               role: "system" as const,
+              // 人稱跟一般總結（summaryInstruction）一致：角色用「我」，user 用名字或他／她／Ta，
+              // 不然合併過的和一般的混在一起，一下「你」一下「他」
               content: `你是一個總結助手。你的任務是將多個對話總結合併成一個精簡的元總結，保留最重要的信息。
-
+${userPersonaText ? `\n對話對象 ${userName} 的資料：\n${userPersonaText}\n` : ""}
 ⚠️ 重要輸出規則：
 1. 你必須直接輸出總結內容，絕對不能輸出空白或拒絕回應
 2. 無論輸入內容多少，都必須生成一段完整的總結文字
-3. 使用「我」代指 ${char.data.name}（角色自己），使用「你」代指 ${userName}（對話對象）
-4. 不要使用第三人稱，不要用名字或暱稱稱呼任何一方
-5. 字數控制在 300-800字，確保內容完整不截斷
-6. 直接開始寫總結，不要加任何前言或說明`,
+3. 以 ${char.data.name} 的第一人稱（「我」）敘述，跟原本的總結一樣
+4. 提到 ${userName} 時用名字，或依 ${userName} 的性別用正確的代詞（他／她／Ta）；不要用「你」稱呼 ${userName}，原總結裡如果寫「你」，也改成名字或代詞
+5. 一定要保留：兩人怎麼認識、第一次見面的經過，以及關係的重要轉折、承諾和約定；照時間順序寫，最早的事放在前面，不要因為比較舊就省略
+6. 字數控制在 300-800字，確保內容完整不截斷
+7. 直接開始寫總結，不要加任何前言或說明`,
             },
             {
               role: "user" as const,
@@ -1557,8 +1589,8 @@ ${recentMessagesText}
           (sum, s) => sum + s.messageCount,
           0,
         ),
-        // 不自動釘選：元總結取代原總結在時間軸上的位置，要不要永遠記得由使用者決定
-        isImportant: false,
+        // 來源裡有釘選的就跟著釘選：原總結收起後不再送，元總結不釘選的話那段記憶會被擠出去
+        isImportant: selectedSummaries.some((s) => s.isImportant === true),
         isManual: false,
         isMeta: true,
         keywords: extractSummaryKeywords(stripOutputTags(metaContent)),
