@@ -8,6 +8,7 @@ class SampleHandler: RPBroadcastSampleHandler {
     static let appWroteKey = "screenWatch.appWrote"
     static let extensionCountKey = "screenWatch.extensionCount"
     static let extensionInfoKey = "screenWatch.extensionInfo"
+    static let lastNotifyKey = "screenWatch.lastNotify"
 
     /// 每隔幾秒抽一張畫面
     private let sampleInterval: TimeInterval = 30
@@ -16,8 +17,8 @@ class SampleHandler: RPBroadcastSampleHandler {
     private var lastSampleAt = Date.distantPast
     private let ciContext = CIContext(options: [.cacheIntermediates: false])
 
-    /// 能用的 App Group（全部）
-    private lazy var groupIds: [String] = SignedAppGroups.usable()
+    /// 能用的 App Group（全部）。畫面會從別的執行緒進來，所以一開始就算好，不用 lazy
+    private let groupIds: [String] = SignedAppGroups.usable()
 
     /// 寫進每一個能用的 App Group（App 那邊挑哪個都讀得到）
     private func writeShared(_ value: Any, forKey key: String) {
@@ -41,7 +42,7 @@ class SampleHandler: RPBroadcastSampleHandler {
         frameCount = 0
         reportCount = 0
         lastSampleAt = Date()
-        let info = "Bundle ID：\(Bundle.main.bundleIdentifier ?? "?")｜簽名裡：\(SignedAppGroups.describeSignature())｜能用：\(groupIds.count) 個"
+        let info = "\(NotificationDiagnostics.timeText()) 開始｜Bundle ID：\(Bundle.main.bundleIdentifier ?? "?")｜簽名裡：\(SignedAppGroups.describeSignature())｜能用：\(groupIds.count) 個"
         writeShared(info, forKey: SampleHandler.extensionInfoKey)
         notify(title: "看螢幕測試：開始了", body: "App Group：\(appGroupValue())\n\(info)")
     }
@@ -95,7 +96,15 @@ class SampleHandler: RPBroadcastSampleHandler {
         content.title = title
         content.body = body
         let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
-        UNUserNotificationCenter.current().add(request, withCompletionHandler: nil)
+        let center = UNUserNotificationCenter.current()
+        // 記下發通知的結果和擴充元件看到的通知設定，回到 App 時顯示，查「為什麼沒跳通知」
+        center.add(request) { [weak self] error in
+            center.getNotificationSettings { settings in
+                let result = error.map { "失敗（\($0.localizedDescription)）" } ?? "成功"
+                let line = "\(NotificationDiagnostics.timeText()) 發「\(title)」\(result)｜擴充元件看到的通知設定：\(NotificationDiagnostics.describe(settings))"
+                self?.writeShared(line, forKey: SampleHandler.lastNotifyKey)
+            }
+        }
     }
 }
 
@@ -203,5 +212,45 @@ enum SignedAppGroups {
             return d.subdata(in: (d.startIndex + b + 8)..<(d.startIndex + b + length))
         }
         return nil
+    }
+}
+
+/// 看螢幕模式 第 0 步：把通知設定寫成看得懂的一行，查「為什麼沒跳通知」用。
+/// （App 和擴充元件是不同模組，這段在 AppDelegate.swift 和 SampleHandler.swift 各有一份，內容一樣）
+enum NotificationDiagnostics {
+    static func describe(_ s: UNNotificationSettings) -> String {
+        let auth: String
+        switch s.authorizationStatus {
+        case .authorized: auth = "允許"
+        case .denied: auth = "不允許"
+        case .notDetermined: auth = "還沒問過"
+        case .provisional: auth = "安靜送達"
+        case .ephemeral: auth = "暫時"
+        @unknown default: auth = "不明"
+        }
+        var parts = [
+            "權限\(auth)",
+            "橫幅\(onOff(s.alertSetting))",
+            "通知中心\(onOff(s.notificationCenterSetting))",
+        ]
+        if s.scheduledDeliverySetting == .enabled {
+            parts.append("排程摘要開著（通知會晚點一起出現）")
+        }
+        return parts.joined(separator: "、")
+    }
+
+    private static func onOff(_ setting: UNNotificationSetting) -> String {
+        switch setting {
+        case .enabled: return "開"
+        case .disabled: return "關"
+        case .notSupported: return "不支援"
+        @unknown default: return "不明"
+        }
+    }
+
+    static func timeText() -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm:ss"
+        return formatter.string(from: Date())
     }
 }

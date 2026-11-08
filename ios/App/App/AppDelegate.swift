@@ -1,5 +1,6 @@
 import UIKit
 import Capacitor
+import ReplayKit
 import UserNotifications
 
 @UIApplicationMain
@@ -51,6 +52,7 @@ enum ScreenWatchProbe {
     static let appWroteKey = "screenWatch.appWrote"
     static let extensionCountKey = "screenWatch.extensionCount"
     static let extensionInfoKey = "screenWatch.extensionInfo"
+    static let lastNotifyKey = "screenWatch.lastNotify"
 
     /// 能用的 App Group（全部）
     static let groupIds: [String] = SignedAppGroups.usable()
@@ -80,12 +82,16 @@ enum ScreenWatchProbe {
         var count = 0
         var info: String?
         var foundIn: String?
+        var lastNotify: String?
         for id in groupIds {
             guard let defaults = UserDefaults(suiteName: id) else { continue }
             count = max(count, defaults.integer(forKey: extensionCountKey))
             if info == nil, let value = defaults.string(forKey: extensionInfoKey) {
                 info = value
                 foundIn = id
+            }
+            if lastNotify == nil {
+                lastNotify = defaults.string(forKey: lastNotifyKey)
             }
         }
         lines.append("擴充元件寫入：第 \(count) 次")
@@ -94,7 +100,48 @@ enum ScreenWatchProbe {
         } else {
             lines.append("擴充元件那邊：\(groupIds.count) 個 App Group 都還沒讀到（還沒開始廣播，或兩邊沒有共同的 App Group）")
         }
+        if let lastNotify = lastNotify {
+            lines.append("擴充元件最後一次發通知：\(lastNotify)")
+        }
         return lines.joined(separator: "\n")
+    }
+}
+
+/// 看螢幕模式：像 DC 那樣在 App 裡開始分享螢幕。
+/// 跳出系統的「開始廣播」視窗，並且已經選好我們的擴充元件，不用再去控制中心找。
+enum ScreenWatchPicker {
+    /// 留著同一個 picker，不要每次都新增
+    private static var picker: RPSystemBroadcastPickerView?
+
+    /// 從 App 裡的 PlugIns 找出螢幕廣播擴充元件的 Bundle ID（Sideloadly 改了名字也找得到）
+    static func extensionBundleId() -> String? {
+        guard let url = Bundle.main.builtInPlugInsURL,
+              let items = try? FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: nil)
+        else { return nil }
+        for item in items where item.pathExtension == "appex" {
+            guard let bundle = Bundle(url: item),
+                  let ext = bundle.infoDictionary?["NSExtension"] as? [String: Any],
+                  ext["NSExtensionPointIdentifier"] as? String == "com.apple.broadcast-services-upload"
+            else { continue }
+            return bundle.bundleIdentifier
+        }
+        return nil
+    }
+
+    static func show(in view: UIView) {
+        let picker = self.picker ?? RPSystemBroadcastPickerView(frame: CGRect(x: 0, y: 0, width: 1, height: 1))
+        self.picker = picker
+        picker.preferredExtension = extensionBundleId()
+        picker.showsMicrophoneButton = false
+        picker.alpha = 0.01
+        if picker.superview !== view {
+            picker.removeFromSuperview()
+            view.addSubview(picker)
+        }
+        // picker 本身是一顆按鈕，幫玩家按下去
+        if let button = picker.subviews.compactMap({ $0 as? UIButton }).first {
+            button.sendActions(for: .allTouchEvents)
+        }
     }
 }
 
@@ -202,5 +249,45 @@ enum SignedAppGroups {
             return d.subdata(in: (d.startIndex + b + 8)..<(d.startIndex + b + length))
         }
         return nil
+    }
+}
+
+/// 看螢幕模式 第 0 步：把通知設定寫成看得懂的一行，查「為什麼沒跳通知」用。
+/// （App 和擴充元件是不同模組，這段在 AppDelegate.swift 和 SampleHandler.swift 各有一份，內容一樣）
+enum NotificationDiagnostics {
+    static func describe(_ s: UNNotificationSettings) -> String {
+        let auth: String
+        switch s.authorizationStatus {
+        case .authorized: auth = "允許"
+        case .denied: auth = "不允許"
+        case .notDetermined: auth = "還沒問過"
+        case .provisional: auth = "安靜送達"
+        case .ephemeral: auth = "暫時"
+        @unknown default: auth = "不明"
+        }
+        var parts = [
+            "權限\(auth)",
+            "橫幅\(onOff(s.alertSetting))",
+            "通知中心\(onOff(s.notificationCenterSetting))",
+        ]
+        if s.scheduledDeliverySetting == .enabled {
+            parts.append("排程摘要開著（通知會晚點一起出現）")
+        }
+        return parts.joined(separator: "、")
+    }
+
+    private static func onOff(_ setting: UNNotificationSetting) -> String {
+        switch setting {
+        case .enabled: return "開"
+        case .disabled: return "關"
+        case .notSupported: return "不支援"
+        @unknown default: return "不明"
+        }
+    }
+
+    static func timeText() -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm:ss"
+        return formatter.string(from: Date())
     }
 }
