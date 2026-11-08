@@ -43,6 +43,17 @@ import {
  * 以前只看角色卡的 extensions.world（導入時不會填），主動訊息從來沒帶到世界書。
  * 主動訊息可能在背景跑，世界書還沒載入就先載入。
  */
+/** 看螢幕：組好的提示詞（不送出），交給原生那邊每隔幾分鐘附上螢幕截圖送出 */
+export interface ProactivePromptCapture {
+  chatId: string;
+  characterId: string;
+  characterName: string;
+  /** PromptBuilder 組好的訊息（最後一則是看螢幕的指示） */
+  messages: any[];
+  api: import("@/types/settings").APISettings;
+  generation: any;
+}
+
 async function collectPromptLorebooks(
   characters: StoredCharacter[],
   extraLorebookIds: string[] = [],
@@ -416,6 +427,70 @@ export class ProactiveMessageService {
       chatId,
       '你還在忙，趁空檔看了手機，看到對方的訊息或未接來電，現在簡短回應對方。',
     )
+  }
+
+  /**
+   * 看螢幕：用跟主動訊息一樣的方式組好提示詞（人設、世界書、總結、最近聊天…），
+   * 最後一則是 instruction；不送 AI、不寫訊息。交給原生那邊附上螢幕截圖再送。
+   */
+  async buildScreenWatchPrompt(
+    chatId: string,
+    instruction: string,
+  ): Promise<ProactivePromptCapture | null> {
+    const characterId = await this.characterIdOfChat(chatId);
+    if (!characterId) return null;
+    let capture: ProactivePromptCapture | null = null;
+    await this.sendProactiveMessage(characterId, this.eventTriggeredSettings(false), {
+      skipScheduleUpdate: true,
+      targetChatId: chatId,
+      customTopicInstruction: instruction,
+      buildOnly: (c) => {
+        capture = c;
+      },
+    });
+    return capture;
+  }
+
+  /**
+   * 看螢幕：iOS 擴充元件在背景生成好的回覆，回到 App 時照一般主動訊息的流程寫進聊天
+   * （解析 <msg>、噗浪、行事曆、未讀數都一樣），不再送 AI。
+   */
+  async deliverScreenWatchReply(chatId: string, aiContent: string, at: number): Promise<boolean> {
+    const characterId = await this.characterIdOfChat(chatId);
+    if (!characterId || !aiContent.trim()) return false;
+    const { getMessageCount } = await import("@/storage/chatMessageStorage");
+    const beforeCount = await getMessageCount(chatId).catch(() => 0);
+    await this.sendProactiveMessage(characterId, this.eventTriggeredSettings(false), {
+      skipScheduleUpdate: true,
+      targetChatId: chatId,
+      precomputedAiContent: aiContent,
+      messageTime: at,
+    });
+    const afterCount = await getMessageCount(chatId).catch(() => beforeCount);
+    return afterCount > beforeCount;
+  }
+
+  private async characterIdOfChat(chatId: string): Promise<string | null> {
+    try {
+      const { db, DB_STORES } = await import("@/db/database");
+      const chat = await db.get<any>(DB_STORES.CHATS, chatId);
+      return chat?.characterId && !chat.isGroupChat ? chat.characterId : null;
+    } catch (err) {
+      console.warn("[ProactiveMessage] 讀取聊天失敗", err);
+      return null;
+    }
+  }
+
+  /** 事件觸發用的臨時設定，不影響正常排程 */
+  private eventTriggeredSettings(showNotification: boolean): ProactiveMessageSettings {
+    return {
+      enabled: true,
+      intervalMinutes: 15,
+      doNotDisturbEnabled: false,
+      doNotDisturbStart: "00:00",
+      doNotDisturbEnd: "06:00",
+      showNotification,
+    };
   }
 
   private async sendCharAwayFollowUp(chatId: string, instruction: string): Promise<boolean> {
@@ -972,6 +1047,12 @@ export class ProactiveMessageService {
       gamePlayingContext?: { gameName: string };
       /** 指定要發進哪個聊天（預設該角色最近的單聊） */
       targetChatId?: string;
+      /** 看螢幕：只組好提示詞交給呼叫方，不送 AI、不寫訊息 */
+      buildOnly?: (capture: ProactivePromptCapture) => void;
+      /** 看螢幕：回覆已經在別處（iOS 擴充元件）生成好，不再組提示詞、不送 AI，直接照一般流程寫進聊天 */
+      precomputedAiContent?: string;
+      /** 訊息時間（預設現在）；看螢幕的回覆用擴充元件生成當下的時間 */
+      messageTime?: number;
     },
   ) {
     // 標記該角色正在處理中，防止 setInterval 重複觸發
@@ -1108,15 +1189,17 @@ export class ProactiveMessageService {
         return;
       }
 
-      // 開始生成任務（註冊到全局狀態）
-      const generationResult = aiGenerationStore.startGeneration(
-        chat.id,
-        "chat",
-        {
-          characterName: character.nickname || character.data.name,
-          characterAvatar: character.avatar,
-        },
-      );
+      // 開始生成任務（註冊到全局狀態）；只組提示詞時不用
+      const generationResult = options?.buildOnly
+        ? { success: true as const, error: undefined }
+        : aiGenerationStore.startGeneration(
+            chat.id,
+            "chat",
+            {
+              characterName: character.nickname || character.data.name,
+              characterAvatar: character.avatar,
+            },
+          );
 
       if (!generationResult.success) {
         console.warn(
@@ -1403,7 +1486,23 @@ export class ProactiveMessageService {
             }),
       });
 
-      const promptData = await promptBuilder.build();
+      // 回覆已經生成好時不用組提示詞（組提示詞可能會呼叫向量檢索之類的 API）
+      const hasPrecomputed = options?.precomputedAiContent !== undefined;
+      const promptData = hasPrecomputed
+        ? { messages: [] as any[] }
+        : await promptBuilder.build();
+
+      if (options?.buildOnly) {
+        options.buildOnly({
+          chatId: chat.id,
+          characterId,
+          characterName: character.nickname || character.data.name,
+          messages: promptData.messages,
+          api: taskConfig.api,
+          generation: chatSettings,
+        });
+        return;
+      }
 
       // 創建 API 客戶端
       const { OpenAICompatibleClient } = await import("@/api/OpenAICompatible");
@@ -1418,8 +1517,10 @@ export class ProactiveMessageService {
       const streamingWindow = useStreamingWindow();
 
       try {
-        // 根據全局設定決定是否使用串流
-        if (chatSettings.streaming) {
+        // 根據全局設定決定是否使用串流；回覆已經生成好就直接用
+        if (hasPrecomputed) {
+          aiContent = options?.precomputedAiContent ?? "";
+        } else if (chatSettings.streaming) {
           // 使用串流模式
           console.log("[ProactiveMessage] Using streaming mode");
 
@@ -1511,7 +1612,7 @@ export class ProactiveMessageService {
           const parsedResponse = parseAIResponse(aiContent, {
             disabledRegexIds: chat.disabledRegexIds,
           });
-          const now = Date.now();
+          const now = options?.messageTime ?? Date.now();
           const newMessages: any[] = [];
 
           if (parsedResponse.messages.length > 0) {

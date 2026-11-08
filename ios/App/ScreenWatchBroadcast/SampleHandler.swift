@@ -2,77 +2,138 @@ import ReplayKit
 import UIKit
 import UserNotifications
 
-/// 看螢幕模式 第 0 步：可行性測試用的螢幕廣播擴充元件。
-/// 不接 AI、不存圖、不送出，只確認：收得到畫面、縮得了圖、記憶體夠、發得了通知、App Group 讀寫得到。
+/// 看螢幕模式（像 DC 分享螢幕）的螢幕廣播擴充元件。
+///
+/// 廣播期間 App 會被系統暫停，所以這裡自己做完：
+/// 每隔幾分鐘挑一張畫面縮小 → 填進網頁組好的請求送 AI → 用角色的名字發通知 → 把回覆存進 App Group，
+/// App 回到前景時再寫進聊天。
+///
+/// - 畫面沒變的時候系統不會送新畫面進來，所以也不會看（省 API 額度）
+/// - 擴充元件記憶體上限大約 50MB：同一時間只留一張縮圖，用完就丟
 class SampleHandler: RPBroadcastSampleHandler {
-    static let appWroteKey = "screenWatch.appWrote"
-    static let extensionCountKey = "screenWatch.extensionCount"
-    static let extensionInfoKey = "screenWatch.extensionInfo"
-    static let lastNotifyKey = "screenWatch.lastNotify"
+    /// 多久檢查一次「要不要停止」、更新狀態
+    private let checkInterval: TimeInterval = 10
+    /// 縮圖寬度
+    private let thumbnailWidth: CGFloat = 720
+    /// 帶進提示詞、避免重複的最近幾則回覆
+    private let recentReplyLimit = 3
 
-    /// 每隔幾秒抽一張畫面
-    private let sampleInterval: TimeInterval = 30
-    private var frameCount = 0
-    private var reportCount = 0
-    private var lastSampleAt = Date.distantPast
+    private let lock = NSLock()
+    private var pack: ScreenWatchPack?
+    private var startedAt = Date()
+    private var nextLookAt = Date.distantFuture
+    private var requestInFlight = false
+    private var replyCount = 0
+    private var recentReplies: [String] = []
+    private var lastError: String?
+    private var errorNotified = false
+    private var finished = false
+    private var checkTimer: DispatchSourceTimer?
+
     private let ciContext = CIContext(options: [.cacheIntermediates: false])
+    private let session: URLSession = {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.timeoutIntervalForRequest = 120
+        configuration.timeoutIntervalForResource = 180
+        return URLSession(configuration: configuration)
+    }()
 
-    /// 能用的 App Group（全部）。畫面會從別的執行緒進來，所以一開始就算好，不用 lazy
-    private let groupIds: [String] = SignedAppGroups.usable()
-
-    /// 寫進每一個能用的 App Group（App 那邊挑哪個都讀得到）
-    private func writeShared(_ value: Any, forKey key: String) {
-        for id in groupIds {
-            UserDefaults(suiteName: id)?.set(value, forKey: key)
-        }
-    }
-
-    /// 從每一個 App Group 找 App 寫的值
-    private func appGroupValue() -> String {
-        guard !groupIds.isEmpty else { return "打不開（簽名裡：\(SignedAppGroups.describeSignature())）" }
-        for id in groupIds {
-            if let value = UserDefaults(suiteName: id)?.string(forKey: SampleHandler.appWroteKey) {
-                return "\(value)（在 \(id)）"
-            }
-        }
-        return "\(groupIds.count) 個都讀不到 App 寫的值"
-    }
+    // MARK: - 廣播開始／結束
 
     override func broadcastStarted(withSetupInfo setupInfo: [String: NSObject]?) {
-        frameCount = 0
-        reportCount = 0
-        lastSampleAt = Date()
-        let info = "\(NotificationDiagnostics.timeText()) 開始｜Bundle ID：\(Bundle.main.bundleIdentifier ?? "?")｜簽名裡：\(SignedAppGroups.describeSignature())｜能用：\(groupIds.count) 個"
-        writeShared(info, forKey: SampleHandler.extensionInfoKey)
-        notify(title: "看螢幕測試：開始了", body: "App Group：\(appGroupValue())\n\(info)")
-    }
-
-    override func processSampleBuffer(_ sampleBuffer: CMSampleBuffer, with sampleBufferType: RPSampleBufferType) {
-        guard sampleBufferType == .video else { return }
-        frameCount += 1
-
-        let now = Date()
-        guard now.timeIntervalSince(lastSampleAt) >= sampleInterval else { return }
-        lastSampleAt = now
-
-        // 同一時間只留一張縮圖，用完就丟
-        let kb: Int = autoreleasepool {
-            guard let jpeg = makeThumbnailJPEG(sampleBuffer) else { return -1 }
-            return jpeg.count / 1024
+        guard let pack = ScreenWatchStore.readNewest(ScreenWatchPack.self, from: ScreenWatchShared.packFile) else {
+            finish(reason: "請從 203 Phone 聊天裡的「分享螢幕」開始")
+            return
         }
+        let now = Date()
+        lock.lock()
+        self.pack = pack
+        startedAt = now
+        nextLookAt = now.addingTimeInterval(pack.firstDelaySeconds)
+        lock.unlock()
 
-        reportCount += 1
-        writeShared(reportCount, forKey: SampleHandler.extensionCountKey)
-
-        let sizeText = kb >= 0 ? "\(kb) KB" : "縮圖失敗"
-        notify(
-            title: "看螢幕測試：第 \(reportCount) 次",
-            body: "收到 \(frameCount) 張｜縮圖 \(sizeText)｜App Group：\(appGroupValue())"
-        )
+        writeStatus()
+        startCheckTimer()
     }
 
     override func broadcastFinished() {
-        notify(title: "看螢幕測試：結束了", body: "共 \(reportCount) 次")
+        lock.lock()
+        finished = true
+        lock.unlock()
+        checkTimer?.cancel()
+        writeStatus()
+    }
+
+    /// 自己結束廣播（玩家按停止、時間到、沒有看螢幕包）。系統會跳出 reason。
+    private func finish(reason: String) {
+        lock.lock()
+        let alreadyFinished = finished
+        finished = true
+        lock.unlock()
+        guard !alreadyFinished else { return }
+        checkTimer?.cancel()
+        writeStatus()
+        finishBroadcastWithError(NSError(
+            domain: "ScreenWatch",
+            code: 1,
+            userInfo: [NSLocalizedDescriptionKey: reason]
+        ))
+    }
+
+    /// 定時檢查：玩家有沒有按停止、時間到了沒，順便更新狀態（畫面沒變時不會有新畫面進來，不能靠畫面觸發）
+    private func startCheckTimer() {
+        let timer = DispatchSource.makeTimerSource(queue: DispatchQueue.global(qos: .utility))
+        timer.schedule(deadline: .now() + checkInterval, repeating: checkInterval)
+        timer.setEventHandler { [weak self] in self?.check() }
+        checkTimer = timer
+        timer.resume()
+    }
+
+    private func check() {
+        lock.lock()
+        let pack = self.pack
+        let startedAt = self.startedAt
+        let isFinished = finished
+        lock.unlock()
+        guard let pack = pack, !isFinished else { return }
+
+        if let stop = ScreenWatchStore.readNewest(ScreenWatchStopRequest.self, from: ScreenWatchShared.stopFile),
+           stop.at >= startedAt.timeIntervalSince1970 * 1000 {
+            finish(reason: "已經停止分享螢幕")
+            return
+        }
+        if Date().timeIntervalSince(startedAt) >= pack.maxSeconds {
+            finish(reason: "已經分享 \(Int(pack.maxSeconds / 60)) 分鐘，自動停止")
+            return
+        }
+        writeStatus()
+    }
+
+    // MARK: - 畫面
+
+    override func processSampleBuffer(_ sampleBuffer: CMSampleBuffer, with sampleBufferType: RPSampleBufferType) {
+        guard sampleBufferType == .video else { return }
+        let now = Date()
+
+        lock.lock()
+        guard let pack = pack, !finished, !requestInFlight, now >= nextLookAt else {
+            lock.unlock()
+            return
+        }
+        requestInFlight = true
+        nextLookAt = now.addingTimeInterval(pack.intervalSeconds)
+        let context = contextText(now: now)
+        lock.unlock()
+
+        // 同一時間只留一張縮圖，用完就丟
+        let jpeg: Data? = autoreleasepool { makeThumbnailJPEG(sampleBuffer) }
+        guard let jpeg = jpeg else {
+            lock.lock()
+            requestInFlight = false
+            lock.unlock()
+            return
+        }
+        look(jpeg: jpeg, context: context, pack: pack)
     }
 
     /// 縮到寬 720、轉 JPEG
@@ -81,7 +142,7 @@ class SampleHandler: RPBroadcastSampleHandler {
         let image = CIImage(cvPixelBuffer: pixelBuffer)
         let width = image.extent.width
         guard width > 0 else { return nil }
-        let scale = min(1, 720 / width)
+        let scale = min(1, thumbnailWidth / width)
         let scaled = image.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
         guard let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) else { return nil }
         return ciContext.jpegRepresentation(
@@ -91,166 +152,189 @@ class SampleHandler: RPBroadcastSampleHandler {
         )
     }
 
+    /// 給 AI 的當下情況：時間、看了多久、剛剛說過的話（不要重複）
+    private func contextText(now: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm"
+        let minutes = Int(now.timeIntervalSince(startedAt) / 60)
+        var text = "現在是 \(formatter.string(from: now))，已經一起看了 \(minutes) 分鐘。"
+        if !recentReplies.isEmpty {
+            let quoted = recentReplies.map { "「\($0)」" }.joined(separator: "")
+            text += "你剛剛看螢幕時說過：\(quoted)，不要重複一樣的話。"
+        }
+        return text
+    }
+
+    // MARK: - 送 AI
+
+    private func look(jpeg: Data, context: String, pack: ScreenWatchPack) {
+        guard let url = URL(string: pack.request.url) else {
+            lookFailed("API 網址不對：\(pack.request.url)")
+            return
+        }
+        let body = pack.request.body
+            .replacingOccurrences(of: ScreenWatchShared.contextPlaceholder, with: Self.jsonEscaped(context))
+            .replacingOccurrences(of: ScreenWatchShared.imagePlaceholder, with: jpeg.base64EncodedString())
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        for (name, value) in pack.request.headers {
+            request.setValue(value, forHTTPHeaderField: name)
+        }
+        request.httpBody = Data(body.utf8)
+
+        session.dataTask(with: request) { [weak self] data, response, error in
+            guard let self = self else { return }
+            if let error = error {
+                self.lookFailed("連不上 AI：\(error.localizedDescription)")
+                return
+            }
+            let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
+            guard (200..<300).contains(statusCode) else {
+                let detail = data.flatMap { String(data: $0, encoding: .utf8) }.map { String($0.prefix(200)) } ?? ""
+                self.lookFailed("AI 回應錯誤 \(statusCode)：\(detail)")
+                return
+            }
+            guard let reply = Self.extractReply(data, format: pack.request.format),
+                  !reply.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            else {
+                self.lookFailed("AI 沒有回應內容")
+                return
+            }
+            self.lookSucceeded(reply, pack: pack)
+        }.resume()
+    }
+
+    private func lookSucceeded(_ reply: String, pack: ScreenWatchPack) {
+        let text = Self.notificationText(reply)
+        lock.lock()
+        replyCount += 1
+        lastError = nil
+        recentReplies.append(String(text.prefix(60)))
+        if recentReplies.count > recentReplyLimit {
+            recentReplies.removeFirst(recentReplies.count - recentReplyLimit)
+        }
+        requestInFlight = false
+        lock.unlock()
+
+        ScreenWatchStore.saveReply(ScreenWatchReply(
+            id: UUID().uuidString,
+            chatId: pack.chatId,
+            at: ScreenWatchShared.nowMs(),
+            content: reply
+        ))
+        writeStatus()
+        if !text.isEmpty {
+            notify(title: pack.characterName, body: text)
+        }
+    }
+
+    private func lookFailed(_ message: String) {
+        lock.lock()
+        lastError = message
+        requestInFlight = false
+        let shouldNotify = !errorNotified
+        errorNotified = true
+        let name = pack?.characterName ?? "看螢幕"
+        lock.unlock()
+
+        writeStatus()
+        // 同一次分享只通知一次錯誤，不要一直跳
+        if shouldNotify {
+            notify(title: "\(name)看不到你的螢幕", body: message)
+        }
+    }
+
+    /// 從 API 回應拿出文字
+    static func extractReply(_ data: Data?, format: String) -> String? {
+        guard let data = data,
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return nil }
+
+        if format == "anthropic" {
+            let blocks = json["content"] as? [[String: Any]] ?? []
+            var text = ""
+            for block in blocks where block["type"] as? String == "text" {
+                text += block["text"] as? String ?? ""
+            }
+            return text
+        }
+
+        guard let choices = json["choices"] as? [[String: Any]],
+              let message = choices.first?["message"] as? [String: Any]
+        else { return nil }
+        if let content = message["content"] as? String {
+            return content
+        }
+        if let parts = message["content"] as? [[String: Any]] {
+            return parts.compactMap { $0["text"] as? String }.joined()
+        }
+        return nil
+    }
+
+    /// 通知上顯示的文字：拿掉思考過程，有 <msg> 就只留 <msg> 裡的話，再拿掉其他標籤
+    static func notificationText(_ raw: String) -> String {
+        var text = raw.replacingOccurrences(
+            of: "<think(?:ing)?>[\\s\\S]*?</think(?:ing)?>",
+            with: "",
+            options: [.regularExpression, .caseInsensitive]
+        )
+        if let regex = try? NSRegularExpression(pattern: "<msg(?:\\s[^>]*)?>([\\s\\S]*?)</msg>", options: [.caseInsensitive]) {
+            let range = NSRange(text.startIndex..., in: text)
+            let messages = regex.matches(in: text, range: range).compactMap { match -> String? in
+                guard let inner = Range(match.range(at: 1), in: text) else { return nil }
+                return String(text[inner])
+            }
+            if !messages.isEmpty {
+                text = messages.joined(separator: "\n")
+            }
+        }
+        text = text.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
+        let lines = text
+            .components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+        let joined = lines.joined(separator: "\n")
+        return joined.count > 200 ? String(joined.prefix(200)) + "…" : joined
+    }
+
+    /// 放進 JSON 字串裡面用（不含前後的引號）
+    static func jsonEscaped(_ string: String) -> String {
+        guard let data = try? JSONEncoder().encode(string),
+              let quoted = String(data: data, encoding: .utf8),
+              quoted.count >= 2
+        else { return "" }
+        return String(quoted.dropFirst().dropLast())
+    }
+
+    // MARK: - 狀態、通知
+
+    private func writeStatus() {
+        lock.lock()
+        guard let pack = pack else {
+            lock.unlock()
+            return
+        }
+        let status = ScreenWatchStatus(
+            active: !finished,
+            chatId: pack.chatId,
+            characterName: pack.characterName,
+            startedAt: startedAt.timeIntervalSince1970 * 1000,
+            heartbeatAt: ScreenWatchShared.nowMs(),
+            replies: replyCount,
+            lastError: lastError
+        )
+        lock.unlock()
+        ScreenWatchStore.writeEverywhere(status, to: ScreenWatchShared.statusFile)
+    }
+
     private func notify(title: String, body: String) {
         let content = UNMutableNotificationContent()
         content.title = title
         content.body = body
+        content.sound = .default
+        content.threadIdentifier = "screen-watch"
         let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
-        let center = UNUserNotificationCenter.current()
-        // 記下發通知的結果和擴充元件看到的通知設定，回到 App 時顯示，查「為什麼沒跳通知」
-        center.add(request) { [weak self] error in
-            center.getNotificationSettings { settings in
-                let result = error.map { "失敗（\($0.localizedDescription)）" } ?? "成功"
-                let line = "\(NotificationDiagnostics.timeText()) 發「\(title)」\(result)｜擴充元件看到的通知設定：\(NotificationDiagnostics.describe(settings))"
-                self?.writeShared(line, forKey: SampleHandler.lastNotifyKey)
-            }
-        }
-    }
-}
-
-/// 看螢幕模式 第 0 步：從自己執行檔的簽名讀出「實際拿到」的 App Group。
-/// Sideloadly 用自己的 Apple ID 重簽時可能把 App Group 改名，寫死的名字就對不上；
-/// 而且 UserDefaults(suiteName:) 名字對不上也不會回傳 nil，只會偷偷改用自己私有的儲存，
-/// 所以要另外查簽名、再用 containerURL 確認容器真的打得開。
-/// （App 和擴充元件是不同模組，這段在 AppDelegate.swift 和 SampleHandler.swift 各有一份，內容一樣）
-enum SignedAppGroups {
-    static let preferredId = "group.uk.aguacloud.aguaphone"
-
-    /// 簽名裡的 App Group 清單；讀不到簽名回傳 nil
-    static func fromSignature() -> [String]? {
-        guard let url = Bundle.main.executableURL,
-              let data = try? Data(contentsOf: url, options: .alwaysMapped),
-              let xml = entitlementsXML(in: data),
-              let plist = try? PropertyListSerialization.propertyList(from: xml, options: [], format: nil),
-              let dict = plist as? [String: Any]
-        else { return nil }
-        return dict["com.apple.security.application-groups"] as? [String] ?? []
-    }
-
-    static func describeSignature() -> String {
-        guard let groups = fromSignature() else { return "讀不到簽名" }
-        return groups.isEmpty ? "沒有" : groups.joined(separator: "、")
-    }
-
-    /// 容器打得開的 App Group 全部列出來（原本的名字、簽名裡的、AltStore 類工具寫在 Info.plist 的，去掉重複）。
-    /// Sideloadly 會給好幾個，而且 App 和擴充元件簽名裡的順序可能不一樣，
-    /// 所以不能各挑「第一個」：兩邊都要寫進全部、從全部讀。
-    static func usable() -> [String] {
-        var candidates = [preferredId]
-        candidates += fromSignature() ?? []
-        candidates += Bundle.main.object(forInfoDictionaryKey: "ALTAppGroups") as? [String] ?? []
-        var seen = Set<String>()
-        return candidates.filter { id in
-            guard seen.insert(id).inserted else { return false }
-            return FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: id) != nil
-        }
-    }
-
-    // MARK: - 解析 Mach-O 的 code signature
-
-    private static func u32(_ d: Data, _ offset: Int, bigEndian: Bool) -> Int? {
-        guard offset >= 0, offset + 4 <= d.count else { return nil }
-        let i = d.startIndex + offset
-        let b0 = UInt32(d[i]), b1 = UInt32(d[i + 1]), b2 = UInt32(d[i + 2]), b3 = UInt32(d[i + 3])
-        let value: UInt32
-        if bigEndian {
-            value = (b0 << 24) | (b1 << 16) | (b2 << 8) | b3
-        } else {
-            value = (b3 << 24) | (b2 << 16) | (b1 << 8) | b0
-        }
-        return Int(value)
-    }
-
-    /// 找出執行檔簽名裡的 entitlements（XML plist）
-    private static func entitlementsXML(in d: Data) -> Data? {
-        var base = 0
-        // fat 執行檔（0xCAFEBABE，大端）：優先挑 arm64
-        if u32(d, 0, bigEndian: true) == 0xCAFE_BABE {
-            guard let archCount = u32(d, 4, bigEndian: true) else { return nil }
-            var first: Int?
-            var arm64: Int?
-            for k in 0..<min(archCount, 8) {
-                let entry = 8 + k * 20
-                guard let cpu = u32(d, entry, bigEndian: true),
-                      let offset = u32(d, entry + 8, bigEndian: true) else { return nil }
-                if first == nil { first = offset }
-                if arm64 == nil && cpu == 0x0100_000C { arm64 = offset }
-            }
-            guard let chosen = arm64 ?? first else { return nil }
-            base = chosen
-        }
-
-        // 64 位元 Mach-O（0xFEEDFACF，小端），header 32 bytes
-        guard u32(d, base, bigEndian: false) == 0xFEED_FACF,
-              let commandCount = u32(d, base + 16, bigEndian: false) else { return nil }
-        var p = base + 32
-        for _ in 0..<min(commandCount, 1024) {
-            guard let cmd = u32(d, p, bigEndian: false),
-                  let size = u32(d, p + 4, bigEndian: false), size >= 8 else { return nil }
-            if cmd == 0x1D { // LC_CODE_SIGNATURE
-                guard let dataOffset = u32(d, p + 8, bigEndian: false) else { return nil }
-                return entitlementsBlob(in: d, superBlob: base + dataOffset)
-            }
-            p += size
-        }
-        return nil
-    }
-
-    /// SuperBlob（0xFADE0CC0）裡找 slot 5 的 entitlements blob（0xFADE7171）
-    private static func entitlementsBlob(in d: Data, superBlob s: Int) -> Data? {
-        guard u32(d, s, bigEndian: true) == 0xFADE_0CC0,
-              let count = u32(d, s + 8, bigEndian: true) else { return nil }
-        for k in 0..<min(count, 64) {
-            let entry = s + 12 + k * 8
-            guard let slot = u32(d, entry, bigEndian: true),
-                  let offset = u32(d, entry + 4, bigEndian: true) else { return nil }
-            guard slot == 5 else { continue }
-            let b = s + offset
-            guard u32(d, b, bigEndian: true) == 0xFADE_7171,
-                  let length = u32(d, b + 4, bigEndian: true),
-                  length > 8, b + length <= d.count else { return nil }
-            return d.subdata(in: (d.startIndex + b + 8)..<(d.startIndex + b + length))
-        }
-        return nil
-    }
-}
-
-/// 看螢幕模式 第 0 步：把通知設定寫成看得懂的一行，查「為什麼沒跳通知」用。
-/// （App 和擴充元件是不同模組，這段在 AppDelegate.swift 和 SampleHandler.swift 各有一份，內容一樣）
-enum NotificationDiagnostics {
-    static func describe(_ s: UNNotificationSettings) -> String {
-        let auth: String
-        switch s.authorizationStatus {
-        case .authorized: auth = "允許"
-        case .denied: auth = "不允許"
-        case .notDetermined: auth = "還沒問過"
-        case .provisional: auth = "安靜送達"
-        case .ephemeral: auth = "暫時"
-        @unknown default: auth = "不明"
-        }
-        var parts = [
-            "權限\(auth)",
-            "橫幅\(onOff(s.alertSetting))",
-            "通知中心\(onOff(s.notificationCenterSetting))",
-        ]
-        if s.scheduledDeliverySetting == .enabled {
-            parts.append("排程摘要開著（通知會晚點一起出現）")
-        }
-        return parts.joined(separator: "、")
-    }
-
-    private static func onOff(_ setting: UNNotificationSetting) -> String {
-        switch setting {
-        case .enabled: return "開"
-        case .disabled: return "關"
-        case .notSupported: return "不支援"
-        @unknown default: return "不明"
-        }
-    }
-
-    static func timeText() -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "HH:mm:ss"
-        return formatter.string(from: Date())
+        UNUserNotificationCenter.current().add(request, withCompletionHandler: nil)
     }
 }

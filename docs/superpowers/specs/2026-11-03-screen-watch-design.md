@@ -1,6 +1,6 @@
 # 設計：他看得到你在手機上做什麼（看螢幕模式）
 
-> 狀態：設計中，第 0 步（iOS 可行性測試）進行中。**第 0 步要先過，才做後面的。**
+> 狀態：第 0 步（iOS 可行性測試）已通過；iOS 完整版已寫好，等實機測試。Android 還沒做。
 > 2026-11-08 更新：開始的方式改成**像 DC 分享螢幕**——在 App 裡按按鈕就開始；寫上第 0 步目前的測試結果。
 
 ## 想要的效果
@@ -71,7 +71,7 @@ MCP 是讓 AI 呼叫外部工具的規格，跟截圖無關。App 本來就自�
 | 3 | 廣播中能發通知 | ✅ 每 30 秒都有發，發送結果「成功」。之前沒跳出來是手機開著**勿擾模式**，通知都收在「勿擾模式期間」 |
 | 4 | 能處理畫面、記憶體夠用 | ✅ 跑了 3 分鐘以上沒被系統關掉：30 秒收到 1366～1600 張（系統一直丟畫面，收到就丟，不花 token），縮圖 76～188 KB |
 | 5 | App 和擴充元件共用資料（App Group） | ✅ 兩個方向都通：擴充元件讀到 App 寫的值，App 也讀到擴充元件寫的次數和發通知結果 |
-| — | 在 App 裡開始分享（像 DC） | 看起來可以（App 開啟後 11 秒擴充元件就開始了），待玩家確認是不是用按鈕開始的 |
+| — | 在 App 裡開始分享（像 DC） | ✅ 玩家用 App 裡的「開始分享螢幕」按鈕開始，系統視窗已經選好 203 Phone |
 
 查到的事：
 
@@ -107,6 +107,30 @@ MCP 是讓 AI 呼叫外部工具的規格，跟截圖無關。App 本來就自�
 - **暫停按鈕**放在通知上
 - Android 可以設「這些 App 不截圖」（銀行、密碼管理）。iOS 擴充元件看不到現在是哪個 App，做不到，要在說明裡提醒
 - 截圖只送給玩家自己設定的 API，不存檔、不上傳到別的地方
+
+## iOS 完整版怎麼做的（2026-11-08）
+
+| 部分 | 檔案 | 做什麼 |
+|---|---|---|
+| 聊天按鈕 | `ChatScreenInputArea.vue`、`useChatPlusMenuRouter.ts` | 加號選單「分享螢幕」（單人聊天才有） |
+| 面板 | `src/components/screenWatch/ScreenWatchPanel.vue` | 選間隔（3／5／10／15 分鐘，預設 5）、最長時間（30／60／120 分鐘，預設 60）、開始／停止、顯示狀態和上次錯誤 |
+| 組提示詞 | `ProactiveMessageService.buildScreenWatchPrompt` | 跟主動訊息同一套（人設、世界書、總結、最近聊天），只組不送 |
+| 組請求 | `OpenAICompatibleClient.buildPendingRequest` | 跟一般聊天送的一樣（網址含代理、headers、body），圖片和「當下情況」先放佔位字串 |
+| 網頁介面 | `src/native/screenWatch.ts` | `start`／`stop`／`status`／回到 App 時收回覆 |
+| App 原生外掛 | `ios/App/App/ScreenWatchPlugin.swift` | 把看螢幕包寫進 App Group、跳出系統的開始廣播視窗、讀狀態和回覆 |
+| 共用 | `ios/App/Shared/ScreenWatchShared.swift` | App Group（從簽名讀實際名字）、看螢幕包／狀態／回覆的格式 |
+| 擴充元件 | `ios/App/ScreenWatchBroadcast/SampleHandler.swift` | 每隔幾分鐘縮圖 → 填進請求送 AI → 用角色名字發通知 → 存回覆；每 10 秒檢查停止和時間到 |
+| 寫回聊天 | `ProactiveMessageService.deliverScreenWatchReply` | 回到 App 時照主動訊息的流程寫進聊天（解析 `<msg>`、噗浪、行事曆、未讀數），時間用擴充元件生成的時間 |
+
+細節：
+
+- 畫面沒變時系統不會送新畫面進來，所以也不會看、不花 API 額度
+- 圖片用 `detail: low`（OpenAI 系列只算固定的少量 token），寬 720 的 JPEG
+- 提示詞帶「現在幾點、看了多久、剛剛說過的話（最近 3 則）」，避免一直講一樣的話
+- 同一次分享只通知一次錯誤；錯誤也會顯示在面板上
+- API 金鑰會寫進 App Group 的檔案（只在這支手機上，給擴充元件用）
+- 改了原生程式，iOS build 號改成 6：熱更新才會改用新 IPA 裡的網頁
+- **要合併進 master 才算完成**：不然 master 之後發的網頁熱更新沒有「分享螢幕」，裝了這個分支的 App 會被蓋掉
 
 ## 步驟
 
