@@ -288,6 +288,16 @@ export interface GenerationParams {
   antiTruncation?: AntiTruncationOptions;
 }
 
+/** 組好但還沒送出的請求（看螢幕：交給原生那邊送） */
+export interface PendingRequest {
+  url: string;
+  headers: Record<string, string>;
+  /** JSON 字串 */
+  body: string;
+  /** 回應格式：OpenAI 相容（choices[0].message.content）或 Anthropic 原生（content[].text） */
+  format: "openai" | "anthropic";
+}
+
 interface BuiltRequest {
   body: Record<string, unknown>;
   diagnostics: GenerationDiagnostics;
@@ -1368,6 +1378,41 @@ export class OpenAICompatibleClient {
         usage,
         totalTimeMs: generationTime,
       },
+    };
+  }
+
+  /**
+   * 組好一次「非串流」請求但不送出：網址（含代理）、headers、body 都跟 generate() 送的一樣。
+   * 看螢幕用：交給 iOS 螢幕廣播擴充元件，在背景每隔幾分鐘附上螢幕截圖送出。
+   */
+  buildPendingRequest(
+    params: Pick<GenerationParams, "messages" | "settings" | "adjustLastMessageRole">,
+  ): PendingRequest {
+    if (this.shouldUseAnthropicNative()) {
+      const request = this.buildAnthropicRequest(
+        params.messages,
+        params.settings,
+        false,
+        params.adjustLastMessageRole,
+      );
+      return {
+        url: this.getAnthropicEndpoint(),
+        headers: this.getHeaders(),
+        body: JSON.stringify(request.body),
+        format: "anthropic",
+      };
+    }
+    const request = this.buildRequest(
+      params.messages,
+      params.settings,
+      false,
+      params.adjustLastMessageRole,
+    );
+    return {
+      url: this.getEndpoint(),
+      headers: this.getHeaders(),
+      body: JSON.stringify(request.body),
+      format: "openai",
     };
   }
 

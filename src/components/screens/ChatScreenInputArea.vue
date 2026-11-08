@@ -891,6 +891,20 @@ const isDarkBackground = computed(() =>
           <button
             v-if="!isGroupChat"
             class="feature-item"
+            @click="emit('handleFeatureClick', 'screen-watch')"
+          >
+            <div class="feature-icon">
+              <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <path
+                  d="M20 3H4c-1.1 0-2 .9-2 2v11c0 1.1.9 2 2 2h6v2H8v2h8v-2h-2v-2h6c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 13H4V5h16v11zM9 13.5V7.5l5.5 3-5.5 3z"
+                />
+              </svg>
+            </div>
+            <span class="feature-label">分享螢幕</span>
+          </button>
+          <button
+            v-if="!isGroupChat"
+            class="feature-item"
             @click="emit('handleFeatureClick', 'date')"
           >
             <div class="feature-icon">

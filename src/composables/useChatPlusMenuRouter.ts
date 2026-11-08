@@ -1,5 +1,5 @@
 import { usePhoneCallStore } from "@/stores/phoneCall";
-import { ref, type ComputedRef, type Ref } from "vue";
+import { getCurrentInstance, ref, type ComputedRef, type Ref } from "vue";
 
 /**
  * 加號選單路由 + 跳轉魔法 + 表情包面板
@@ -40,6 +40,8 @@ export function useChatPlusMenuRouter(deps: {
   emit: (e: string, ...args: any[]) => void;
 }) {
   const phoneCallStore = usePhoneCallStore();
+  // 「分享螢幕」面板掛在 body 上，要用聊天畫面的 appContext 才拿得到 store 等
+  const appContext = getCurrentInstance()?.appContext ?? null;
 
   // ===== 跳轉魔法 =====
   const showTimeTravelModal = ref(false);
@@ -131,6 +133,18 @@ export function useChatPlusMenuRouter(deps: {
         break;
       case "music":
         if (typeof deps.onShareMusic === "function") deps.onShareMusic();
+        break;
+      case "screen-watch":
+        if (deps.isGroupChat.value) break;
+        void import("@/components/screenWatch/openScreenWatchPanel").then(({ openScreenWatchPanel }) =>
+          openScreenWatchPanel(
+            {
+              chatId: deps.currentChatId.value || deps.chatId,
+              characterName: deps.characterName || "角色",
+            },
+            appContext,
+          ),
+        );
         break;
       default:
         console.log("未實現的功能:", feature);
