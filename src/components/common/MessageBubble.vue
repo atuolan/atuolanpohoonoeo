@@ -6385,6 +6385,10 @@ const showTextVoiceTranscript = ref(true);
     padding: 14px 16px;
     border-radius: 12px;
     color: white;
+    // .bubble.ai .bubble-text 會設 -webkit-text-fill-color（氣泡文字色），
+    // 它會繼承下來並蓋過 color，照片／影片卡片的白字就變成深色字。
+    // 這裡改回跟著各元素自己的 color 走。
+    -webkit-text-fill-color: currentColor;
     align-items: flex-start;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 
