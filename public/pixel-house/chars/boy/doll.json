@@ -1,0 +1,292 @@
+{
+ "poses": {
+  "front": {
+   "w": 25,
+   "h": 41,
+   "layers": [
+    {
+     "slot": "body",
+     "styles": {
+      "01": "doll/front/body_01.png"
+     }
+    },
+    {
+     "slot": "eyes",
+     "styles": {
+      "01": "doll/front/eyes_01.png"
+     }
+    },
+    {
+     "slot": "blush",
+     "styles": {
+      "01": "doll/front/blush_01.png"
+     }
+    },
+    {
+     "slot": "brows",
+     "styles": {
+      "01": "doll/front/brows_01.png"
+     }
+    },
+    {
+     "slot": "hair",
+     "styles": {
+      "01": "doll/front/hair_01.png",
+      "02": "doll/front/hair_02.png",
+      "03": "doll/front/hair_03.png",
+      "04": "doll/front/hair_04.png",
+      "05": "doll/front/hair_05.png"
+     }
+    },
+    {
+     "slot": "underwear",
+     "styles": {
+      "01": "doll/front/underwear_01.png"
+     }
+    },
+    {
+     "slot": "shoes",
+     "styles": {
+      "01": "doll/front/shoes_01.png",
+      "02": "doll/front/shoes_02.png"
+     }
+    },
+    {
+     "slot": "pants",
+     "styles": {
+      "01": "doll/front/pants_01.png",
+      "02": "doll/front/pants_02.png"
+     }
+    },
+    {
+     "slot": "shirt",
+     "styles": {
+      "01": "doll/front/shirt_01.png",
+      "02": "doll/front/shirt_02.png",
+      "03": "doll/front/shirt_03.png",
+      "04": "doll/front/shirt_04.png"
+     }
+    },
+    {
+     "slot": "jacket",
+     "styles": {
+      "01": "doll/front/jacket_01.png",
+      "02": "doll/front/jacket_02.png",
+      "03": "doll/front/jacket_03.png"
+     }
+    }
+   ]
+  },
+  "back": {
+   "w": 25,
+   "h": 41,
+   "layers": [
+    {
+     "slot": "body",
+     "styles": {
+      "01": "doll/back/body_01.png"
+     }
+    },
+    {
+     "slot": "underwear",
+     "styles": {
+      "01": "doll/back/underwear_01.png"
+     }
+    },
+    {
+     "slot": "pants",
+     "styles": {
+      "01": "doll/back/pants_01.png",
+      "02": "doll/back/pants_02.png"
+     }
+    },
+    {
+     "slot": "shoes",
+     "styles": {
+      "01": "doll/back/shoes_01.png",
+      "02": "doll/back/shoes_02.png"
+     }
+    },
+    {
+     "slot": "shirt",
+     "styles": {
+      "01": "doll/back/shirt_01.png",
+      "02": "doll/back/shirt_02.png",
+      "03": "doll/back/shirt_03.png",
+      "04": "doll/back/shirt_04.png"
+     }
+    },
+    {
+     "slot": "jacket",
+     "styles": {
+      "01": "doll/back/jacket_01.png",
+      "02": "doll/back/jacket_02.png",
+      "03": "doll/back/jacket_03.png"
+     }
+    },
+    {
+     "slot": "hair",
+     "styles": {
+      "01": "doll/back/hair_01.png",
+      "02": "doll/back/hair_02.png",
+      "03": "doll/back/hair_03.png",
+      "04": "doll/back/hair_04.png",
+      "05": "doll/back/hair_05.png"
+     }
+    }
+   ]
+  },
+  "walk": {
+   "w": 25,
+   "h": 41,
+   "frames": 4,
+   "ms": 150,
+   "faces": "left",
+   "layers": [
+    {
+     "slot": "body",
+     "styles": {
+      "01": [
+       "doll/walk/body_01_0.png",
+       "doll/walk/body_01_1.png",
+       "doll/walk/body_01_2.png",
+       "doll/walk/body_01_3.png"
+      ]
+     }
+    },
+    {
+     "slot": "shoes",
+     "styles": {
+      "01": [
+       "doll/walk/shoes_01_0.png",
+       "doll/walk/shoes_01_1.png",
+       "doll/walk/shoes_01_2.png",
+       "doll/walk/shoes_01_3.png"
+      ],
+      "02": [
+       "doll/walk/shoes_02_0.png",
+       "doll/walk/shoes_02_1.png",
+       "doll/walk/shoes_02_2.png",
+       "doll/walk/shoes_02_3.png"
+      ]
+     }
+    },
+    {
+     "slot": "eyes",
+     "styles": {
+      "01": [
+       "doll/walk/eyes_01_0.png",
+       "doll/walk/eyes_01_1.png",
+       "doll/walk/eyes_01_2.png",
+       "doll/walk/eyes_01_3.png"
+      ]
+     }
+    },
+    {
+     "slot": "hair",
+     "styles": {
+      "01": [
+       "doll/walk/hair_01_0.png",
+       "doll/walk/hair_01_1.png",
+       "doll/walk/hair_01_2.png",
+       "doll/walk/hair_01_3.png"
+      ],
+      "02": [
+       "doll/walk/hair_02_0.png",
+       "doll/walk/hair_02_1.png",
+       "doll/walk/hair_02_2.png",
+       "doll/walk/hair_02_3.png"
+      ],
+      "03": [
+       "doll/walk/hair_03_0.png",
+       "doll/walk/hair_03_1.png",
+       "doll/walk/hair_03_2.png",
+       "doll/walk/hair_03_3.png"
+      ],
+      "04": [
+       "doll/walk/hair_04_0.png",
+       "doll/walk/hair_04_1.png",
+       "doll/walk/hair_04_2.png",
+       "doll/walk/hair_04_3.png"
+      ],
+      "05": [
+       "doll/walk/hair_05_0.png",
+       "doll/walk/hair_05_1.png",
+       "doll/walk/hair_05_2.png",
+       "doll/walk/hair_05_3.png"
+      ]
+     }
+    },
+    {
+     "slot": "pants",
+     "styles": {
+      "01": [
+       "doll/walk/pants_01_0.png",
+       "doll/walk/pants_01_1.png",
+       "doll/walk/pants_01_2.png",
+       "doll/walk/pants_01_3.png"
+      ],
+      "02": [
+       "doll/walk/pants_02_0.png",
+       "doll/walk/pants_02_1.png",
+       "doll/walk/pants_02_2.png",
+       "doll/walk/pants_02_3.png"
+      ]
+     }
+    },
+    {
+     "slot": "shirt",
+     "styles": {
+      "01": [
+       "doll/walk/shirt_01_0.png",
+       "doll/walk/shirt_01_1.png",
+       "doll/walk/shirt_01_2.png",
+       "doll/walk/shirt_01_3.png"
+      ],
+      "02": [
+       "doll/walk/shirt_02_0.png",
+       "doll/walk/shirt_02_1.png",
+       "doll/walk/shirt_02_2.png",
+       "doll/walk/shirt_02_3.png"
+      ],
+      "03": [
+       "doll/walk/shirt_03_0.png",
+       "doll/walk/shirt_03_1.png",
+       "doll/walk/shirt_03_2.png",
+       "doll/walk/shirt_03_3.png"
+      ],
+      "04": [
+       "doll/walk/shirt_04_0.png",
+       "doll/walk/shirt_04_1.png",
+       "doll/walk/shirt_04_2.png",
+       "doll/walk/shirt_04_3.png"
+      ]
+     }
+    },
+    {
+     "slot": "jacket",
+     "styles": {
+      "01": [
+       "doll/walk/jacket_01_0.png",
+       "doll/walk/jacket_01_1.png",
+       "doll/walk/jacket_01_2.png",
+       "doll/walk/jacket_01_3.png"
+      ],
+      "02": [
+       "doll/walk/jacket_02_0.png",
+       "doll/walk/jacket_02_1.png",
+       "doll/walk/jacket_02_2.png",
+       "doll/walk/jacket_02_3.png"
+      ],
+      "03": [
+       "doll/walk/jacket_03_0.png",
+       "doll/walk/jacket_03_1.png",
+       "doll/walk/jacket_03_2.png",
+       "doll/walk/jacket_03_3.png"
+      ]
+     }
+    }
+   ]
+  }
+ }
+}

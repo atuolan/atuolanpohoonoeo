@@ -19,6 +19,7 @@ export type SettingsPageId =
   | "notification"
   | "background"
   | "phone"
+  | "homeScreen"
   | "backup"
   | "sync"
   | "storage"
@@ -35,6 +36,7 @@ export const SETTINGS_PAGE_TITLES: Record<Exclude<SettingsPageId, "home">, strin
   notification: "通知",
   background: "背景執行",
   phone: "日曆與定位",
+  homeScreen: "主頁",
   backup: "備份與還原",
   sync: "跨裝置同步",
   storage: "儲存空間",

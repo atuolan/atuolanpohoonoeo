@@ -6,6 +6,12 @@ import GlobalPhoneCallBar from "@/components/common/GlobalPhoneCallBar.vue";
 import NotificationToast from "@/components/common/NotificationToast.vue";
 import StreamingOutputWindow from "@/components/common/StreamingOutputWindow.vue";
 import NeonWheelDock from "@/components/dock/NeonWheelDock.vue";
+import PixelHouseHome from "@/components/pixelHouse/PixelHouseHome.vue";
+import {
+  loadPixelHouseState,
+  PIXEL_HOUSE_CHANGED_EVENT,
+  type HomeStyle,
+} from "@/components/pixelHouse/houseState";
 import IncomingCallModal from "@/components/modals/IncomingCallModal.vue";
 import PhoneCallModal from "@/components/modals/PhoneCallModal.vue";
 import VideoCallModal from "@/components/modals/VideoCallModal.vue";
@@ -132,6 +138,20 @@ import { PendingCall } from "./types";
 
 // 時間動態主題
 const { backgroundColor, textColor, isDark } = useTimeTheme();
+
+// 主頁樣式：畫布或像素小屋（設定 › 主頁）
+const homeStyle = ref<HomeStyle>(loadPixelHouseState().homeStyle);
+function syncHomeStyle() {
+  homeStyle.value = loadPixelHouseState().homeStyle;
+}
+onMounted(() => {
+  window.addEventListener(PIXEL_HOUSE_CHANGED_EVENT, syncHomeStyle);
+  window.addEventListener("storage", syncHomeStyle);
+});
+onUnmounted(() => {
+  window.removeEventListener(PIXEL_HOUSE_CHANGED_EVENT, syncHomeStyle);
+  window.removeEventListener("storage", syncHomeStyle);
+});
 
 // 全局事件處理：打開商店
 function handleOpenShopEvent() {
@@ -1977,6 +1997,10 @@ function handleNavigate(page: string) {
   } else if (page === "pomodoro" || page === "專注" || page === "番茄鐘") {
     // 番茄鐘
     navigateToPage("pomodoro");
+  } else if (page === "prompt-manager") {
+    // 提示詞管理（像素小屋的轉盤）
+    navigationHistory.value.push(currentPage.value);
+    navigateToPage("prompt-manager");
   }
 }
 
@@ -3095,6 +3119,9 @@ async function handleNotificationNavigate(page: string, data?: Record<string, an
     if (!restored) {
       console.warn("[App] 無法恢復通知對應聊天，已忽略此次跳轉", data);
     }
+  } else if (page === "chat" && data?.characterId) {
+    // 像素小屋點他、但還沒跟他聊過：跟從角色卡開始聊天一樣
+    await startChat(data.characterId);
   } else if (page === "open_fishing") {
     // 打開釣魚遊戲（通過遊戲中心）
     navigateToPage("game-center");
@@ -3180,12 +3207,20 @@ useSwipeBack(handleGlobalSwipeBack, swipeBackEnabled);
 
       <!-- 主頁：橫向白板畫布 -->
       <div v-else-if="authStore.isAuthenticated && currentPage === 'home'" class="home-screen-wrapper screen-container">
-        <!-- 最近聊天組件會帶 chatId，走跟通知相同的導航才能直接開該聊天 -->
-        <WhiteboardCanvas @navigate="handleNotificationNavigate" />
-        <NeonWheelDock
-          @navigate="handleNavigate"
+        <!-- 像素小屋：點他會帶 chatId，跟通知走同一條導航 -->
+        <PixelHouseHome
+          v-if="homeStyle === 'pixel-house'"
+          @navigate="handleNotificationNavigate"
           @open-global-theme="showGlobalTheme = true"
         />
+        <template v-else>
+          <!-- 最近聊天組件會帶 chatId，走跟通知相同的導航才能直接開該聊天 -->
+          <WhiteboardCanvas @navigate="handleNotificationNavigate" />
+          <NeonWheelDock
+            @navigate="handleNavigate"
+            @open-global-theme="showGlobalTheme = true"
+          />
+        </template>
       </div>
 
       <!-- 角色列表頁 -->
@@ -3440,7 +3475,7 @@ useSwipeBack(handleGlobalSwipeBack, swipeBackEnabled);
 
     <!-- 首頁全局設定教學：引導長按核心按鈕 -->
     <HomeGlobalThemeTutorialOverlay
-      v-if="currentPage === 'home' && authStore.isAuthenticated && !authScreenOnStage"
+      v-if="currentPage === 'home' && homeStyle !== 'pixel-house' && authStore.isAuthenticated && !authScreenOnStage"
       :global-theme-open="showGlobalTheme"
     />
 
