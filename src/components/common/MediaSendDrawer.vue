@@ -68,7 +68,7 @@
               </div>
               <div class="option-content">
                 <h4>AI 文生圖</h4>
-                <p>使用 NovelAI 生成圖片</p>
+                <p>用 AI 生成圖片</p>
               </div>
               <ChevronRight :size="20" />
             </div>

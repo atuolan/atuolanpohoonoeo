@@ -73,6 +73,96 @@ export interface NovelAIImageSettings {
   customBaseUrl?: string;
   /** OpenAI 格式用的模型名稱（由第三方決定，自由填寫） */
   openaiModel?: string;
+  /**
+   * 生圖服務；沒有（舊資料）＝ novelai。
+   * 上面的欄位大多是 NovelAI 專用，其他服務各自的連線設定放在 gpt / banana / midjourney。
+   */
+  provider?: ImageProvider;
+  gpt?: GptImageSettings;
+  banana?: BananaImageSettings;
+  /** Midjourney 與 Niji 共用（同一把 Key、同一個中轉站） */
+  midjourney?: MidjourneyImageSettings;
+}
+
+/** 生圖服務：niji 是 Midjourney 的動漫模型（--niji），跟 midjourney 共用連線設定 */
+export type ImageProvider = 'novelai' | 'gpt' | 'banana' | 'midjourney' | 'niji';
+
+export interface GptImageSettings {
+  apiKey: string;
+  /** 例如 https://api.openai.com/v1，或中轉站的 /v1 */
+  baseUrl: string;
+  /** gpt-image-2、gpt-image-1.5…，中轉站的自訂名稱也可以 */
+  model: string;
+  quality: 'auto' | 'low' | 'medium' | 'high';
+  /**
+   * images：POST /images/generations（官方格式）
+   * chat：POST /chat/completions，從回覆裡找圖片（部分中轉站的 gpt-4o-image 之類只給這種）
+   */
+  requestFormat: 'images' | 'chat';
+}
+
+export interface BananaImageSettings {
+  apiKey: string;
+  /** Gemini 格式填 https://generativelanguage.googleapis.com；OpenAI 格式填中轉站的 /v1 */
+  baseUrl: string;
+  /** gemini-2.5-flash-image（Nano Banana）、gemini-3-pro-image-preview（Pro）… */
+  model: string;
+  /** gemini：Google 原生 generateContent；openai：中轉站的 /chat/completions */
+  apiFormat: 'gemini' | 'openai';
+  /** 解析度；gemini-2.5-flash-image 只有 1K，不會送 */
+  imageSize: '1K' | '2K' | '4K';
+}
+
+export interface MidjourneyImageSettings {
+  apiKey: string;
+  /** midjourney-proxy 或支援 /mj 的中轉站（New API 等），填到 /mj 前面 */
+  baseUrl: string;
+  /** --v 版本；空字串＝不指定（用帳號預設） */
+  mjVersion: string;
+  /** --niji 版本 */
+  nijiVersion: string;
+  /** --stylize；空＝不指定 */
+  stylize?: number | null;
+  /** 速度：加在提示詞後面的 --fast / --relax / --turbo */
+  speed: 'default' | 'fast' | 'relax' | 'turbo';
+  /**
+   * single：把四宮格切出第一張（不另外花錢，跟 U1 幾乎一樣）
+   * upscale：自動按 U1（多一次任務、多一點時間與費用）
+   * grid：保留整張四宮格
+   */
+  resultMode: 'single' | 'upscale' | 'grid';
+}
+
+export function createDefaultGptImageSettings(): GptImageSettings {
+  return {
+    apiKey: '',
+    baseUrl: 'https://api.openai.com/v1',
+    model: 'gpt-image-2',
+    quality: 'medium',
+    requestFormat: 'images',
+  };
+}
+
+export function createDefaultBananaImageSettings(): BananaImageSettings {
+  return {
+    apiKey: '',
+    baseUrl: 'https://generativelanguage.googleapis.com',
+    model: 'gemini-2.5-flash-image',
+    apiFormat: 'gemini',
+    imageSize: '1K',
+  };
+}
+
+export function createDefaultMidjourneyImageSettings(): MidjourneyImageSettings {
+  return {
+    apiKey: '',
+    baseUrl: '',
+    mjVersion: '',
+    nijiVersion: '7',
+    stylize: null,
+    speed: 'default',
+    resultMode: 'single',
+  };
 }
 
 export type NovelAIApiSource = 'official' | 'nai-compatible' | 'openai';
@@ -310,6 +400,11 @@ export function applySavedNovelAIImageSettings(
   saved: Partial<NovelAIImageSettings>,
 ): void {
   Object.assign(target, saved);
+  target.provider = saved.provider ?? 'novelai';
+  // 各服務的子設定：舊資料或舊匯出沒有的欄位補預設值
+  target.gpt = { ...createDefaultGptImageSettings(), ...(saved.gpt ?? {}) };
+  target.banana = { ...createDefaultBananaImageSettings(), ...(saved.banana ?? {}) };
+  target.midjourney = { ...createDefaultMidjourneyImageSettings(), ...(saved.midjourney ?? {}) };
   if (!saved.qualityPreset) {
     target.qualityPreset = saved.qualityToggle === false ? 'none' : 'standard';
   }
@@ -365,6 +460,10 @@ export function createDefaultNovelAIImageSettings(): NovelAIImageSettings {
     apiSource: 'official',
     customBaseUrl: '',
     openaiModel: '',
+    provider: 'novelai',
+    gpt: createDefaultGptImageSettings(),
+    banana: createDefaultBananaImageSettings(),
+    midjourney: createDefaultMidjourneyImageSettings(),
   };
 }
 
@@ -410,7 +509,7 @@ function getSkipCfgAboveSigma(model: NovelAIModel, width: number, height: number
 /**
  * 按層級組裝最終 prompt（角色 -> 使用者 -> 全域前綴 -> 主體 -> 全域後綴）
  */
-function buildPromptWithTags(
+export function buildPromptWithTags(
   imagePrompt: string,
   settings: NovelAIImageSettings,
   characterPrompt?: string,
@@ -545,7 +644,7 @@ function buildParameters(
 /**
  * 使用 JSZip 解壓 NovelAI 回傳的 zip，取得圖片 base64
  */
-function arrayBufferToBase64(buffer: ArrayBuffer): string {
+export function arrayBufferToBase64(buffer: ArrayBuffer): string {
   const bytes = new Uint8Array(buffer);
   let binary = '';
   const chunk = 0x8000;
@@ -555,12 +654,12 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
   return btoa(binary);
 }
 
-function startsWithBytes(bytes: Uint8Array, magic: number[], offset = 0): boolean {
+export function startsWithBytes(bytes: Uint8Array, magic: number[], offset = 0): boolean {
   return magic.every((b, i) => bytes[offset + i] === b);
 }
 
 /** 直接是圖片檔（PNG / JPEG / WEBP / GIF）就回傳 true */
-function isRawImage(bytes: Uint8Array): boolean {
+export function isRawImage(bytes: Uint8Array): boolean {
   return (
     startsWithBytes(bytes, [0x89, 0x50, 0x4e, 0x47]) ||
     startsWithBytes(bytes, [0xff, 0xd8, 0xff]) ||
@@ -570,7 +669,7 @@ function isRawImage(bytes: Uint8Array): boolean {
 }
 
 /** 把圖片 URL（http 或 data:）轉成 base64 */
-async function imageUrlToBase64(url: string): Promise<string | null> {
+export async function imageUrlToBase64(url: string): Promise<string | null> {
   const dataMatch = url.match(/^data:[^;,]*;base64,(.*)$/);
   if (dataMatch) return dataMatch[1];
   try {
@@ -587,7 +686,7 @@ async function imageUrlToBase64(url: string): Promise<string | null> {
  * 從 JSON 回應找圖片：
  * OpenAI 格式 { data: [{ b64_json | url }] }，也容忍 { images: [...] }、{ image: ... }
  */
-async function extractImageFromJson(json: unknown): Promise<string | null> {
+export async function extractImageFromJson(json: unknown): Promise<string | null> {
   if (!json || typeof json !== 'object') return null;
   const obj = json as Record<string, unknown>;
   const candidates: unknown[] = [];
@@ -611,7 +710,7 @@ async function extractImageFromJson(json: unknown): Promise<string | null> {
 }
 
 /** 依回應內容判斷是 ZIP、圖片檔還是 JSON，取出 base64 圖片 */
-async function extractImageFromResponse(arrayBuffer: ArrayBuffer): Promise<string | null> {
+export async function extractImageFromResponse(arrayBuffer: ArrayBuffer): Promise<string | null> {
   const bytes = new Uint8Array(arrayBuffer);
   if (startsWithBytes(bytes, [0x50, 0x4b])) return extractImageFromZip(arrayBuffer);
   if (isRawImage(bytes)) return arrayBufferToBase64(arrayBuffer);
@@ -625,7 +724,7 @@ async function extractImageFromResponse(arrayBuffer: ArrayBuffer): Promise<strin
 }
 
 /** 第三方地址去掉結尾斜線 */
-function normalizeBaseUrl(url?: string): string {
+export function normalizeBaseUrl(url?: string): string {
   return (url || '').trim().replace(/\/+$/, '');
 }
 
@@ -650,7 +749,7 @@ async function extractImageFromZip(arrayBuffer: ArrayBuffer): Promise<string | n
  * 增強版：更多重試次數和更智能的等待策略
  * iOS Safari 優化：更短的等待時間
  */
-async function fetchWithRetry(
+export async function fetchWithRetry(
   url: string,
   init: RequestInit,
   maxRetries = 3, // 從 1 增加到 3
@@ -742,7 +841,7 @@ function extractErrorDetail(text: string): string {
   return text.trim().slice(0, 300);
 }
 
-async function parseApiError(response: Response): Promise<string> {
+export async function parseApiError(response: Response): Promise<string> {
   const text = await response.text().catch(() => '');
   const detail = extractErrorDetail(text);
   switch (response.status) {

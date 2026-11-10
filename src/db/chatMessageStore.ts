@@ -13,6 +13,7 @@
 import type { ChatMessage } from "@/types/chat";
 import { getDatabase, DB_STORES } from "@/db/database";
 import type { StoredChatMessage } from "@/db/database";
+import { externalizeRecordAudio, type AudioStoreAccess } from "@/db/messageAudio";
 
 // 重新匯出供外部使用
 export type { StoredChatMessage } from "@/db/database";
@@ -71,6 +72,45 @@ function toStorableRecord(record: StoredChatMessage): StoredChatMessage {
       return safe as unknown as StoredChatMessage;
     }
   }
+}
+
+type MessageDb = Awaited<ReturnType<typeof getDatabase>>;
+
+function openMessageAndAudioTx(db: MessageDb) {
+  return db.transaction(["chatMessages", "audio-blobs"], "readwrite");
+}
+type MessageWriteTx = ReturnType<typeof openMessageAndAudioTx>;
+
+/**
+ * 寫訊息的交易，連 audio-blobs 一起開：訊息裡內嵌的 base64 語音在同一個交易裡搬出去，
+ * 進資料庫的訊息只留引用（見 messageAudio.ts）。
+ */
+function openMessageWriteTx(db: MessageDb): { tx: MessageWriteTx; audio: AudioStoreAccess | null } {
+  if (db.objectStoreNames.contains("audio-blobs")) {
+    const tx = openMessageAndAudioTx(db);
+    const audioStore = tx.objectStore("audio-blobs");
+    return {
+      tx,
+      audio: {
+        get: (id) => audioStore.get(id),
+        put: (record) => audioStore.put(record),
+      },
+    };
+  }
+  // 舊版資料庫連線可能還沒有 audio-blobs 表：照舊只寫訊息，語音留在訊息裡
+  const tx = db.transaction("chatMessages", "readwrite") as unknown as MessageWriteTx;
+  return { tx, audio: null };
+}
+
+/** 把要寫入的訊息裡的內嵌語音換成引用；existing 是資料庫裡原本那筆，已經搬出去的音檔會沿用 */
+async function withExternalAudio(
+  record: StoredChatMessage,
+  audio: AudioStoreAccess | null,
+  existing: StoredChatMessage | undefined,
+): Promise<StoredChatMessage> {
+  if (!audio) return record;
+  const converted = await externalizeRecordAudio(record, audio, existing);
+  return converted ? converted.record : record;
 }
 
 function messageSortKey(message: Pick<ChatMessage, "createdAt" | "id">): [number, string] {
@@ -297,7 +337,7 @@ export async function saveChatMessages(
   snapshotTime?: number,
 ): Promise<void> {
   const db = await getDatabase();
-  const tx = db.transaction("chatMessages", "readwrite");
+  const { tx, audio } = openMessageWriteTx(db);
   const store = tx.objectStore("chatMessages");
   const index = store.index("by-chatId");
 
@@ -338,7 +378,11 @@ export async function saveChatMessages(
       });
       continue;
     }
-    await store.put(toStorableRecord({ ...msg, chatId } as StoredChatMessage));
+    await store.put(
+      toStorableRecord(
+        await withExternalAudio({ ...msg, chatId } as StoredChatMessage, audio, existing),
+      ),
+    );
   }
 
   await tx.done;
@@ -354,7 +398,7 @@ export async function upsertChatMessages(
 ): Promise<void> {
   if (!messages.length) return;
   const db = await getDatabase();
-  const tx = db.transaction("chatMessages", "readwrite");
+  const { tx, audio } = openMessageWriteTx(db);
   const store = tx.objectStore("chatMessages");
   for (const msg of messages) {
     if (!msg || !msg.id) continue;
@@ -367,7 +411,11 @@ export async function upsertChatMessages(
       });
       continue;
     }
-    await store.put(toStorableRecord({ ...msg, chatId } as StoredChatMessage));
+    await store.put(
+      toStorableRecord(
+        await withExternalAudio({ ...msg, chatId } as StoredChatMessage, audio, existing),
+      ),
+    );
   }
   await tx.done;
 }
@@ -382,7 +430,7 @@ export async function appendChatMessages(
 ): Promise<void> {
   if (!newMessages.length) return;
   const db = await getDatabase();
-  const tx = db.transaction("chatMessages", "readwrite");
+  const { tx, audio } = openMessageWriteTx(db);
   const store = tx.objectStore("chatMessages");
 
   for (const msg of newMessages) {
@@ -396,7 +444,11 @@ export async function appendChatMessages(
       });
       continue;
     }
-    await store.put(toStorableRecord({ ...msg, chatId } as StoredChatMessage));
+    await store.put(
+      toStorableRecord(
+        await withExternalAudio({ ...msg, chatId } as StoredChatMessage, audio, existing),
+      ),
+    );
   }
 
   await tx.done;

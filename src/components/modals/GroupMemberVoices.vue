@@ -16,6 +16,7 @@ import {
   type MiniMaxTTSSettings,
   type MiniMaxVoice,
 } from "@/api/MiniMaxTTSApi";
+import { getActiveTTSApiKey, getTTSProvider } from "@/api/ttsProvider";
 import { computed, nextTick, onMounted, ref } from "vue";
 
 // voice_id 一定是英文字母開頭，不會跟這個值撞到
@@ -39,7 +40,15 @@ const error = ref("");
 /** 有清單但選了「自己輸入」的成員 */
 const typingOwn = ref<Record<string, boolean>>({});
 
-const cacheKey = computed(() => `${props.ttsSettings.platform}:${props.ttsSettings.apiKey}`);
+const apiKey = computed(() => getActiveTTSApiKey(props.ttsSettings));
+const isFish = computed(() => getTTSProvider(props.ttsSettings) === "fishaudio");
+/** MiniMax 叫 voice_id、Fish Audio 叫 reference_id */
+const idLabel = computed(() => (isFish.value ? "reference_id" : "voice_id"));
+const cacheKey = computed(() =>
+  isFish.value
+    ? `fish:${props.ttsSettings.fishAudio?.baseUrl}:${apiKey.value}`
+    : `${props.ttsSettings.platform}:${apiKey.value}`,
+);
 const clonedVoices = computed(() => voices.value.filter((v) => v.voice_type !== "system"));
 const systemVoices = computed(() => voices.value.filter((v) => v.voice_type === "system"));
 
@@ -54,7 +63,7 @@ function isListed(voiceId: string): boolean {
 }
 
 async function loadVoices(force = false) {
-  if (!props.ttsSettings.apiKey) return;
+  if (!apiKey.value) return;
   const cached = voiceCache.get(cacheKey.value);
   if (cached && !force) {
     voices.value = cached;
@@ -68,7 +77,7 @@ async function loadVoices(force = false) {
     voiceCache.set(cacheKey.value, result.voices);
     voices.value = result.voices;
   } else {
-    error.value = `取不到音色清單：${result.error || "未知錯誤"}，可以直接輸入 voice_id`;
+    error.value = `取不到音色清單：${result.error || "未知錯誤"}，可以直接輸入 ${idLabel.value}`;
   }
 }
 
@@ -94,7 +103,7 @@ onMounted(() => void loadVoices());
     <div class="member-voices__head">
       <span id="member-voices-title" class="member-voices__title">成員音色</span>
       <button
-        v-if="ttsSettings.apiKey"
+        v-if="apiKey"
         type="button"
         class="member-voices__reload"
         :disabled="loading"
@@ -104,7 +113,7 @@ onMounted(() => void loadVoices());
       </button>
     </div>
     <p class="member-voices__hint">
-      每個成員可以有自己的聲音；沒選的人用{{ fallbackLabel }}。<template v-if="voices.length">清單裡沒有的，選「自己輸入 voice_id」。</template>
+      每個成員可以有自己的聲音；沒選的人用{{ fallbackLabel }}。<template v-if="voices.length">清單裡沒有的，選「自己輸入 {{ idLabel }}」。</template>
     </p>
 
     <div v-for="member in members" :key="member.id" class="member-voices__row">
@@ -121,7 +130,7 @@ onMounted(() => void loadVoices());
         @change="onSelect(member.id, ($event.target as HTMLSelectElement).value)"
       >
         <option value="">跟著群組</option>
-        <option :value="TYPE_OWN">自己輸入 voice_id…</option>
+        <option :value="TYPE_OWN">自己輸入 {{ idLabel }}…</option>
         <option
           v-if="modelValue?.[member.id] && !isListed(modelValue[member.id])"
           :value="modelValue[member.id]"
@@ -145,7 +154,7 @@ onMounted(() => void loadVoices());
           type="text"
           class="member-voices__field"
           :value="modelValue?.[member.id] ?? ''"
-          placeholder="voice_id，留空跟著群組"
+          :placeholder="`${idLabel}，留空跟著群組`"
           autocomplete="off"
           autocapitalize="none"
           spellcheck="false"

@@ -8,6 +8,7 @@ import {
   phoneCalendarMethodLabel as getPhoneCalendarMethodLabel,
   resolvePhoneCalendarMethod,
 } from "@/services/phoneCalendar";
+import { getTTSProviderName, isTTSConfigured } from "@/api/ttsProvider";
 import { AUXILIARY_TASKS, useNotificationStore, useSettingsStore } from "@/stores";
 import type { RoutableTaskType } from "@/stores/settings";
 import { useAnnouncementStore } from "@/stores/announcements";
@@ -195,10 +196,12 @@ const groups = computed<Array<{ title: string; items: HomeItem[] }>>(() => [
       },
       {
         key: "tts",
-        label: "語音合成（MiniMax）",
+        label: "語音合成",
         icon: AudioLines,
         hue: "lavender",
-        value: settingsStore.minimaxTTS.apiKey ? "已設定" : "未設定",
+        value: isTTSConfigured(settingsStore.minimaxTTS)
+          ? getTTSProviderName(settingsStore.minimaxTTS)
+          : "未設定",
         onClick: () => emit("open", "tts"),
       },
       {

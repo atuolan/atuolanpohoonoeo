@@ -2,19 +2,20 @@ import { ref } from "vue";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { synthesizeSpeech } from "@/api/MiniMaxTTSApi";
 import { useChatTTS } from "./useChatTTS";
+import type { ChatScreenMessage as ChatMessage } from "@/types/chatScreen";
 
 vi.mock("@/api/MiniMaxTTSApi", () => ({
   synthesizeSpeech: vi.fn(),
 }));
 
-const aiMessage = {
+const aiMessage: ChatMessage = {
   id: "ai-1",
-  role: "ai" as const,
+  role: "ai",
   content: "沒有標記的句子",
   timestamp: Date.now(),
 };
 
-function createContext(messages = [aiMessage]) {
+function createContext(messages: ChatMessage[] = [aiMessage]) {
   return {
     messages: ref(messages),
     chatMinimaxTTSEnabled: ref(true),
@@ -361,7 +362,7 @@ describe("useChatTTS 點了才生成", () => {
     );
   });
 
-  function createLazyContext(messages = [{ ...aiMessage }]) {
+  function createLazyContext(messages: ChatMessage[] = [{ ...aiMessage }]) {
     const context = createContext(messages);
     context.settingsStore.minimaxTTS.autoGenerate = false;
     return context;

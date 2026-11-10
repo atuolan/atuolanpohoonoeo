@@ -1663,6 +1663,14 @@ async function loadAppData() {
     }
   }
 
+  // 舊訊息裡內嵌的 base64 語音搬到 audio-blobs（一筆一筆、分批做），之後讀聊天不會把語音全讀進記憶體。
+  // 搬完一次就不再掃；新寫進去的語音都會在 chatMessageStore 轉成引用。
+  setTimeout(() => {
+    import("@/db/messageAudio")
+      .then(({ migrateInlineMessageAudio }) => migrateInlineMessageAudio())
+      .catch((err) => console.warn("[App] 搬移舊語音失敗:", err));
+  }, 5000);
+
   // 載入全局遊戲經濟狀態（錢包、裝飾品等）
   const gameEconomyStore = useGameEconomyStore();
   await gameEconomyStore.loadState("global");

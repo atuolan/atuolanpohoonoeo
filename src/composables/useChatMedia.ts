@@ -1,4 +1,10 @@
 import { useSettingsStore } from "@/stores";
+import {
+  getImageGenTimeoutMs,
+  getImageProvider,
+  getImageProviderLabel,
+  isImageGenReady,
+} from "@/api/ImageGenApi";
 import { useUserStore } from "@/stores/user";
 import type { StoredCharacter } from "@/types/character";
 import { ref, type Ref } from "vue";
@@ -239,11 +245,11 @@ export function useChatMedia(deps: {
       deps.messages.value[msgIndex].imageCaption = imageDescription.trim();
     }
 
-    // 遞補鏈：NovelAI 啟用時使用 NovelAI，否則使用 Pixabay
-    if (
-      settingsStore.novelAIImage.enabled &&
-      settingsStore.novelAIImage.apiKey
-    ) {
+    // 遞補鏈：文生圖（NovelAI / GPT / Banana / MJ / Niji）啟用時用它，否則使用 Pixabay
+    if (isImageGenReady(settingsStore.novelAIImage)) {
+      const providerLabel = getImageProviderLabel(
+        getImageProvider(settingsStore.novelAIImage),
+      );
       // 舊資料可能只留下圖片描述，沒有保存英文 prompt；這時退回用描述重生。
       const novelAIPrompt = imagePrompt?.trim() || effectivePrompt;
 
@@ -259,11 +265,10 @@ export function useChatMedia(deps: {
       isGeneratingImage.value = true;
 
       try {
-        const { generateImage } = await import("@/api/NovelAIImageApi");
+        const { generateAIImage } = await import("@/api/ImageGenApi");
 
-        // iOS Safari 特殊處理：更短的超時時間
-        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-        const timeoutMs = isIOS ? 45000 : 60000; // iOS: 45秒, 其他: 60秒
+        // NovelAI：iOS 45 秒、其他 60 秒；GPT / Banana / MJ 本來就比較久
+        const timeoutMs = getImageGenTimeoutMs(settingsStore.novelAIImage);
 
         // 添加超時控制
         const timeoutPromise = new Promise<never>((_, reject) =>
@@ -279,7 +284,7 @@ export function useChatMedia(deps: {
         );
 
         const result = await Promise.race([
-          generateImage(novelAIPrompt, settingsStore.novelAIImage, {
+          generateAIImage(novelAIPrompt, settingsStore.novelAIImage, {
             characterPrompt: getCharacterPrompt(),
             userPrompt: getUserPrompt(),
           }),
@@ -294,9 +299,9 @@ export function useChatMedia(deps: {
             ...deps.messages.value[idx],
             content: deps.messages.value[idx].imageCaption || effectivePrompt,
             messageType: "image",
-            imageUrl: `data:image/png;base64,${result.imageBase64}`,
+            imageUrl: `data:${result.mimeType || "image/png"};base64,${result.imageBase64}`,
             imageData: result.imageBase64,
-            imageMimeType: "image/png",
+            imageMimeType: result.mimeType || "image/png",
             imagePrompt: novelAIPrompt,
             isStreaming: false,
           };
@@ -308,11 +313,11 @@ export function useChatMedia(deps: {
           const errorMsg = result.error || "未知錯誤";
           if (errorMsg.includes("503")) {
             alert(
-              `NovelAI 圖片生成失敗 (503)\n\n${errorMsg}\n\n提示詞: ${novelAIPrompt}`,
+              `${providerLabel} 圖片生成失敗 (503)\n\n${errorMsg}\n\n提示詞: ${novelAIPrompt}`,
             );
           } else {
             alert(
-              `NovelAI 圖片生成失敗\n\n${errorMsg}\n\n提示詞: ${novelAIPrompt}`,
+              `${providerLabel} 圖片生成失敗\n\n${errorMsg}\n\n提示詞: ${novelAIPrompt}`,
             );
           }
         }
@@ -325,15 +330,15 @@ export function useChatMedia(deps: {
           error instanceof Error ? error.message : "網絡錯誤或請求超時";
         if (errorMsg.includes("503")) {
           alert(
-            `NovelAI 圖片生成異常 (503)\n\n服務暫時不可用，可能原因：\n1. NovelAI 服務器負載過高\n2. 網絡連接不穩定\n3. API Key 使用頻率過高\n\n建議：\n- 稍後重試（系統已自動重試 3 次）\n- 切換到 WiFi 網絡環境\n- 檢查 API Key 是否有效\n\n提示詞: ${novelAIPrompt}`,
+            `${providerLabel} 圖片生成異常 (503)\n\n服務暫時不可用，可能原因：\n1. 服務器負載過高\n2. 網絡連接不穩定\n3. API Key 使用頻率過高\n\n建議：\n- 稍後重試（系統已自動重試 3 次）\n- 切換到 WiFi 網絡環境\n- 檢查 API Key 是否有效\n\n提示詞: ${novelAIPrompt}`,
           );
         } else if (errorMsg.includes("超時")) {
           alert(
-            `NovelAI 圖片生成超時\n\n${errorMsg}\n\n建議：\n- 檢查網絡連接\n- 切換到更穩定的網絡環境\n- 稍後重試\n\n提示詞: ${novelAIPrompt}`,
+            `${providerLabel} 圖片生成超時\n\n${errorMsg}\n\n建議：\n- 檢查網絡連接\n- 切換到更穩定的網絡環境\n- 稍後重試\n\n提示詞: ${novelAIPrompt}`,
           );
         } else {
           alert(
-            `NovelAI 圖片生成異常\n\n${errorMsg}\n\n提示詞: ${novelAIPrompt}`,
+            `${providerLabel} 圖片生成異常\n\n${errorMsg}\n\n提示詞: ${novelAIPrompt}`,
           );
         }
       } finally {
@@ -354,11 +359,8 @@ export function useChatMedia(deps: {
   }
 
   async function handleAIGenerateImage(prompt: string) {
-    if (
-      !settingsStore.novelAIImage.enabled ||
-      !settingsStore.novelAIImage.apiKey
-    ) {
-      alert("請先在聊天設定中配置 NovelAI API Key");
+    if (!isImageGenReady(settingsStore.novelAIImage)) {
+      alert("請先在聊天設定的「文生圖設定」啟用並填好 API Key");
       return;
     }
 
@@ -375,8 +377,8 @@ export function useChatMedia(deps: {
     deps.scrollToBottom();
 
     try {
-      const { generateImage } = await import("@/api/NovelAIImageApi");
-      const result = await generateImage(prompt, settingsStore.novelAIImage, {
+      const { generateAIImage } = await import("@/api/ImageGenApi");
+      const result = await generateAIImage(prompt, settingsStore.novelAIImage, {
         characterPrompt: getCharacterPrompt(),
         userPrompt: getUserPrompt(),
       });
@@ -390,9 +392,9 @@ export function useChatMedia(deps: {
             ...deps.messages.value[msgIndex],
             content: `[AI 生成] ${prompt}`,
             messageType: "image",
-            imageUrl: `data:image/png;base64,${result.imageBase64}`,
+            imageUrl: `data:${result.mimeType || "image/png"};base64,${result.imageBase64}`,
             imageData: result.imageBase64,
-            imageMimeType: "image/png",
+            imageMimeType: result.mimeType || "image/png",
             imageCaption: prompt,
             imagePrompt: prompt,
           };

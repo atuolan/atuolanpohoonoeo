@@ -10,6 +10,13 @@ import {
   getMessageTTSSource,
 } from "@/utils/messageTTS";
 import {
+  applyTTSVoiceOverride,
+  getOverrideMemberVoices,
+  getOverrideVoice,
+  isTTSConfigured,
+} from "@/api/ttsProvider";
+import { isMessageAudioRef, messageAudioExists, storeMessageAudio } from "@/db/messageAudio";
+import {
   convertTTSContentToSimplified,
   prepareTTSContent,
   type TTSLanguageMode,
@@ -26,6 +33,10 @@ export interface ChatMinimaxTTSOverride {
   callBilingual?: boolean;
   /** 群聊成員各自的音色：key 是訊息的 senderCharacterId，value 是 voice_id */
   memberVoices?: Record<string, string>;
+  /** Fish Audio 的音色（reference_id）；跟 MiniMax 的 voice_id 不通用，分開存 */
+  fishVoiceId?: string;
+  /** Fish Audio 的群聊成員音色 */
+  fishMemberVoices?: Record<string, string>;
 }
 
 export type MessageTTSRegenerationResult =
@@ -83,8 +94,20 @@ export function useChatTTS(context: {
     showMinimaxTTSSettingsModal.value = false;
   }
 
-  /** MiniMax 回傳的是 Aliyun OSS 簽名 URL（約 24h 後過期），下載轉成 base64 data URL 保存 */
+  /**
+   * 音檔存進 audio-blobs，訊息裡只留引用（audioblob_…）。
+   * 以前轉成 base64 直接放在訊息裡，語音多的聊天每次回覆都把全部語音讀進記憶體，手機會閃退。
+   * MiniMax 回傳的是 Aliyun OSS 簽名 URL（約 24h 後過期），要先下載；Fish Audio 直接回傳 data URL。
+   */
   async function persistAudioUrl(audioUrl: string): Promise<string> {
+    if (audioUrl.startsWith("data:")) {
+      try {
+        return await storeMessageAudio(audioUrl);
+      } catch (err) {
+        console.warn("[TTS] 語音存檔失敗，先放在訊息裡：", err);
+        return audioUrl;
+      }
+    }
     try {
       const audioResp = await fetch(audioUrl);
       if (!audioResp.ok) {
@@ -94,18 +117,9 @@ export function useChatTTS(context: {
         return audioUrl;
       }
       const blob = await audioResp.blob();
-      return await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onloadend = () => {
-          const r = reader.result;
-          if (typeof r === "string") resolve(r);
-          else reject(new Error("FileReader 結果非字串"));
-        };
-        reader.onerror = () => reject(reader.error);
-        reader.readAsDataURL(blob);
-      });
+      return await storeMessageAudio(blob, blob.type || "audio/mpeg");
     } catch (fetchErr) {
-      console.warn("[MiniMax TTS] 下載音頻失敗，仍使用臨時 URL：", fetchErr);
+      console.warn("[MiniMax TTS] 下載或保存音頻失敗，仍使用臨時 URL：", fetchErr);
       return audioUrl;
     }
   }
@@ -124,11 +138,13 @@ export function useChatTTS(context: {
 
     const { synthesizeSpeech } = await import("@/api/MiniMaxTTSApi");
     const override = chatMinimaxTTSOverride.value;
-    const memberVoice = (id: string | undefined) => (id && override.memberVoices?.[id]?.trim()) || undefined;
+    const globalSettings = context.settingsStore.minimaxTTS;
+    const memberVoices = getOverrideMemberVoices(globalSettings, override);
+    const memberVoice = (id: string | undefined) => (id && memberVoices?.[id]?.trim()) || undefined;
     // 群聊：說話的成員有自己的音色就用它，其次才是這個聊天的音色
     const senderVoice = memberVoice(message.senderCharacterId);
     const baseSettings = {
-      ...context.settingsStore.minimaxTTS,
+      ...globalSettings,
       ...(override.pitch !== undefined && { pitch: override.pitch }),
       ...(override.languageBoost !== undefined && { languageBoost: override.languageBoost }),
     };
@@ -138,21 +154,19 @@ export function useChatTTS(context: {
     const speakerVoice = seg.speaker
       ? memberVoice(context.resolveSpeakerId?.(seg.speaker))
       : undefined;
-    const voiceId = speakerVoice || senderVoice || override.voiceId;
-    // 每段用自己的 speed 和 emotion
-    const mergedSettings = {
-      ...baseSettings,
-      // 成員或聊天自己指定的音色優先於全域的音色混合
-      ...(voiceId && { voiceId, timberWeightsEnabled: false }),
-      speed: baseSpeed * (seg.speed ?? 1),
-    };
+    const voiceId = speakerVoice || senderVoice || getOverrideVoice(globalSettings, override);
+    // 每段用自己的 speed 和 emotion；成員或聊天自己指定的音色優先於全域的音色混合
+    const mergedSettings = applyTTSVoiceOverride(
+      { ...baseSettings, speed: baseSpeed * (seg.speed ?? 1) },
+      voiceId,
+    );
     const ttsText = convertTTSContentToSimplified(seg.text, mergedSettings.languageBoost);
 
     const result = await synthesizeSpeech(ttsText, mergedSettings, {
       emotion: seg.emotion !== "neutral" ? seg.emotion : override.emotion,
     });
     if (!result.success || !result.audioUrl) {
-      console.warn(`[MiniMax TTS] 段落 ${index} 合成失敗:`, result.error);
+      console.warn(`[TTS] 段落 ${index} 合成失敗:`, result.error);
       return undefined;
     }
 
@@ -188,7 +202,7 @@ export function useChatTTS(context: {
     },
   ): Promise<boolean> {
     if (!context.chatMinimaxTTSEnabled.value) return false;
-    if (!context.settingsStore.minimaxTTS.apiKey) return false;
+    if (!isTTSConfigured(context.settingsStore.minimaxTTS)) return false;
     if (!options?.force && !hasTTSTags(content)) return false;
 
     // 找到訊息並保存原始文字
@@ -267,8 +281,15 @@ export function useChatTTS(context: {
     const message = context.messages.value.find((m) => m.id === messageId);
     const segment = message?.ttsSegments?.[index];
     if (!message || !segment) return { success: false, reason: "not-found" };
-    if (segment.audioUrl) return { success: true, audioUrl: segment.audioUrl };
-    if (!context.settingsStore.minimaxTTS.apiKey) {
+    if (segment.audioUrl) {
+      // 從別台裝置同步過來的語音只有引用、音檔不在這台：當成還沒生成
+      if (!isMessageAudioRef(segment.audioUrl) || (await messageAudioExists(segment.audioUrl))) {
+        return { success: true, audioUrl: segment.audioUrl };
+      }
+      segment.audioUrl = undefined;
+      if (index === 0) message.ttsAudioUrl = undefined;
+    }
+    if (!isTTSConfigured(context.settingsStore.minimaxTTS)) {
       return { success: false, reason: "missing-api-key" };
     }
 
@@ -300,7 +321,7 @@ export function useChatTTS(context: {
     if (!context.chatMinimaxTTSEnabled.value) {
       return { success: false, reason: "disabled" };
     }
-    if (!context.settingsStore.minimaxTTS.apiKey) {
+    if (!isTTSConfigured(context.settingsStore.minimaxTTS)) {
       return { success: false, reason: "missing-api-key" };
     }
     if (regeneratingMessageIds.has(messageId)) {
