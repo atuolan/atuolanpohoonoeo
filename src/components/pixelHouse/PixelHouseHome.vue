@@ -12,6 +12,7 @@ import { useCharactersStore } from "@/stores";
 import { useHomeBadgesStore } from "@/stores/homeBadges";
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from "vue";
 import HouseAppsSheet from "./HouseAppsSheet.vue";
+import HouseGuide, { type GuideAction } from "./HouseGuide.vue";
 import HouseRoom from "./HouseRoom.vue";
 import HouseWardrobe from "./HouseWardrobe.vue";
 import type { PartSlot } from "./wardrobeData";
@@ -568,6 +569,30 @@ function pickSheetApp(app: string) {
   emit("navigate", app);
 }
 
+// ===== 小屋怎麼玩 =====
+const guideOpen = ref(false);
+function closeGuide() {
+  guideOpen.value = false;
+  if (!state.guideSeen) {
+    state.guideSeen = true;
+    persist();
+  }
+}
+/** 說明裡的「試試看」：關掉說明，直接帶去做那件事 */
+function tryGuide(action: GuideAction) {
+  closeGuide();
+  if (action === "show-spots") {
+    menuOpen.value = false;
+    showAll.value = true;
+  } else if (action === "open-dial") {
+    showAll.value = false;
+    menuOpen.value = true;
+  } else if (action === "find-resident") findResident();
+  else if (action === "wardrobe") openWardrobe(null);
+  else if (action === "edit-layout") enterEdit();
+  else if (action === "settings") emit("navigate", "settings");
+}
+
 function backToCanvas() {
   sheetOpen.value = false;
   state.homeStyle = "canvas";
@@ -768,6 +793,12 @@ const hint = computed(() => {
 
 function hintTap() {
   if (editMode.value || menuOpen.value || !isHome.value || meVisible.value) return;
+  findResident();
+}
+
+/** 畫面滑到他在的那一間 */
+function findResident() {
+  if (!isHome.value) return;
   if (meInBath.value) {
     openBath();
     return;
@@ -842,6 +873,8 @@ onMounted(async () => {
   if (residentId.value && status.value !== "away" && status.value !== "date") life.start();
   // 一打開都從客廳開始（不跟著他跑；想看他點下面的提示）
   scrollToRoom(0, 0);
+  // 第一次打開小屋：先看一次怎麼玩
+  if (!state.guideSeen) guideOpen.value = true;
   started = true;
   if (document.hidden) life.pause();
   else startTimers();
@@ -1209,6 +1242,15 @@ function labelStyle(room: RoomId, it: RenderItem) {
         @wardrobe="sheetOpen = false; openWardrobe(null)"
         @global-theme="sheetOpen = false; emit('open-global-theme')"
         @back-to-canvas="backToCanvas"
+        @guide="sheetOpen = false; guideOpen = true"
+      />
+      <HouseGuide
+        :open="guideOpen"
+        :pronoun="pronoun"
+        :has-resident="!!residentId"
+        :at-home="isHome"
+        @close="closeGuide"
+        @try="tryGuide"
       />
       <HouseWardrobe
         :open="wardrobeOpen"

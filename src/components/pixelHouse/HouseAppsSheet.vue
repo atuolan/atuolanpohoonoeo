@@ -14,6 +14,7 @@ const emit = defineEmits<{
   (e: "wardrobe"): void;
   (e: "global-theme"): void;
   (e: "back-to-canvas"): void;
+  (e: "guide"): void;
 }>();
 
 function badgeText(n: number): string {
@@ -49,6 +50,9 @@ function badgeText(n: number): string {
 
           <h3 class="ph-sheet-sub">小屋</h3>
           <div class="ph-row-list">
+            <button class="ph-row" @click="emit('guide')">
+              <span>小屋怎麼玩</span><span class="ph-row-note">哪裡可以點、怎麼換裝、怎麼佈置</span>
+            </button>
             <button class="ph-row" @click="emit('wardrobe')">
               <span>換外觀</span><span class="ph-row-note">也可以點浴室的鏡子</span>
             </button>
