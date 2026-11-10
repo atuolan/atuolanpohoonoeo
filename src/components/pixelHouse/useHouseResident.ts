@@ -34,6 +34,10 @@ export function useHouseResident(deps: ResidentDeps) {
   /** 走路時往哪間 */
   const heading = ref<RoomId>("living");
   const home = ref(false);
+  /** 這趟會走到別間（同一間裡走動時是 false） */
+  const crossing = ref(false);
+  /** 排前後用的腳的位置：走路時用起點和終點裡比較前面的那個，走到了才換，不會走到一半被家具蓋住 */
+  const depthY = ref(me.y);
 
   let nextTimer: ReturnType<typeof setTimeout> | null = null;
   let legTimer: ReturnType<typeof setTimeout> | null = null;
@@ -77,6 +81,7 @@ export function useHouseResident(deps: ResidentDeps) {
     const target = spotOf(key);
     const legs = planRoute({ ...me }, target, bathDoor());
     act.value = key;
+    crossing.value = target.room !== me.room;
     heading.value = target.room;
     walking.value = true;
     runLegs(legs, () => {
@@ -88,6 +93,7 @@ export function useHouseResident(deps: ResidentDeps) {
 
   function runLegs(legs: Leg[], done: () => void) {
     if (dead) return;
+    depthY.value = me.y;
     const [leg, ...rest] = legs;
     if (!leg) {
       done();
@@ -112,6 +118,7 @@ export function useHouseResident(deps: ResidentDeps) {
     const ms = Math.round((dist / WALK_SPEED) * 1000);
     moveMs.value = ms;
     if (Math.abs(dx) > 2) facing.value = dx > 0 ? 1 : -1;
+    depthY.value = Math.max(me.y, leg.y);
     Object.assign(me, { room: leg.room, x: leg.x, y: leg.y });
     legTimer = setTimeout(() => runLegs(rest, done), ms);
   }
@@ -125,6 +132,7 @@ export function useHouseResident(deps: ResidentDeps) {
       // 出門回來：從客廳大門走進來
       const door = spotOf("door");
       Object.assign(me, door);
+      depthY.value = me.y;
       moveMs.value = 0;
       act.value = "door";
       goTo(first);
@@ -133,6 +141,7 @@ export function useHouseResident(deps: ResidentDeps) {
     const spot = spotOf(first);
     moveMs.value = 0;
     Object.assign(me, spot);
+    depthY.value = me.y;
     act.value = first;
     walking.value = false;
     schedule(dwellMs(first));
@@ -165,7 +174,7 @@ export function useHouseResident(deps: ResidentDeps) {
     clearTimers();
   });
 
-  return { me, act, walking, facing, moveMs, heading, home, start, leave, onStatusChange };
+  return { me, act, walking, facing, moveMs, heading, home, crossing, depthY, start, leave, onStatusChange };
 }
 
 /** 橫條上的 x（房間格子）：客廳 0、臥室 130、廚房 260；浴室自己一張 */

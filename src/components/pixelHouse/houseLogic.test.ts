@@ -1,9 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { ACT_WEIGHTS, ACTS, itemZone } from "./houseData";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { ACT_WEIGHTS, ACTS, itemZone, moveGroupOf, type RoomId } from "./houseData";
 import {
   actSpot,
+  clampGroupMove,
   clampPlacement,
   followAnchor,
+  itemDepths,
+  itemsInFront,
+  type DepthItem,
   pickAct,
   pickDefaultResident,
   planRoute,
@@ -159,5 +165,92 @@ describe("parsePixelHouseState", () => {
       }),
     ).toEqual({ homeStyle: "pixel-house", residentCharId: "c1", look: "girl", looks: {}, timeLight: false, placements: { living: { sofa: [1, 2] } } });
     expect(parsePixelHouseState({ timeLight: "x" }).timeLight).toBe(true);
+  });
+});
+
+/** 讀真正的房間圖清單，照預設的擺法算每件家具的前後 */
+function roomDepths(room: RoomId, moved: Record<string, [number, number]> = {}) {
+  const layout = JSON.parse(readFileSync(resolve(__dirname, `../../../public/pixel-house/${room}/layout.json`), "utf-8")) as {
+    floor: { y: number };
+    items: { id: string; x: number; y: number; w: number; h: number; empty?: boolean }[];
+  };
+  const items: DepthItem[] = layout.items
+    .filter((it) => !it.empty)
+    .map((it) => ({
+      id: it.id,
+      x: moved[it.id]?.[0] ?? it.x,
+      y: moved[it.id]?.[1] ?? it.y,
+      w: it.w,
+      h: it.h,
+      zone: itemZone(room, it.id, it.y + it.h, layout.floor.y),
+    }));
+  return itemDepths(room, items);
+}
+
+describe("itemDepths：誰在前面", () => {
+  it("牆上的在最下面，地毯在其他家具下面", () => {
+    const d = roomDepths("bedroom");
+    expect(d.window).toBe(-1);
+    expect(d.curtains).toBe(-1);
+    expect(d.rug).toBe(0);
+    expect(d.bed).toBeGreaterThan(d.rug);
+    expect(roomDepths("kitchen").tiles).toBe(-1);
+    expect(roomDepths("bath")["bath-mat"]).toBe(0);
+  });
+  it("放在別件家具上的東西跟著那件家具，在它前面", () => {
+    const bedroom = roomDepths("bedroom");
+    expect(bedroom.tv).toBeGreaterThan(bedroom["tv-cabinet"]);
+    expect(bedroom.phone).toBeGreaterThan(bedroom.bed);
+    expect(bedroom.monitor).toBeGreaterThan(bedroom.desk);
+    expect(bedroom.chair).toBeGreaterThan(bedroom.desk);
+    const kitchen = roomDepths("kitchen");
+    expect(kitchen["fruit-plate"]).toBeGreaterThan(kitchen.table);
+    expect(kitchen.faucet).toBeGreaterThan(kitchen.counter);
+    // 鍋子在爐子上，爐子在流理台上
+    expect(kitchen.pot).toBeGreaterThan(kitchen.stove);
+    expect(kitchen.stove).toBeGreaterThan(kitchen.counter);
+    expect(kitchen["chair-left"]).toBeGreaterThan(kitchen.table);
+    expect(roomDepths("bath").duck).toBeGreaterThan(roomDepths("bath").bathtub);
+  });
+  it("家具搬到別件的後面（比較上面）就被它蓋住", () => {
+    // 啞鈴搬到沙發上緣的後面
+    const d = roomDepths("living", { dumbbell: [100, 180] });
+    expect(d.dumbbell).toBeLessThan(d.sofa);
+    // 細的立燈搬到沙發前面：沙發比它寬，不會變成「放在立燈上」
+    const l = roomDepths("living", { lamp: [39, 218] });
+    expect(l.sofa).toBe(247);
+    expect(l.lamp).toBeGreaterThan(l.sofa);
+    // 桌子搬走，桌上的盤子留在原地就不再跟著桌子
+    const k = roomDepths("kitchen", { table: [20, 170] });
+    expect(k["fruit-plate"]).toBeGreaterThan(k.table);
+    expect(k["fruit-plate"]).toBe(220);
+  });
+  it("他站在餐桌後面時桌子、椅子、桌上的東西在他前面；站到前面就都在後面", () => {
+    const d = roomDepths("kitchen");
+    const behind = itemsInFront(d, ACTS.eat.y);
+    expect(behind).toEqual(expect.arrayContaining(["table", "chair-left", "chair-right", "fruit-plate", "mug-pink", "mug-blue"]));
+    expect(behind).not.toContain("counter");
+    expect(behind).not.toContain("window");
+    expect(itemsInFront(d, 253)).toEqual([]);
+  });
+});
+
+describe("窗戶整組一起移動", () => {
+  it("拖窗戶或窗簾是整組，拖窗台上的盆栽只動盆栽", () => {
+    expect(moveGroupOf("living", "window")).toEqual(["window", "curtains", "sill-plant", "vase"]);
+    expect(moveGroupOf("living", "curtains")).toEqual(["window", "curtains", "sill-plant", "vase"]);
+    expect(moveGroupOf("living", "sill-plant")).toEqual(["sill-plant"]);
+    expect(moveGroupOf("kitchen", "valance")).toEqual(["window", "valance"]);
+    expect(moveGroupOf("bath", "window")).toEqual(["window"]);
+  });
+  it("整組限制在牆上、房間裡，每件之間的距離不變", () => {
+    const group = [
+      { x: 12, y: 41, w: 50, h: 54 },
+      { x: 10, y: 38, w: 52, h: 54 },
+    ];
+    expect(clampGroupMove(group, 20.4, 5.2, 158)).toEqual({ dx: 20, dy: 5 });
+    // 往右下拖太多：整組右邊貼牆（10 → 78），底部貼地板線（38 → 101）
+    expect(clampGroupMove(group, 500, 500, 158)).toEqual({ dx: 68, dy: 63 });
+    expect(clampGroupMove(group, -500, -500, 158)).toEqual({ dx: -10, dy: -38 });
   });
 });

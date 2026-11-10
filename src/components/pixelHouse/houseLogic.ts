@@ -5,6 +5,8 @@ import type { CharAway } from "@/types/chat";
 import {
   ACT_WEIGHTS,
   ACTS,
+  DEPTH_BIAS,
+  FLAT_ITEMS,
   ROOM_CORRIDOR,
   ROOM_H,
   ROOM_W,
@@ -51,6 +53,64 @@ export function clampPlacement(
   else if (zone === "floor") y = clamp(y, floorTop - 6 - box.h, ROOM_H - box.h);
   else y = clamp(y, 0, ROOM_H - box.h);
   return { x, y };
+}
+
+/**
+ * 一組家具一起移動（窗戶和窗簾）：整組當成一個大框，限制在牆上，回傳實際移了幾格。
+ * 每件之間的相對位置不變。
+ */
+export function clampGroupMove(boxes: ItemBox[], dx: number, dy: number, floorTop: number): { dx: number; dy: number } {
+  if (!boxes.length) return { dx: 0, dy: 0 };
+  const left = Math.min(...boxes.map((b) => b.x));
+  const top = Math.min(...boxes.map((b) => b.y));
+  const right = Math.max(...boxes.map((b) => b.x + b.w));
+  const bottom = Math.max(...boxes.map((b) => b.y + b.h));
+  const pos = clampPlacement("wall", { x: left + dx, y: top + dy, w: right - left, h: bottom - top }, floorTop, top);
+  return { dx: pos.x - left, dy: pos.y - top };
+}
+
+// ===== 誰在前面 =====
+
+export interface DepthItem extends ItemBox {
+  id: string;
+  zone: ItemZone;
+}
+
+/**
+ * 每件家具排在多前面（數字大的畫在上面；一樣大的照原本的順序）：
+ * - 牆上的、不能動的：-1，在最下面
+ * - 平貼地上的（地毯）：0
+ * - 其他：看底部在哪一列，越下面越前面
+ * - 放在別件家具上面的（桌上的杯子、櫃子上的電視）跟著那件家具，再前面一點
+ */
+export function itemDepths(room: RoomId, items: ReadonlyArray<DepthItem>): Record<string, number> {
+  const flat = FLAT_ITEMS[room];
+  const bias = DEPTH_BIAS[room];
+  const out: Record<string, number> = {};
+  const solid = items.filter((it) => it.zone !== "wall" && it.zone !== "fixed" && !flat.includes(it.id));
+  const bottom = (it: DepthItem) => it.y + it.h;
+  // 由下往上算：下面那件先算好，上面的才能跟著它
+  const sorted = [...solid].sort((a, b) => bottom(b) - bottom(a));
+  for (const it of items) {
+    if (it.zone === "wall" || it.zone === "fixed") out[it.id] = -1;
+    else if (flat.includes(it.id)) out[it.id] = 0;
+  }
+  for (const a of sorted) {
+    let depth = bottom(a) + (bias[a.id] ?? 0);
+    const cx = a.x + a.w / 2;
+    for (const b of sorted) {
+      if (b === a || bottom(b) <= bottom(a) || out[b.id] === undefined) continue;
+      // 比 b 窄的 a，底部落在 b 的範圍裡（含剛好放在 b 上緣）：a 放在 b 上面或擺在它前面
+      if (a.w <= b.w && bottom(a) >= b.y - 2 && cx >= b.x && cx < b.x + b.w) depth = Math.max(depth, out[b.id] + 0.01);
+    }
+    out[a.id] = depth;
+  }
+  return out;
+}
+
+/** 腳在 feetY 的他，哪些家具要畫在他前面 */
+export function itemsInFront(depths: Record<string, number>, feetY: number): string[] {
+  return Object.keys(depths).filter((id) => depths[id] > feetY);
 }
 
 // ===== 他站哪 =====

@@ -138,7 +138,93 @@ async function composeLookNow(manifest: DollManifest, asset: string, outfit: Out
       out[name].push(ctx.canvas.toDataURL("image/png"));
     }
   }
+  // 還沒畫睡覺的圖：用側面走路第一格自動做一張（閉眼、只留頭，身體蓋在棉被裡）
+  if (!manifest.poses[SLEEP_POSE] && manifest.poses.walk) {
+    const auto = await composeAutoSleep(manifest, asset, outfit, customs, bob);
+    if (auto) out[SLEEP_POSE] = [auto];
+  }
   return out;
+}
+
+/** 睡覺的動作：doll.json 有畫就用畫的，沒有就自動做 */
+export const SLEEP_POSE = "sleep";
+
+/** 衣服這幾層最上面那一列就是脖子：睡覺時從這裡以下蓋在棉被裡 */
+const CLOTHES_LAYERS = ["underwear", "shirt", "jacket"];
+
+/**
+ * 自動做的睡覺圖：側面站姿（走路第一格），眼睛換成閉眼的一條線，脖子以下清掉。
+ * 髮型、髮色、膚色、上傳的頭髮都跟著現在的外觀，不用另外畫；顯示時再轉 90 度躺在枕頭上。
+ */
+async function composeAutoSleep(
+  manifest: DollManifest,
+  asset: string,
+  outfit: Outfit,
+  customs: CustomPart[],
+  bob: number[],
+): Promise<string | null> {
+  const pose = manifest.poses.walk;
+  if (!pose) return null;
+  const { w, h } = pose;
+  const plan = buildLayerPlan(manifest, "walk", 0, outfit, customs);
+  const layers = await Promise.all(plan.map((l) => layerPixels(l, asset, w, h, 0, bob)));
+  const ctx = canvas(w, h);
+  const tmp = canvas(w, h);
+  let neck: number | null = null;
+  let eyes: ImageData | null = null;
+  plan.forEach((l, i) => {
+    const px = layers[i];
+    if (!px) return;
+    if (l.layer === "eyes") {
+      eyes = px.data;
+      return;
+    }
+    if (CLOTHES_LAYERS.includes(l.layer)) {
+      const top = topRow(px.data.data, w, h);
+      if (top !== null) neck = neck === null ? top : Math.min(neck, top);
+    }
+    tmp.putImageData(px.data, 0, 0);
+    ctx.drawImage(tmp.canvas, 0, px.dy);
+  });
+  const out = ctx.getImageData(0, 0, w, h);
+  const d = out.data;
+  if (eyes) drawClosedEyes(d, (eyes as ImageData).data, w, h);
+  // 脖子以下蓋在棉被裡（留一列領口，跟棉被接起來）
+  const cut = Math.min(h, (neck ?? Math.round(h * 0.42)) + 1);
+  for (let i = cut * w * 4; i < d.length; i++) d[i] = 0;
+  ctx.putImageData(out, 0, 0);
+  return ctx.canvas.toDataURL("image/png");
+}
+
+/** 閉眼：眼睛那一層的範圍裡，在最下面那一列畫一條線，顏色用眼睛裡最深的那個 */
+function drawClosedEyes(target: Uint8ClampedArray, eyes: Uint8ClampedArray, w: number, h: number): void {
+  let minX = w;
+  let maxX = -1;
+  let maxY = -1;
+  let dark: [number, number, number] | null = null;
+  let darkSum = Infinity;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = (y * w + x) * 4;
+      if (eyes[i + 3] === 0) continue;
+      minX = Math.min(minX, x);
+      maxX = Math.max(maxX, x);
+      maxY = Math.max(maxY, y);
+      const sum = eyes[i] + eyes[i + 1] + eyes[i + 2];
+      if (sum < darkSum) {
+        darkSum = sum;
+        dark = [eyes[i], eyes[i + 1], eyes[i + 2]];
+      }
+    }
+  }
+  if (!dark || maxX < 0) return;
+  for (let x = minX; x <= maxX; x++) {
+    const i = (maxY * w + x) * 4;
+    target[i] = dark[0];
+    target[i + 1] = dark[1];
+    target[i + 2] = dark[2];
+    target[i + 3] = 255;
+  }
 }
 
 /** 只疊一個部位（衣櫃的款式小圖）：身體＋這個部位 */

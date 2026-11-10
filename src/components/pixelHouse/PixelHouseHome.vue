@@ -21,6 +21,7 @@ import {
   CHAR_HEIGHT,
   FURNITURE_ACTIONS,
   itemZone,
+  moveGroupOf,
   ROOM_H,
   ROOM_NAMES,
   ROOM_W,
@@ -30,9 +31,9 @@ import {
   type ItemZone,
   type RoomId,
 } from "./houseData";
-import { clampPlacement, followAnchor, pickDefaultResident, residentStatus, sceneAt, stripIndex, type ResidentStatus } from "./houseLogic";
+import { clampGroupMove, clampPlacement, followAnchor, itemDepths, itemsInFront, pickDefaultResident, residentStatus, sceneAt, stripIndex, type ResidentStatus } from "./houseLogic";
 import { loadCustomParts, loadPixelHouseState, PIXEL_HOUSE_CHANGED_EVENT, savePixelHouseState, type PixelHouseState } from "./houseState";
-import { composeLook, loadDollManifest, loadWardrobeCatalog, type ComposedLook } from "./dollCompose";
+import { composeLook, SLEEP_POSE, loadDollManifest, loadWardrobeCatalog, type ComposedLook } from "./dollCompose";
 import { defaultOutfit, type CustomPart, type DollManifest, type DollPose, type Outfit, type WardrobeCatalog } from "./wardrobeLogic";
 import { stripX, useHouseResident } from "./useHouseResident";
 
@@ -124,6 +125,8 @@ interface RenderItem extends LayoutItem {
   px: number;
   py: number;
   zone: ItemZone;
+  /** 排在多前面（houseLogic.itemDepths） */
+  depth: number;
   action?: FurnitureAction;
 }
 
@@ -132,7 +135,7 @@ function itemsOf(room: RoomId): RenderItem[] {
   if (!layout) return [];
   const cur = currentOf(room);
   const ft = floorTop(room);
-  return layout.items
+  const list = layout.items
     .filter((it) => !it.empty)
     .map((it) => ({
       ...it,
@@ -140,8 +143,16 @@ function itemsOf(room: RoomId): RenderItem[] {
       px: cur[it.id].x,
       py: cur[it.id].y,
       zone: itemZone(room, it.id, it.y + it.h, ft),
+      depth: 0,
       action: FURNITURE_ACTIONS[room][it.id],
     }));
+  const depths = itemDepths(
+    room,
+    list.map((it) => ({ id: it.id, x: it.px, y: it.py, w: it.w, h: it.h, zone: it.zone })),
+  );
+  for (const it of list) it.depth = depths[it.id] ?? 0;
+  // 後面的先畫；一樣前後的維持原本的順序（sort 是穩定的）
+  return list.sort((a, b) => a.depth - b.depth);
 }
 
 const roomItems = computed(() => {
@@ -386,15 +397,24 @@ const spriteSrc = computed(() => {
   return `${ASSET}chars/${currentBase.value}/walk-${dir}-${n}.png`;
 });
 /** 紙娃娃現在用哪個動作：有畫的就用，沒畫的先用正面 */
+/** 睡覺的圖還沒畫：用側面站姿自動做的那張（dollCompose），轉 90 度躺著 */
+const autoSleep = computed(() => lying.value && !!doll.value && !doll.value.poses[SLEEP_POSE] && !!doll.value.poses.walk);
 const dollPoseKey = computed<string | null>(() => {
   const d = doll.value;
   if (!d) return null;
+  if (autoSleep.value) return SLEEP_POSE;
   const dir = life.facing.value > 0 ? "right" : "left";
   const want = life.walking.value ? [`walk-${dir}`, "walk", "front"] : [meAct.value?.pose ?? "front", "front"];
   for (const k of want) if (d.poses[k]) return k;
   return Object.keys(d.poses)[0] ?? null;
 });
-const dollPose = computed<DollPose | null>(() => (dollPoseKey.value ? (doll.value?.poses[dollPoseKey.value] ?? null) : null));
+const dollPose = computed<DollPose | null>(() => {
+  const d = doll.value;
+  if (!d || !dollPoseKey.value) return null;
+  // 自動做的睡覺圖跟走路的一樣大，只有一格
+  if (autoSleep.value) return { ...d.poses.walk, frames: 1 };
+  return d.poses[dollPoseKey.value] ?? null;
+});
 
 /** 這個動作疊好的每一格（照他的外觀換好色）；每格都放，只顯示現在這格（換格時不會閃） */
 const dollFrames = computed(() => (dollPoseKey.value ? (composedLook.value?.[dollPoseKey.value] ?? []) : []));
@@ -408,7 +428,7 @@ const dollAnimated = computed(() => (dollPose.value?.frames ?? 1) > 1);
 /** 畫的方向跟現在走的方向相反就左右翻 */
 const dollFlip = computed(() => {
   const faces = dollPose.value?.faces;
-  if (!faces) return false;
+  if (!faces || lying.value) return false;
   return (faces === "left") !== (life.facing.value < 0);
 });
 
@@ -446,8 +466,13 @@ const spriteStyle = computed(() => {
     left: `${-w / 2}px`,
     top: `${-h + (dollPose.value ? 0 : u(1))}px`,
     // 躺下：先用站姿轉 90 度代替（之後換成睡覺的圖）；紙娃娃沒有走路的圖時，走路一上一下跳
+    // 有畫睡覺的圖（已經是躺著的）就不轉
     transform: lying.value
-      ? "rotate(-90deg)"
+      ? doll.value?.poses[SLEEP_POSE]
+        ? undefined
+        : autoSleep.value && dollPose.value?.faces === "right"
+          ? "rotate(-90deg) scaleX(-1)"
+          : "rotate(-90deg)"
       : dollFlip.value
         ? "scaleX(-1)"
         : dollPose.value && !dollAnimated.value && life.walking.value && frame.value % 2
@@ -463,6 +488,28 @@ const meVisible = computed(() => {
   if (bathOpen.value) return false;
   const x = u(mePos.value.x) + stripOffset.value - scrollX.value;
   return x > -20 && x < stageW.value + 20;
+});
+
+/** 排前後用的腳的位置：靠牆那排家具（書桌、書櫃、門）永遠在他後面；躺在床上時沒有東西蓋住他 */
+const meDepth = computed(() => {
+  if (lying.value) return Infinity;
+  const room = life.me.room;
+  let d = Math.max(life.depthY.value, floorTop(room) + 2);
+  const behind = life.walking.value ? undefined : meAct.value?.behind;
+  const it = behind ? roomItems.value[room].find((i) => i.id === behind) : undefined;
+  if (it) d = Math.min(d, it.depth - 0.5);
+  return d;
+});
+
+/** 每間房哪些家具畫在他前面 */
+const frontIds = computed(() => {
+  const out = {} as Record<RoomId, string[]>;
+  for (const room of ALL_ROOMS) {
+    // 他在橫條上時三間都算（走到房間邊上會跨到隔壁），在浴室時只算浴室
+    const same = (room === "bath") === meInBath.value;
+    out[room] = isHome.value && same ? itemsInFront(Object.fromEntries(roomItems.value[room].map((i) => [i.id, i.depth])), meDepth.value) : [];
+  }
+  return out;
 });
 
 const steam = computed(() => {
@@ -561,7 +608,7 @@ interface PointerState {
   lastT: number;
   vel: number;
   moved: boolean;
-  item?: { room: RoomId; it: RenderItem; ft: number; defY: number };
+  item?: { room: RoomId; it: RenderItem; ft: number; defY: number; group: RenderItem[] };
 }
 let ptr: PointerState | null = null;
 let longPressTimer: ReturnType<typeof setTimeout> | null = null;
@@ -590,7 +637,9 @@ function onPointerDown(e: PointerEvent) {
     const it = room ? roomItems.value[room].find((i) => i.id === el?.dataset.item) : undefined;
     if (room && it && it.zone !== "fixed") {
       const def = layouts[room]?.items.find((i) => i.id === it.id);
-      ptr.item = { room, it: { ...it }, ft: floorTop(room), defY: def?.y ?? it.py };
+      const ids = moveGroupOf(room, it.id);
+      const group = ids.length > 1 ? roomItems.value[room].filter((i) => ids.includes(i.id)).map((i) => ({ ...i })) : [];
+      ptr.item = { room, it: { ...it }, ft: floorTop(room), defY: def?.y ?? it.py, group };
       dragging.value = `${room}:${it.id}`;
     }
   } else {
@@ -618,7 +667,20 @@ function onPointerMove(e: PointerEvent) {
   }
   if (!ptr.moved) return;
   if (ptr.item) {
-    const { room, it, ft, defY } = ptr.item;
+    const { room, it, ft, defY, group } = ptr.item;
+    if (group.length > 1) {
+      // 窗戶和窗簾整組一起動
+      const d = clampGroupMove(
+        group.map((g) => ({ x: g.px, y: g.py, w: g.w, h: g.h })),
+        dx / s.value,
+        dy / s.value,
+        ft,
+      );
+      const next = { ...(state.placements[room] ?? {}) };
+      for (const g of group) next[g.id] = [g.px + d.dx, g.py + d.dy];
+      state.placements[room] = next;
+      return;
+    }
     const pos = clampPlacement(it.zone, { x: it.px + dx / s.value, y: it.py + dy / s.value, w: it.w, h: it.h }, ft, defY);
     state.placements[room] = { ...(state.placements[room] ?? {}), [it.id]: [pos.x, pos.y] };
     return;
@@ -685,7 +747,9 @@ const meLine = computed(() => {
   if (!residentId.value) return "還沒有人住進來｜到設定 › 主頁 選一位";
   if (status.value === "date") return `${p}出門約會了`;
   if (status.value === "away") return `${p}出門了`;
-  if (life.walking.value) return `${p}正在走去${ROOM_NAMES[life.heading.value]}`;
+  if (life.walking.value) {
+    return life.crossing.value ? `${p}正在走去${ROOM_NAMES[life.heading.value]}` : `${p}在${ROOM_NAMES[life.heading.value]}走動`;
+  }
   return `${p}在${ROOM_NAMES[life.me.room]}${meAct.value?.label ?? ""}`;
 });
 
@@ -872,6 +936,8 @@ function labelStyle(room: RoomId, it: RenderItem) {
           :dragging="dragging"
           :flash-key="flashKey"
           :night="scene === 'night'"
+          pass="back"
+          :front-ids="frontIds[room]"
           @item-click="onItemClick"
         />
         <!-- 「？」：所有可以點的地方 -->
@@ -942,6 +1008,29 @@ function labelStyle(room: RoomId, it: RenderItem) {
       >
         <i></i><i></i><i></i>
       </div>
+
+      <!-- 在他前面的家具：疊在他上面 -->
+      <div
+        v-for="(room, idx) in STRIP_ROOMS"
+        :key="`front-${room}`"
+        class="ph-room ph-front"
+        :style="{ left: `${idx * roomPx}px`, width: `${roomPx}px` }"
+      >
+        <HouseRoom
+          :room="room"
+          :asset="ASSET"
+          :scale="s"
+          :layers="[]"
+          :items="roomItems[room]"
+          :edit-mode="editMode"
+          :dragging="dragging"
+          :flash-key="flashKey"
+          :night="scene === 'night'"
+          pass="front"
+          :front-ids="frontIds[room]"
+          @item-click="onItemClick"
+        />
+      </div>
     </div>
 
     <!-- 浴室：從臥室的門進去，蓋在上面 -->
@@ -960,6 +1049,8 @@ function labelStyle(room: RoomId, it: RenderItem) {
         :dragging="dragging"
         :flash-key="flashKey"
         :night="scene === 'night'"
+        pass="back"
+        :front-ids="frontIds.bath"
         @item-click="onItemClick"
       />
       <template v-if="showAll && bathOpen">
@@ -993,6 +1084,22 @@ function labelStyle(room: RoomId, it: RenderItem) {
       </div>
       <div v-if="isHome && steam && steam.inBath" class="ph-steam" :style="{ left: `${u(steam.x)}px`, top: `${u(steam.y)}px` }" aria-hidden="true">
         <i></i><i></i><i></i>
+      </div>
+      <div class="ph-front ph-front-bath">
+        <HouseRoom
+          room="bath"
+          :asset="ASSET"
+          :scale="s"
+          :layers="[]"
+          :items="roomItems.bath"
+          :edit-mode="editMode"
+          :dragging="dragging"
+          :flash-key="flashKey"
+          :night="scene === 'night'"
+          pass="front"
+          :front-ids="frontIds.bath"
+          @item-click="onItemClick"
+        />
       </div>
     </div>
 
@@ -1126,6 +1233,17 @@ function labelStyle(room: RoomId, it: RenderItem) {
   height: 100%;
   overflow: hidden;
   overflow: clip;
+}
+
+/* 在他前面的家具：疊在他上面；空的地方不擋手指 */
+.ph-front {
+  z-index: 3;
+  pointer-events: none;
+}
+
+.ph-front-bath {
+  position: absolute;
+  inset: 0;
 }
 
 .ph-spot {
@@ -1263,7 +1381,8 @@ function labelStyle(room: RoomId, it: RenderItem) {
   width: 0;
   height: 0;
   pointer-events: none;
-  z-index: 3;
+  /* 在他和他頭上的泡泡後面（蒸氣是從他面前的鍋子、浴缸冒出來的） */
+  z-index: 2;
 }
 
 .ph-steam i {
@@ -1412,7 +1531,8 @@ function labelStyle(room: RoomId, it: RenderItem) {
 
 .ph-arrow {
   position: absolute;
-  top: 50%;
+  /* 放在地板靠牆那一段（房間第 176 列）：預設的擺法這裡沒有家具，不會蓋住門 */
+  top: 62.4%;
   width: 36px;
   height: 36px;
   margin-top: -18px;

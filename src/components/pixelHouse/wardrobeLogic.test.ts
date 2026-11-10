@@ -20,6 +20,7 @@ import {
   type DollManifest,
   type WardrobeCatalog,
 } from "./wardrobeLogic";
+import type { Outfit } from "./wardrobeLogic";
 
 const manifest: DollManifest = {
   poses: {
@@ -88,7 +89,7 @@ describe("styleInfo / outfitCost", () => {
     expect(styleInfo(null, "pants", "03")).toEqual({ name: "款式 03", price: 3000 });
   });
   it("只算還沒買的，買過就不用再付", () => {
-    let o = { ...defaultOutfit("boy"), parts: { jacket: "02" } };
+    let o: Outfit = { ...defaultOutfit("boy"), parts: { jacket: "02" } };
     const cost = outfitCost(o, manifest, catalog, []);
     expect(cost.total).toBe(5000);
     expect(cost.items.map((i) => i.style)).toEqual(["02"]);

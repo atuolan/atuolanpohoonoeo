@@ -63,6 +63,38 @@ export function itemZone(room: RoomId, id: string, defaultBottom: number, floorT
   return defaultBottom >= floorTop - 6 ? "floor" : "any";
 }
 
+/** 平貼在地上的（地毯、浴墊）：永遠在其他家具和他的下面 */
+export const FLAT_ITEMS: Record<RoomId, string[]> = {
+  living: ["rug"],
+  bedroom: ["rug"],
+  kitchen: [],
+  bath: ["bath-mat"],
+};
+
+/** 排前後時往前挪幾格：椅子的腳比桌腳高一點，但畫的時候是擺在桌子前面 */
+export const DEPTH_BIAS: Record<RoomId, Record<string, number>> = {
+  living: {},
+  bedroom: {},
+  kitchen: { "chair-left": 2, "chair-right": 2 },
+  bath: {},
+};
+
+/**
+ * 一起移動的家具：拖帶頭的（窗戶、窗簾）整組一起動，拖其他的（窗台上的盆栽、花瓶）只動那一件。
+ * 圖還是一件一張，之後商店可以單獨換其中一件的樣式。
+ */
+export const MOVE_GROUPS: Record<RoomId, { leaders: string[]; members: string[] }[]> = {
+  living: [{ leaders: ["window", "curtains"], members: ["window", "curtains", "sill-plant", "vase"] }],
+  bedroom: [{ leaders: ["window", "curtains"], members: ["window", "curtains", "sill-plant", "vase"] }],
+  kitchen: [{ leaders: ["window", "valance"], members: ["window", "valance"] }],
+  bath: [],
+};
+
+/** 拖這件時要一起動的家具（含自己）；不是帶頭的就只有自己 */
+export function moveGroupOf(room: RoomId, id: string): string[] {
+  return MOVE_GROUPS[room].find((g) => g.leaders.includes(id))?.members ?? [id];
+}
+
 /** 晚上換成夜景的家具（items/<id>-night.png，scripts/pixel-house/night_windows.py 做的） */
 export const NIGHT_ITEMS: Record<RoomId, string[]> = {
   living: ["window"],
@@ -148,6 +180,8 @@ export interface ActDef {
   hop?: boolean;
   /** 冒蒸氣的位置（房間格子；跟著 anchor 家具走） */
   steam?: [number, number];
+  /** 做這件事時他在這件家具後面（泡在浴缸裡）：這件家具畫在他前面 */
+  behind?: string;
   /** 躺下（睡覺）：腳的位置（房間格子；跟著 anchor 家具走），頭朝左躺在枕頭上 */
   lie?: [number, number];
 }
@@ -162,14 +196,15 @@ export const ACTS: Record<string, ActDef> = {
   read: { room: "bedroom", x: 20, y: 160, anchor: "bookshelf", pose: "back", label: "找書看" },
   bedphone: { room: "bedroom", x: 66, y: 252, anchor: "bed", pose: "phone", label: "滑手機" },
   daze: { room: "bedroom", x: 92, y: 196, pose: "sad", label: "發呆" },
-  sleep: { room: "bedroom", x: 72, y: 252, anchor: "bed", pose: "sleep", label: "睡覺中", lie: [58, 222] },
+  sleep: { room: "bedroom", x: 72, y: 252, anchor: "bed", pose: "sleep", label: "睡覺中", lie: [53, 220] },
   cook: { room: "kitchen", x: 78, y: 158, anchor: "stove", pose: "back", label: "煮飯中", steam: [77, 108] },
   fridge: { room: "kitchen", x: 113, y: 160, anchor: "fridge", pose: "back", label: "找東西吃" },
   dishes: { room: "kitchen", x: 27, y: 158, anchor: "faucet", pose: "back", label: "洗碗中" },
-  eat: { room: "kitchen", x: 64, y: 253, anchor: "table", pose: "back", label: "吃飯中" },
+  // 站在餐桌後面、面向前，退後一點讓頭露在桌上的東西上面
+  eat: { room: "kitchen", x: 64, y: 232, anchor: "table", pose: "stand", label: "吃飯中" },
   brush: { room: "bath", x: 85, y: 158, anchor: "sink", pose: "back", label: "刷牙中" },
   mirror: { room: "bath", x: 86, y: 162, anchor: "mirror", pose: "happy", label: "照鏡子" },
-  shower: { room: "bath", x: 31, y: 150, anchor: "bathtub", pose: "back", label: "洗澡中", steam: [44, 70] },
+  shower: { room: "bath", x: 31, y: 150, anchor: "bathtub", pose: "back", label: "洗澡中", steam: [44, 70], behind: "bathtub" },
 };
 
 export type Scene = "day" | "dusk" | "night";

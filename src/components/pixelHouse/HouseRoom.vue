@@ -33,7 +33,20 @@ const props = defineProps<{
   flashKey: string | null;
   /** 晚上：窗戶換成夜空 */
   night?: boolean;
+  /**
+   * 一間房分兩次畫：back 畫牆、地板和在他後面的家具，front 只畫在他前面的家具（疊在他上面）。
+   * 兩次都放全部的家具，不是這一層的藏起來，換層時不會閃。
+   */
+  pass?: "back" | "front";
+  /** 在他前面的家具 */
+  frontIds?: string[];
 }>();
+
+function hidden(id: string): boolean {
+  if (!props.pass) return false;
+  const front = !!props.frontIds?.includes(id);
+  return props.pass === "front" ? !front : front;
+}
 
 function itemSrc(id: string): string {
   const night = props.night && NIGHT_ITEMS[props.room].includes(id);
@@ -70,7 +83,7 @@ const emit = defineEmits<{ (e: "item-click", it: RoomItem): void }>();
       :alt="it.action && !editMode ? `${it.name}，${it.action.to}` : ''"
       :role="it.action && !editMode ? 'button' : undefined"
       draggable="false"
-      :style="{ left: `${it.px}px`, top: `${it.py}px`, width: `${it.w}px`, height: `${it.h}px` }"
+      :style="{ left: `${it.px}px`, top: `${it.py}px`, width: `${it.w}px`, height: `${it.h}px`, visibility: hidden(it.id) ? 'hidden' : undefined }"
       @click="emit('item-click', it)"
     />
   </div>
