@@ -327,6 +327,54 @@ export class ProactiveMessageService {
   }
 
   /**
+   * 聊天「+」選單：手動讓角色主動發一條訊息
+   * - 不需要開啟定時主動發訊（沒設定就用臨時設定）
+   * - 不寫回排程欄位，不會影響 / 開啟定時排程
+   * - 發進目前打開的這個聊天
+   *
+   * 回傳 { ok, reason }：ok=false 時 reason 為 'busy'（該角色正在生成中）或其他原因
+   */
+  async sendManualProactiveMessage(
+    characterId: string,
+    chatId?: string,
+  ): Promise<{ ok: boolean; reason?: string }> {
+    if (this.pendingCharacters.has(characterId)) {
+      return { ok: false, reason: 'busy' }
+    }
+
+    const stored = this.getSettings(characterId)
+    const settings: ProactiveMessageSettings = stored
+      ? { ...stored }
+      : {
+          enabled: false,
+          intervalMinutes: 60,
+          doNotDisturbEnabled: false,
+          doNotDisturbStart: '00:00',
+          doNotDisturbEnd: '06:00',
+          showNotification: false,
+        }
+
+    let beforeCount = 0
+    const { getMessageCount } = await import('@/storage/chatMessageStorage')
+    if (chatId) beforeCount = await getMessageCount(chatId).catch(() => 0)
+
+    try {
+      await this.sendProactiveMessage(characterId, settings, {
+        skipScheduleUpdate: true,
+        targetChatId: chatId,
+      })
+    } catch (err) {
+      return { ok: false, reason: String(err) }
+    }
+
+    if (!chatId) return { ok: true }
+    const afterCount = await getMessageCount(chatId).catch(() => beforeCount)
+    return afterCount > beforeCount
+      ? { ok: true }
+      : { ok: false, reason: 'no message appended' }
+  }
+
+  /**
    * 封鎖系統專用：觸發角色主動發一條訊息
    * 不依賴 proactiveMessageSettings，即使角色沒開主動訊息也能發
    *

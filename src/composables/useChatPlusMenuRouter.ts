@@ -37,6 +37,8 @@ export function useChatPlusMenuRouter(deps: {
   onShareMusic?: () => void;
   /** 約會出門：選地點 */
   openDatePicker?: () => void;
+  /** 讓角色現在主動發一條訊息（不需開啟定時主動發訊） */
+  sendProactiveNow?: () => void;
   emit: (e: string, ...args: any[]) => void;
 }) {
   const phoneCallStore = usePhoneCallStore();
@@ -133,6 +135,10 @@ export function useChatPlusMenuRouter(deps: {
         break;
       case "music":
         if (typeof deps.onShareMusic === "function") deps.onShareMusic();
+        break;
+      case "proactive-message":
+        if (deps.isGroupChat.value) break;
+        deps.sendProactiveNow?.();
         break;
       case "screen-watch":
         if (deps.isGroupChat.value) break;

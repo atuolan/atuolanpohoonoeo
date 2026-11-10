@@ -891,6 +891,20 @@ const isDarkBackground = computed(() =>
           <button
             v-if="!isGroupChat"
             class="feature-item"
+            @click="emit('handleFeatureClick', 'proactive-message')"
+          >
+            <div class="feature-icon">
+              <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <path
+                  d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-7 12h-2v-2h2v2zm0-4h-2V6h2v4z"
+                />
+              </svg>
+            </div>
+            <span class="feature-label">主動發訊</span>
+          </button>
+          <button
+            v-if="!isGroupChat"
+            class="feature-item"
             @click="emit('handleFeatureClick', 'screen-watch')"
           >
             <div class="feature-icon">
