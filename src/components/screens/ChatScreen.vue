@@ -198,7 +198,7 @@ import {
 import { countTurnAiMessages } from "@/utils/unreadCount";
 import { useChatTheater } from "@/composables/useChatTheater";
 import { useHolidayTrigger } from "@/composables/useHolidayTrigger";
-import { userBirthdayHoliday } from "@/utils/userBirthday";
+import { specialDayName, userBirthdayHoliday } from "@/utils/userBirthday";
 import {
   useStreamingWindow,
   type PromptDebugMessage,
@@ -657,7 +657,11 @@ useHolidayTrigger(holidayChatId, async (holiday: Holiday) => {
 5. 可以使用表情符號`;
 
   await triggerAIResponse({ holidayTriggerPrompt: fullPrompt });
-}, () => userBirthdayHoliday(userStore.currentPersona?.birthday) ?? detectTodayHoliday());
+}, () => {
+  // 生日優先；同一天也是節日的話合在一起祝
+  const holiday = detectTodayHoliday();
+  return userBirthdayHoliday(userStore.currentPersona?.birthday, undefined, holiday) ?? holiday;
+});
 
 // 群聊相關狀態
 const currentChatData = ref<Chat | null>(null);
@@ -6737,9 +6741,12 @@ async function runAIResponseOnce(
         ? buildGiftNudgeNote({
             now: Date.now(),
             lastGiftToUserAt: lastGiftToUserAt(giftMemoriesForChar.value),
-            todayHolidayName: userBirthdayHoliday(userStore.currentPersona?.birthday, chatToday())
-              ? `${userStore.currentPersona?.name || "{{user}}"}的生日`
-              : detectTodayHoliday()?.name,
+            todayHolidayName: specialDayName(
+              userStore.currentPersona?.birthday,
+              userStore.currentPersona?.name || "{{user}}",
+              chatToday(),
+              detectTodayHoliday()?.name,
+            ),
             // 拿掉標籤，送禮訊息的「送禮物」不算提到禮物
             latestUserText: [...messages.value]
               .reverse()

@@ -5,6 +5,7 @@ import {
   buildBirthdayCalendarLine,
   daysUntilBirthday,
   normalizeBirthday,
+  specialDayName,
   USER_BIRTHDAY_HOLIDAY_NAME,
   userBirthdayHoliday,
 } from "@/utils/userBirthday";
@@ -81,5 +82,26 @@ describe("userBirthdayHoliday", () => {
     });
     expect(userBirthdayHoliday("11-11", "2026-11-10")).toBeNull();
     expect(userBirthdayHoliday(undefined, "2026-11-10")).toBeNull();
+  });
+
+  it("同一天也是節日：合在一起，兩個都提到", () => {
+    const holiday = { name: "聖誕節", date: "12-25", greeting: "聖誕快樂！", aiPrompt: "可以聊聖誕禮物", suggestionAmount: 1225 };
+    const merged = userBirthdayHoliday("12-25", "2026-12-25", holiday)!;
+    expect(merged.name).toBe(USER_BIRTHDAY_HOLIDAY_NAME);
+    expect(merged.aiPrompt).toContain("{{user}} 的生日");
+    expect(merged.aiPrompt).toContain("今天剛好也是聖誕節");
+    expect(merged.aiPrompt).toContain("可以聊聖誕禮物");
+    expect(merged.suggestionAmount).toBe(1225);
+    // 不是生日就不合，交給原本的節日
+    expect(userBirthdayHoliday("12-24", "2026-12-25", holiday)).toBeNull();
+  });
+});
+
+describe("specialDayName", () => {
+  it("生日、節日、兩個都是", () => {
+    expect(specialDayName("12-25", "小栩", "2026-12-25", "聖誕節")).toBe("小栩的生日，也是聖誕節");
+    expect(specialDayName("12-25", "小栩", "2026-12-25", undefined)).toBe("小栩的生日");
+    expect(specialDayName("01-01", "小栩", "2026-12-25", "聖誕節")).toBe("聖誕節");
+    expect(specialDayName(undefined, "小栩", "2026-12-25", undefined)).toBeUndefined();
   });
 });

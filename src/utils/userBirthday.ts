@@ -68,15 +68,43 @@ export function buildBirthdayCalendarLine(
   return `- ${options.dateLabel(date)} 🎂 ${options.userName}的生日（${when}）`;
 }
 
-/** 今天（預設現實時間）是 user 生日的話，當成一個節日給節日主動祝福用；不是回傳 null */
-export function userBirthdayHoliday(birthday: string | undefined, today: string = toDateString(new Date())): Holiday | null {
+/**
+ * 今天（預設現實時間）是 user 生日的話，當成一個節日給節日主動祝福用；不是回傳 null。
+ * 同一天剛好也是節日（sameDayHoliday）的話合在一起，角色一次祝兩個
+ */
+export function userBirthdayHoliday(
+  birthday: string | undefined,
+  today: string = toDateString(new Date()),
+  sameDayHoliday?: Holiday | null,
+): Holiday | null {
   if (daysUntilBirthday(birthday, today) !== 0) return null;
+  const birthdayPrompt =
+    "今天是 {{user}} 的生日！請讓 {{char}} 主動祝 {{user}} 生日快樂。" +
+    "可以依你們的關係和 {{char}} 的性格，表達特別的心意（例如準備驚喜、約定慶祝、送禮物），不要只是一句客套話。";
+  if (!sameDayHoliday) {
+    return { name: USER_BIRTHDAY_HOLIDAY_NAME, date: today.slice(5), greeting: "生日快樂！", aiPrompt: birthdayPrompt };
+  }
+  const holidayPrompt = sameDayHoliday.aiPrompt ? `\n節日情境：${sameDayHoliday.aiPrompt}` : "";
   return {
+    // 名字不變：觸發紀錄照「使用者生日」記，一個聊天一天只祝一次
     name: USER_BIRTHDAY_HOLIDAY_NAME,
     date: today.slice(5),
-    greeting: "生日快樂！",
+    greeting: `生日快樂！${sameDayHoliday.greeting}`,
+    suggestionAmount: sameDayHoliday.suggestionAmount,
     aiPrompt:
-      "今天是 {{user}} 的生日！請讓 {{char}} 主動祝 {{user}} 生日快樂。" +
-      "可以依你們的關係和 {{char}} 的性格，表達特別的心意（例如準備驚喜、約定慶祝、送禮物），不要只是一句客套話。",
+      `${birthdayPrompt}\n今天剛好也是${sameDayHoliday.name}，生日和${sameDayHoliday.name}撞在同一天，` +
+      `兩個都要記得，自然地一起祝福（例如覺得很巧、很特別），生日是重點。${holidayPrompt}`,
   };
+}
+
+/** 給 AI 看的「今天是什麼特別的日子」：生日、節日，或兩個都是 */
+export function specialDayName(
+  birthday: string | undefined,
+  userName: string,
+  today: string,
+  holidayName: string | undefined,
+): string | undefined {
+  const birthdayName = daysUntilBirthday(birthday, today) === 0 ? `${userName}的生日` : undefined;
+  if (birthdayName && holidayName) return `${birthdayName}，也是${holidayName}`;
+  return birthdayName ?? holidayName;
 }
