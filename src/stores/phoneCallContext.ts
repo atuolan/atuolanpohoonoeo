@@ -36,8 +36,36 @@ export interface CallContext {
   recentChatHistory: CallRecentChatMessage[];
 }
 
-/** 通話前帶進來的聊天訊息數量 */
-const RECENT_CHAT_LIMIT = 15;
+/**
+ * 通話前帶進來的聊天紀錄範圍。
+ * 聊天一則回覆常拆成好幾個泡泡，只帶固定 15 則時，往往只剩最後一兩輪，
+ * 剛約好要做的事（例如要一起玩哪款遊戲）會被切掉，電話裡就接不上。
+ * 改成：至少帶最近 RECENT_CHAT_MIN 則，再往前補到字數預算或 RECENT_CHAT_MAX 則為止。
+ */
+export const RECENT_CHAT_MIN = 15;
+export const RECENT_CHAT_MAX = 80;
+export const RECENT_CHAT_CHAR_BUDGET = 8000;
+
+/** 從最新往回挑通話前的聊天紀錄：保底 min 則，之後在字數預算和上限內盡量多帶 */
+export function pickRecentChatForCall<T extends { content?: unknown }>(
+  msgs: T[],
+  opts: { min?: number; max?: number; charBudget?: number } = {},
+): T[] {
+  const min = opts.min ?? RECENT_CHAT_MIN;
+  const max = opts.max ?? RECENT_CHAT_MAX;
+  const budget = opts.charBudget ?? RECENT_CHAT_CHAR_BUDGET;
+  let used = 0;
+  let start = msgs.length;
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    const taken = msgs.length - i;
+    if (taken > max) break;
+    const len = typeof msgs[i].content === "string" ? (msgs[i].content as string).length : 0;
+    if (taken > min && used + len > budget) break;
+    used += len;
+    start = i;
+  }
+  return msgs.slice(start);
+}
 
 export function emptyCallContext(): CallContext {
   return { summaries: [], importantEvents: [], recentChatHistory: [] };
@@ -81,8 +109,9 @@ export async function loadCallContext(info: {
 
     if (info.chatId) {
       // 包含普通聊天消息和通話記錄（sender === "system" 且含通話內容）
-      const msgs = (await loadMessages(info.chatId))
+      const all = (await loadMessages(info.chatId))
         .filter((m: any) => {
+          if (m.isGroupChatHistory) return false;
           if (m.sender === "user" || m.sender === "assistant") return true;
           if (
             m.sender === "system" &&
@@ -92,8 +121,8 @@ export async function loadCallContext(info: {
             return true;
           }
           return false;
-        })
-        .slice(-RECENT_CHAT_LIMIT);
+        });
+      const msgs = pickRecentChatForCall(all);
       context.recentChatHistory = msgs.map((m: any) => ({
         role: (m.is_user ? "user" : "assistant") as "user" | "assistant",
         name: m.name,
