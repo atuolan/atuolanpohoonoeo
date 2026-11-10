@@ -3708,8 +3708,36 @@ const {
   startGroupCall,
   onShareMusic: handleShareMusicToChat,
   openDatePicker: () => dateCtl.openPicker(),
+  sendProactiveNow: () => void handleSendProactiveNow(),
   emit: emit as (e: string, ...args: any[]) => void,
 });
+
+// 「+」選單：讓角色現在主動發一條訊息（不需開啟定時主動發訊、不影響排程）
+const isSendingProactiveNow = ref(false);
+async function handleSendProactiveNow() {
+  if (isGroupChat.value || !props.characterId) return;
+  if (isSendingProactiveNow.value || isGenerating.value) {
+    showToast("角色正在回覆中，請稍候");
+    return;
+  }
+  isSendingProactiveNow.value = true;
+  try {
+    // 先存檔，確保角色看得到最新的聊天內容
+    await saveChatImmediate();
+    const result = await proactiveMessageService.sendManualProactiveMessage(
+      props.characterId,
+      currentChatId.value || props.chatId || undefined,
+    );
+    if (!result.ok) {
+      showToast(result.reason === "busy" ? "角色正在回覆中，請稍候" : "這次沒有發出訊息，請稍後再試");
+    }
+  } catch (err) {
+    console.error("[ChatScreen] 手動主動發訊失敗:", err);
+    showToast("發送失敗，請稍後再試");
+  } finally {
+    isSendingProactiveNow.value = false;
+  }
+}
 
 const onInputQuickWheel = (...args: any[]) => handleQuickInputWheel(args[0] as WheelEvent);
 const onInputInsertQuickAction = (...args: any[]) => insertQuickAction(args[0] as string);
