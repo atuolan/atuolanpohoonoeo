@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "@/db/database";
 import { loadChatById } from "@/storage/chatStorage";
 import { loadMessages } from "@/storage/chatMessageStorage";
-import { loadCallContext } from "./phoneCallContext";
+import { loadCallContext, pickRecentChatForCall } from "./phoneCallContext";
 
 vi.mock("@/db/database", () => ({
   DB_STORES: { SUMMARIES: "summaries", IMPORTANT_EVENTS: "importantEvents" },
@@ -67,10 +67,53 @@ describe("loadCallContext", () => {
     expect(ctx.recentChatHistory.map((m) => m.content)).toEqual(["嗨", "你好"]);
   });
 
+  it("一則回覆拆成很多泡泡時，往前多帶到字數預算內的聊天，不只最後 15 則", async () => {
+    const msgs = Array.from({ length: 40 }, (_, i) => ({
+      sender: i % 2 ? "assistant" : "user",
+      is_user: i % 2 === 0,
+      name: i % 2 ? "小雪" : "我",
+      content: i === 0 ? "我們等下玩雙人成行吧" : `短句${i}`,
+      createdAt: i,
+    }));
+    vi.mocked(loadMessages).mockResolvedValue(msgs as any);
+    const ctx = await loadCallContext({ chatId: "chat-1", characterId: "char-1" });
+    expect(ctx.recentChatHistory).toHaveLength(40);
+    expect(ctx.recentChatHistory[0].content).toBe("我們等下玩雙人成行吧");
+  });
+
+  it("略過群聊同步過來的紀錄", async () => {
+    vi.mocked(loadMessages).mockResolvedValue([
+      { sender: "assistant", is_user: false, name: "A", content: "群聊", createdAt: 1, isGroupChatHistory: true },
+      { sender: "user", is_user: true, name: "我", content: "私聊", createdAt: 2 },
+    ] as any);
+    const ctx = await loadCallContext({ chatId: "chat-1", characterId: "char-1" });
+    expect(ctx.recentChatHistory.map((m) => m.content)).toEqual(["私聊"]);
+  });
+
   it("讀取失敗時回傳空的，不會沿用舊資料", async () => {
     vi.mocked(db.getAll).mockRejectedValue(new Error("db 壞了"));
     vi.spyOn(console, "warn").mockImplementation(() => {});
     const ctx = await loadCallContext({ chatId: "chat-1", characterId: "char-1" });
     expect(ctx).toEqual({ summaries: [], importantEvents: [], recentChatHistory: [] });
+  });
+});
+
+describe("pickRecentChatForCall", () => {
+  const make = (n: number, len: number) =>
+    Array.from({ length: n }, (_, i) => ({ id: i, content: "x".repeat(len) }));
+
+  it("訊息很長時仍保底帶最近 min 則", () => {
+    const picked = pickRecentChatForCall(make(30, 1000), { min: 15, max: 80, charBudget: 2000 });
+    expect(picked).toHaveLength(15);
+    expect(picked[picked.length - 1].id).toBe(29);
+  });
+
+  it("超過保底後依字數預算停下", () => {
+    const picked = pickRecentChatForCall(make(100, 100), { min: 5, max: 80, charBudget: 2000 });
+    expect(picked).toHaveLength(20);
+  });
+
+  it("不超過上限則數", () => {
+    expect(pickRecentChatForCall(make(200, 1), { min: 5, max: 80, charBudget: 99999 })).toHaveLength(80);
   });
 });

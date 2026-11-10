@@ -586,7 +586,8 @@ export class PromptBuilder {
           }
           return m.name + ": " + m.content;
         })
-        .join("\n");
+        .join("\n") +
+        "\n（以上越後面越新，最後幾則是剛剛才聊的：剛約好或正在聊的事要接著延續，不要自己換成別的。）";
     } else {
       phoneContextVars.phoneRecentChatHistory = "（無之前的聊天紀錄）";
     }
@@ -751,7 +752,8 @@ export class PromptBuilder {
           }
           return m.name + ": " + m.content;
         })
-        .join("\n");
+        .join("\n") +
+        "\n（以上越後面越新，最後幾則是剛剛才聊的：剛約好或正在聊的事要接著延續，不要自己換成別的。）";
     } else {
       phoneContextVars.phoneRecentChatHistory = "（無之前的聊天紀錄）";
     }
