@@ -11,6 +11,8 @@ type Pos = { x: number; y: number };
 export interface ResidentDeps {
   scene: Ref<Scene>;
   status: Ref<ResidentStatus>;
+  /** 少走動：每件事做久一點 */
+  calm: Ref<boolean>;
   /** 房間 → 家具現在的位置 */
   current: (room: RoomId) => Record<string, Pos>;
   /** 房間 → 家具預設的位置 */
@@ -43,6 +45,8 @@ export function useHouseResident(deps: ResidentDeps) {
   let legTimer: ReturnType<typeof setTimeout> | null = null;
   let dead = false;
 
+  const dwell = (key: string) => dwellMs(key, Math.random, deps.calm.value);
+
   function clearTimers() {
     if (nextTimer) clearTimeout(nextTimer);
     if (legTimer) clearTimeout(legTimer);
@@ -69,7 +73,7 @@ export function useHouseResident(deps: ResidentDeps) {
       const forced = forcedAct(deps.status.value);
       if (forced && forced === act.value && !walking.value) {
         // 一直在睡／在忙：原地繼續
-        schedule(dwellMs(forced));
+        schedule(dwell(forced));
         return;
       }
       goTo(forced ?? pickAct(deps.scene.value, act.value, me.room));
@@ -87,7 +91,7 @@ export function useHouseResident(deps: ResidentDeps) {
     runLegs(legs, () => {
       walking.value = false;
       moveMs.value = 0;
-      schedule(dwellMs(key));
+      schedule(dwell(key));
     });
   }
 
@@ -144,7 +148,7 @@ export function useHouseResident(deps: ResidentDeps) {
     depthY.value = me.y;
     act.value = first;
     walking.value = false;
-    schedule(dwellMs(first));
+    schedule(dwell(first));
   }
 
   /** 出門（暫離、約會）：不在家 */
@@ -154,8 +158,36 @@ export function useHouseResident(deps: ResidentDeps) {
     walking.value = false;
   }
 
+  let paused = false;
+
+  /** 畫面看不到了（App 切到背景、螢幕關掉）：停下來，不在背景繼續走 */
+  function pause() {
+    if (paused || !home.value) return;
+    paused = true;
+    clearTimers();
+    if (walking.value) {
+      // 走到一半：直接站到要去的地方
+      Object.assign(me, spotOf(act.value));
+      depthY.value = me.y;
+      moveMs.value = 0;
+      walking.value = false;
+    }
+  }
+
+  /** 畫面回來了：真實狀態有指定就過去，不然繼續做原本的事 */
+  function resume() {
+    if (!paused) return;
+    paused = false;
+    if (!home.value) return;
+    const forced = forcedAct(deps.status.value);
+    if (forced && forced !== act.value) goTo(forced);
+    else schedule(dwell(act.value));
+  }
+
   /** 狀態變了：要睡、要忙就馬上過去；出門就離開；回來就從大門進來 */
   function onStatusChange(next: ResidentStatus, prev: ResidentStatus | undefined) {
+    // 停著的時候不動，回來時 resume 會照最新的狀態走
+    if (paused && next !== "away" && next !== "date" && home.value) return;
     if (next === "away" || next === "date") {
       leave();
       return;
@@ -174,7 +206,7 @@ export function useHouseResident(deps: ResidentDeps) {
     clearTimers();
   });
 
-  return { me, act, walking, facing, moveMs, heading, home, crossing, depthY, start, leave, onStatusChange };
+  return { me, act, walking, facing, moveMs, heading, home, crossing, depthY, start, pause, resume, leave, onStatusChange };
 }
 
 /** 橫條上的 x（房間格子）：客廳 0、臥室 130、廚房 260；浴室自己一張 */

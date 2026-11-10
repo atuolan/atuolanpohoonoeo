@@ -6,6 +6,7 @@ import {
   actSpot,
   clampGroupMove,
   clampPlacement,
+  dwellMs,
   followAnchor,
   itemDepths,
   itemsInFront,
@@ -154,7 +155,7 @@ describe("residentStatus", () => {
 
 describe("parsePixelHouseState", () => {
   it("壞掉的資料用預設值，擺放只留數字", () => {
-    expect(parsePixelHouseState(null)).toEqual({ homeStyle: "canvas", residentCharId: null, look: "boy", looks: {}, timeLight: true, placements: {} });
+    expect(parsePixelHouseState(null)).toEqual({ homeStyle: "canvas", residentCharId: null, look: "boy", looks: {}, timeLight: true, calm: false, placements: {} });
     expect(
       parsePixelHouseState({
         homeStyle: "pixel-house",
@@ -163,7 +164,9 @@ describe("parsePixelHouseState", () => {
         timeLight: false,
         placements: { living: { sofa: [1, 2], bad: ["x", 2], worse: 3 } },
       }),
-    ).toEqual({ homeStyle: "pixel-house", residentCharId: "c1", look: "girl", looks: {}, timeLight: false, placements: { living: { sofa: [1, 2] } } });
+    ).toEqual({ homeStyle: "pixel-house", residentCharId: "c1", look: "girl", looks: {}, timeLight: false, calm: false, placements: { living: { sofa: [1, 2] } } });
+    expect(parsePixelHouseState({ calm: true }).calm).toBe(true);
+    expect(parsePixelHouseState({ calm: "yes" }).calm).toBe(false);
     expect(parsePixelHouseState({ timeLight: "x" }).timeLight).toBe(true);
   });
 });
@@ -232,6 +235,20 @@ describe("itemDepths：誰在前面", () => {
     expect(behind).not.toContain("counter");
     expect(behind).not.toContain("window");
     expect(itemsInFront(d, 253)).toEqual([]);
+  });
+});
+
+describe("dwellMs：每件事做多久", () => {
+  it("一般 20～40 秒，睡覺 3～5 分鐘", () => {
+    expect(dwellMs("sofa", () => 0)).toBe(20_000);
+    expect(dwellMs("sofa", () => 1)).toBe(40_000);
+    expect(dwellMs("sleep", () => 0)).toBe(180_000);
+    expect(dwellMs("sleep", () => 1)).toBe(300_000);
+  });
+  it("少走動：四倍，一兩分鐘才換一件事", () => {
+    expect(dwellMs("sofa", () => 0, true)).toBe(80_000);
+    expect(dwellMs("sofa", () => 1, true)).toBe(160_000);
+    expect(dwellMs("sleep", () => 0, true)).toBe(720_000);
   });
 });
 

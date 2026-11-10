@@ -98,7 +98,9 @@ function persist() {
 }
 /** 設定頁改了光線就跟著換（其他設定回到主頁時才重新讀）；上傳的部位也重讀 */
 function onSettingsChanged() {
-  state.timeLight = loadPixelHouseState().timeLight;
+  const saved = loadPixelHouseState();
+  state.timeLight = saved.timeLight;
+  state.calm = saved.calm;
   customParts.value = loadCustomParts();
 }
 
@@ -261,6 +263,8 @@ function closeBath() {
 const now = ref(new Date());
 const scene = computed(() => sceneAt(now.value));
 const tint = computed(() => (state.timeLight ? SCENE_TINT[scene.value] : SCENE_TINT.day));
+/** 白天不用疊色：整個畫面的混色很耗電，不需要就不放 */
+const tintOn = computed(() => tint.value !== SCENE_TINT.day);
 
 // ===== 住在小屋的他 =====
 const charactersStore = useCharactersStore();
@@ -325,6 +329,7 @@ function saveOutfit(outfit: Outfit) {
 const life = useHouseResident({
   scene,
   status,
+  calm: computed(() => state.calm),
   current: currentOf,
   defaults: defaultsOf,
 });
@@ -452,10 +457,10 @@ const mePos = computed(() => {
   return { x: stripX(life.me), y: life.me.y };
 });
 
+// 用位移（transform）移動：不用每一格重新排版，交給顯示晶片處理，比改 left/top 省電
 const meStyle = computed(() => ({
-  left: `${u(mePos.value.x)}px`,
-  top: `${u(mePos.value.y)}px`,
-  transition: lying.value ? "none" : `left ${life.moveMs.value}ms linear, top ${life.moveMs.value}ms linear`,
+  transform: `translate3d(${u(mePos.value.x)}px, ${u(mePos.value.y)}px, 0)`,
+  transition: lying.value ? "none" : `transform ${life.moveMs.value}ms linear`,
 }));
 
 const spriteStyle = computed(() => {
@@ -789,6 +794,36 @@ function onNativeScroll(e: Event) {
 let statusTimer: ReturnType<typeof setInterval> | null = null;
 let clockTimer: ReturnType<typeof setInterval> | null = null;
 
+function startTimers() {
+  stopTimers();
+  frameTimer = setInterval(() => {
+    if (life.walking.value) frame.value++;
+  }, 110);
+  clockTimer = setInterval(() => (now.value = new Date()), 60_000);
+  statusTimer = setInterval(() => void refreshResident(), 30_000);
+}
+
+function stopTimers() {
+  if (frameTimer) clearInterval(frameTimer);
+  if (statusTimer) clearInterval(statusTimer);
+  if (clockTimer) clearInterval(clockTimer);
+  frameTimer = statusTimer = clockTimer = null;
+}
+
+/** App 切到背景、螢幕關掉：他停下來、計時器全停；回來再繼續 */
+function onVisibilityChange() {
+  if (document.hidden) {
+    life.pause();
+    stopTimers();
+    return;
+  }
+  if (!started) return;
+  now.value = new Date();
+  startTimers();
+  void refreshResident().then(() => life.resume());
+}
+let started = false;
+
 onMounted(async () => {
   measure();
   if (typeof ResizeObserver !== "undefined" && root.value) {
@@ -796,10 +831,7 @@ onMounted(async () => {
     resizeObs.observe(root.value);
   }
   homeBadges.start();
-  frameTimer = setInterval(() => {
-    if (life.walking.value) frame.value++;
-  }, 110);
-  clockTimer = setInterval(() => (now.value = new Date()), 60_000);
+  document.addEventListener("visibilitychange", onVisibilityChange);
   window.addEventListener(CHAT_UNREAD_CHANGED_EVENT, onChatEvent);
   window.addEventListener("aguaphone:chat-messages-appended", onChatEvent);
   window.addEventListener(PIXEL_HOUSE_CHANGED_EVENT, onSettingsChanged);
@@ -810,15 +842,16 @@ onMounted(async () => {
   if (residentId.value && status.value !== "away" && status.value !== "date") life.start();
   // 一打開都從客廳開始（不跟著他跑；想看他點下面的提示）
   scrollToRoom(0, 0);
-  statusTimer = setInterval(() => void refreshResident(), 30_000);
+  started = true;
+  if (document.hidden) life.pause();
+  else startTimers();
 });
 
 onUnmounted(() => {
   stopAnim();
   resizeObs?.disconnect();
-  if (frameTimer) clearInterval(frameTimer);
-  if (statusTimer) clearInterval(statusTimer);
-  if (clockTimer) clearInterval(clockTimer);
+  stopTimers();
+  document.removeEventListener("visibilitychange", onVisibilityChange);
   if (longPressTimer) clearTimeout(longPressTimer);
   window.removeEventListener(CHAT_UNREAD_CHANGED_EVENT, onChatEvent);
   window.removeEventListener("aguaphone:chat-messages-appended", onChatEvent);
@@ -1104,7 +1137,7 @@ function labelStyle(room: RoomId, it: RenderItem) {
     </div>
 
     <!-- 時間的光線（multiply：白色＝不變） -->
-    <div class="ph-tint" :style="{ background: tint }" aria-hidden="true"></div>
+    <div v-if="tintOn" class="ph-tint" :style="{ background: tint }" aria-hidden="true"></div>
 
     <!-- 介面 -->
     <div class="ph-ui">
@@ -1272,6 +1305,9 @@ function labelStyle(room: RoomId, it: RenderItem) {
 /* ===== 他 ===== */
 .ph-me {
   position: absolute;
+  left: 0;
+  top: 0;
+  will-change: transform;
   width: 0;
   height: 0;
   z-index: 3;

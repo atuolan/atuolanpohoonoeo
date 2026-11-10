@@ -180,9 +180,16 @@ export function pickAct(scene: Scene, current: string | null, room: RoomId | nul
   return keys[0];
 }
 
-/** 每件事做多久（毫秒）：睡覺久一點，其他 7～12 秒 */
-export function dwellMs(act: string, rand: () => number = Math.random): number {
-  return act === "sleep" ? 20000 : 7000 + rand() * 5000;
+/** 「少走動」時每件事做的時間乘幾倍 */
+export const CALM_FACTOR = 4;
+
+/**
+ * 每件事做多久（毫秒）：睡覺 3～5 分鐘，其他 20～40 秒。
+ * calm（設定的「少走動」）：再乘 4 倍，一兩分鐘才換一件事，比較省電。
+ */
+export function dwellMs(act: string, rand: () => number = Math.random, calm = false): number {
+  const base = act === "sleep" ? 180_000 + rand() * 120_000 : 20_000 + rand() * 20_000;
+  return calm ? base * CALM_FACTOR : base;
 }
 
 // ===== 走哪條路 =====

@@ -4,6 +4,7 @@
  * - 住在小屋的角色（第一次用時是最近聊天的那位，之後固定）
  * - 小人是男生還是女生
  * - 房間要不要跟著現在的時間變黃昏、晚上的光線
+ * - 少走動（省電）
  * - 每個角色的外觀（穿什麼、什麼顏色、買過哪些款式）
  * 用戶上傳自己畫的部位另外存一個 key（圖比較大，所有角色共用）
  * - 家具擺在哪（只存搬過的）
@@ -23,6 +24,8 @@ export interface PixelHouseState {
   looks: Record<string, Outfit>;
   /** 黃昏、晚上房間變暗（關掉就一直是白天的亮度） */
   timeLight: boolean;
+  /** 少走動：他每件事做久一點才換，比較省電 */
+  calm: boolean;
   /** 房間 → 家具 id → [x, y]（房間格子） */
   placements: Partial<Record<RoomId, Record<string, [number, number]>>>;
 }
@@ -31,7 +34,7 @@ const STORAGE_KEY = "pixel_house_state";
 export const PIXEL_HOUSE_CHANGED_EVENT = "aguaphone:pixel-house-changed";
 
 export function defaultPixelHouseState(): PixelHouseState {
-  return { homeStyle: "canvas", residentCharId: null, look: "boy", looks: {}, timeLight: true, placements: {} };
+  return { homeStyle: "canvas", residentCharId: null, look: "boy", looks: {}, timeLight: true, calm: false, placements: {} };
 }
 
 /** 讀不到或格式不對的欄位用預設值 */
@@ -65,6 +68,7 @@ export function parsePixelHouseState(raw: unknown): PixelHouseState {
     look,
     looks,
     timeLight: r.timeLight !== false,
+    calm: r.calm === true,
     placements,
   };
 }

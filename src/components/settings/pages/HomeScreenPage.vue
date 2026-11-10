@@ -21,6 +21,7 @@ const initial = loadPixelHouseState();
 const homeStyle = ref<HomeStyle>(initial.homeStyle);
 const residentId = ref<string>(initial.residentCharId ?? "");
 const timeLight = ref(initial.timeLight);
+const calm = ref(initial.calm);
 const hasPlacements = ref(Object.keys(initial.placements).length > 0);
 const resetDone = ref(false);
 
@@ -54,6 +55,11 @@ function setResident(v: string) {
 function setTimeLight(v: boolean) {
   timeLight.value = v;
   updatePixelHouseState({ timeLight: v });
+}
+
+function setCalm(v: boolean) {
+  calm.value = v;
+  updatePixelHouseState({ calm: v });
 }
 
 function resetPlacements() {
@@ -95,6 +101,12 @@ function resetPlacements() {
         description="黃昏偏橘、晚上偏藍；關掉就一直是白天的亮度"
         :model-value="timeLight"
         @update:model-value="setTimeLight"
+      />
+      <SettingsSwitchRow
+        label="少走動"
+        description="一兩分鐘才換一件事，比較省電；關掉是二十到四十秒換一件"
+        :model-value="calm"
+        @update:model-value="setCalm"
       />
       <SettingsRow
         label="還原家具擺設"
