@@ -554,6 +554,8 @@ const menuOpen = ref(false);
 const sheetOpen = ref(false);
 const homeBadges = useHomeBadgesStore();
 const badges = computed(() => homeBadges.badges);
+/** 有未讀訊息：客廳的信箱露出一封信 */
+const hasMail = computed(() => (badges.value.message ?? 0) > 0);
 
 function pickDialApp(app: string) {
   menuOpen.value = false;
@@ -1002,6 +1004,7 @@ function labelStyle(room: RoomId, it: RenderItem) {
           :dragging="dragging"
           :flash-key="flashKey"
           :night="scene === 'night'"
+          :has-mail="hasMail"
           pass="back"
           :front-ids="frontIds[room]"
           @item-click="onItemClick"
@@ -1092,6 +1095,7 @@ function labelStyle(room: RoomId, it: RenderItem) {
           :dragging="dragging"
           :flash-key="flashKey"
           :night="scene === 'night'"
+          :has-mail="hasMail"
           pass="front"
           :front-ids="frontIds[room]"
           @item-click="onItemClick"
@@ -1115,6 +1119,7 @@ function labelStyle(room: RoomId, it: RenderItem) {
         :dragging="dragging"
         :flash-key="flashKey"
         :night="scene === 'night'"
+        :has-mail="hasMail"
         pass="back"
         :front-ids="frontIds.bath"
         @item-click="onItemClick"
@@ -1162,6 +1167,7 @@ function labelStyle(room: RoomId, it: RenderItem) {
           :dragging="dragging"
           :flash-key="flashKey"
           :night="scene === 'night'"
+          :has-mail="hasMail"
           pass="front"
           :front-ids="frontIds.bath"
           @item-click="onItemClick"
