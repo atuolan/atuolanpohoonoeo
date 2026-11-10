@@ -38,7 +38,7 @@ export const ROOM_CORRIDOR: Record<RoomId, number> = {
 export type ItemZone = "wall" | "floor" | "any" | "row" | "fixed";
 
 const WALL_ITEMS: Record<RoomId, string[]> = {
-  living: ["garland", "clock", "window", "curtains"],
+  living: ["garland", "clock", "window", "curtains", "mailbox"],
   bedroom: ["garland", "photo-landscape", "photo-heart", "wall-shelf", "calendar", "curtains", "window", "clock", "board"],
   kitchen: ["clock", "valance", "window", "spice-rack", "canister-shelf", "hood"],
   bath: ["window", "mirror", "towels", "skincare-shelf", "curtain", "shower-head"],
@@ -103,6 +103,14 @@ export const NIGHT_ITEMS: Record<RoomId, string[]> = {
   bath: ["window"],
 };
 
+/** 有未讀訊息時換成 items/<id>-full.png 的家具（信箱露出一封信；scripts/pixel-house/draw_mailbox.py 畫的） */
+export const MAIL_ITEMS: Record<RoomId, string[]> = {
+  living: ["mailbox"],
+  bedroom: [],
+  kitchen: [],
+  bath: [],
+};
+
 /** 點家具打開的東西：App（handleNavigate 的 id）、幾個 App 選一個、或進浴室 */
 export type FurnitureAction =
   | { kind: "app"; app: string; to: string }
@@ -115,6 +123,7 @@ export type FurnitureAction =
 export const FURNITURE_ACTIONS: Record<RoomId, Record<string, FurnitureAction>> = {
   living: {
     tv: { kind: "app", app: "game", to: "遊戲中心" },
+    mailbox: { kind: "app", app: "message", to: "訊息" },
     door: {
       kind: "choose",
       to: "商店．外送",

@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { ACT_WEIGHTS, ACTS, itemZone, moveGroupOf, type RoomId } from "./houseData";
+import { existsSync } from "node:fs";
+import { ACT_WEIGHTS, ACTS, FURNITURE_ACTIONS, itemZone, MAIL_ITEMS, moveGroupOf, NIGHT_ITEMS, type RoomId } from "./houseData";
 import {
   actSpot,
   clampGroupMove,
@@ -270,5 +271,26 @@ describe("窗戶整組一起移動", () => {
     // 往右下拖太多：整組右邊貼牆（10 → 78），底部貼地板線（38 → 101）
     expect(clampGroupMove(group, 500, 500, 158)).toEqual({ dx: 68, dy: 63 });
     expect(clampGroupMove(group, -500, -500, 158)).toEqual({ dx: -10, dy: -38 });
+  });
+});
+
+describe("家具的圖", () => {
+  const ROOMS: RoomId[] = ["living", "bedroom", "kitchen", "bath"];
+  const dir = (room: RoomId) => resolve(__dirname, `../../../public/pixel-house/${room}`);
+  it("每件家具都有圖，晚上和有信的版本也有", () => {
+    for (const room of ROOMS) {
+      const layout = JSON.parse(readFileSync(`${dir(room)}/layout.json`, "utf-8")) as { items: { id: string; empty?: boolean }[] };
+      const ids = layout.items.filter((it) => !it.empty).map((it) => it.id);
+      for (const id of ids) expect(existsSync(`${dir(room)}/items/${id}.png`), `${room}/${id}`).toBe(true);
+      for (const id of NIGHT_ITEMS[room]) expect(existsSync(`${dir(room)}/items/${id}-night.png`), `${room}/${id}-night`).toBe(true);
+      for (const id of MAIL_ITEMS[room]) expect(existsSync(`${dir(room)}/items/${id}-full.png`), `${room}/${id}-full`).toBe(true);
+      // 對到 App 的家具都在房間裡
+      for (const id of Object.keys(FURNITURE_ACTIONS[room])) expect(ids, `${room}/${id}`).toContain(id);
+    }
+  });
+  it("客廳的信箱掛在牆上，點了打開訊息", () => {
+    expect(itemZone("living", "mailbox", 107, 158)).toBe("wall");
+    expect(FURNITURE_ACTIONS.living.mailbox).toEqual({ kind: "app", app: "message", to: "訊息" });
+    expect(roomDepths("living").mailbox).toBe(-1);
   });
 });

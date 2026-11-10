@@ -72,3 +72,12 @@ python3 -I scripts/pixel-house/add_style.py source/girl-styles/hairBack_01.png g
 ```
 
 注意：換色是拿每一層「最多的那個顏色」當主色，所以 hairBack 的主色要跟前面的頭髮一樣，外框和陰影不要比主色多。
+
+## 客廳的信箱
+
+信箱不在原圖裡，另外畫。重新跑 `split_room.py` 拆客廳之後，要再跑一次：
+
+```
+python3 -I scripts/pixel-house/draw_mailbox.py
+```
+
