@@ -1460,7 +1460,12 @@ export class ProactiveMessageService {
             { from: proactiveToday, to: shiftDate(proactiveToday, 6) },
             { characterId: character.id, chatId: chat.id },
           ).catch(() => []),
-          { today: proactiveToday, charName: character.data?.name || character.nickname || "角色" },
+          {
+            today: proactiveToday,
+            charName: character.data?.name || character.nickname || "角色",
+            birthday: currentPersona?.birthday,
+            userName: currentPersona?.name,
+          },
         ) || undefined;
       // 暫離／睡覺／忙碌期間 user 留了幾則訊息（回來後要他接著回，只算最後一次偷回之後的）
       const awayLeftMessageCount = chat.charAway

@@ -22,6 +22,7 @@ import {
     getHolidaysForYear,
     getLunarDateString,
 } from "@/utils/holidayDetector";
+import { birthdayInYear, daysUntilBirthday, normalizeBirthday } from "@/utils/userBirthday";
 import {
     ArrowLeft,
     CalendarCheck,
@@ -107,6 +108,45 @@ const holidayMap = computed(() => {
   return map;
 });
 
+// ===== user 生日（人設上的 MM-DD，每年重複）=====
+interface BirthdayMark {
+  personaId: string;
+  label: string;
+}
+
+function birthdayLabel(name: string) {
+  return hasManyPersonas.value ? `${name}的生日` : "我的生日";
+}
+
+/** 這個月的生日（by MM-DD）；2/29 生日平年標在 2/28 */
+const birthdayMap = computed(() => {
+  const year = currentDate.value.getFullYear();
+  const map = new Map<string, BirthdayMark[]>();
+  for (const p of userStore.personas) {
+    const b = normalizeBirthday(p.birthday);
+    if (!b) continue;
+    const md = birthdayInYear(b, year).slice(5);
+    map.set(md, [...(map.get(md) ?? []), { personaId: p.id, label: birthdayLabel(p.name) }]);
+  }
+  return map;
+});
+
+/** 今天起 7 天內的生日 */
+const upcomingBirthdays = computed(() => {
+  const today = formatDateStr(new Date());
+  return userStore.personas
+    .flatMap((p) => {
+      const days = daysUntilBirthday(p.birthday, today);
+      if (days === null || days > 6) return [];
+      const d = new Date();
+      d.setDate(d.getDate() + days);
+      return [{ personaId: p.id, label: birthdayLabel(p.name), days, dateLabel: `${d.getMonth() + 1}月${d.getDate()}日` }];
+    })
+    .sort((a, b) => a.days - b.days);
+});
+const todayBirthdays = computed(() => upcomingBirthdays.value.filter((b) => b.days === 0));
+const soonBirthdays = computed(() => upcomingBirthdays.value.filter((b) => b.days > 0));
+
 // 事件 Map（by date YYYY-MM-DD -> events）；跨天的行程每一天都放
 const eventsByDate = computed(() => {
   const map = new Map<string, CalendarEvent[]>();
@@ -132,6 +172,7 @@ interface DayInfo {
   isCurrentMonth: boolean;
   isToday: boolean;
   holiday: Holiday | null;
+  birthdays: BirthdayMark[];
   events: CalendarEvent[];
 }
 
@@ -156,6 +197,7 @@ const calendarDays = computed(() => {
       isCurrentMonth: false,
       isToday: false,
       holiday: null,
+      birthdays: [],
       events: [],
     });
   }
@@ -174,6 +216,7 @@ const calendarDays = computed(() => {
       isCurrentMonth: true,
       isToday,
       holiday: holidayMap.value.get(`${mm}-${dd}`) || null,
+      birthdays: birthdayMap.value.get(`${mm}-${dd}`) || [],
       events: eventsByDate.value.get(ds) || [],
     });
   }
@@ -186,6 +229,7 @@ const calendarDays = computed(() => {
       isCurrentMonth: false,
       isToday: false,
       holiday: null,
+      birthdays: [],
       events: [],
     });
   }
@@ -219,6 +263,9 @@ const selectedDayEvents = computed(() =>
 );
 const selectedDayHoliday = computed(() =>
   selectedDate.value ? holidayMap.value.get(selectedDate.value.slice(5)) ?? null : null,
+);
+const selectedDayBirthdays = computed(() =>
+  selectedDate.value ? birthdayMap.value.get(selectedDate.value.slice(5)) ?? [] : [],
 );
 
 function previousMonth() {
@@ -461,12 +508,14 @@ onMounted(async () => {
                 'other-month': !day.isCurrentMonth,
                 today: day.isToday,
                 'has-holiday': !!day.holiday,
+                'has-birthday': day.birthdays.length > 0,
                 'has-events': day.events.length > 0,
               }"
               @click="selectDay(day)"
             >
               <div class="day-number">{{ day.date }}</div>
-              <div v-if="day.holiday || day.events.length > 0" class="dot-row">
+              <div v-if="day.holiday || day.birthdays.length > 0 || day.events.length > 0" class="dot-row">
+                <span v-if="day.birthdays.length > 0" class="dot dot-birthday" />
                 <span v-if="day.holiday" class="dot dot-holiday" />
                 <span
                   v-for="e in day.events.slice(0, 2)"
@@ -482,6 +531,29 @@ onMounted(async () => {
 
       <!-- 右側資訊 -->
       <div class="events-section">
+        <!-- 今天生日 -->
+        <div v-for="b in todayBirthdays" :key="b.personaId" class="holiday-banner birthday-banner">
+          <span class="birthday-banner-icon" aria-hidden="true">🎂</span>
+          <div>
+            <div class="holiday-banner-name">今天是{{ b.label }}</div>
+            <div class="holiday-banner-greeting">生日快樂！</div>
+          </div>
+        </div>
+
+        <!-- 即將到來的生日 -->
+        <div v-if="soonBirthdays.length > 0" class="upcoming-section">
+          <div class="section-subtitle">
+            <span aria-hidden="true">🎂</span>
+            <span>即將到來的生日</span>
+          </div>
+          <div class="holiday-list">
+            <div v-for="b in soonBirthdays" :key="b.personaId" class="holiday-item birthday-item">
+              <span class="holiday-date-tag">{{ b.dateLabel }}</span>
+              <span class="holiday-name-small">{{ b.label }}（還有 {{ b.days }} 天）</span>
+            </div>
+          </div>
+        </div>
+
         <!-- 今日節日 -->
         <div v-if="todayHoliday" class="holiday-banner">
           <Star :size="22" color="white" fill="white" />
@@ -572,6 +644,10 @@ onMounted(async () => {
           </button>
         </div>
         <div class="modal-body">
+          <div v-for="b in selectedDayBirthdays" :key="b.personaId" class="day-holiday day-birthday">
+            <span aria-hidden="true">🎂</span>
+            <span>{{ b.label }}</span>
+          </div>
           <div v-if="selectedDayHoliday" class="day-holiday">
             <Star :size="14" />
             <span>{{ selectedDayHoliday.name }}</span>
@@ -831,7 +907,10 @@ onMounted(async () => {
   &.has-holiday:not(.today) {
     background: rgba(245, 158, 11, 0.08);
   }
-  &.has-events:not(.today):not(.has-holiday) {
+  &.has-birthday:not(.today) {
+    background: rgba(244, 63, 94, 0.1);
+  }
+  &.has-events:not(.today):not(.has-holiday):not(.has-birthday) {
     background: rgba(59, 130, 246, 0.06);
   }
   &:hover:not(.other-month) {
@@ -855,6 +934,25 @@ onMounted(async () => {
 }
 .dot-holiday {
   background: #f59e0b;
+}
+.dot-birthday {
+  background: #f43f5e;
+}
+.holiday-banner.birthday-banner {
+  background: #f43f5e;
+  .birthday-banner-icon {
+    font-size: 22px;
+    line-height: 1;
+  }
+}
+.birthday-item {
+  background: #ffe4e6;
+  .holiday-date-tag {
+    color: #e11d48;
+  }
+  .holiday-name-small {
+    color: #9f1239;
+  }
 }
 .events-section {
   flex: 1;
@@ -1174,6 +1272,10 @@ textarea.form-control {
   color: #92400e;
   font-size: 13px;
   font-weight: 500;
+}
+.day-birthday {
+  background: #ffe4e6;
+  color: #9f1239;
 }
 /* 橫屏 */
 @media (orientation: landscape) {
