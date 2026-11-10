@@ -11,6 +11,7 @@ import {
   useUserStore,
   type UserPersona,
 } from "@/stores/user";
+import { normalizeBirthday } from "@/utils/userBirthday";
 import { computed, onMounted, ref, watch } from "vue";
 
 // Emits
@@ -124,6 +125,43 @@ watch(
   },
   { deep: true },
 );
+
+// ===== 生日（人設上存 MM-DD）=====
+const birthdayMonth = ref<number | "">("");
+const birthdayDay = ref<number | "">("");
+/** 這個月有幾天（2 月給 29 天，2/29 生日平年過 2/28） */
+const birthdayDayCount = computed(() =>
+  birthdayMonth.value ? new Date(2000, birthdayMonth.value, 0).getDate() : 31,
+);
+
+// 換編輯的人設時，把它的生日帶進選單
+watch(
+  () => editingPersona.value?.birthday,
+  (birthday) => {
+    const b = normalizeBirthday(birthday);
+    birthdayMonth.value = b ? Number(b.slice(0, 2)) : "";
+    birthdayDay.value = b ? Number(b.slice(3)) : "";
+  },
+  { immediate: true },
+);
+
+// 月、日都選了才寫回人設；只選一半先不動
+watch([birthdayMonth, birthdayDay], ([month, day]) => {
+  if (!editingPersona.value) return;
+  if (month && day && day > birthdayDayCount.value) {
+    birthdayDay.value = birthdayDayCount.value;
+    return;
+  }
+  if (month && day) {
+    editingPersona.value.birthday = normalizeBirthday(`${month}-${day}`);
+  }
+});
+
+function clearBirthday() {
+  birthdayMonth.value = "";
+  birthdayDay.value = "";
+  if (editingPersona.value) editingPersona.value.birthday = undefined;
+}
 
 // 切換區域展開
 function toggleSection(section: keyof typeof expandedSections.value) {
@@ -537,6 +575,41 @@ async function handleClearAll() {
               <p class="form-hint">
                 這個名稱會在聊天中顯示，也會替換 &#123;&#123;user&#125;&#125;
                 巨集
+              </p>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">生日</label>
+              <div class="birthday-row">
+                <select
+                  v-model="birthdayMonth"
+                  class="soft-input birthday-select"
+                  aria-label="生日月份"
+                >
+                  <option value="">月</option>
+                  <option v-for="m in 12" :key="m" :value="m">{{ m }} 月</option>
+                </select>
+                <select
+                  v-model="birthdayDay"
+                  class="soft-input birthday-select"
+                  aria-label="生日日期"
+                >
+                  <option value="">日</option>
+                  <option v-for="d in birthdayDayCount" :key="d" :value="d">
+                    {{ d }} 日
+                  </option>
+                </select>
+                <button
+                  v-if="birthdayMonth || birthdayDay"
+                  type="button"
+                  class="birthday-clear"
+                  @click="clearBirthday"
+                >
+                  清除
+                </button>
+              </div>
+              <p class="form-hint">
+                每年重複。行事曆會標出你的生日，生日前一週角色就會知道；當天進入聊天，角色會主動祝你生日快樂
               </p>
             </div>
           </div>
@@ -1518,6 +1591,28 @@ async function handleClearAll() {
 }
 
 // 表單
+.birthday-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.birthday-select {
+  flex: 1;
+  min-width: 0;
+}
+
+.birthday-clear {
+  flex-shrink: 0;
+  padding: 8px 12px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--color-text-secondary, #888);
+  font-size: 13px;
+  cursor: pointer;
+}
+
 .form-group {
   margin-bottom: 16px;
 

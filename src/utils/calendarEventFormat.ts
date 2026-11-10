@@ -2,6 +2,7 @@
  * 行事曆事件的日期、時間、說明怎麼算和怎麼顯示（純函式，行事曆 App、聊天卡片、角色工具、解析器共用）
  */
 import type { CalendarEvent, CalendarEventScope, CalendarEventTime } from "@/types/calendar";
+import { buildBirthdayCalendarLine } from "@/utils/userBirthday";
 
 /** 行程的最後一天：跨天的是結束日期，其他就是當天 */
 export function eventLastDate(event: { date: string; endDate?: string }): string {
@@ -92,11 +93,12 @@ function addDays(date: string, days: number): string {
 
 /**
  * 給 AI 看的使用者行事曆（{{userCalendar}}）：today 起 7 天內的行程和經期紀錄，最多 10 筆；
- * 角色幫忙記的標出來（events 要先用 isEventVisibleTo 過濾過）。沒有行程回傳空字串（條目就不輸出）
+ * 角色幫忙記的標出來（events 要先用 isEventVisibleTo 過濾過）。
+ * 有給 user 的生日（人設上的 MM-DD）且在 7 天內，放在最前面。沒有行程回傳空字串（條目就不輸出）
  */
 export function buildUserCalendarPromptText(
   events: CalendarEvent[],
-  options: { today: string; charName: string },
+  options: { today: string; charName: string; birthday?: string; userName?: string },
 ): string {
   const last = addDays(options.today, 6);
   const lines = events
@@ -112,5 +114,10 @@ export function buildUserCalendarPromptText(
       const helped = e.sourceCharacterId || e.sourceChatId ? `（${options.charName}幫忙記的）` : "";
       return `- ${days}${time ? ` ${time}` : ""} ${kind}${e.title}${notes ? `（${notes}）` : ""}${helped}`;
     });
-  return lines.join("\n");
+  const birthdayLine = buildBirthdayCalendarLine(options.birthday, {
+    today: options.today,
+    userName: options.userName || "{{user}}",
+    dateLabel: formatMonthDayWeekday,
+  });
+  return [birthdayLine, ...lines].filter(Boolean).join("\n");
 }

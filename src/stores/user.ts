@@ -51,6 +51,8 @@ export interface UserPersona {
   secrets: string;
   /** 與AI角色的權力關係 */
   powerDynamic: string;
+  /** 生日 MM-DD（每年重複；行事曆會標出來，當天角色會主動祝福） */
+  birthday?: string;
   /** 描述位置 */
   descriptionPosition: PersonaDescriptionPosition;
   /** 描述深度（當位置為 AT_DEPTH 時使用） */
