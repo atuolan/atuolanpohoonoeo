@@ -1,7 +1,7 @@
 /**
  * 像素小屋主頁的固定資料：房間、家具對到哪個 App、他會做的事、轉盤選單。
  *
- * 房間圖在 public/pixel-house/<房間>/（scripts/pixel-house 拆出來的），座標都是房間格子（130×282）。
+ * 房間圖在 public/pixel-house/<房間>/（scripts/pixel-house/draw_rooms.py 畫的），座標都是房間格子（130×282）。
  */
 
 export type RoomId = "living" | "bedroom" | "kitchen" | "bath";
@@ -38,10 +38,10 @@ export const ROOM_CORRIDOR: Record<RoomId, number> = {
 export type ItemZone = "wall" | "floor" | "any" | "row" | "fixed";
 
 const WALL_ITEMS: Record<RoomId, string[]> = {
-  living: ["garland", "clock", "window", "curtains", "mailbox"],
+  living: ["garland", "clock", "window", "curtains", "mailbox", "wall-shelf", "wall-photo"],
   bedroom: ["garland", "photo-landscape", "photo-heart", "wall-shelf", "calendar", "curtains", "window", "clock", "board"],
-  kitchen: ["clock", "valance", "window", "spice-rack", "canister-shelf", "hood"],
-  bath: ["window", "mirror", "towels", "skincare-shelf", "curtain", "shower-head"],
+  kitchen: ["clock", "valance", "window", "spice-rack", "canister-shelf", "hood", "utensil-rack"],
+  bath: ["window", "mirror", "towels", "skincare-shelf", "curtain", "shower-head", "vent", "tub-tap"],
 };
 const ROW_ITEMS: Record<RoomId, string[]> = {
   living: ["door"],
@@ -95,7 +95,7 @@ export function moveGroupOf(room: RoomId, id: string): string[] {
   return MOVE_GROUPS[room].find((g) => g.leaders.includes(id))?.members ?? [id];
 }
 
-/** 晚上換成夜景的家具（items/<id>-night.png，scripts/pixel-house/night_windows.py 做的） */
+/** 晚上換成夜景的家具（items/<id>-night.png，draw_rooms.py 一起畫的） */
 export const NIGHT_ITEMS: Record<RoomId, string[]> = {
   living: ["window"],
   bedroom: ["window"],
@@ -103,13 +103,61 @@ export const NIGHT_ITEMS: Record<RoomId, string[]> = {
   bath: ["window"],
 };
 
-/** 有未讀訊息時換成 items/<id>-full.png 的家具（信箱露出一封信；scripts/pixel-house/draw_mailbox.py 畫的） */
+/** 有未讀訊息時換成 items/<id>-full.png 的家具（信箱露出一封信；draw_rooms.py 一起畫的） */
 export const MAIL_ITEMS: Record<RoomId, string[]> = {
   living: ["mailbox"],
   bedroom: [],
   kitchen: [],
   bath: [],
 };
+
+/** 他睡在裡面時換成 items/<id>-sleep.png 的家具（床的被子鼓起來） */
+export const SLEEP_ITEMS: Record<RoomId, string[]> = {
+  living: [],
+  bedroom: ["bed"],
+  kitchen: [],
+  bath: [],
+};
+
+/**
+ * 擺件：擺件商店買的（public/pixel-house/decor/decor.json，scripts/pixel-house/draw/decor.py 畫的）。
+ * 買了出現在 room 的 (x, y)，之後跟其他家具一樣可以搬。
+ */
+export interface DecorDef {
+  id: string;
+  name: string;
+  price: number;
+  room: RoomId;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  /** 掛在牆上的 */
+  wall: boolean;
+}
+
+/**
+ * 家具的款式（換色、換花樣）：擺件商店「換款式」買的（public/pixel-house/skins/skins.json，scripts/pixel-house/draw/skins.py 畫的）。
+ * 跟原本的家具一樣大；圖在 skins/<room>/<item>/<id>.png，原本有睡覺、有信、晚上的圖的也一起畫了（<id>-sleep.png…）。
+ */
+export interface SkinDef {
+  room: RoomId;
+  /** 哪件家具（房間原本的家具或擺件的 id） */
+  item: string;
+  itemName: string;
+  id: string;
+  name: string;
+  price: number;
+  /** 原本那張圖（相對 public/pixel-house/） */
+  base: string;
+  w: number;
+  h: number;
+}
+
+/** 款式的 key：房間:家具 */
+export function skinSlot(room: RoomId, item: string): string {
+  return `${room}:${item}`;
+}
 
 /** 點家具打開的東西：App（handleNavigate 的 id）、幾個 App 選一個、或進浴室 */
 export type FurnitureAction =
@@ -191,7 +239,7 @@ export interface ActDef {
   steam?: [number, number];
   /** 做這件事時他在這件家具後面（泡在浴缸裡）：這件家具畫在他前面 */
   behind?: string;
-  /** 躺下（睡覺）：腳的位置（房間格子；跟著 anchor 家具走），頭朝左躺在枕頭上 */
+  /** 睡覺：腳的位置（房間格子；跟著 anchor 家具走）。只露出頭在枕頭上，身體在鼓起來的被子裡 */
   lie?: [number, number];
 }
 
@@ -205,7 +253,7 @@ export const ACTS: Record<string, ActDef> = {
   read: { room: "bedroom", x: 20, y: 160, anchor: "bookshelf", pose: "back", label: "找書看" },
   bedphone: { room: "bedroom", x: 66, y: 252, anchor: "bed", pose: "phone", label: "滑手機" },
   daze: { room: "bedroom", x: 92, y: 196, pose: "sad", label: "發呆" },
-  sleep: { room: "bedroom", x: 72, y: 252, anchor: "bed", pose: "sleep", label: "睡覺中", lie: [53, 220] },
+  sleep: { room: "bedroom", x: 72, y: 252, anchor: "bed", pose: "sleep", label: "睡覺中", lie: [36, 229] },
   cook: { room: "kitchen", x: 78, y: 158, anchor: "stove", pose: "back", label: "煮飯中", steam: [77, 108] },
   fridge: { room: "kitchen", x: 113, y: 160, anchor: "fridge", pose: "back", label: "找東西吃" },
   dishes: { room: "kitchen", x: 27, y: 158, anchor: "faucet", pose: "back", label: "洗碗中" },
@@ -237,7 +285,7 @@ export const WALK_SPEED = 30;
 /** 小人顯示的高度（房間格子） */
 export const CHAR_HEIGHT = 46;
 
-// ===== 轉盤選單 =====
+// ===== 側邊選單（右上角轉盤按鈕打開） =====
 
 export interface DialApp {
   key: string;

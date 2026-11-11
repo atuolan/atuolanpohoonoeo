@@ -3,7 +3,7 @@
  * 一間房：牆、護牆板、地板、每件家具。
  * 用原本的像素大小（1 格 = 1px）排好，再整間一起放大，所有圖層的格子才會對齊。
  */
-import { MAIL_ITEMS, NIGHT_ITEMS, type FurnitureAction, type ItemZone, type RoomId } from "./houseData";
+import { MAIL_ITEMS, NIGHT_ITEMS, SLEEP_ITEMS, type FurnitureAction, type ItemZone, type RoomId } from "./houseData";
 
 export interface RoomLayer {
   name: string;
@@ -20,6 +20,8 @@ export interface RoomItem {
   h: number;
   zone: ItemZone;
   action?: FurnitureAction;
+  /** 圖不在這間的 items/ 裡（商店買的擺件）：直接給網址 */
+  src?: string;
 }
 
 const props = defineProps<{
@@ -35,6 +37,10 @@ const props = defineProps<{
   night?: boolean;
   /** 有未讀訊息：信箱露出一封信 */
   hasMail?: boolean;
+  /** 他睡在這間的床上：床換成被子鼓起來的那張 */
+  sleeping?: boolean;
+  /** 這間的家具換了哪個款式：家具 id → 款式 id */
+  skins?: Record<string, string>;
   /**
    * 一間房分兩次畫：back 畫牆、地板和在他後面的家具，front 只畫在他前面的家具（疊在他上面）。
    * 兩次都放全部的家具，不是這一層的藏起來，換層時不會閃。
@@ -50,7 +56,20 @@ function hidden(id: string): boolean {
   return props.pass === "front" ? !front : front;
 }
 
-function itemSrc(id: string): string {
+/** 現在這件家具是哪個狀態：睡覺、有信、晚上（沒有就是平常） */
+function stateSuffix(id: string): string {
+  if (props.sleeping && SLEEP_ITEMS[props.room].includes(id)) return "-sleep";
+  if (props.hasMail && MAIL_ITEMS[props.room].includes(id)) return "-full";
+  if (props.night && NIGHT_ITEMS[props.room].includes(id)) return "-night";
+  return "";
+}
+
+function itemSrc(it: RoomItem): string {
+  const skin = props.skins?.[it.id];
+  if (skin) return `${props.asset}skins/${props.room}/${it.id}/${skin}${stateSuffix(it.id)}.png`;
+  if (it.src) return it.src;
+  const id = it.id;
+  if (props.sleeping && SLEEP_ITEMS[props.room].includes(id)) return `${props.asset}${props.room}/items/${id}-sleep.png`;
   if (props.hasMail && MAIL_ITEMS[props.room].includes(id)) return `${props.asset}${props.room}/items/${id}-full.png`;
   const night = props.night && NIGHT_ITEMS[props.room].includes(id);
   return `${props.asset}${props.room}/items/${id}${night ? "-night" : ""}.png`;
@@ -82,7 +101,7 @@ const emit = defineEmits<{ (e: "item-click", it: RoomItem): void }>();
       }"
       :data-room="room"
       :data-item="it.id"
-      :src="itemSrc(it.id)"
+      :src="itemSrc(it)"
       :alt="it.action && !editMode ? `${it.name}，${it.action.to}` : ''"
       :role="it.action && !editMode ? 'button' : undefined"
       draggable="false"

@@ -1,24 +1,57 @@
-# 像素小屋拆圖
+# 像素小屋的圖
 
-把設計稿的房間圖拆成牆、地板、每件家具（透明背景），給像素小屋主頁用。
+## 房間和家具：全部用程式畫
+
+四間房（客廳、臥室、廚房、浴室）都是 130×282。先畫空房間（牆、護牆板、地板），家具再一件一件畫好放上去：
 
 ```
-python3 -I scripts/pixel-house/split_room.py scripts/pixel-house/source/living.png scripts/pixel-house/living.json public/pixel-house/living
-python3 -I scripts/pixel-house/refine_living.py public/pixel-house/living
-rm public/pixel-house/living/_recomposed.png public/pixel-house/living/_unassigned.png
+python3 -I scripts/pixel-house/draw_rooms.py                    # 畫好寫進 public/pixel-house/<房間>/
+python3 -I scripts/pixel-house/draw_rooms.py --preview <資料夾>  # 只出預覽圖（空房間、白天、晚上），不動 public
+python3 -I scripts/pixel-house/draw_rooms.py --preview <資料夾> kitchen   # 只看一間
+```
 
-python3 -I scripts/pixel-house/split_room.py scripts/pixel-house/source/bedroom.png scripts/pixel-house/bedroom.json public/pixel-house/bedroom
-rm public/pixel-house/bedroom/_recomposed.png public/pixel-house/bedroom/_unassigned.png
+- `draw/kit.py`：畫布、色票（四間共用）、形狀、自動描外框、空房間的牆和地板
+- `draw/common.py`：幾間都用到的家具（窗戶、窗簾、掛鐘、門、電視、盆栽、杯子…）
+- `draw/living.py`、`bedroom.py`、`kitchen.py`、`bath.py`：每間的家具和擺在哪
+- 輸出：`wall.png`、`wainscot.png`（護牆板；浴室是下半的磁磚牆）、`floor.png`、`items/<id>.png`、`layout.json`
+- 晚上的窗戶（`items/window-night.png`）、有信的信箱（`items/mailbox-full.png`）、他睡覺時的床（`items/bed-sleep.png`）也是這支一起畫的
 
-python3 -I scripts/pixel-house/split_room.py scripts/pixel-house/source/kitchen.png scripts/pixel-house/kitchen.json public/pixel-house/kitchen
-rm public/pixel-house/kitchen/_recomposed.png public/pixel-house/kitchen/_unassigned.png
+改一件家具：改那個函式，跑一次預覽看看，再跑一次不帶 `--preview` 的寫進去。
 
-python3 -I scripts/pixel-house/split_room.py scripts/pixel-house/source/bath.png scripts/pixel-house/bath.json public/pixel-house/bath
-rm public/pixel-house/bath/_recomposed.png public/pixel-house/bath/_unassigned.png
+加一件家具：在那間的 `build()` 裡 `r.add("<id>", "<名字>", <圖>, <x>, bottom=<底部那列>)`。
+掛在牆上的要把 id 加進 `houseData.ts` 的 `WALL_ITEMS`；點了要打開 App 的加進 `FURNITURE_ACTIONS`。
+已經有的 id 不要改名（使用者搬過的位置、他做事時站哪，都是跟著 id 走）。
 
-# 晚上的窗戶（夜空、星星、月亮）：items/window-night.png
-python3 -I scripts/pixel-house/night_windows.py
+### 擺件（擺件商店賣的）
 
+`draw/decor.py` 的 `DECOR` 清單：id、名字、畫的函式、價錢、預設放哪間的哪裡、是不是掛在牆上。
+跑 `draw_rooms.py` 會輸出 `public/pixel-house/decor/<id>.png` 和 `decor.json`（程式讀這份）。
+加一件新擺件只要畫一個函式、在 `DECOR` 加一行，商店就會出現，不用改程式。
+id 不能跟房間原本的家具一樣，已經上架的 id 不要改（使用者買過的是記 id）。
+
+### 家具的款式（換色、換花樣）
+
+`draw/skins.py`：擺件商店「換款式」賣的。換色是拿已經畫好的家具圖，把某一組顏色（例如沙發的綠色那組）整組換成別的色調，
+其他顏色（抱枕、木頭、外框）不動；原本有睡覺、有信、晚上的圖的，那幾張也一起換。換花樣是重新畫（床的條紋、點點被子）。
+
+- 加一個換色：在 `add(...)` 那幾行加一個 `(色調, 名字)`；色調在 `TONES`
+- 加一件家具的換色：`add(房間, 家具 id, 顏色組, 價錢, [...])`，顏色組是那件家具「要換的那些顏色」
+- 款式一定要跟原本一樣大（不一樣大會直接報錯），換了才不會影響擺放
+- 輸出 `public/pixel-house/skins/<房間>/<家具>/<款式>.png` 和 `skins/skins.json`；已經上架的款式 id 不要改（使用者買過的是記 id）
+
+### 他睡覺時的床
+
+`items/bed-sleep.png`：被子中間鼓起來的版本（`bedroom.py` 的 `bed(sleep=True)`）。
+小人只留頭（正面、閉眼，程式自動做的）放在枕頭上，位置是 `houseData.ts` 的 `ACTS.sleep.lie`；
+床的枕頭或被子位置有改，要一起調 `bulge()` 和 `lie`。
+
+改完跑 `npx vitest run src/components/pixelHouse/houseLogic.test.ts`。
+
+`source/living.png` 等四張是最早那版設計稿的原圖，只留著參考。
+
+## 小人
+
+```
 # 自己畫的分層小人（Aseprite 匯出 Sprite Sheet → 分割圖層，直排或橫排都可以；圖層名由底往上）
 python3 -I scripts/pixel-house/split_doll.py scripts/pixel-house/source/boy-front-layers-fixed.png boy front body,eyes,blush,brows,hair,underwear,shoes,pants,shirt,jacket 01
 # （boy-front-layers.png 是使用者畫的原稿，-fixed 是修過的版本）
@@ -30,16 +63,6 @@ python3 -I scripts/pixel-house/split_doll.py scripts/pixel-house/source/boy-walk
 # 小人走路圖（暫用；女生／男生 × 向左／向右 × 6 格）
 python3 -I scripts/pixel-house/extract_walk.py scripts/pixel-house/source/walk-sheet.webp public/pixel-house/chars
 ```
-
-臥室之後的房間都直接寫在設定檔裡（家具的顏色過濾、被擋住的地方補畫），不用另外的 refine 腳本。
-
-`refine_<房間>.py`：細拆和補畫。牆再拆成壁紙、護牆板；疊在一起的東西拆開（窗戶／窗簾／窗台盆栽／花瓶、電視／電視櫃），被擋住的地方照周圍補畫。
-
-- `source/`：設計稿（https://claude.ai/artifact/VnszuGe4esytxkV6nHq2pM）資產庫下載的原圖，130×282
-- `<房間>.json`：牆、護牆板、地板的範圍，每件家具的保留框（框外跟背景不一樣的像素當成雜點丟掉，露出重建的牆或地板）
-- 輸出：`wall.png`（壁紙）、`wainscot.png`（護牆板＋踢腳板；浴室是下半的磁磚牆）、`floor.png`、`items/<id>.png`、`layout.json`（每層的位置；`unassigned` 是丟掉的雜點數）
-
-做法：牆每欄一色（從乾淨的上緣取）、護牆板每列找水平週期、地板每 12 列重複取眾數，重建出空房間；跟原圖不一樣的像素就是家具。
 
 ## 加一個新款式（一張長條圖）
 
@@ -72,12 +95,3 @@ python3 -I scripts/pixel-house/add_style.py source/girl-styles/hairBack_01.png g
 ```
 
 注意：換色是拿每一層「最多的那個顏色」當主色，所以 hairBack 的主色要跟前面的頭髮一樣，外框和陰影不要比主色多。
-
-## 客廳的信箱
-
-信箱不在原圖裡，另外畫。重新跑 `split_room.py` 拆客廳之後，要再跑一次：
-
-```
-python3 -I scripts/pixel-house/draw_mailbox.py
-```
-

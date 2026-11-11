@@ -1,0 +1,8 @@
+[
+ {"id": "bed-shelf", "name": "床頭書櫃和小夜燈", "price": 3800, "room": "bedroom", "x": 4, "y": 158, "w": 64, "h": 34, "wall": false},
+ {"id": "shelf-cat", "name": "牆上睡覺的橘貓", "price": 3200, "room": "bedroom", "x": 98, "y": 63, "w": 30, "h": 14, "wall": true},
+ {"id": "star-lamp", "name": "星星燈", "price": 1800, "room": "bedroom", "x": 61, "y": 73, "w": 13, "h": 14, "wall": false},
+ {"id": "headphones", "name": "耳機", "price": 1500, "room": "bedroom", "x": 37, "y": 99, "w": 13, "h": 16, "wall": true},
+ {"id": "pendant-lamp", "name": "吊燈", "price": 2600, "room": "bedroom", "x": 13, "y": 0, "w": 17, "h": 35, "wall": true},
+ {"id": "floor-cushion", "name": "圓坐墊", "price": 1200, "room": "bedroom", "x": 1, "y": 257, "w": 24, "h": 11, "wall": false}
+]
