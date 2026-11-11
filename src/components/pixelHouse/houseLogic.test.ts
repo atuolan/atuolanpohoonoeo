@@ -228,7 +228,7 @@ describe("itemDepths：誰在前面", () => {
     // 桌子搬走，桌上的盤子留在原地就不再跟著桌子
     const k = roomDepths("kitchen", { table: [20, 170] });
     expect(k["fruit-plate"]).toBeGreaterThan(k.table);
-    expect(k["fruit-plate"]).toBe(220);
+    expect(k["fruit-plate"]).toBe(221);
   });
   it("他站在餐桌後面時桌子、椅子、桌上的東西在他前面；站到前面就都在後面", () => {
     const d = roomDepths("kitchen");

@@ -1,7 +1,7 @@
 /**
  * 像素小屋主頁的固定資料：房間、家具對到哪個 App、他會做的事、轉盤選單。
  *
- * 房間圖在 public/pixel-house/<房間>/（scripts/pixel-house 拆出來的），座標都是房間格子（130×282）。
+ * 房間圖在 public/pixel-house/<房間>/（scripts/pixel-house/draw_rooms.py 畫的），座標都是房間格子（130×282）。
  */
 
 export type RoomId = "living" | "bedroom" | "kitchen" | "bath";
@@ -38,10 +38,10 @@ export const ROOM_CORRIDOR: Record<RoomId, number> = {
 export type ItemZone = "wall" | "floor" | "any" | "row" | "fixed";
 
 const WALL_ITEMS: Record<RoomId, string[]> = {
-  living: ["garland", "clock", "window", "curtains", "mailbox"],
+  living: ["garland", "clock", "window", "curtains", "mailbox", "wall-shelf", "wall-photo"],
   bedroom: ["garland", "photo-landscape", "photo-heart", "wall-shelf", "calendar", "curtains", "window", "clock", "board"],
-  kitchen: ["clock", "valance", "window", "spice-rack", "canister-shelf", "hood"],
-  bath: ["window", "mirror", "towels", "skincare-shelf", "curtain", "shower-head"],
+  kitchen: ["clock", "valance", "window", "spice-rack", "canister-shelf", "hood", "utensil-rack"],
+  bath: ["window", "mirror", "towels", "skincare-shelf", "curtain", "shower-head", "vent", "tub-tap"],
 };
 const ROW_ITEMS: Record<RoomId, string[]> = {
   living: ["door"],
@@ -95,7 +95,7 @@ export function moveGroupOf(room: RoomId, id: string): string[] {
   return MOVE_GROUPS[room].find((g) => g.leaders.includes(id))?.members ?? [id];
 }
 
-/** 晚上換成夜景的家具（items/<id>-night.png，scripts/pixel-house/night_windows.py 做的） */
+/** 晚上換成夜景的家具（items/<id>-night.png，draw_rooms.py 一起畫的） */
 export const NIGHT_ITEMS: Record<RoomId, string[]> = {
   living: ["window"],
   bedroom: ["window"],
@@ -103,7 +103,7 @@ export const NIGHT_ITEMS: Record<RoomId, string[]> = {
   bath: ["window"],
 };
 
-/** 有未讀訊息時換成 items/<id>-full.png 的家具（信箱露出一封信；scripts/pixel-house/draw_mailbox.py 畫的） */
+/** 有未讀訊息時換成 items/<id>-full.png 的家具（信箱露出一封信；draw_rooms.py 一起畫的） */
 export const MAIL_ITEMS: Record<RoomId, string[]> = {
   living: ["mailbox"],
   bedroom: [],
