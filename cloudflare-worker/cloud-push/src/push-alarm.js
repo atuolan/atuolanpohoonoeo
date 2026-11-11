@@ -66,8 +66,9 @@ export class PushAlarmDO {
       return json({ ok: true, nextAlarm: null, nextAlarmReadable: null, disabled: true });
     }
 
-    // 儲存設定
+    // 儲存設定（新的聊天紀錄已經包含之前雲端發的訊息，清掉「同步後發過的」）
     await this.state.storage.put("config", payload);
+    await this.state.storage.delete("sentSinceSync");
     await this.state.storage.put("enabled", true);
     await this.state.storage.put("errorCount", 0);
     await this.state.storage.put("lastCharacterIndex", -1);
@@ -383,6 +384,7 @@ export class PushAlarmDO {
 
       // 存入離線訊息
       await this.appendMessage(character, content);
+      await this.recordSentSinceSync(character, content);
 
       // 推送通知
       await this.pushNotifications(config, character, content);
@@ -487,7 +489,18 @@ export class PushAlarmDO {
       content: m.content,
     }));
 
-    const triggerPrompt = `[系統指令] 請以 ${character.name} 的身份，根據以上對話歷史，主動向 ${userName} 發起一段自然的對話。像是你自己想到要說的話，不要提及這是系統要求的。如果是深夜時段，可以假設用戶已經入睡，但你想分享事情。`;
+    // 上次同步之後雲端已經發過的（聊天紀錄快照裡沒有）：帶最近兩次，不然每次都看同一份紀錄、寫出一樣的話
+    const sentSinceSync = ((await this.state.storage.get("sentSinceSync")) || []).filter(
+      (s) => s.characterId === character.id,
+    );
+    for (const s of sentSinceSync.slice(-2)) {
+      historyMessages.push({ role: "assistant", content: s.content });
+    }
+
+    const unrepliedCount = (character.unrepliedProactiveCount || 0) + sentSinceSync.length;
+    const triggerPrompt =
+      `[系統指令] 請以 ${character.name} 的身份，根據以上對話歷史，主動向 ${userName} 發起一段自然的對話。像是你自己想到要說的話，不要提及這是系統要求的。如果是深夜時段，可以假設用戶已經入睡，但你想分享事情。` +
+      buildUnrepliedNote(userName, unrepliedCount, character.lastUserMessageAt);
 
     const body = {
       model: apiSettings.model,
@@ -525,6 +538,14 @@ export class PushAlarmDO {
   }
 
   // ─── 訊息暫存 ────────────────────────────────────────────────
+
+  /** 記下同步之後雲端發過的訊息（給下次生成看，避免重複）；下次同步時清掉 */
+  async recordSentSinceSync(character, content) {
+    const list = (await this.state.storage.get("sentSinceSync")) || [];
+    list.push({ characterId: character.id, content, createdAt: Date.now() });
+    while (list.length > 20) list.shift();
+    await this.state.storage.put("sentSinceSync", list);
+  }
 
   async appendMessage(character, content) {
     const messages = (await this.state.storage.get("pendingMessages")) || [];
@@ -814,4 +835,30 @@ function json(data, status = 200) {
     status,
     headers: { "Content-Type": "application/json" },
   });
+}
+
+// ─── 主動訊息：user 沒回時別重複 ─────────────────────────────
+
+function formatElapsed(ms) {
+  const minutes = Math.max(1, Math.round(ms / 60000));
+  if (minutes < 60) return `${minutes} 分鐘`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} 小時`;
+  return `${Math.floor(hours / 24)} 天`;
+}
+
+function buildUnrepliedNote(userName, count, lastUserAt) {
+  if (!count || count <= 0) return "";
+  const now = Date.now();
+  const since =
+    typeof lastUserAt === "number" && lastUserAt < now
+      ? `${userName} 最後一次傳訊息是 ${formatElapsed(now - lastUserAt)}前，`
+      : "";
+  return (
+    `
+【注意：${userName} 還沒回】${since}之後你已經主動傳了 ${count} 次訊息，${userName} 都還沒回，可能在忙或睡了。` +
+    `這次不要重複你前幾次講過的內容、開場和句型——同樣的天氣、同樣的問候、同樣的事情、同樣的晚安都算重複。` +
+    `想想這段時間你身上有沒有新的事，或換個話題、換個角度；也可以只傳一兩句短的。` +
+    `要接話的話，以 ${userName} 最後說的話為準，不要去接很久以前的話題。`
+  );
 }

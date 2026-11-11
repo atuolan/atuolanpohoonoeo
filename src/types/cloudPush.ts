@@ -13,6 +13,10 @@ export interface CloudPushCharacter {
   avatar: string | null;
   /** 最近聊天紀錄（最多 15 輪，每輪含 user + assistant） */
   recentMessages?: Array<{ role: "user" | "assistant"; content: string }>;
+  /** user 最後一則訊息之後，角色已經主動傳了幾次還沒回（同步當下） */
+  unrepliedProactiveCount?: number;
+  /** user 最後一則訊息的時間（ms） */
+  lastUserMessageAt?: number;
   /** 最近總結（最多 5 條） */
   recentSummaries?: string[];
   /** 可用表情包名稱列表 */
