@@ -136,6 +136,29 @@ export interface DecorDef {
   wall: boolean;
 }
 
+/**
+ * 家具的款式（換色、換花樣）：擺件商店「換款式」買的（public/pixel-house/skins/skins.json，scripts/pixel-house/draw/skins.py 畫的）。
+ * 跟原本的家具一樣大；圖在 skins/<room>/<item>/<id>.png，原本有睡覺、有信、晚上的圖的也一起畫了（<id>-sleep.png…）。
+ */
+export interface SkinDef {
+  room: RoomId;
+  /** 哪件家具（房間原本的家具或擺件的 id） */
+  item: string;
+  itemName: string;
+  id: string;
+  name: string;
+  price: number;
+  /** 原本那張圖（相對 public/pixel-house/） */
+  base: string;
+  w: number;
+  h: number;
+}
+
+/** 款式的 key：房間:家具 */
+export function skinSlot(room: RoomId, item: string): string {
+  return `${room}:${item}`;
+}
+
 /** 點家具打開的東西：App（handleNavigate 的 id）、幾個 App 選一個、或進浴室 */
 export type FurnitureAction =
   | { kind: "app"; app: string; to: string }

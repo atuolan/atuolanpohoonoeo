@@ -1,10 +1,11 @@
 <script setup lang="ts">
 /**
- * 擺件商店：用金幣（跟商店、衣櫃同一個錢包）買擺件，買了就出現在房間裡預設的位置，
- * 之後跟其他家具一樣可以搬。買過的可以收起來、再擺出來，不用再付錢。
+ * 擺件商店：用金幣（跟商店、衣櫃同一個錢包）買東西。
+ * - 擺件：買了就出現在房間裡預設的位置，之後跟其他家具一樣可以搬。買過的可以收起來、再擺出來，不用再付錢。
+ * - 換款式：家具的別的顏色、花樣。買了馬上換上；買過的可以隨時換回原本的或換別的，不用再付錢。
  */
-import { ref, watch } from "vue";
-import type { DecorDef, RoomId } from "./houseData";
+import { computed, ref, watch } from "vue";
+import { skinSlot, type DecorDef, type RoomId, type SkinDef } from "./houseData";
 import { loadWardrobeBalance, payCoins } from "./wardrobeShop";
 
 const props = defineProps<{
@@ -14,16 +15,102 @@ const props = defineProps<{
   defs: DecorDef[];
   /** 買過的擺件 id → 有沒有擺出來 */
   owned: Record<string, boolean>;
+  skinDefs: SkinDef[];
+  /** 買過的款式："房間:家具:款式" */
+  ownedSkins: string[];
+  /** 每件家具現在用哪個款式："房間:家具" → 款式 id */
+  wornSkins: Record<string, string>;
   roomNames: Record<RoomId, string>;
 }>();
 const emit = defineEmits<{
   (e: "close"): void;
   (e: "change", owned: Record<string, boolean>): void;
+  (e: "change-skins", next: { owned: string[]; worn: Record<string, string> }): void;
   /** 去房間看這件 */
   (e: "show", id: string): void;
+  (e: "show-item", room: RoomId, item: string): void;
 }>();
 
+type Tab = "decor" | "skins";
+const tab = ref<Tab>("decor");
+
 const balance = ref<number | null>(null);
+
+// ===== 換款式 =====
+interface SkinGroup {
+  slot: string;
+  room: RoomId;
+  item: string;
+  itemName: string;
+  base: string;
+  w: number;
+  h: number;
+  variants: SkinDef[];
+}
+
+/** 一件家具一組：原本的＋它的所有款式；擺件的款式要先買了擺件才看得到 */
+const skinGroups = computed<SkinGroup[]>(() => {
+  const decorIds = new Set(props.defs.map((d) => d.id));
+  const groups = new Map<string, SkinGroup>();
+  for (const v of props.skinDefs) {
+    if (decorIds.has(v.item) && !(v.item in props.owned)) continue;
+    const slot = skinSlot(v.room, v.item);
+    let g = groups.get(slot);
+    if (!g) {
+      g = { slot, room: v.room, item: v.item, itemName: v.itemName, base: v.base, w: v.w, h: v.h, variants: [] };
+      groups.set(slot, g);
+    }
+    g.variants.push(v);
+  }
+  return [...groups.values()];
+});
+
+function skinOwned(v: SkinDef): boolean {
+  return props.ownedSkins.includes(`${skinSlot(v.room, v.item)}:${v.id}`);
+}
+
+/** 這件家具現在用的款式（空字串 = 原本的） */
+function worn(g: SkinGroup): string {
+  return props.wornSkins[g.slot] ?? "";
+}
+
+function wear(g: SkinGroup, id: string, owned = props.ownedSkins) {
+  const next = { ...props.wornSkins };
+  if (id) next[g.slot] = id;
+  else delete next[g.slot];
+  emit("change-skins", { owned, worn: next });
+  const name = id ? g.variants.find((v) => v.id === id)?.name : "原本的";
+  message.value = `${props.roomNames[g.room]}的${g.itemName}換成${name}了`;
+}
+
+async function buySkin(g: SkinGroup, v: SkinDef) {
+  if (busy.value) return;
+  if (skinOwned(v)) {
+    wear(g, v.id);
+    return;
+  }
+  const key = `${g.slot}:${v.id}`;
+  busy.value = key;
+  message.value = "";
+  try {
+    const r = await payCoins(v.price, `小屋家具款式：${g.itemName}（${v.name}）`, `pixel-house:skin:${key}`);
+    if (!r.ok) {
+      message.value =
+        r.error === "insufficient_funds" ? `金幣不夠，還差 ${(v.price - (balance.value ?? 0)).toLocaleString()}` : "付款失敗，再試一次";
+      return;
+    }
+    balance.value = r.balance;
+    wear(g, v.id, [...props.ownedSkins, key]);
+  } finally {
+    busy.value = null;
+  }
+}
+
+/** 縮圖放大幾倍，放進 box×box 的格子：放得下就整數倍（不會糊），太大的（地毯）照比例縮小 */
+function fit(w: number, h: number, box: number): number {
+  const k = box / Math.max(w, h);
+  return k >= 1 ? Math.min(4, Math.floor(k)) : k;
+}
 const busy = ref<string | null>(null);
 const message = ref("");
 
@@ -78,10 +165,62 @@ function zoom(d: DecorDef): number {
           <span class="ds-coins" aria-label="金幣">金幣 {{ balance === null ? "…" : balance.toLocaleString() }}</span>
           <button class="ds-close" aria-label="關閉" @click="emit('close')">×</button>
         </header>
-        <p class="ds-note">買了會出現在房間裡，長按房間可以搬到喜歡的位置。</p>
+        <div class="ds-tabs" role="tablist">
+          <button role="tab" class="ds-tab" :class="{ 'is-on': tab === 'decor' }" :aria-selected="tab === 'decor'" @click="tab = 'decor'; message = ''">
+            擺件
+          </button>
+          <button role="tab" class="ds-tab" :class="{ 'is-on': tab === 'skins' }" :aria-selected="tab === 'skins'" @click="tab = 'skins'; message = ''">
+            換款式
+          </button>
+        </div>
+        <p class="ds-note">
+          {{ tab === "decor" ? "買了會出現在房間裡，長按房間可以搬到喜歡的位置。" : "家具換顏色、換花樣。買了馬上換上，買過的隨時可以換回來。" }}
+        </p>
         <p v-if="message" class="ds-msg" role="status">{{ message }}</p>
 
-        <ul class="ds-list">
+        <div v-if="tab === 'skins'" class="ds-list">
+          <section v-for="g in skinGroups" :key="g.slot" class="ds-group">
+            <header class="ds-group-head">
+              <span class="ds-name">{{ g.itemName }}</span>
+              <span class="ds-sub">{{ roomNames[g.room] }}</span>
+              <button class="ds-link" @click="emit('show-item', g.room, g.item)">去看</button>
+            </header>
+            <div class="ds-cards">
+              <button class="ds-card" :class="{ 'is-on': worn(g) === '' }" :aria-pressed="worn(g) === ''" @click="wear(g, '')">
+                <span class="ds-card-img">
+                  <img :src="`${asset}${g.base}`" alt="" draggable="false" :style="{ width: `${g.w * fit(g.w, g.h, 60)}px`, height: `${g.h * fit(g.w, g.h, 60)}px` }" />
+                </span>
+                <span class="ds-card-name">原本的</span>
+                <span class="ds-card-tag">{{ worn(g) === "" ? "使用中" : "換上" }}</span>
+              </button>
+              <button
+                v-for="v in g.variants"
+                :key="v.id"
+                class="ds-card"
+                :class="{ 'is-on': worn(g) === v.id, 'is-locked': !skinOwned(v) }"
+                :aria-pressed="worn(g) === v.id"
+                :disabled="busy !== null"
+                @click="buySkin(g, v)"
+              >
+                <span class="ds-card-img">
+                  <img
+                    :src="`${asset}skins/${v.room}/${v.item}/${v.id}.png`"
+                    alt=""
+                    draggable="false"
+                    :style="{ width: `${v.w * fit(v.w, v.h, 60)}px`, height: `${v.h * fit(v.w, v.h, 60)}px` }"
+                  />
+                </span>
+                <span class="ds-card-name">{{ v.name }}</span>
+                <span class="ds-card-tag">
+                  {{ worn(g) === v.id ? "使用中" : skinOwned(v) ? "換上" : busy === `${g.slot}:${v.id}` ? "付款中…" : `${v.price.toLocaleString()} 金幣` }}
+                </span>
+              </button>
+            </div>
+          </section>
+          <p v-if="!skinGroups.length" class="ds-note">現在沒有款式可以換。</p>
+        </div>
+
+        <ul v-else class="ds-list">
           <li v-for="d in defs" :key="d.id" class="ds-item">
             <div class="ds-thumb">
               <img
@@ -106,7 +245,7 @@ function zoom(d: DecorDef): number {
             </div>
           </li>
         </ul>
-        <p v-if="!defs.length" class="ds-note">現在沒有擺件可以買。</p>
+        <p v-if="tab === 'decor' && !defs.length" class="ds-note">現在沒有擺件可以買。</p>
       </section>
     </div>
   </Transition>
@@ -278,6 +417,142 @@ function zoom(d: DecorDef): number {
 .ds-btn:disabled {
   opacity: 0.5;
   cursor: default;
+}
+
+.ds-tabs {
+  display: flex;
+  gap: 6px;
+  margin: 0 20px 8px;
+  padding: 4px;
+  border-radius: 999px;
+  background: rgba(59, 42, 38, 0.08);
+}
+
+.ds-tab {
+  flex: 1;
+  min-height: 34px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: rgba(59, 42, 38, 0.7);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.ds-tab.is-on {
+  background: #fffbf5;
+  color: #3b2a26;
+  box-shadow: 0 1px 4px rgba(59, 42, 38, 0.15);
+}
+
+.ds-group {
+  padding: 10px 0 12px;
+  border-bottom: 1px solid rgba(59, 42, 38, 0.1);
+}
+
+.ds-group:last-of-type {
+  border-bottom: 0;
+}
+
+.ds-group-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.ds-group-head .ds-sub {
+  flex: 1;
+}
+
+.ds-link {
+  padding: 4px 2px;
+  border: 0;
+  background: transparent;
+  color: #8a4a2a;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.ds-cards {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  touch-action: pan-x;
+  margin: 0 -16px;
+  padding: 2px 16px 4px;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.ds-cards::-webkit-scrollbar {
+  display: none;
+}
+
+.ds-card {
+  flex: none;
+  width: 84px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 4px 8px;
+  border: 0;
+  border-radius: 14px;
+  background: #f7e8cf;
+  color: #3b2a26;
+  font-family: inherit;
+  cursor: pointer;
+  box-shadow: inset 0 0 0 2px transparent;
+}
+
+.ds-card.is-on {
+  box-shadow: inset 0 0 0 2px #3b2a26;
+}
+
+.ds-card:disabled {
+  cursor: default;
+}
+
+.ds-card-img {
+  width: 72px;
+  height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.ds-card-img img {
+  display: block;
+  image-rendering: crisp-edges;
+  image-rendering: pixelated;
+}
+
+.ds-card-name {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.ds-card-tag {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: rgba(59, 42, 38, 0.65);
+}
+
+.ds-card.is-locked .ds-card-tag {
+  color: #8a4a2a;
+  font-weight: 600;
+}
+
+.ds-card.is-on .ds-card-tag {
+  color: #3b2a26;
+  font-weight: 700;
 }
 
 .ds-sheet-enter-active,

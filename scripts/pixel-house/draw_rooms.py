@@ -6,7 +6,8 @@
 
 每間都是 130×282；家具的 id 跟程式裡用的一樣（houseData.ts）。
 畫法在 draw/kit.py，每間房一個檔：draw/living.py、bedroom.py、kitchen.py、bath.py；
-商店賣的擺件在 draw/decor.py（輸出 public/pixel-house/decor/）。
+商店賣的擺件在 draw/decor.py（輸出 public/pixel-house/decor/）；
+家具的款式（換色、換花樣）在 draw/skins.py（輸出 public/pixel-house/skins/）。
 """
 import os
 import sys
@@ -20,6 +21,7 @@ import bedroom  # noqa: E402
 import decor  # noqa: E402
 import kitchen  # noqa: E402
 import living  # noqa: E402
+import skins  # noqa: E402
 
 BUILDERS = [living.build, bedroom.build, kitchen.build, bath.build]
 
@@ -54,12 +56,15 @@ def main():
             for _, _, pim, x, y in sorted(things, key=lambda t: (t[0] if t[0] >= 158 - 6 else -1, t[1])):
                 im.alpha_composite(pim, (x, y))
             im.resize((130 * 6, 282 * 6), Image.NEAREST).save(os.path.join(preview, f"{r.id}-decor.png"))
+        # 款式要從已經寫好的圖換色，所以預覽的是 public 裡現在的家具
+        skins.preview(os.path.join(preview, "skins.png"))
     else:
         for r in rooms:
             r.save()
             print(f"{r.id}: {len(r.items)} 件")
         if not only:
             print(f"擺件: {len(decor.save())} 件")
+            print(f"款式: {len(skins.save())} 種")
 
 
 if __name__ == "__main__":

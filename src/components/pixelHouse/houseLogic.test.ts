@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { existsSync } from "node:fs";
-import { ACT_WEIGHTS, ACTS, FURNITURE_ACTIONS, itemZone, MAIL_ITEMS, moveGroupOf, NIGHT_ITEMS, SLEEP_ITEMS, type DecorDef, type RoomId } from "./houseData";
+import { ACT_WEIGHTS, ACTS, FURNITURE_ACTIONS, itemZone, MAIL_ITEMS, moveGroupOf, NIGHT_ITEMS, SLEEP_ITEMS, type DecorDef, type RoomId, type SkinDef } from "./houseData";
 import {
   actSpot,
   clampGroupMove,
@@ -156,7 +156,7 @@ describe("residentStatus", () => {
 
 describe("parsePixelHouseState", () => {
   it("壞掉的資料用預設值，擺放只留數字", () => {
-    expect(parsePixelHouseState(null)).toEqual({ homeStyle: "canvas", residentCharId: null, look: "boy", looks: {}, timeLight: true, calm: false, guideSeen: false, placements: {}, decor: {} });
+    expect(parsePixelHouseState(null)).toEqual({ homeStyle: "canvas", residentCharId: null, look: "boy", looks: {}, timeLight: true, calm: false, guideSeen: false, placements: {}, decor: {}, ownedSkins: [], skins: {} });
     expect(
       parsePixelHouseState({
         homeStyle: "pixel-house",
@@ -165,7 +165,7 @@ describe("parsePixelHouseState", () => {
         timeLight: false,
         placements: { living: { sofa: [1, 2], bad: ["x", 2], worse: 3 } },
       }),
-    ).toEqual({ homeStyle: "pixel-house", residentCharId: "c1", look: "girl", looks: {}, timeLight: false, calm: false, guideSeen: false, placements: { living: { sofa: [1, 2] } }, decor: {} });
+    ).toEqual({ homeStyle: "pixel-house", residentCharId: "c1", look: "girl", looks: {}, timeLight: false, calm: false, guideSeen: false, placements: { living: { sofa: [1, 2] } }, decor: {}, ownedSkins: [], skins: {} });
     expect(parsePixelHouseState({ guideSeen: true }).guideSeen).toBe(true);
     expect(parsePixelHouseState({ calm: true }).calm).toBe(true);
     expect(parsePixelHouseState({ calm: "yes" }).calm).toBe(false);
@@ -304,6 +304,35 @@ describe("家具的圖", () => {
       // 掛在牆上的整件都在地板線以上
       if (d.wall) expect(d.y + d.h, d.id).toBeLessThanOrEqual(layout.floor.y);
     }
+  });
+  it("家具款式：每個都有圖、跟原本一樣大，原本有睡覺／有信／晚上的圖的款式也有", () => {
+    const root = resolve(__dirname, "../../../public/pixel-house");
+    const defs = JSON.parse(readFileSync(`${root}/skins/skins.json`, "utf-8")) as SkinDef[];
+    expect(defs.length).toBeGreaterThan(0);
+    const keys = defs.map((d) => `${d.room}:${d.item}:${d.id}`);
+    expect(new Set(keys).size).toBe(keys.length);
+    const pngSize = (p: string) => {
+      const b = readFileSync(p);
+      return [b.readUInt32BE(16), b.readUInt32BE(20)];
+    };
+    for (const d of defs) {
+      const file = `${root}/skins/${d.room}/${d.item}/${d.id}.png`;
+      expect(existsSync(file), file).toBe(true);
+      expect(pngSize(file), file).toEqual(pngSize(`${root}/${d.base}`));
+      expect(pngSize(file), file).toEqual([d.w, d.h]);
+      expect(d.price, file).toBeGreaterThan(0);
+      for (const [list, suf] of [[SLEEP_ITEMS, "-sleep"], [MAIL_ITEMS, "-full"], [NIGHT_ITEMS, "-night"]] as const) {
+        if (list[d.room].includes(d.item)) expect(existsSync(`${root}/skins/${d.room}/${d.item}/${d.id}${suf}.png`), `${file}${suf}`).toBe(true);
+      }
+    }
+  });
+  it("換上的款式一定是買過的，沒買過的丟掉", () => {
+    const st = parsePixelHouseState({
+      ownedSkins: ["living:sofa:pink", "living:sofa:pink", "bad", 3],
+      skins: { "living:sofa": "pink", "bedroom:bed": "blue" },
+    });
+    expect(st.ownedSkins).toEqual(["living:sofa:pink"]);
+    expect(st.skins).toEqual({ "living:sofa": "pink" });
   });
   it("買過的擺件記在狀態裡：true 擺出來、false 收起來，格式不對的丟掉", () => {
     expect(parsePixelHouseState({ decor: { "star-lamp": true, headphones: false, bad: "yes" } }).decor).toEqual({ "star-lamp": true, headphones: false });

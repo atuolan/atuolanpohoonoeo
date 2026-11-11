@@ -30,6 +30,7 @@ import {
   SCENE_TINT,
   STRIP_ROOMS,
   type DecorDef,
+  type SkinDef,
   type FurnitureAction,
   type ItemZone,
   type RoomId,
@@ -74,6 +75,8 @@ const layouts = reactive<Partial<Record<RoomId, RoomLayout>>>({});
 const walkSizes = ref<Record<string, { w: number; h: number }>>({});
 /** 擺件商店賣的全部擺件 */
 const decorDefs = ref<DecorDef[]>([]);
+/** 擺件商店「換款式」賣的全部款式 */
+const skinDefs = ref<SkinDef[]>([]);
 
 /** 使用者自己畫的分層小人（紙娃娃）：每個動作一組圖層，1 px＝房間 1 格；照他的外觀疊好再顯示 */
 const doll = ref<DollManifest | null>(null);
@@ -95,6 +98,11 @@ async function loadAssets() {
     decorDefs.value = await (await fetch(`${ASSET}decor/decor.json`)).json();
   } catch {
     decorDefs.value = [];
+  }
+  try {
+    skinDefs.value = await (await fetch(`${ASSET}skins/skins.json`)).json();
+  } catch {
+    skinDefs.value = [];
   }
   try {
     walkSizes.value = await (await fetch(`${ASSET}chars/walk.json`)).json();
@@ -341,20 +349,39 @@ function onDecorChange(next: Record<string, boolean>) {
   state.decor = next;
   persist();
 }
-/** 買完去看：關掉商店，滑到那間房 */
-function showDecor(id: string) {
-  const d = decorDefs.value.find((x) => x.id === id);
+/** 買了款式、換款式 */
+function onSkinsChange(next: { owned: string[]; worn: Record<string, string> }) {
+  state.ownedSkins = next.owned;
+  state.skins = next.worn;
+  persist();
+}
+/** 每間房的家具換了哪個款式：家具 id → 款式 id */
+const roomSkins = computed(() => {
+  const out = {} as Record<RoomId, Record<string, string>>;
+  for (const r of ALL_ROOMS) out[r] = {};
+  for (const [slot, id] of Object.entries(state.skins)) {
+    const [room, item] = slot.split(":") as [RoomId, string];
+    if (out[room]) out[room][item] = id;
+  }
+  return out;
+});
+/** 去看：關掉商店，滑到那間房，那件家具閃一下 */
+function showItem(room: RoomId, id: string) {
   decorOpen.value = false;
-  if (!d) return;
-  if (d.room === "bath") openBath();
+  if (room === "bath") openBath();
   else {
     bathOpen.value = false;
-    scrollToRoom(stripIndex(d.room));
+    scrollToRoom(stripIndex(room));
   }
-  flashKey.value = `${d.room}:${id}`;
+  flashKey.value = `${room}:${id}`;
   setTimeout(() => {
-    if (flashKey.value === `${d.room}:${id}`) flashKey.value = null;
+    if (flashKey.value === `${room}:${id}`) flashKey.value = null;
   }, 1200);
+}
+function showDecor(id: string) {
+  const d = decorDefs.value.find((x) => x.id === id);
+  if (d) showItem(d.room, id);
+  else decorOpen.value = false;
 }
 const wardrobeSlot = ref<PartSlot | null>(null);
 function openWardrobe(slot: PartSlot | null) {
@@ -1052,6 +1079,7 @@ function labelStyle(room: RoomId, it: RenderItem) {
           :flash-key="flashKey"
           :night="scene === 'night'"
           :has-mail="hasMail"
+          :skins="roomSkins[room]"
           :sleeping="sleepUpright && isHome && room === 'bedroom'"
           pass="back"
           :front-ids="frontIds[room]"
@@ -1149,6 +1177,7 @@ function labelStyle(room: RoomId, it: RenderItem) {
           :flash-key="flashKey"
           :night="scene === 'night'"
           :has-mail="hasMail"
+          :skins="roomSkins[room]"
           :sleeping="sleepUpright && isHome && room === 'bedroom'"
           pass="front"
           :front-ids="frontIds[room]"
@@ -1174,6 +1203,7 @@ function labelStyle(room: RoomId, it: RenderItem) {
         :flash-key="flashKey"
         :night="scene === 'night'"
         :has-mail="hasMail"
+        :skins="roomSkins.bath"
         pass="back"
         :front-ids="frontIds.bath"
         @item-click="onItemClick"
@@ -1222,6 +1252,7 @@ function labelStyle(room: RoomId, it: RenderItem) {
           :flash-key="flashKey"
           :night="scene === 'night'"
           :has-mail="hasMail"
+          :skins="roomSkins.bath"
           pass="front"
           :front-ids="frontIds.bath"
           @item-click="onItemClick"
@@ -1318,10 +1349,15 @@ function labelStyle(room: RoomId, it: RenderItem) {
         :asset="ASSET"
         :defs="decorDefs"
         :owned="state.decor"
+        :skin-defs="skinDefs"
+        :owned-skins="state.ownedSkins"
+        :worn-skins="state.skins"
         :room-names="ROOM_NAMES"
         @close="decorOpen = false"
         @change="onDecorChange"
+        @change-skins="onSkinsChange"
         @show="showDecor"
+        @show-item="showItem"
       />
       <HouseWardrobe
         :open="wardrobeOpen"

@@ -18,7 +18,7 @@ CAT_FACE = [
 CAT_PAL = {"W": "wh", "k": "ol", "p": "pk1", "s": "wh3"}
 
 
-def bed(sleep=False):
+def bed(sleep=False, quilt="check"):
     """床（從床尾看過去）：床頭板、兩顆枕頭（貓貓枕頭和恐龍娃娃）、白床單、綠格子被、兩個抽屜。
     sleep=True：他睡在裡面，被子中間鼓起來（頭是另外疊上去的小人）。"""
     cv = Cv(62, 58)
@@ -36,14 +36,24 @@ def bed(sleep=False):
     cv.v_(30, 15, 10, "ol2").v_(31, 15, 10, "ol2")
     # 白床單的反摺
     cv.rect(5, 26, 52, 5, "wh").h_(5, 26, 52, "#ffffff").h_(5, 30, 52, "wh3")
-    # 綠格子被
+    # 被子：格子（預設）、直條紋、點點；顏色都用綠色那組，換色由 skins.py 整組換
     cv.rect(5, 31, 52, 15, "g1")
-    for j, y in enumerate(range(31, 46, 5)):
-        for i, x in enumerate(range(5, 57, 4)):
-            if (i + j) % 2 == 0:
-                cv.rect(x, y, 4, 5, "g3")
-            elif j % 2 == 1 and i % 2 == 0:
-                cv.rect(x, y, 4, 5, "g2")
+    if quilt == "check":
+        for j, y in enumerate(range(31, 46, 5)):
+            for i, x in enumerate(range(5, 57, 4)):
+                if (i + j) % 2 == 0:
+                    cv.rect(x, y, 4, 5, "g3")
+                elif j % 2 == 1 and i % 2 == 0:
+                    cv.rect(x, y, 4, 5, "g2")
+    elif quilt == "stripe":
+        for i, x in enumerate(range(5, 57, 3)):
+            if i % 2 == 0:
+                cv.rect(x, 31, 2, 15, "g3")
+    elif quilt == "dot":
+        cv.rect(5, 31, 52, 15, "g3")
+        for j, y in enumerate(range(33, 45, 4)):
+            for x in range(7 + (j % 2) * 3, 56, 6):
+                cv.rect(x, y, 2, 2, "g1")
     cv.h_(5, 45, 52, "g4").h_(5, 31, 52, "#c4dcb0")
     if sleep:
         bulge(cv)

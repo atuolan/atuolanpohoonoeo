@@ -39,6 +39,8 @@ const props = defineProps<{
   hasMail?: boolean;
   /** 他睡在這間的床上：床換成被子鼓起來的那張 */
   sleeping?: boolean;
+  /** 這間的家具換了哪個款式：家具 id → 款式 id */
+  skins?: Record<string, string>;
   /**
    * 一間房分兩次畫：back 畫牆、地板和在他後面的家具，front 只畫在他前面的家具（疊在他上面）。
    * 兩次都放全部的家具，不是這一層的藏起來，換層時不會閃。
@@ -54,7 +56,17 @@ function hidden(id: string): boolean {
   return props.pass === "front" ? !front : front;
 }
 
+/** 現在這件家具是哪個狀態：睡覺、有信、晚上（沒有就是平常） */
+function stateSuffix(id: string): string {
+  if (props.sleeping && SLEEP_ITEMS[props.room].includes(id)) return "-sleep";
+  if (props.hasMail && MAIL_ITEMS[props.room].includes(id)) return "-full";
+  if (props.night && NIGHT_ITEMS[props.room].includes(id)) return "-night";
+  return "";
+}
+
 function itemSrc(it: RoomItem): string {
+  const skin = props.skins?.[it.id];
+  if (skin) return `${props.asset}skins/${props.room}/${it.id}/${skin}${stateSuffix(it.id)}.png`;
   if (it.src) return it.src;
   const id = it.id;
   if (props.sleeping && SLEEP_ITEMS[props.room].includes(id)) return `${props.asset}${props.room}/items/${id}-sleep.png`;
