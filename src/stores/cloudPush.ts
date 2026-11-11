@@ -295,17 +295,38 @@ export const useCloudPushStore = defineStore("cloudPush", () => {
         }
         const existingChatId = preferredChat?.id;
 
-        // 構建新訊息
+        // 構建新訊息：雲端存的是模型原文，要跟本機一樣解析（收起 ˇ心聲ˇ、正規化表情包等），
+        // 不然心聲會直接顯示在氣泡裡
+        const { parseAIResponse } = await import("@/services/ResponseParser");
         const newMessages: unknown[] = [];
+        let lastAt = 0;
         for (const msg of charMsgs) {
-          const chatMessage = createDefaultMessage(
-            "assistant",
-            msg.characterName,
-            msg.content,
-          );
-          chatMessage.createdAt = msg.createdAt;
-          chatMessage.updatedAt = msg.createdAt;
-          newMessages.push(chatMessage);
+          const parsed = parseAIResponse(`<msg>${msg.content}</msg>`, {
+            disabledRegexIds: preferredChat?.disabledRegexIds,
+          }).messages;
+          const parts = parsed.length
+            ? parsed.map((p) => ({
+                content:
+                  p.isAiImage && p.imageDescription
+                    ? `<pic>${p.imageDescription}</pic>`
+                    : p.content,
+                thought: p.thought,
+              }))
+            : [{ content: msg.content, thought: undefined }];
+          for (const part of parts) {
+            const chatMessage = createDefaultMessage(
+              "assistant",
+              msg.characterName,
+              part.content,
+            );
+            // 一則拆成好幾個氣泡時往後推 1ms，保持順序
+            const at = Math.max(msg.createdAt, lastAt + 1);
+            lastAt = at;
+            chatMessage.createdAt = at;
+            chatMessage.updatedAt = at;
+            if (part.thought) chatMessage.thought = part.thought;
+            newMessages.push(chatMessage);
+          }
         }
 
         // v24：用 appendChatMessages 追加訊息（無競態風險）

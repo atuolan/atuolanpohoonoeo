@@ -577,7 +577,9 @@ export class PushAlarmDO {
 
   // ─── 推送通知 ────────────────────────────────────────────────
 
-  async pushNotifications(config, character, content) {
+  async pushNotifications(config, character, rawContent) {
+    // 通知只放看得到的字：拿掉 <msg> 標籤和 ˇ心聲ˇ
+    const content = toVisibleText(rawContent);
     const channels = config.pushChannels || [];
     console.log("[PushAlarmDO] pushNotifications 開始:", {
       channels,
@@ -855,10 +857,19 @@ function buildUnrepliedNote(userName, count, lastUserAt) {
       ? `${userName} 最後一次傳訊息是 ${formatElapsed(now - lastUserAt)}前，`
       : "";
   return (
-    `
-【注意：${userName} 還沒回】${since}之後你已經主動傳了 ${count} 次訊息，${userName} 都還沒回，可能在忙或睡了。` +
+    `\n【注意：${userName} 還沒回】${since}之後你已經主動傳了 ${count} 次訊息，${userName} 都還沒回，可能在忙或睡了。` +
     `這次不要重複你前幾次講過的內容、開場和句型——同樣的天氣、同樣的問候、同樣的事情、同樣的晚安都算重複。` +
     `想想這段時間你身上有沒有新的事，或換個話題、換個角度；也可以只傳一兩句短的。` +
     `要接話的話，以 ${userName} 最後說的話為準，不要去接很久以前的話題。`
   );
+}
+
+/** 模型原文 → 通知裡顯示的字（拿掉 <msg> 標籤、ˇ心聲ˇ、~(舊格式心聲)~） */
+function toVisibleText(content) {
+  const parts = content.match(/<msg>([\s\S]*?)<\/msg>/g);
+  const texts = parts ? parts.map((m) => m.replace(/<\/?msg>/g, "")) : [content];
+  return texts
+    .map((t) => t.replace(/\s*ˇ[^ˇ]+ˇ/g, "").replace(/\s*~\([^)]+\)~/g, "").trim())
+    .filter(Boolean)
+    .join("\n");
 }

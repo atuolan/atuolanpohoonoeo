@@ -1831,7 +1831,11 @@ const renderedContent = computed(() => {
         ).trim();
 
         // 移除漏網的 ˇ想法ˇ 和舊格式 ~(想法)~
-        return cleaned.replace(/\n?ˇ([^]*?)\/~\n?/g, "\n").trim();
+        // （聊天停用「收起心聲」時 ˇ 已被 withReplyShield 擋住，這裡比對不到，會留在訊息裡）
+        return cleaned
+          .replace(/\s*ˇ[^ˇ]+ˇ/g, "")
+          .replace(/\s*~\([^)]+\)~/g, "")
+          .trim();
       },
       { escapeKept: true },
     );
