@@ -8,6 +8,7 @@
  * - 每個角色的外觀（穿什麼、什麼顏色、買過哪些款式）
  * 用戶上傳自己畫的部位另外存一個 key（圖比較大，所有角色共用）
  * - 家具擺在哪（只存搬過的）
+ * - 買過哪些擺件、有沒有擺出來
  */
 import type { RoomId } from "./houseData";
 import { parseCustomParts, parseOutfit, type CustomPart, type Outfit } from "./wardrobeLogic";
@@ -30,13 +31,15 @@ export interface PixelHouseState {
   guideSeen: boolean;
   /** 房間 → 家具 id → [x, y]（房間格子） */
   placements: Partial<Record<RoomId, Record<string, [number, number]>>>;
+  /** 買過的擺件 id → 有沒有擺出來（false = 收起來） */
+  decor: Record<string, boolean>;
 }
 
 const STORAGE_KEY = "pixel_house_state";
 export const PIXEL_HOUSE_CHANGED_EVENT = "aguaphone:pixel-house-changed";
 
 export function defaultPixelHouseState(): PixelHouseState {
-  return { homeStyle: "canvas", residentCharId: null, look: "boy", looks: {}, timeLight: true, calm: false, guideSeen: false, placements: {} };
+  return { homeStyle: "canvas", residentCharId: null, look: "boy", looks: {}, timeLight: true, calm: false, guideSeen: false, placements: {}, decor: {} };
 }
 
 /** 讀不到或格式不對的欄位用預設值 */
@@ -64,6 +67,12 @@ export function parsePixelHouseState(raw: unknown): PixelHouseState {
       if (charId) looks[charId] = parseOutfit(outfit, look);
     }
   }
+  const decor: Record<string, boolean> = {};
+  if (r.decor && typeof r.decor === "object" && !Array.isArray(r.decor)) {
+    for (const [id, shown] of Object.entries(r.decor as Record<string, unknown>)) {
+      if (id && typeof shown === "boolean") decor[id] = shown;
+    }
+  }
   return {
     homeStyle: r.homeStyle === "pixel-house" ? "pixel-house" : "canvas",
     residentCharId: typeof r.residentCharId === "string" && r.residentCharId ? r.residentCharId : null,
@@ -73,6 +82,7 @@ export function parsePixelHouseState(raw: unknown): PixelHouseState {
     calm: r.calm === true,
     guideSeen: r.guideSeen === true,
     placements,
+    decor,
   };
 }
 

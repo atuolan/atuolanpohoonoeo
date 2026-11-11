@@ -111,6 +111,31 @@ export const MAIL_ITEMS: Record<RoomId, string[]> = {
   bath: [],
 };
 
+/** 他睡在裡面時換成 items/<id>-sleep.png 的家具（床的被子鼓起來） */
+export const SLEEP_ITEMS: Record<RoomId, string[]> = {
+  living: [],
+  bedroom: ["bed"],
+  kitchen: [],
+  bath: [],
+};
+
+/**
+ * 擺件：擺件商店買的（public/pixel-house/decor/decor.json，scripts/pixel-house/draw/decor.py 畫的）。
+ * 買了出現在 room 的 (x, y)，之後跟其他家具一樣可以搬。
+ */
+export interface DecorDef {
+  id: string;
+  name: string;
+  price: number;
+  room: RoomId;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  /** 掛在牆上的 */
+  wall: boolean;
+}
+
 /** 點家具打開的東西：App（handleNavigate 的 id）、幾個 App 選一個、或進浴室 */
 export type FurnitureAction =
   | { kind: "app"; app: string; to: string }
@@ -191,7 +216,7 @@ export interface ActDef {
   steam?: [number, number];
   /** 做這件事時他在這件家具後面（泡在浴缸裡）：這件家具畫在他前面 */
   behind?: string;
-  /** 躺下（睡覺）：腳的位置（房間格子；跟著 anchor 家具走），頭朝左躺在枕頭上 */
+  /** 睡覺：腳的位置（房間格子；跟著 anchor 家具走）。只露出頭在枕頭上，身體在鼓起來的被子裡 */
   lie?: [number, number];
 }
 
@@ -205,7 +230,7 @@ export const ACTS: Record<string, ActDef> = {
   read: { room: "bedroom", x: 20, y: 160, anchor: "bookshelf", pose: "back", label: "找書看" },
   bedphone: { room: "bedroom", x: 66, y: 252, anchor: "bed", pose: "phone", label: "滑手機" },
   daze: { room: "bedroom", x: 92, y: 196, pose: "sad", label: "發呆" },
-  sleep: { room: "bedroom", x: 72, y: 252, anchor: "bed", pose: "sleep", label: "睡覺中", lie: [53, 220] },
+  sleep: { room: "bedroom", x: 72, y: 252, anchor: "bed", pose: "sleep", label: "睡覺中", lie: [36, 229] },
   cook: { room: "kitchen", x: 78, y: 158, anchor: "stove", pose: "back", label: "煮飯中", steam: [77, 108] },
   fridge: { room: "kitchen", x: 113, y: 160, anchor: "fridge", pose: "back", label: "找東西吃" },
   dishes: { room: "kitchen", x: 27, y: 158, anchor: "faucet", pose: "back", label: "洗碗中" },

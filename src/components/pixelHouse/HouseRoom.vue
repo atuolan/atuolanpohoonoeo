@@ -3,7 +3,7 @@
  * 一間房：牆、護牆板、地板、每件家具。
  * 用原本的像素大小（1 格 = 1px）排好，再整間一起放大，所有圖層的格子才會對齊。
  */
-import { MAIL_ITEMS, NIGHT_ITEMS, type FurnitureAction, type ItemZone, type RoomId } from "./houseData";
+import { MAIL_ITEMS, NIGHT_ITEMS, SLEEP_ITEMS, type FurnitureAction, type ItemZone, type RoomId } from "./houseData";
 
 export interface RoomLayer {
   name: string;
@@ -20,6 +20,8 @@ export interface RoomItem {
   h: number;
   zone: ItemZone;
   action?: FurnitureAction;
+  /** 圖不在這間的 items/ 裡（商店買的擺件）：直接給網址 */
+  src?: string;
 }
 
 const props = defineProps<{
@@ -35,6 +37,8 @@ const props = defineProps<{
   night?: boolean;
   /** 有未讀訊息：信箱露出一封信 */
   hasMail?: boolean;
+  /** 他睡在這間的床上：床換成被子鼓起來的那張 */
+  sleeping?: boolean;
   /**
    * 一間房分兩次畫：back 畫牆、地板和在他後面的家具，front 只畫在他前面的家具（疊在他上面）。
    * 兩次都放全部的家具，不是這一層的藏起來，換層時不會閃。
@@ -50,7 +54,10 @@ function hidden(id: string): boolean {
   return props.pass === "front" ? !front : front;
 }
 
-function itemSrc(id: string): string {
+function itemSrc(it: RoomItem): string {
+  if (it.src) return it.src;
+  const id = it.id;
+  if (props.sleeping && SLEEP_ITEMS[props.room].includes(id)) return `${props.asset}${props.room}/items/${id}-sleep.png`;
   if (props.hasMail && MAIL_ITEMS[props.room].includes(id)) return `${props.asset}${props.room}/items/${id}-full.png`;
   const night = props.night && NIGHT_ITEMS[props.room].includes(id);
   return `${props.asset}${props.room}/items/${id}${night ? "-night" : ""}.png`;
@@ -82,7 +89,7 @@ const emit = defineEmits<{ (e: "item-click", it: RoomItem): void }>();
       }"
       :data-room="room"
       :data-item="it.id"
-      :src="itemSrc(it.id)"
+      :src="itemSrc(it)"
       :alt="it.action && !editMode ? `${it.name}，${it.action.to}` : ''"
       :role="it.action && !editMode ? 'button' : undefined"
       draggable="false"

@@ -12,6 +12,7 @@ import { useCharactersStore } from "@/stores";
 import { useHomeBadgesStore } from "@/stores/homeBadges";
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from "vue";
 import HouseAppsSheet from "./HouseAppsSheet.vue";
+import HouseDecorShop from "./HouseDecorShop.vue";
 import HouseGuide, { type GuideAction } from "./HouseGuide.vue";
 import HouseRoom from "./HouseRoom.vue";
 import HouseWardrobe from "./HouseWardrobe.vue";
@@ -28,13 +29,14 @@ import {
   ROOM_W,
   SCENE_TINT,
   STRIP_ROOMS,
+  type DecorDef,
   type FurnitureAction,
   type ItemZone,
   type RoomId,
 } from "./houseData";
 import { clampGroupMove, clampPlacement, followAnchor, itemDepths, itemsInFront, pickDefaultResident, residentStatus, sceneAt, stripIndex, type ResidentStatus } from "./houseLogic";
 import { loadCustomParts, loadPixelHouseState, PIXEL_HOUSE_CHANGED_EVENT, savePixelHouseState, type PixelHouseState } from "./houseState";
-import { composeLook, SLEEP_POSE, loadDollManifest, loadWardrobeCatalog, type ComposedLook } from "./dollCompose";
+import { autoSleepSource, composeLook, SLEEP_POSE, loadDollManifest, loadWardrobeCatalog, type ComposedLook } from "./dollCompose";
 import { defaultOutfit, type CustomPart, type DollManifest, type DollPose, type Outfit, type WardrobeCatalog } from "./wardrobeLogic";
 import { stripX, useHouseResident } from "./useHouseResident";
 
@@ -57,6 +59,9 @@ interface LayoutItem extends Box {
   id: string;
   name: string;
   empty?: boolean;
+  /** 商店買的擺件：圖的網址、是不是掛在牆上 */
+  src?: string;
+  wall?: boolean;
 }
 interface RoomLayout {
   size: [number, number];
@@ -67,6 +72,8 @@ interface RoomLayout {
 
 const layouts = reactive<Partial<Record<RoomId, RoomLayout>>>({});
 const walkSizes = ref<Record<string, { w: number; h: number }>>({});
+/** 擺件商店賣的全部擺件 */
+const decorDefs = ref<DecorDef[]>([]);
 
 /** 使用者自己畫的分層小人（紙娃娃）：每個動作一組圖層，1 px＝房間 1 格；照他的外觀疊好再顯示 */
 const doll = ref<DollManifest | null>(null);
@@ -84,6 +91,11 @@ async function loadAssets() {
     }),
   );
   for (const [room, layout] of results) layouts[room] = layout;
+  try {
+    decorDefs.value = await (await fetch(`${ASSET}decor/decor.json`)).json();
+  } catch {
+    decorDefs.value = [];
+  }
   try {
     walkSizes.value = await (await fetch(`${ASSET}chars/walk.json`)).json();
   } catch {
@@ -110,9 +122,18 @@ function floorTop(room: RoomId): number {
   return f ? f.y : 158;
 }
 
+/** 這間房的全部家具：原本就有的，加上買了而且擺出來的擺件 */
+function layoutItems(room: RoomId): LayoutItem[] {
+  const base = layouts[room]?.items ?? [];
+  const decor = decorDefs.value
+    .filter((d) => d.room === room && state.decor[d.id] === true)
+    .map((d) => ({ id: d.id, name: d.name, x: d.x, y: d.y, w: d.w, h: d.h, src: `${ASSET}decor/${d.id}.png`, wall: d.wall }));
+  return decor.length ? [...base, ...decor] : base;
+}
+
 function defaultsOf(room: RoomId): Record<string, { x: number; y: number }> {
   const out: Record<string, { x: number; y: number }> = {};
-  for (const it of layouts[room]?.items ?? []) out[it.id] = { x: it.x, y: it.y };
+  for (const it of layoutItems(room)) out[it.id] = { x: it.x, y: it.y };
   return out;
 }
 
@@ -138,14 +159,14 @@ function itemsOf(room: RoomId): RenderItem[] {
   if (!layout) return [];
   const cur = currentOf(room);
   const ft = floorTop(room);
-  const list = layout.items
+  const list = layoutItems(room)
     .filter((it) => !it.empty)
     .map((it) => ({
       ...it,
       room,
       px: cur[it.id].x,
       py: cur[it.id].y,
-      zone: itemZone(room, it.id, it.y + it.h, ft),
+      zone: it.wall ? ("wall" as ItemZone) : itemZone(room, it.id, it.y + it.h, ft),
       depth: 0,
       action: FURNITURE_ACTIONS[room][it.id],
     }));
@@ -312,6 +333,29 @@ watch(
 
 const residentName = computed(() => resident.value?.nickname || resident.value?.data?.name || "他");
 const wardrobeOpen = ref(false);
+
+// ===== 擺件商店 =====
+const decorOpen = ref(false);
+/** 買了（或收起來的再擺出來）：出現在預設的位置 */
+function onDecorChange(next: Record<string, boolean>) {
+  state.decor = next;
+  persist();
+}
+/** 買完去看：關掉商店，滑到那間房 */
+function showDecor(id: string) {
+  const d = decorDefs.value.find((x) => x.id === id);
+  decorOpen.value = false;
+  if (!d) return;
+  if (d.room === "bath") openBath();
+  else {
+    bathOpen.value = false;
+    scrollToRoom(stripIndex(d.room));
+  }
+  flashKey.value = `${d.room}:${id}`;
+  setTimeout(() => {
+    if (flashKey.value === `${d.room}:${id}`) flashKey.value = null;
+  }, 1200);
+}
 const wardrobeSlot = ref<PartSlot | null>(null);
 function openWardrobe(slot: PartSlot | null) {
   // 沒人住就沒有衣櫃（下面的提示會說到設定選一位）
@@ -403,8 +447,11 @@ const spriteSrc = computed(() => {
   return `${ASSET}chars/${currentBase.value}/walk-${dir}-${n}.png`;
 });
 /** 紙娃娃現在用哪個動作：有畫的就用，沒畫的先用正面 */
-/** 睡覺的圖還沒畫：用側面站姿自動做的那張（dollCompose），轉 90 度躺著 */
-const autoSleep = computed(() => lying.value && !!doll.value && !doll.value.poses[SLEEP_POSE] && !!doll.value.poses.walk);
+/** 睡覺的圖還沒畫：用正面站姿自動做的那張（dollCompose，只有頭、閉眼），放在枕頭上 */
+const autoSleepFrom = computed(() => (doll.value && !doll.value.poses[SLEEP_POSE] ? autoSleepSource(doll.value) : null));
+const autoSleep = computed(() => lying.value && !!autoSleepFrom.value);
+/** 睡覺時是直的（頭在枕頭上、身體在被子裡）；只有側面圖的舊紙娃娃和暫用的走路圖才轉 90 度躺著 */
+const sleepUpright = computed(() => lying.value && !!doll.value && (!!doll.value.poses[SLEEP_POSE] || autoSleepFrom.value === "front"));
 const dollPoseKey = computed<string | null>(() => {
   const d = doll.value;
   if (!d) return null;
@@ -417,8 +464,8 @@ const dollPoseKey = computed<string | null>(() => {
 const dollPose = computed<DollPose | null>(() => {
   const d = doll.value;
   if (!d || !dollPoseKey.value) return null;
-  // 自動做的睡覺圖跟走路的一樣大，只有一格
-  if (autoSleep.value) return { ...d.poses.walk, frames: 1 };
+  // 自動做的睡覺圖跟拿來做的那個動作一樣大，只有一格
+  if (autoSleep.value && autoSleepFrom.value) return { ...d.poses[autoSleepFrom.value], frames: 1 };
   return d.poses[dollPoseKey.value] ?? null;
 });
 
@@ -474,7 +521,7 @@ const spriteStyle = computed(() => {
     // 躺下：先用站姿轉 90 度代替（之後換成睡覺的圖）；紙娃娃沒有走路的圖時，走路一上一下跳
     // 有畫睡覺的圖（已經是躺著的）就不轉
     transform: lying.value
-      ? doll.value?.poses[SLEEP_POSE]
+      ? sleepUpright.value
         ? undefined
         : autoSleep.value && dollPose.value?.faces === "right"
           ? "rotate(-90deg) scaleX(-1)"
@@ -484,7 +531,7 @@ const spriteStyle = computed(() => {
         : dollPose.value && !dollAnimated.value && life.walking.value && frame.value % 2
           ? `translateY(${-u(1)}px)`
           : undefined,
-    transformOrigin: lying.value ? "50% 100%" : undefined,
+    transformOrigin: lying.value && !sleepUpright.value ? "50% 100%" : undefined,
   };
 });
 
@@ -668,7 +715,7 @@ function onPointerDown(e: PointerEvent) {
     const room = el?.dataset.room as RoomId | undefined;
     const it = room ? roomItems.value[room].find((i) => i.id === el?.dataset.item) : undefined;
     if (room && it && it.zone !== "fixed") {
-      const def = layouts[room]?.items.find((i) => i.id === it.id);
+      const def = layoutItems(room).find((i) => i.id === it.id);
       const ids = moveGroupOf(room, it.id);
       const group = ids.length > 1 ? roomItems.value[room].filter((i) => ids.includes(i.id)).map((i) => ({ ...i })) : [];
       ptr.item = { room, it: { ...it }, ft: floorTop(room), defY: def?.y ?? it.py, group };
@@ -1005,6 +1052,7 @@ function labelStyle(room: RoomId, it: RenderItem) {
           :flash-key="flashKey"
           :night="scene === 'night'"
           :has-mail="hasMail"
+          :sleeping="sleepUpright && isHome && room === 'bedroom'"
           pass="back"
           :front-ids="frontIds[room]"
           @item-click="onItemClick"
@@ -1060,12 +1108,17 @@ function labelStyle(room: RoomId, it: RenderItem) {
           v-if="bubbleText && !editMode"
           class="ph-bubble"
           :class="{ 'is-unread': unread > 0 }"
-          :style="{ top: `${-(lying ? u(30) : spriteSize.h) - 34}px`, left: lying ? `${-u(charUnits / 2)}px` : undefined }"
+          :style="{ top: `${-(lying && !sleepUpright ? u(30) : spriteSize.h) - 34}px`, left: lying && !sleepUpright ? `${-u(charUnits / 2)}px` : undefined }"
           aria-hidden="true"
         >
           {{ bubbleText }}
         </div>
-        <div v-if="lying" class="ph-zs" :style="{ left: `${-u(charUnits - 6)}px`, top: `${-u(14)}px` }" aria-hidden="true">
+        <div
+          v-if="lying"
+          class="ph-zs"
+          :style="sleepUpright ? { left: `${u(9)}px`, top: `${-u(charUnits - 8)}px` } : { left: `${-u(charUnits - 6)}px`, top: `${-u(14)}px` }"
+          aria-hidden="true"
+        >
           <span>Z</span><span>Z</span><span>Z</span>
         </div>
       </div>
@@ -1096,6 +1149,7 @@ function labelStyle(room: RoomId, it: RenderItem) {
           :flash-key="flashKey"
           :night="scene === 'night'"
           :has-mail="hasMail"
+          :sleeping="sleepUpright && isHome && room === 'bedroom'"
           pass="front"
           :front-ids="frontIds[room]"
           @item-click="onItemClick"
@@ -1246,6 +1300,7 @@ function labelStyle(room: RoomId, it: RenderItem) {
         @pick="pickSheetApp"
         @edit-layout="enterEdit"
         @wardrobe="sheetOpen = false; openWardrobe(null)"
+        @decor="sheetOpen = false; decorOpen = true"
         @global-theme="sheetOpen = false; emit('open-global-theme')"
         @back-to-canvas="backToCanvas"
         @guide="sheetOpen = false; guideOpen = true"
@@ -1257,6 +1312,16 @@ function labelStyle(room: RoomId, it: RenderItem) {
         :at-home="isHome"
         @close="closeGuide"
         @try="tryGuide"
+      />
+      <HouseDecorShop
+        :open="decorOpen"
+        :asset="ASSET"
+        :defs="decorDefs"
+        :owned="state.decor"
+        :room-names="ROOM_NAMES"
+        @close="decorOpen = false"
+        @change="onDecorChange"
+        @show="showDecor"
       />
       <HouseWardrobe
         :open="wardrobeOpen"

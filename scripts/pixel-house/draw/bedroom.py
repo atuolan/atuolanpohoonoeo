@@ -18,8 +18,9 @@ CAT_FACE = [
 CAT_PAL = {"W": "wh", "k": "ol", "p": "pk1", "s": "wh3"}
 
 
-def bed():
-    """床（從床尾看過去）：床頭板、兩顆枕頭（貓貓枕頭和恐龍娃娃）、白床單、綠格子被、兩個抽屜"""
+def bed(sleep=False):
+    """床（從床尾看過去）：床頭板、兩顆枕頭（貓貓枕頭和恐龍娃娃）、白床單、綠格子被、兩個抽屜。
+    sleep=True：他睡在裡面，被子中間鼓起來（頭是另外疊上去的小人）。"""
     cv = Cv(62, 58)
     # 床頭板
     cv.rrect(3, 2, 56, 20, "w1", 2)
@@ -44,6 +45,8 @@ def bed():
             elif j % 2 == 1 and i % 2 == 0:
                 cv.rect(x, y, 4, 5, "g2")
     cv.h_(5, 45, 52, "g4").h_(5, 31, 52, "#c4dcb0")
+    if sleep:
+        bulge(cv)
     # 床架和抽屜
     cv.rect(5, 46, 52, 9, "w1").h_(5, 46, 52, "w4").h_(5, 54, 52, "w2")
     for x in (7, 32):
@@ -55,9 +58,49 @@ def bed():
     # 貓貓枕頭（左）和恐龍娃娃（右）畫在枕頭上
     cat = Cv(15, 11)
     cat.art(1, 1, CAT_FACE, CAT_PAL)
-    cv.paste(cat.outline(), 10, 12)
-    cv.paste(dino(), 38, 11)
+    # 睡覺時兩個往旁邊挪，中間留給他的頭
+    cv.paste(cat.outline(), 6 if sleep else 10, 12)
+    cv.paste(dino(), 41 if sleep else 38, 11)
     return cv
+
+
+def bulge(cv):
+    """被子中間鼓起一個人形：肩膀圓圓的，格子往上拱，上面亮、右邊有影子"""
+    from kit import col
+
+    cx = 31
+    # 每一列鼓起來的半寬：肩膀（床單反摺）往上拱成圓的，下面到床尾收一點
+    hw = {22: 6, 23: 8, 24: 10, 25: 11}
+    for y in range(26, 44):
+        hw[y] = 12
+    hw[44], hw[45] = 11, 10
+    light = {col("g2"): col("g1"), col("g1"): col("g3"), col("g3"): col("#c4dcb0")}
+    px = cv.im.load()
+    # 被子：格子往上移 2 格，上半亮一階
+    rows = {y: [px[x, min(45, y + 2)] for x in range(cx - 12, cx + 13)] for y in range(31, 46)}
+    for y in range(31, 46):
+        for i, x in enumerate(range(cx - hw[y], cx + hw[y] + 1)):
+            c = rows[y][x - (cx - 12)]
+            px[x, y] = light.get(c, c) if y < 40 else c
+    # 床單反摺跟著拱起來
+    for y in range(22, 31):
+        for x in range(cx - hw[y], cx + hw[y] + 1):
+            px[x, y] = col("#ffffff") if y < 25 else col("wh")
+    cv.h_(cx - 11, 30, 23, "wh3")
+    # 輪廓：左邊亮、右邊暗，外面一條影子
+    for y in range(22, 46):
+        l, r = cx - hw[y], cx + hw[y]
+        sheet = y < 31
+        px[l, y] = col("wh3" if sheet else "g2")
+        px[r, y] = col("wh3" if sheet else "g4")
+        if not sheet:
+            px[l + 1, y] = col("#d6e8c6")
+            px[r - 1, y] = col("g2")
+            if r + 1 < 57:
+                px[r + 1, y] = col("g2")
+    cv.h_(cx - 5, 21, 11, "wh3")
+    # 腳那邊的摺痕
+    cv.line(cx - 6, 42, cx - 3, 44, "g2").line(cx + 6, 42, cx + 3, 44, "g2")
 
 
 def dino():
@@ -289,7 +332,8 @@ def build():
 
     # 地上
     r.add("rug", "地毯", rug(92, 26, "#eef3e4", "#cfdcbf", "#b4c8a2"), 18, bottom=272)
-    r.add("bed", "床", bed(), 5, bottom=240)
+    r.add("bed", "床", bed(), 5, bottom=240, raw=True)
+    r.variant("bed", "sleep", bed(sleep=True))
     r.add("phone", "他的手機", phone(), 49, bottom=229)
     r.add("floor-box", "地上的小箱子", toolbox(), 3, bottom=250)
     r.add("tv-cabinet", "電視櫃", low_cabinet(), 80, bottom=243, at=(80, 228, 43, 15))

@@ -14,13 +14,26 @@ python3 -I scripts/pixel-house/draw_rooms.py --preview <資料夾> kitchen   # �
 - `draw/common.py`：幾間都用到的家具（窗戶、窗簾、掛鐘、門、電視、盆栽、杯子…）
 - `draw/living.py`、`bedroom.py`、`kitchen.py`、`bath.py`：每間的家具和擺在哪
 - 輸出：`wall.png`、`wainscot.png`（護牆板；浴室是下半的磁磚牆）、`floor.png`、`items/<id>.png`、`layout.json`
-- 晚上的窗戶（`items/window-night.png`）和有信的信箱（`items/mailbox-full.png`）也是這支一起畫的
+- 晚上的窗戶（`items/window-night.png`）、有信的信箱（`items/mailbox-full.png`）、他睡覺時的床（`items/bed-sleep.png`）也是這支一起畫的
 
 改一件家具：改那個函式，跑一次預覽看看，再跑一次不帶 `--preview` 的寫進去。
 
 加一件家具：在那間的 `build()` 裡 `r.add("<id>", "<名字>", <圖>, <x>, bottom=<底部那列>)`。
 掛在牆上的要把 id 加進 `houseData.ts` 的 `WALL_ITEMS`；點了要打開 App 的加進 `FURNITURE_ACTIONS`。
 已經有的 id 不要改名（使用者搬過的位置、他做事時站哪，都是跟著 id 走）。
+
+### 擺件（擺件商店賣的）
+
+`draw/decor.py` 的 `DECOR` 清單：id、名字、畫的函式、價錢、預設放哪間的哪裡、是不是掛在牆上。
+跑 `draw_rooms.py` 會輸出 `public/pixel-house/decor/<id>.png` 和 `decor.json`（程式讀這份）。
+加一件新擺件只要畫一個函式、在 `DECOR` 加一行，商店就會出現，不用改程式。
+id 不能跟房間原本的家具一樣，已經上架的 id 不要改（使用者買過的是記 id）。
+
+### 他睡覺時的床
+
+`items/bed-sleep.png`：被子中間鼓起來的版本（`bedroom.py` 的 `bed(sleep=True)`）。
+小人只留頭（正面、閉眼，程式自動做的）放在枕頭上，位置是 `houseData.ts` 的 `ACTS.sleep.lie`；
+床的枕頭或被子位置有改，要一起調 `bulge()` 和 `lie`。
 
 改完跑 `npx vitest run src/components/pixelHouse/houseLogic.test.ts`。
 

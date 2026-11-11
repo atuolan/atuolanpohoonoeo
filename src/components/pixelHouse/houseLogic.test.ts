@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { existsSync } from "node:fs";
-import { ACT_WEIGHTS, ACTS, FURNITURE_ACTIONS, itemZone, MAIL_ITEMS, moveGroupOf, NIGHT_ITEMS, type RoomId } from "./houseData";
+import { ACT_WEIGHTS, ACTS, FURNITURE_ACTIONS, itemZone, MAIL_ITEMS, moveGroupOf, NIGHT_ITEMS, SLEEP_ITEMS, type DecorDef, type RoomId } from "./houseData";
 import {
   actSpot,
   clampGroupMove,
@@ -156,7 +156,7 @@ describe("residentStatus", () => {
 
 describe("parsePixelHouseState", () => {
   it("壞掉的資料用預設值，擺放只留數字", () => {
-    expect(parsePixelHouseState(null)).toEqual({ homeStyle: "canvas", residentCharId: null, look: "boy", looks: {}, timeLight: true, calm: false, guideSeen: false, placements: {} });
+    expect(parsePixelHouseState(null)).toEqual({ homeStyle: "canvas", residentCharId: null, look: "boy", looks: {}, timeLight: true, calm: false, guideSeen: false, placements: {}, decor: {} });
     expect(
       parsePixelHouseState({
         homeStyle: "pixel-house",
@@ -165,7 +165,7 @@ describe("parsePixelHouseState", () => {
         timeLight: false,
         placements: { living: { sofa: [1, 2], bad: ["x", 2], worse: 3 } },
       }),
-    ).toEqual({ homeStyle: "pixel-house", residentCharId: "c1", look: "girl", looks: {}, timeLight: false, calm: false, guideSeen: false, placements: { living: { sofa: [1, 2] } } });
+    ).toEqual({ homeStyle: "pixel-house", residentCharId: "c1", look: "girl", looks: {}, timeLight: false, calm: false, guideSeen: false, placements: { living: { sofa: [1, 2] } }, decor: {} });
     expect(parsePixelHouseState({ guideSeen: true }).guideSeen).toBe(true);
     expect(parsePixelHouseState({ calm: true }).calm).toBe(true);
     expect(parsePixelHouseState({ calm: "yes" }).calm).toBe(false);
@@ -284,9 +284,30 @@ describe("家具的圖", () => {
       for (const id of ids) expect(existsSync(`${dir(room)}/items/${id}.png`), `${room}/${id}`).toBe(true);
       for (const id of NIGHT_ITEMS[room]) expect(existsSync(`${dir(room)}/items/${id}-night.png`), `${room}/${id}-night`).toBe(true);
       for (const id of MAIL_ITEMS[room]) expect(existsSync(`${dir(room)}/items/${id}-full.png`), `${room}/${id}-full`).toBe(true);
+      for (const id of SLEEP_ITEMS[room]) expect(existsSync(`${dir(room)}/items/${id}-sleep.png`), `${room}/${id}-sleep`).toBe(true);
       // 對到 App 的家具都在房間裡
       for (const id of Object.keys(FURNITURE_ACTIONS[room])) expect(ids, `${room}/${id}`).toContain(id);
     }
+  });
+  it("擺件商店的每件擺件都有圖，預設位置在房間裡，id 不跟原本的家具撞名", () => {
+    const decorDir = resolve(__dirname, "../../../public/pixel-house/decor");
+    const defs = JSON.parse(readFileSync(`${decorDir}/decor.json`, "utf-8")) as DecorDef[];
+    expect(defs.length).toBeGreaterThan(0);
+    expect(new Set(defs.map((d) => d.id)).size).toBe(defs.length);
+    for (const d of defs) {
+      expect(existsSync(`${decorDir}/${d.id}.png`), d.id).toBe(true);
+      expect(ROOMS, d.id).toContain(d.room);
+      expect(d.price, d.id).toBeGreaterThan(0);
+      expect(d.x >= 0 && d.y >= 0 && d.x + d.w <= 130 && d.y + d.h <= 282, d.id).toBe(true);
+      const layout = JSON.parse(readFileSync(`${dir(d.room)}/layout.json`, "utf-8")) as { floor: { y: number }; items: { id: string }[] };
+      expect(layout.items.map((i) => i.id), d.id).not.toContain(d.id);
+      // 掛在牆上的整件都在地板線以上
+      if (d.wall) expect(d.y + d.h, d.id).toBeLessThanOrEqual(layout.floor.y);
+    }
+  });
+  it("買過的擺件記在狀態裡：true 擺出來、false 收起來，格式不對的丟掉", () => {
+    expect(parsePixelHouseState({ decor: { "star-lamp": true, headphones: false, bad: "yes" } }).decor).toEqual({ "star-lamp": true, headphones: false });
+    expect(parsePixelHouseState({ decor: ["x"] }).decor).toEqual({});
   });
   it("客廳的信箱掛在牆上，點了打開訊息", () => {
     expect(itemZone("living", "mailbox", 107, 158)).toBe("wall");

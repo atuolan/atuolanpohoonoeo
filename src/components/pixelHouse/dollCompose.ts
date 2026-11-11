@@ -138,8 +138,8 @@ async function composeLookNow(manifest: DollManifest, asset: string, outfit: Out
       out[name].push(ctx.canvas.toDataURL("image/png"));
     }
   }
-  // 還沒畫睡覺的圖：用側面走路第一格自動做一張（閉眼、只留頭，身體蓋在棉被裡）
-  if (!manifest.poses[SLEEP_POSE] && manifest.poses.walk) {
+  // 還沒畫睡覺的圖：用正面（沒有就用側面走路第一格）自動做一張（閉眼、只留頭，身體蓋在棉被裡）
+  if (!manifest.poses[SLEEP_POSE] && autoSleepSource(manifest)) {
     const auto = await composeAutoSleep(manifest, asset, outfit, customs, bob);
     if (auto) out[SLEEP_POSE] = [auto];
   }
@@ -149,12 +149,19 @@ async function composeLookNow(manifest: DollManifest, asset: string, outfit: Out
 /** 睡覺的動作：doll.json 有畫就用畫的，沒有就自動做 */
 export const SLEEP_POSE = "sleep";
 
+/** 自動做睡覺圖時用哪個動作：正面的頭直接放在枕頭上；只有側面的話顯示時再轉 90 度 */
+export function autoSleepSource(manifest: DollManifest): "front" | "walk" | null {
+  if (manifest.poses.front) return "front";
+  if (manifest.poses.walk) return "walk";
+  return null;
+}
+
 /** 衣服這幾層最上面那一列就是脖子：睡覺時從這裡以下蓋在棉被裡 */
 const CLOTHES_LAYERS = ["underwear", "shirt", "jacket"];
 
 /**
- * 自動做的睡覺圖：側面站姿（走路第一格），眼睛換成閉眼的一條線，脖子以下清掉。
- * 髮型、髮色、膚色、上傳的頭髮都跟著現在的外觀，不用另外畫；顯示時再轉 90 度躺在枕頭上。
+ * 自動做的睡覺圖：正面站姿（沒有就用走路第一格），眼睛換成閉眼的一條線，脖子以下清掉。
+ * 髮型、髮色、膚色、上傳的頭髮都跟著現在的外觀，不用另外畫；頭放在枕頭上，身體是床那張鼓起來的被子。
  */
 async function composeAutoSleep(
   manifest: DollManifest,
@@ -163,10 +170,11 @@ async function composeAutoSleep(
   customs: CustomPart[],
   bob: number[],
 ): Promise<string | null> {
-  const pose = manifest.poses.walk;
-  if (!pose) return null;
+  const source = autoSleepSource(manifest);
+  const pose = source ? manifest.poses[source] : null;
+  if (!source || !pose) return null;
   const { w, h } = pose;
-  const plan = buildLayerPlan(manifest, "walk", 0, outfit, customs);
+  const plan = buildLayerPlan(manifest, source, 0, outfit, customs);
   const layers = await Promise.all(plan.map((l) => layerPixels(l, asset, w, h, 0, bob)));
   const ctx = canvas(w, h);
   const tmp = canvas(w, h);
