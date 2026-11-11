@@ -45,9 +45,9 @@ const GROUPS: { title: string; items: GuideItem[] }[] = [
       },
       {
         q: "找不到想要的 App？",
-        a: "右上角的彩色轉盤是常用的 App；轉盤最下面的「全部 App」裡有每一個功能。",
+        a: "點右上角的彩色轉盤，右邊會滑出選單：上面是常用的 App，「全部 App」裡有每一個功能；往右滑或點旁邊就收起來。",
         action: "open-dial",
-        actionLabel: "打開轉盤",
+        actionLabel: "打開選單",
       },
       {
         q: "怎麼換房間？",
@@ -128,7 +128,7 @@ const GROUPS: { title: string; items: GuideItem[] }[] = [
               </li>
             </ul>
           </template>
-          <p class="ph-guide-foot">之後想再看：轉盤 › 全部 App › 小屋怎麼玩</p>
+          <p class="ph-guide-foot">之後想再看：右上角的選單 › 全部 App › 小屋怎麼玩</p>
         </div>
 
         <footer class="ph-guide-actions">

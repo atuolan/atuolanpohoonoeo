@@ -285,7 +285,7 @@ export const WALK_SPEED = 30;
 /** 小人顯示的高度（房間格子） */
 export const CHAR_HEIGHT = 46;
 
-// ===== 轉盤選單 =====
+// ===== 側邊選單（右上角轉盤按鈕打開） =====
 
 export interface DialApp {
   key: string;

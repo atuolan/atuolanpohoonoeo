@@ -1,5 +1,5 @@
 <script setup lang="ts">
-/** 轉盤裡的「全部 App」：所有 App、小屋的設定、還沒開放的家具功能 */
+/** 側邊選單裡的「全部 App」：所有 App、小屋的設定、還沒開放的家具功能 */
 import { DOCK_APP_CATALOG } from "@/components/dock/dockApps";
 import { COMING_SOON } from "./houseData";
 

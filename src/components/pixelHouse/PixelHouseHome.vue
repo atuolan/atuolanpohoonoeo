@@ -17,7 +17,7 @@ import HouseGuide, { type GuideAction } from "./HouseGuide.vue";
 import HouseRoom from "./HouseRoom.vue";
 import HouseWardrobe from "./HouseWardrobe.vue";
 import type { PartSlot } from "./wardrobeData";
-import PixelDial from "./PixelDial.vue";
+import PixelWaveMenu from "./PixelWaveMenu.vue";
 import {
   ACTS,
   CHAR_HEIGHT,
@@ -623,7 +623,7 @@ function onItemClick(it: { room: RoomId; id: string; name: string; action?: Furn
   }, 160);
 }
 
-// ===== 轉盤、全部 App =====
+// ===== 側邊選單、全部 App =====
 const menuOpen = ref(false);
 const sheetOpen = ref(false);
 const homeBadges = useHomeBadgesStore();
@@ -720,8 +720,8 @@ let ptr: PointerState | null = null;
 let longPressTimer: ReturnType<typeof setTimeout> | null = null;
 let suppressClick = false;
 
-/** 蓋在房間上的面板（全部 App、衣櫃、轉盤）：在上面滑不要帶動房間 */
-const OVERLAY_SELECTOR = ".ph-sheet-wrap, .wd-wrap, .ph-dial-root";
+/** 蓋在房間上的面板（全部 App、衣櫃、擺件商店、側邊選單）：在上面滑不要帶動房間 */
+const OVERLAY_SELECTOR = ".ph-sheet-wrap, .wd-wrap, .ds-wrap, .pw-root";
 
 function onPointerDown(e: PointerEvent) {
   if (ptr || (e.pointerType === "mouse" && e.button !== 0)) return;
@@ -1296,13 +1296,16 @@ function labelStyle(room: RoomId, it: RenderItem) {
         ?
       </button>
 
-      <PixelDial
+      <PixelWaveMenu
         v-if="!editMode"
         :open="menuOpen"
         :badges="badges"
         @toggle="menuOpen = !menuOpen; showAll = false"
         @close="menuOpen = false"
         @pick="pickDialApp"
+        @decor="menuOpen = false; decorOpen = true"
+        @wardrobe="menuOpen = false; openWardrobe(null)"
+        @edit-layout="enterEdit"
       />
 
       <!-- 下面的提示列 -->
@@ -1709,8 +1712,8 @@ function labelStyle(room: RoomId, it: RenderItem) {
   color: #fff;
 }
 
-.ph-ui > .ph-dial-root,
-.ph-ui :deep(.ph-dial-root) {
+.ph-ui > .pw-root,
+.ph-ui :deep(.pw-root) {
   pointer-events: none;
 }
 
