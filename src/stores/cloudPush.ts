@@ -110,12 +110,28 @@ export const useCloudPushStore = defineStore("cloudPush", () => {
 
   // ===== 核心操作 =====
 
-  /** 同步設定到雲端 Worker */
-  async function syncToCloud(): Promise<void> {
+  /** 同步中的那一次：同時被叫好幾次時共用，不重複組提示詞 */
+  let syncInFlight: Promise<void> | null = null;
+
+  /** 同步設定到雲端 Worker（連同照本機主動訊息組好的整份提示詞） */
+  function syncToCloud(): Promise<void> {
+    if (!syncInFlight) {
+      syncInFlight = doSyncToCloud().finally(() => {
+        syncInFlight = null;
+      });
+    }
+    return syncInFlight;
+  }
+
+  async function doSyncToCloud(): Promise<void> {
     syncStatus.value = "syncing";
     syncError.value = null;
 
     try {
+      // 先把雲端已經發的訊息拉回聊天，這次的聊天紀錄才會包含它們
+      const snapshotAt = Date.now();
+      if (enabled.value) await pullOfflineMessages();
+
       // 延遲導入避免循環依賴
       const { useCharactersStore } = await import("@/stores/characters");
       const { useSettingsStore } = await import("@/stores/settings");
@@ -141,13 +157,26 @@ export const useCloudPushStore = defineStore("cloudPush", () => {
       // 只傳有啟用主動發訊息的角色，並帶上各自的時間設定；整個角色都歸檔了就不傳
       const { getArchivedCharacterIds } = await import("@/utils/chatArchive");
       const archivedCharacterIds = getArchivedCharacterIds(allChats);
+      const enabledCharacters = charactersStore.characters.filter(
+        (c) =>
+          c.proactiveMessageSettings?.enabled === true &&
+          !archivedCharacterIds.has(c.id),
+      );
+
+      // 照本機主動訊息組好整份請求（一個一個來，組提示詞可能會呼叫記憶檢索）
+      const { proactiveMessageService } = await import("@/services/ProactiveMessageService");
+      const cloudPrompts = new Map<string, CloudPushCharacter["cloudPrompt"]>();
+      for (const c of enabledCharacters) {
+        try {
+          const prompt = await proactiveMessageService.buildCloudPushRequest(c.id);
+          if (prompt) cloudPrompts.set(c.id, prompt);
+        } catch (e) {
+          console.warn(`[CloudPush] 組 ${c.id} 的提示詞失敗，雲端改用精簡版:`, e);
+        }
+      }
+
       const characters: CloudPushCharacter[] = await Promise.all(
-        charactersStore.characters
-          .filter(
-            (c) =>
-              c.proactiveMessageSettings?.enabled === true &&
-              !archivedCharacterIds.has(c.id),
-          )
+        enabledCharacters
           .map(async (c) => {
             const ps = c.proactiveMessageSettings!;
 
@@ -199,6 +228,7 @@ export const useCloudPushStore = defineStore("cloudPush", () => {
               unrepliedProactiveCount,
               lastUserMessageAt,
               recentSummaries: charSummaries,
+              cloudPrompt: cloudPrompts.get(c.id),
               stickerNames,
               proactiveSettings: {
                 intervalMinutes: ps.intervalMinutes,
@@ -230,6 +260,13 @@ export const useCloudPushStore = defineStore("cloudPush", () => {
         doNotDisturbStart: doNotDisturbStart.value,
         doNotDisturbEnd: doNotDisturbEnd.value,
         timezoneOffset: new Date().getTimezoneOffset(),
+        timeZone: (() => {
+          try {
+            return Intl.DateTimeFormat().resolvedOptions().timeZone || undefined;
+          } catch {
+            return undefined;
+          }
+        })(),
       };
 
       const payload: CloudPushSyncPayload = {
@@ -239,6 +276,7 @@ export const useCloudPushStore = defineStore("cloudPush", () => {
         schedule,
         pushChannels: enabledChannels.value,
         discordUserId: discordUserId.value,
+        snapshotAt,
         // 本地頁面存活時間戳：Worker 收到後若距現在 < 間隔時間，代表本地還活著，跳過雲端生成
         lastClientAliveAt: Date.now(),
       };
@@ -267,8 +305,20 @@ export const useCloudPushStore = defineStore("cloudPush", () => {
     }
   }
 
+  /** 拉取中的那一次：同時被叫（回到 App、同步前）時共用，不會同一批寫兩次 */
+  let pullInFlight: Promise<number> | null = null;
+
   /** 拉取離線訊息並寫入對應聊天 */
-  async function pullOfflineMessages(): Promise<number> {
+  function pullOfflineMessages(): Promise<number> {
+    if (!pullInFlight) {
+      pullInFlight = doPullOfflineMessages().finally(() => {
+        pullInFlight = null;
+      });
+    }
+    return pullInFlight;
+  }
+
+  async function doPullOfflineMessages(): Promise<number> {
     try {
       const messages = await CloudPushService.pullMessages();
       if (!messages.length) return 0;
@@ -283,7 +333,29 @@ export const useCloudPushStore = defineStore("cloudPush", () => {
         grouped.set(msg.characterId, arr);
       }
 
-      for (const [characterId, charMsgs] of grouped) {
+      const { proactiveMessageService } = await import("@/services/ProactiveMessageService");
+      for (const [characterId, allCharMsgs] of grouped) {
+        // 新版 Worker 附了模型原文：照本機主動訊息的流程解析寫入（心聲、表情包、噗浪、狀態、行事曆都一樣）
+        const generations = new Map<string, typeof allCharMsgs>();
+        for (const m of allCharMsgs) {
+          if (!m.generationId) continue;
+          const arr = generations.get(m.generationId) || [];
+          arr.push(m);
+          generations.set(m.generationId, arr);
+        }
+        const delivered = new Set<string>();
+        for (const parts of generations.values()) {
+          const raw = parts.find((p) => p.raw)?.raw;
+          if (!raw) continue;
+          const ok = await proactiveMessageService
+            .deliverCloudPushReply(characterId, raw, parts[0].createdAt)
+            .catch(() => false);
+          if (ok) for (const p of parts) delivered.add(p.id);
+        }
+        // 舊版 Worker 的訊息、或照流程寫不進去的，用下面的簡單解析
+        const charMsgs = allCharMsgs.filter((m) => !delivered.has(m.id));
+        if (!charMsgs.length) continue;
+
         let preferredChat = await resolvePreferredDirectChat(characterId);
         if (preferredChat?.archivedAt) {
           // 歸檔的聊天完全安靜：改投到沒歸檔的單聊，整個角色都歸檔了就丟掉
@@ -409,6 +481,63 @@ export const useCloudPushStore = defineStore("cloudPush", () => {
       console.error("[CloudPush] 拉取離線訊息失敗:", e);
       return 0;
     }
+  }
+
+  // ===== 自動更新雲端的聊天快照 =====
+  // 以前只有改設定時才同步，雲端拿的聊天紀錄可能是好幾天前的，角色就會去接很久以前的話
+
+  /** App 開著時多久檢查一次 */
+  const AUTO_REFRESH_INTERVAL_MS = 10 * 60 * 1000;
+  /** 聊天沒變也重新同步的間隔（行程、天氣、世界書這些可能變了） */
+  const STALE_SNAPSHOT_MS = 6 * 60 * 60 * 1000;
+  /** 回到 App 時拉雲端訊息的最短間隔 */
+  const PULL_ON_RESUME_GAP_MS = 30 * 1000;
+  let autoRefreshStarted = false;
+  let lastResumePullAt = 0;
+
+  /** 有開主動訊息的角色聊天有新內容（或快照太舊）才重新同步 */
+  async function refreshCloudSnapshot(): Promise<void> {
+    if (!enabled.value) return;
+    try {
+      const since = lastSyncAt.value ?? 0;
+      if (Date.now() - since < STALE_SNAPSHOT_MS) {
+        const { useCharactersStore } = await import("@/stores/characters");
+        const ids = new Set(
+          useCharactersStore()
+            .characters.filter((c) => c.proactiveMessageSettings?.enabled === true)
+            .map((c) => c.id),
+        );
+        if (ids.size === 0) return;
+        const chats = await db.getAll<any>(DB_STORES.CHATS);
+        const changed = chats.some(
+          (ch) => ids.has(ch.characterId) && !ch.isGroupChat && (ch.updatedAt || 0) > since,
+        );
+        if (!changed) return;
+      }
+      await syncToCloud();
+    } catch (e) {
+      console.warn("[CloudPush] 自動同步失敗（非致命）:", e);
+    }
+  }
+
+  /** 離開 App 時、App 開著每 10 分鐘更新雲端快照；回到 App 時把雲端發的訊息拉回來 */
+  function startAutoRefresh(): void {
+    if (autoRefreshStarted || typeof document === "undefined") return;
+    autoRefreshStarted = true;
+    document.addEventListener("visibilitychange", () => {
+      if (!enabled.value) return;
+      if (document.visibilityState === "hidden") {
+        void refreshCloudSnapshot();
+      } else if (Date.now() - lastResumePullAt > PULL_ON_RESUME_GAP_MS) {
+        lastResumePullAt = Date.now();
+        void pullOfflineMessages();
+      }
+    });
+    setInterval(() => {
+      if (enabled.value && document.visibilityState === "visible") {
+        void refreshCloudSnapshot();
+      }
+    }, AUTO_REFRESH_INTERVAL_MS);
   }
 
   /** 刷新雲端狀態 */
@@ -618,6 +747,8 @@ export const useCloudPushStore = defineStore("cloudPush", () => {
     saveSettings,
     syncToCloud,
     pullOfflineMessages,
+    refreshCloudSnapshot,
+    startAutoRefresh,
     refreshStatus,
     disableCloudPush,
     testPushNotification,

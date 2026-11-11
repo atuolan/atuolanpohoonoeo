@@ -81,6 +81,7 @@ import { cleanTTSTags } from "@/utils/ttsTagCleaner";
 import { resolveStoryTime, STORY_CLOCK_SYNC_THRESHOLD_MS } from "@/utils/fakeTime";
 import { formatCharStatusForPrompt, formatGap } from "@/utils/elapsedTime";
 import { describeImageForPrompt } from "@/utils/picNote";
+import { CLOUD_PUSH_MARKERS } from "@/utils/proactiveHistory";
 import { getMacroEngine } from "../macros/MacroEngine";
 import { resolveDeferredVariables } from "./deferredVariables";
 import { WorldInfoScanner } from "../worldinfo/WorldInfoScanner";
@@ -414,6 +415,11 @@ export interface PromptBuilderOptions {
   };
   /** 是否感知現實時間（關閉後不注入時間標籤和時間提示詞） */
   enableRealTimeAwareness?: boolean;
+  /**
+   * 雲端推送：組好的提示詞要過幾小時才送，現在時間改放記號由 Worker 生成當下填，
+   * 「距離上次回覆多久」也交給 Worker 寫
+   */
+  cloudPushTimeTokens?: boolean;
   /** 假時間覆蓋（由 useChatFakeTime 計算後傳入，替代 new Date()） */
   fakeTimeOverride?: Date;
   /** 假時間模式（用於決定是否注入 time-jump 提示詞） */
@@ -2183,16 +2189,20 @@ export class PromptBuilder {
         // 時間信息需要動態替換宏
         if (promptDef && promptDef.content) {
           const now = this.options.fakeTimeOverride ?? new Date();
+          const cloudTokens = this.options.cloudPushTimeTokens === true;
           let content = promptDef.content
-            .replace("{{currentTime}}", now.toLocaleTimeString("zh-TW"))
-            .replace("{{currentDate}}", now.toLocaleDateString("zh-TW"))
-            .replace("{{currentYear}}", now.getFullYear().toString())
+            .replace("{{currentTime}}", cloudTokens ? CLOUD_PUSH_MARKERS.time : now.toLocaleTimeString("zh-TW"))
+            .replace("{{currentDate}}", cloudTokens ? CLOUD_PUSH_MARKERS.date : now.toLocaleDateString("zh-TW"))
+            .replace("{{currentYear}}", cloudTokens ? CLOUD_PUSH_MARKERS.year : now.getFullYear().toString())
             .replace(
               "{{currentDay}}",
-              ["日", "一", "二", "三", "四", "五", "六"][now.getDay()],
+              cloudTokens
+                ? CLOUD_PUSH_MARKERS.day
+                : ["日", "一", "二", "三", "四", "五", "六"][now.getDay()],
             );
           if (identifier === "timeInfo") {
-            const gapNote = this.buildReplyGapNote(now);
+            // 雲端推送：「距離上次回覆多久」由 Worker 生成當下寫
+            const gapNote = cloudTokens ? null : this.buildReplyGapNote(now);
             if (gapNote) content += `\n\n${gapNote}`;
             if (this.options.charAwayReturnNote)
               content += `\n\n${this.options.charAwayReturnNote}`;
@@ -2310,7 +2320,9 @@ export class PromptBuilder {
         }
         if (ws.timezone?.trim()) {
           const now = this.options.fakeTimeOverride ?? new Date();
-          const localTime = formatLocalTime(now, ws.timezone.trim());
+          const localTime = this.options.cloudPushTimeTokens
+            ? CLOUD_PUSH_MARKERS.tzTime(ws.timezone.trim())
+            : formatLocalTime(now, ws.timezone.trim());
           lines.push(`本地時間：${localTime}（${ws.timezone.trim()}）`);
         }
         if (lines.length === 0) return null;

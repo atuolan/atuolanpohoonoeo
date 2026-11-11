@@ -1729,6 +1729,8 @@ async function loadAppData() {
     const { useCloudPushStore } = await import("@/stores/cloudPush");
     const cloudPushStore = useCloudPushStore();
     await cloudPushStore.loadSettings();
+    // 離開 App／開著時自動更新雲端聊天快照、回到 App 時拉雲端訊息（沒開雲端推送時什麼都不做）
+    cloudPushStore.startAutoRefresh();
     if (cloudPushStore.enabled) {
       await cloudPushStore.pullOfflineMessages();
     }

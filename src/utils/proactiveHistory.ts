@@ -1,5 +1,20 @@
 // 主動訊息：整理「user 沒回之後角色連發的訊息」，避免角色每次都照著自己上一則再寫一次
 
+/**
+ * 雲端推送：App 組好整份請求交給 Worker，會變的部分先放記號，由 Worker 生成當下填。
+ * Worker（cloudflare-worker/cloud-push/src/push-alarm.js）認同樣的字串，改了要兩邊一起改。
+ */
+export const CLOUD_PUSH_MARKERS = {
+  /** 話題引導的結尾：換成「多久沒說話、已經連發幾次（含同步後雲端發的）、別重複」的提醒 */
+  note: "⟦CP_NOTE⟧",
+  time: "⟦CP_TIME⟧",
+  date: "⟦CP_DATE⟧",
+  year: "⟦CP_YEAR⟧",
+  day: "⟦CP_DAY⟧",
+  /** 角色所在地的本地時間：⟦CP_TZTIME:Asia/Tokyo⟧ */
+  tzTime: (timeZone: string) => `⟦CP_TZTIME:${timeZone}⟧`,
+} as const;
+
 export interface ProactiveHistoryMessage {
   sender?: string;
   is_user?: boolean;

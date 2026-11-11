@@ -29,7 +29,11 @@ import type { StoredCharacter } from "@/types/character";
 import type { Lorebook } from "@/types/worldinfo";
 import { resolveSummaryReadCount, selectSummariesForPrompt } from "@/utils/summarySelection";
 import { GENERATION_ERROR_PREFIX, sliceMessagesByTurns } from "@/utils/chatScreenHelpers";
-import { buildUnrepliedProactiveNote, trimUnrepliedProactiveTail } from "@/utils/proactiveHistory";
+import {
+  buildUnrepliedProactiveNote,
+  CLOUD_PUSH_MARKERS,
+  trimUnrepliedProactiveTail,
+} from "@/utils/proactiveHistory";
 import { buildEventScanText, selectImportantEventsForPrompt } from "@/utils/importantEventSelection";
 import type { ImportantEventsLog } from "@/types/importantEvents";
 import { buildCharWalletPromptNote, storyNowForChat } from "@/services/charWallet";
@@ -54,6 +58,30 @@ export interface ProactivePromptCapture {
   messages: any[];
   api: import("@/types/settings").APISettings;
   generation: any;
+  /** 雲端推送組提示詞時才有：Worker 生成當下要用的資訊 */
+  cloudMeta?: CloudPushPromptMeta;
+}
+
+/** 雲端推送：Worker 生成當下填時間、寫「已連發幾次」提醒要用的資訊 */
+export interface CloudPushPromptMeta {
+  /** 同步當下 user 沒回之後角色已經主動傳了幾次 */
+  unrepliedCount: number;
+  /** user 最後一則訊息的時間 */
+  lastUserAt?: number;
+  /** 聊天的假時間跟現實差多少（ms）；現實時間是 0 */
+  timeOffsetMs: number;
+  /** 這個聊天有沒有開感知現實時間 */
+  timeAware: boolean;
+}
+
+/** 雲端推送：組好但還沒送的請求，交給 Worker 照原樣送出 */
+export interface CloudPushPromptRequest {
+  chatId: string;
+  format: "openai" | "anthropic";
+  url: string;
+  headers: Record<string, string>;
+  body: string;
+  meta: CloudPushPromptMeta;
 }
 
 async function collectPromptLorebooks(
@@ -499,6 +527,63 @@ export class ProactiveMessageService {
       },
     });
     return capture;
+  }
+
+  /**
+   * 雲端推送：照本機主動訊息組好整份請求（人設、世界書、提示詞預設、總結設定的輪數和總結數都一樣），
+   * 交給 Worker 在 App 關著時送出。會變的時間和「已連發幾次」先放記號，Worker 生成當下填。
+   */
+  async buildCloudPushRequest(characterId: string): Promise<CloudPushPromptRequest | null> {
+    let capture: ProactivePromptCapture | null = null;
+    await this.sendProactiveMessage(characterId, this.eventTriggeredSettings(false), {
+      skipScheduleUpdate: true,
+      cloudPushBuild: true,
+      buildOnly: (c) => {
+        capture = c;
+      },
+    });
+    const built = capture as ProactivePromptCapture | null;
+    if (!built?.cloudMeta) return null;
+    const { OpenAICompatibleClient } = await import("@/api/OpenAICompatible");
+    // 雲端直接打 API，不走 App 的 CORS 代理
+    const client = new OpenAICompatibleClient({ ...built.api, directConnect: true });
+    const pending = client.buildPendingRequest({
+      messages: built.messages,
+      settings: built.generation,
+      adjustLastMessageRole: true,
+    });
+    return {
+      chatId: built.chatId,
+      format: pending.format,
+      url: pending.url,
+      headers: pending.headers,
+      body: pending.body,
+      meta: built.cloudMeta,
+    };
+  }
+
+  /**
+   * 雲端推送：Worker 在 App 關著時生成的回覆，拉回來後照一般主動訊息的流程寫進聊天
+   * （解析 <msg>、心聲、噗浪、行事曆、未讀數都一樣），不再送 AI。寫進去了才回 true。
+   */
+  async deliverCloudPushReply(characterId: string, aiContent: string, at: number): Promise<boolean> {
+    if (!aiContent.trim()) return false;
+    const { db, DB_STORES } = await import("@/db/database");
+    const { getMessageCount } = await import("@/storage/chatMessageStorage");
+    const chats = (await db.getAll<any>(DB_STORES.CHATS))
+      .filter((c) => c.characterId === characterId && !c.isGroupChat && !c.archivedAt)
+      .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+    const chatId = chats[0]?.id;
+    if (!chatId) return false;
+    const beforeCount = await getMessageCount(chatId).catch(() => 0);
+    await this.sendProactiveMessage(characterId, this.eventTriggeredSettings(false), {
+      skipScheduleUpdate: true,
+      targetChatId: chatId,
+      precomputedAiContent: aiContent,
+      messageTime: at,
+    });
+    const afterCount = await getMessageCount(chatId).catch(() => beforeCount);
+    return afterCount > beforeCount;
   }
 
   /**
@@ -1103,6 +1188,8 @@ export class ProactiveMessageService {
       precomputedAiContent?: string;
       /** 訊息時間（預設現在）；看螢幕的回覆用擴充元件生成當下的時間 */
       messageTime?: number;
+      /** 雲端推送組提示詞：時間和「已連發幾次」放記號，由 Worker 生成當下填（搭配 buildOnly） */
+      cloudPushBuild?: boolean;
     },
   ) {
     // 標記該角色正在處理中，防止 setInterval 重複觸發
@@ -1238,17 +1325,23 @@ export class ProactiveMessageService {
       }
 
       // 添加話題引導訊息（臨時，用於生成後會移除）
+      // 雲端推送：結尾放記號，Worker 生成當下換成「已連發幾次、別重複」的提醒；
+      // 不帶時間（createdAt 0），不然會被標上同步當下的時間
+      const cloudPushBuild = options?.cloudPushBuild === true;
+      const topicCreatedAt = cloudPushBuild ? 0 : Date.now();
       const topicMessage = {
         id: crypto.randomUUID(),
         sender: "user" as const,
         name: "System",
-        content: unrepliedNote
-          ? `${topicInstruction}\n<request>${unrepliedNote}</request>`
-          : topicInstruction,
+        content: cloudPushBuild
+          ? `${topicInstruction}${CLOUD_PUSH_MARKERS.note}`
+          : unrepliedNote
+            ? `${topicInstruction}\n<request>${unrepliedNote}</request>`
+            : topicInstruction,
         is_user: true,
         status: "sent" as const,
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
+        createdAt: topicCreatedAt,
+        updatedAt: topicCreatedAt,
       };
 
       // 暫時把 topicMessage 加入記憶體列表以便構建 prompt（不寫入 IDB）
@@ -1516,6 +1609,7 @@ export class ProactiveMessageService {
         chatLocalPrompts: proactiveOverrides.chatLocalPrompts,
         // 從聊天記錄載入感知現實時間設定（默認開啟）
         enableRealTimeAwareness: chat.enableRealTimeAwareness !== false,
+        cloudPushTimeTokens: cloudPushBuild,
         fakeTimeOverride:
           (chat.fakeTimeMode ?? "real") !== "real"
             ? computeChatNow(chat)
@@ -1567,6 +1661,17 @@ export class ProactiveMessageService {
           messages: promptData.messages,
           api: taskConfig.api,
           generation: chatSettings,
+          cloudMeta: cloudPushBuild
+            ? {
+                unrepliedCount: unreplied.unrepliedBatches,
+                lastUserAt: unreplied.lastUserAt,
+                timeOffsetMs:
+                  (chat.fakeTimeMode ?? "real") !== "real"
+                    ? computeChatNow(chat).getTime() - Date.now()
+                    : 0,
+                timeAware: chat.enableRealTimeAwareness !== false,
+              }
+            : undefined,
         });
         return;
       }
