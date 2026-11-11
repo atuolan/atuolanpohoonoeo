@@ -4,6 +4,15 @@
  */
 
 import { sendDM } from "./discord.js";
+import {
+  PROMPT_CHUNK_CHARS,
+  finalizeCloudPromptBody,
+  stripThinking,
+  textOfContent,
+  toVisibleText,
+  unrepliedNoteText,
+  visibleHistoryText,
+} from "./cloud-prompt.js";
 import { buildPushPayload } from "@block65/webcrypto-web-push";
 
 // Re-export VAPID public key so the main worker can serve it to clients
@@ -66,9 +75,19 @@ export class PushAlarmDO {
       return json({ ok: true, nextAlarm: null, nextAlarmReadable: null, disabled: true });
     }
 
-    // 儲存設定（新的聊天紀錄已經包含之前雲端發的訊息，清掉「同步後發過的」）
+    // App 組好的整份請求分開存（Durable Object 每個值上限 128 KiB），config 裡不留
+    await this.storeCloudPrompts(payload.characters);
+    for (const c of payload.characters) delete c.cloudPrompt;
+
+    // 儲存設定
     await this.state.storage.put("config", payload);
-    await this.state.storage.delete("sentSinceSync");
+    // 「同步後雲端發過的」：App 同步前會先把它們拉回聊天，這次的紀錄已經有了；
+    // 只留快照之後才發的（紀錄裡沒有）
+    const snapshotAt = payload.snapshotAt || Date.now();
+    const keptSent = ((await this.state.storage.get("sentSinceSync")) || []).filter(
+      (s) => (s.createdAt || 0) > snapshotAt,
+    );
+    await this.state.storage.put("sentSinceSync", keptSent);
     await this.state.storage.put("enabled", true);
     await this.state.storage.put("errorCount", 0);
     await this.state.storage.put("lastCharacterIndex", -1);
@@ -421,9 +440,118 @@ export class PushAlarmDO {
     await this.state.storage.setAlarm(nextMs);
   }
 
+  // ─── App 組好的整份請求 ───────────────────────────────────────
+
+  /** 每個角色的整份請求切塊存（Durable Object 每個值上限 128 KiB）；舊的全部換掉 */
+  async storeCloudPrompts(characters) {
+    const old = await this.state.storage.list({ prefix: "cp:" });
+    const oldKeys = [...old.keys()];
+    for (let i = 0; i < oldKeys.length; i += 128) {
+      await this.state.storage.delete(oldKeys.slice(i, i + 128));
+    }
+
+    const entries = {};
+    for (const c of characters || []) {
+      const p = c.cloudPrompt;
+      if (!p || typeof p.body !== "string" || !p.url) continue;
+      const chunks = [];
+      for (let i = 0; i < p.body.length; i += PROMPT_CHUNK_CHARS) {
+        chunks.push(p.body.slice(i, i + PROMPT_CHUNK_CHARS));
+      }
+      entries[`cp:${c.id}:meta`] = {
+        format: p.format === "anthropic" ? "anthropic" : "openai",
+        url: p.url,
+        headers: p.headers || {},
+        meta: p.meta || {},
+        chunks: chunks.length,
+        savedAt: Date.now(),
+      };
+      chunks.forEach((chunk, i) => {
+        entries[`cp:${c.id}:${i}`] = chunk;
+      });
+    }
+    const keys = Object.keys(entries);
+    for (let i = 0; i < keys.length; i += 128) {
+      const batch = {};
+      for (const k of keys.slice(i, i + 128)) batch[k] = entries[k];
+      await this.state.storage.put(batch);
+    }
+  }
+
+  async loadCloudPrompt(characterId) {
+    const info = await this.state.storage.get(`cp:${characterId}:meta`);
+    if (!info || !info.chunks) return null;
+    let body = "";
+    for (let start = 0; start < info.chunks; start += 128) {
+      const keys = [];
+      for (let i = start; i < Math.min(info.chunks, start + 128); i++) keys.push(`cp:${characterId}:${i}`);
+      const got = await this.state.storage.get(keys);
+      for (const k of keys) {
+        const part = got.get(k);
+        if (typeof part !== "string") return null;
+        body += part;
+      }
+    }
+    return { ...info, body };
+  }
+
   // ─── AI 呼叫 ─────────────────────────────────────────────────
 
+  /** 有 App 組好的整份請求就照原樣送（填上生成當下的時間、接上同步後自己發過的）；沒有才自己組精簡版 */
   async callAI(config, character) {
+    let request = null;
+    try {
+      const prompt = await this.loadCloudPrompt(character.id);
+      if (prompt) request = await this.prepareCloudPromptRequest(config, character, prompt);
+    } catch (e) {
+      console.error("[PushAlarmDO] 整份提示詞處理失敗，改用精簡版:", e);
+      request = null;
+    }
+    if (!request) return this.callAISimple(config, character);
+
+    const res = await fetch(request.url, {
+      method: "POST",
+      headers: request.headers,
+      body: request.body,
+      signal: AbortSignal.timeout(240000),
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`AI API 錯誤 (${res.status}): ${text.slice(0, 300)}`);
+    }
+    const data = await res.json();
+    const content =
+      request.format === "anthropic"
+        ? (data.content || [])
+            .filter((b) => b && b.type === "text")
+            .map((b) => b.text)
+            .join("")
+        : textOfContent(data.choices?.[0]?.message?.content);
+    if (!content || !content.trim()) {
+      throw new Error("AI 回應為空");
+    }
+    return content.trim();
+  }
+
+  async prepareCloudPromptRequest(config, character, prompt) {
+    const meta = prompt.meta || {};
+    const sent = ((await this.state.storage.get("sentSinceSync")) || []).filter(
+      (s) => s.characterId === character.id,
+    );
+    const body = finalizeCloudPromptBody(prompt.body, {
+      nowMs: Date.now(),
+      timeOffsetMs: meta.timeOffsetMs,
+      schedule: config.schedule,
+      userName: config.userName,
+      unrepliedCount: meta.unrepliedCount,
+      lastUserAt: meta.timeAware === false ? undefined : meta.lastUserAt,
+      sentTexts: sent.slice(-2).map((s) => visibleHistoryText(s.content)),
+    });
+    return { url: prompt.url, headers: prompt.headers, format: prompt.format, body };
+  }
+
+  /** 舊版 App 沒傳整份請求時：自己組精簡版提示詞 */
+  async callAISimple(config, character) {
     const { apiSettings, userName } = config;
     const endpoint = apiSettings.endpoint.replace(/\/+$/, "");
     const url = `${endpoint}/chat/completions`;
@@ -494,13 +622,15 @@ export class PushAlarmDO {
       (s) => s.characterId === character.id,
     );
     for (const s of sentSinceSync.slice(-2)) {
-      historyMessages.push({ role: "assistant", content: s.content });
+      const text = visibleHistoryText(s.content);
+      if (text) historyMessages.push({ role: "assistant", content: text });
     }
 
     const unrepliedCount = (character.unrepliedProactiveCount || 0) + sentSinceSync.length;
+    const noteText = unrepliedNoteText(userName, unrepliedCount, character.lastUserMessageAt);
     const triggerPrompt =
       `[系統指令] 請以 ${character.name} 的身份，根據以上對話歷史，主動向 ${userName} 發起一段自然的對話。像是你自己想到要說的話，不要提及這是系統要求的。如果是深夜時段，可以假設用戶已經入睡，但你想分享事情。` +
-      buildUnrepliedNote(userName, unrepliedCount, character.lastUserMessageAt);
+      (noteText ? `\n${noteText}` : "");
 
     const body = {
       model: apiSettings.model,
@@ -550,12 +680,16 @@ export class PushAlarmDO {
   async appendMessage(character, content) {
     const messages = (await this.state.storage.get("pendingMessages")) || [];
 
-    // 將 <msg> 標籤拆成多條獨立訊息（前端每條 = 一個氣泡）
-    const msgParts = content.match(/<msg>([\s\S]*?)<\/msg>/g);
+    // 將 <msg> 標籤拆成多條獨立訊息（前端每條 = 一個氣泡）；舊版 App 照這些寫入
+    const cleaned = stripThinking(content);
+    const msgParts = cleaned.match(/<msg\b[^>]*>([\s\S]*?)<\/msg>/g);
     const parts = msgParts
-      ? msgParts.map((m) => m.replace(/<\/?msg>/g, "").trim()).filter(Boolean)
-      : [content.replace(/<\/?msg>/g, "").trim()]; // 沒有 <msg> 標籤就整段當一條
+      ? msgParts.map((m) => m.replace(/<\/?msg\b[^>]*>/g, "").trim()).filter(Boolean)
+      : [cleaned.replace(/<\/?msg\b[^>]*>/g, "").trim()]; // 沒有 <msg> 標籤就整段當一條
+    if (parts.length === 0) parts.push(cleaned.trim() || content.trim());
 
+    // 新版 App 用第一則附的模型原文照本機流程解析（心聲、噗浪、狀態、行事曆都一樣）
+    const generationId = crypto.randomUUID();
     const now = Date.now();
     for (let i = 0; i < parts.length; i++) {
       messages.push({
@@ -564,6 +698,8 @@ export class PushAlarmDO {
         characterName: character.name,
         content: parts[i],
         createdAt: now + i, // 微小時間差確保排序正確
+        generationId,
+        ...(i === 0 ? { raw: content } : {}),
       });
     }
 
@@ -837,39 +973,4 @@ function json(data, status = 200) {
     status,
     headers: { "Content-Type": "application/json" },
   });
-}
-
-// ─── 主動訊息：user 沒回時別重複 ─────────────────────────────
-
-function formatElapsed(ms) {
-  const minutes = Math.max(1, Math.round(ms / 60000));
-  if (minutes < 60) return `${minutes} 分鐘`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours} 小時`;
-  return `${Math.floor(hours / 24)} 天`;
-}
-
-function buildUnrepliedNote(userName, count, lastUserAt) {
-  if (!count || count <= 0) return "";
-  const now = Date.now();
-  const since =
-    typeof lastUserAt === "number" && lastUserAt < now
-      ? `${userName} 最後一次傳訊息是 ${formatElapsed(now - lastUserAt)}前，`
-      : "";
-  return (
-    `\n【注意：${userName} 還沒回】${since}之後你已經主動傳了 ${count} 次訊息，${userName} 都還沒回，可能在忙或睡了。` +
-    `這次不要重複你前幾次講過的內容、開場和句型——同樣的天氣、同樣的問候、同樣的事情、同樣的晚安都算重複。` +
-    `想想這段時間你身上有沒有新的事，或換個話題、換個角度；也可以只傳一兩句短的。` +
-    `要接話的話，以 ${userName} 最後說的話為準，不要去接很久以前的話題。`
-  );
-}
-
-/** 模型原文 → 通知裡顯示的字（拿掉 <msg> 標籤、ˇ心聲ˇ、~(舊格式心聲)~） */
-function toVisibleText(content) {
-  const parts = content.match(/<msg>([\s\S]*?)<\/msg>/g);
-  const texts = parts ? parts.map((m) => m.replace(/<\/?msg>/g, "")) : [content];
-  return texts
-    .map((t) => t.replace(/\s*ˇ[^ˇ]+ˇ/g, "").replace(/\s*~\([^)]+\)~/g, "").trim())
-    .filter(Boolean)
-    .join("\n");
 }

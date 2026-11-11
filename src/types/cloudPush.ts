@@ -17,6 +17,11 @@ export interface CloudPushCharacter {
   unrepliedProactiveCount?: number;
   /** user 最後一則訊息的時間（ms） */
   lastUserMessageAt?: number;
+  /**
+   * 照本機主動訊息組好的整份請求（人設、世界書、提示詞預設、總結設定的輪數和總結數）。
+   * 有這個 Worker 就照原樣送；沒有（舊版 App、組失敗）才用下面的精簡資料自己組。
+   */
+  cloudPrompt?: import("@/services/ProactiveMessageService").CloudPushPromptRequest;
   /** 最近總結（最多 5 條） */
   recentSummaries?: string[];
   /** 可用表情包名稱列表 */
@@ -50,6 +55,8 @@ export interface CloudPushSchedule {
   doNotDisturbEnd: string;
   /** 用戶時區偏移（分鐘），用於伺服器端 DND 計算 */
   timezoneOffset: number;
+  /** 用戶時區名稱（如 Asia/Taipei），Worker 填「現在時間」用；沒有就用 timezoneOffset */
+  timeZone?: string;
 }
 
 // ===== POST /push/sync 請求 =====
@@ -60,6 +67,8 @@ export interface CloudPushSyncPayload {
   schedule: CloudPushSchedule;
   pushChannels: ("discord" | "webpush")[];
   discordUserId: string;
+  /** 這次同步的聊天紀錄截到什麼時候（ms）：之後雲端才發的訊息不在紀錄裡，Worker 要自己記著 */
+  snapshotAt?: number;
   /** 本地頁面存活時間戳（ms）。Worker 收到後若距現在 < 間隔時間，代表本地還活著，跳過雲端生成 */
   lastClientAliveAt?: number;
   pushSubscription?: PushSubscriptionJSON | null;
@@ -90,6 +99,10 @@ export interface CloudPushMessage {
   characterName: string;
   content: string;
   createdAt: number;
+  /** 同一次生成拆出來的氣泡共用（新版 Worker 才有） */
+  generationId?: string;
+  /** 模型原文，只放在同一次生成的第一則：App 用它照本機流程解析（新版 Worker 才有） */
+  raw?: string;
 }
 
 // ===== GET /push/messages 回應 =====
