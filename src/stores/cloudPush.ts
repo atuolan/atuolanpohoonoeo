@@ -24,6 +24,8 @@ import type {
 import { defineStore } from "pinia";
 import { computed, ref } from "vue";
 import { selectSummariesForPrompt } from "@/utils/summarySelection";
+import { GENERATION_ERROR_PREFIX } from "@/utils/chatScreenHelpers";
+import { trimUnrepliedProactiveTail } from "@/utils/proactiveHistory";
 
 const SETTINGS_KEY = "cloud-push-settings";
 
@@ -155,13 +157,23 @@ export const useCloudPushStore = defineStore("cloudPush", () => {
               .sort((a: any, b: any) => (b.updatedAt || 0) - (a.updatedAt || 0))[0];
 
             let recentMessages: Array<{ role: "user" | "assistant"; content: string }> = [];
+            let unrepliedProactiveCount = 0;
+            let lastUserMessageAt: number | undefined;
             if (charChat) {
               // v24：從 chatMessages 表載入訊息（不再用 chat.messages）
               const allMsgs = await loadMessages(charChat.id);
-              // 取最後 30 條（15 輪 × 2），過濾掉 system 訊息
-              const msgs = allMsgs
-                .filter((m: any) => m.sender === "user" || m.sender === "assistant")
-                .slice(-30);
+              // user 沒回之後連發的主動訊息只留最近幾次，避免雲端照著再寫一次
+              const unreplied = trimUnrepliedProactiveTail(
+                allMsgs.filter(
+                  (m: any) =>
+                    (m.sender === "user" || m.sender === "assistant") &&
+                    !(typeof m.content === "string" && m.content.startsWith(GENERATION_ERROR_PREFIX)),
+                ),
+              );
+              unrepliedProactiveCount = unreplied.unrepliedBatches;
+              lastUserMessageAt = unreplied.lastUserAt;
+              // 取最後 30 條（15 輪 × 2）
+              const msgs = unreplied.messages.slice(-30);
               recentMessages = msgs.map((m: any) => ({
                 role: m.sender === "user" ? ("user" as const) : ("assistant" as const),
                 content: ((m.content || "") as string).slice(0, 500), // 截斷過長訊息
@@ -184,6 +196,8 @@ export const useCloudPushStore = defineStore("cloudPush", () => {
               systemPrompt: c.data.system_prompt || "",
               avatar: null, // 不傳 base64 頭像到雲端
               recentMessages,
+              unrepliedProactiveCount,
+              lastUserMessageAt,
               recentSummaries: charSummaries,
               stickerNames,
               proactiveSettings: {

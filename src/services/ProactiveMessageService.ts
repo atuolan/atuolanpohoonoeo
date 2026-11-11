@@ -28,6 +28,8 @@ import type { GroupMember, MultiCharMember } from "@/types/chat";
 import type { StoredCharacter } from "@/types/character";
 import type { Lorebook } from "@/types/worldinfo";
 import { resolveSummaryReadCount, selectSummariesForPrompt } from "@/utils/summarySelection";
+import { GENERATION_ERROR_PREFIX, sliceMessagesByTurns } from "@/utils/chatScreenHelpers";
+import { buildUnrepliedProactiveNote, trimUnrepliedProactiveTail } from "@/utils/proactiveHistory";
 import { buildEventScanText, selectImportantEventsForPrompt } from "@/utils/importantEventSelection";
 import type { ImportantEventsLog } from "@/types/importantEvents";
 import { buildCharWalletPromptNote, storyNowForChat } from "@/services/charWallet";
@@ -1207,22 +1209,50 @@ export class ProactiveMessageService {
         options?.customTopicInstruction ||
         `<request>【話題引導】請主動向用戶發起對話。根據你們之前的對話歷史（如果有的話），用自然、符合你性格的方式提起一個話題，就像是你自己想到的一樣。如果沒有對話歷史，可以問候用戶或分享你最近的想法，如果在深夜可以預設用戶已經入睡了，但你想分享事情。如果此刻比起直接傳訊息，更像是會發一則噗浪的心情（自言自語、分享日常、想讓用戶看到卻不想直說），也可以順手發噗，甚至只發噗不傳訊息。</request>`;
 
+      // v24：從 chatMessages 表載入訊息（不再用 chat.messages）
+      const existingMessages = await loadMessages(chat.id);
+
+      // user 沒回之後角色連發的主動訊息：只留最近幾次（不然模型會照著自己上一則再寫一次，
+      // user 真正說過的話也會被擠出視窗），並提醒這次別重複。生成失敗的錯誤氣泡不送。
+      const unreplied = trimUnrepliedProactiveTail(
+        existingMessages.filter(
+          (m) =>
+            !(
+              m.sender === "assistant" &&
+              typeof m.content === "string" &&
+              m.content.startsWith(GENERATION_ERROR_PREFIX)
+            ),
+        ),
+      );
+      const unrepliedNote = buildUnrepliedProactiveNote({
+        userName:
+          (await import("@/stores/user")).useUserStore().currentPersona?.name || "User",
+        unrepliedBatches: unreplied.unrepliedBatches,
+        droppedCount: unreplied.droppedCount,
+        lastUserAt: unreplied.lastUserAt,
+      });
+      if (unreplied.unrepliedBatches > 0) {
+        console.log(
+          `[ProactiveMessage] 沒回的主動訊息 ${unreplied.unrepliedBatches} 次，省略 ${unreplied.droppedCount} 則`,
+        );
+      }
+
       // 添加話題引導訊息（臨時，用於生成後會移除）
       const topicMessage = {
         id: crypto.randomUUID(),
         sender: "user" as const,
         name: "System",
-        content: topicInstruction,
+        content: unrepliedNote
+          ? `${topicInstruction}\n<request>${unrepliedNote}</request>`
+          : topicInstruction,
         is_user: true,
         status: "sent" as const,
         createdAt: Date.now(),
         updatedAt: Date.now(),
       };
 
-      // v24：從 chatMessages 表載入訊息（不再用 chat.messages）
-      const existingMessages = await loadMessages(chat.id);
       // 暫時把 topicMessage 加入記憶體列表以便構建 prompt（不寫入 IDB）
-      const messagesWithTopic = [...existingMessages, topicMessage];
+      const messagesWithTopic = [...unreplied.messages, topicMessage];
 
       // 觸發 AI 生成回應
       const { useSettingsStore } = await import("@/stores/settings");
@@ -1296,29 +1326,13 @@ export class ProactiveMessageService {
       let messagesToUse: typeof allMessages;
 
       if (actualMode === "turn") {
-        // 按輪次讀取：每輪 = 用戶發言 + AI 回覆
-        let turnCount = 0;
-        let startIndex = allMessages.length;
-        for (let i = allMessages.length - 1; i >= 0; i--) {
-          if (allMessages[i].sender === "assistant") {
-            turnCount++;
-            if (turnCount >= actualCount) {
-              // 往前找到這輪的 user 消息
-              for (let j = i - 1; j >= 0; j--) {
-                if (allMessages[j].sender === "user") {
-                  startIndex = j;
-                  break;
-                }
-              }
-              if (startIndex === allMessages.length) {
-                startIndex = i;
-              }
-              break;
-            }
-          }
-          startIndex = i;
-        }
-        messagesToUse = allMessages.slice(startIndex);
+        // 按輪次讀取，跟聊天頁同一套規則：一輪 = user 發言 + 角色整段回覆（連著的氣泡只算一輪）。
+        // 以前每個角色氣泡各算一輪，主動訊息一次三四個氣泡，幾次沒回就把 user 的話全擠出去了。
+        const wrapped = allMessages.map((m) => ({
+          role: m.sender === "user" ? "user" : m.sender === "assistant" ? "ai" : "system",
+          m,
+        }));
+        messagesToUse = sliceMessagesByTurns(wrapped, actualCount).map((w) => w.m);
       } else {
         // 按消息數讀取
         messagesToUse = allMessages.slice(-actualCount);
