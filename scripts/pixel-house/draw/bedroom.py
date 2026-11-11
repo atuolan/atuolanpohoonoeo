@@ -4,34 +4,80 @@ from kit import Cv, Room, striped_wall, wood_floor, wood_wainscot
 from living import rug
 
 
+CAT_FACE = [
+    ".W.........W.",
+    "WWW.......WWW",
+    "WWWWWWWWWWWWW",
+    "WWWWWWWWWWWWW",
+    "WWkWWWWWWWkWW",
+    "WpWWWkWkWWWpW",
+    "WWWWWWkWWWWWW",
+    "sWWWWWWWWWWWs",
+    ".sssssssssss.",
+]
+CAT_PAL = {"W": "wh", "k": "ol", "p": "pk1", "s": "wh3"}
+
+
 def bed():
-    """側面的床：左邊高床頭、枕頭，綠格子被子，下面兩個抽屜"""
-    cv = Cv(62, 40)
-    # 床架
-    cv.rect(4, 27, 54, 10, "w1").h_(4, 27, 54, "w3").h_(4, 36, 54, "w2")
-    for x in (8, 33):
-        cv.rect(x, 29, 22, 6, "w3").h_(x, 29, 22, "w5").h_(x, 34, 22, "w1")
-        cv.rect(x + 9, 31, 4, 1, "w4")
-        cv.h_(x - 1, 28, 24, "w4").h_(x - 1, 35, 24, "w4").v_(x - 1, 29, 6, "w4").v_(x + 22, 29, 6, "w4")
-    # 床墊
-    cv.rect(5, 20, 52, 7, "wh").h_(5, 26, 52, "wh3").h_(5, 25, 52, "wh2")
-    # 被子（格子），蓋到床墊一半
-    cv.rrect(19, 13, 38, 13, "g1", 1)
-    for x in range(19, 57, 6):
-        cv.rect(x, 14, 3, 11, "g3")
-    for y in (17, 21):
-        cv.h_(20, y, 36, "g2")
-    cv.h_(20, 13, 36, "#c4dcb0").h_(20, 25, 36, "g4")
-    cv.rect(16, 13, 4, 5, "wh").h_(16, 17, 4, "wh3")
+    """床（從床尾看過去）：床頭板、兩顆枕頭（貓貓枕頭和恐龍娃娃）、白床單、綠格子被、兩個抽屜"""
+    cv = Cv(62, 58)
+    # 床頭板
+    cv.rrect(3, 2, 56, 20, "w1", 2)
+    cv.h_(5, 2, 52, "w5").h_(4, 3, 54, "w3")
+    for x in (7, 32):
+        cv.rect(x, 6, 23, 10, "w3").h_(x, 6, 23, "w2").v_(x, 6, 10, "w2").h_(x + 1, 15, 22, "w5")
+    # 兩根床柱
+    for x in (1, 57):
+        cv.rect(x, 14, 4, 42, "w1").v_(x, 14, 42, "w3").v_(x + 3, 15, 41, "w2")
     # 枕頭
-    cv.rrect(6, 12, 12, 8, "wh", 2).h_(8, 19, 8, "wh3").h_(8, 12, 8, "#ffffff")
-    # 床頭、床尾
-    cv.rrect(1, 1, 5, 36, "w1", 1).v_(1, 2, 34, "w3").v_(5, 2, 35, "w2").h_(2, 1, 3, "w5")
-    cv.rrect(57, 15, 4, 22, "w1", 1).v_(57, 16, 20, "w3").v_(60, 16, 21, "w2")
-    cv.rect(2, 37, 3, 2, "w4").rect(57, 37, 3, 2, "w4")
-    out = cv.outline()
-    out.h_(19, 12, 38, "ol").v_(18, 13, 5, "ol")
-    return out
+    cv.rrect(5, 13, 25, 13, "wh", 2).h_(7, 25, 21, "wh3").h_(7, 13, 21, "#ffffff")
+    cv.rrect(32, 13, 25, 13, "wh", 2).h_(34, 25, 21, "wh3").h_(34, 13, 21, "#ffffff")
+    cv.v_(30, 15, 10, "ol2").v_(31, 15, 10, "ol2")
+    # 白床單的反摺
+    cv.rect(5, 26, 52, 5, "wh").h_(5, 26, 52, "#ffffff").h_(5, 30, 52, "wh3")
+    # 綠格子被
+    cv.rect(5, 31, 52, 15, "g1")
+    for j, y in enumerate(range(31, 46, 5)):
+        for i, x in enumerate(range(5, 57, 4)):
+            if (i + j) % 2 == 0:
+                cv.rect(x, y, 4, 5, "g3")
+            elif j % 2 == 1 and i % 2 == 0:
+                cv.rect(x, y, 4, 5, "g2")
+    cv.h_(5, 45, 52, "g4").h_(5, 31, 52, "#c4dcb0")
+    # 床架和抽屜
+    cv.rect(5, 46, 52, 9, "w1").h_(5, 46, 52, "w4").h_(5, 54, 52, "w2")
+    for x in (7, 32):
+        cv.rect(x, 48, 23, 5, "w3").h_(x, 48, 23, "w5").h_(x, 52, 23, "w1")
+        cv.rect(x + 9, 50, 5, 1, "w4")
+        cv.h_(x, 47, 23, "w4").h_(x, 53, 23, "w4").v_(x - 1, 48, 5, "w4").v_(x + 23, 48, 5, "w4")
+    cv.rect(2, 56, 3, 1, "w4").rect(57, 56, 3, 1, "w4")
+    cv.outline()
+    # 貓貓枕頭（左）和恐龍娃娃（右）畫在枕頭上
+    cat = Cv(15, 11)
+    cat.art(1, 1, CAT_FACE, CAT_PAL)
+    cv.paste(cat.outline(), 10, 12)
+    cv.paste(dino(), 38, 11)
+    return cv
+
+
+def dino():
+    """綠色的恐龍娃娃"""
+    cv = Cv(15, 14)
+    rows = [
+        "..GGGG.......",
+        ".GGkGGG......",
+        ".GGGGGGd.....",
+        ".GGGGGGGd....",
+        "...GGGGGGd...",
+        "..LGGGGGGGd..",
+        ".LLGGGGGGGG..",
+        ".LLGGGGGGGGGd",
+        "..LGGGGGGGGGG",
+        "..GG.GG..GGG.",
+        "..GG.GG......",
+    ]
+    cv.art(1, 1, rows, {"G": "leaf1", "L": "leaf3", "d": "leaf2", "k": "ol"})
+    return cv.outline()
 
 
 def bookshelf(w=30, h=71):
@@ -186,29 +232,25 @@ def low_cabinet(w=43, h=15):
 
 
 def beanbag():
-    cv = Cv(26, 20)
-    cv.rrect(1, 8, 24, 11, "g1", 3)
-    cv.rrect(5, 2, 16, 10, "g1", 3)
-    cv.rect(3, 6, 20, 4, "g1")
-    cv.h_(8, 2, 10, "g3").h_(6, 3, 5, "g3")
-    cv.h_(4, 18, 18, "g2").h_(2, 16, 3, "g2").h_(21, 16, 3, "g2")
-    cv.line(7, 12, 12, 15, "g2").line(18, 12, 14, 15, "g2")
+    """綠色的懶骨頭：後面鼓起來，前面攤開"""
+    cv = Cv(30, 25)
+    cv.ell(1, 9, 28, 15, "g1")
+    cv.ell(7, 1, 21, 20, "g1")
+    cv.rect(4, 14, 22, 8, "g1")
+    # 亮面和皺褶
+    cv.ell(12, 2, 11, 5, "g3")
+    cv.line(4, 13, 8, 11, "g3").line(9, 10, 12, 9, "g3")
+    cv.line(24, 8, 26, 14, "g2").line(21, 5, 24, 9, "g2")
+    cv.ell(3, 19, 24, 5, "g2")
+    cv.rect(5, 18, 20, 3, "g1")
+    cv.h_(6, 23, 18, "g4")
     return cv.outline()
 
 
-def cat(c="#f0a45a", c2="#d98840"):
-    """趴著睡的橘貓"""
-    cv = Cv(15, 9)
-    rows = [
-        ".O...O.......",
-        "OOO.OOO......",
-        "OOOOOOOOOOOO.",
-        "OkOOOkOOOoOOO",
-        "OOOpOOOOOOOoO",
-        "OWWWWWOOOOOoO",
-        ".OOOOOOOOOOO.",
-    ]
-    cv.art(1, 1, rows, {"O": c, "o": c2, "k": "ol", "p": "pk2", "W": "wh"})
+def cat():
+    """白色的貓貓抱枕"""
+    cv = Cv(15, 11)
+    cv.art(1, 1, CAT_FACE, CAT_PAL)
     return cv.outline()
 
 
@@ -248,13 +290,13 @@ def build():
     # 地上
     r.add("rug", "地毯", rug(92, 26, "#eef3e4", "#cfdcbf", "#b4c8a2"), 18, bottom=272)
     r.add("bed", "床", bed(), 5, bottom=240)
-    r.add("phone", "他的手機", phone(), 48, bottom=224)
+    r.add("phone", "他的手機", phone(), 49, bottom=229)
     r.add("floor-box", "地上的小箱子", toolbox(), 3, bottom=250)
     r.add("tv-cabinet", "電視櫃", low_cabinet(), 80, bottom=243, at=(80, 228, 43, 15))
     r.add("tv", "電視", C.tv(28, 20, on=True), 89, bottom=228, at=(89, 208, 28, 20))
     r.add("tv-plant", "電視櫃上的盆栽", C.small_plant("small", "wh", "wh2", 5, 4), 80, bottom=229)
-    r.add("beanbag", "懶骨頭", beanbag(), 98, bottom=270)
-    r.add("cat", "貓", cat(), 104, bottom=254)
+    r.add("beanbag", "懶骨頭", beanbag(), 97, bottom=272)
+    r.add("cat", "貓貓抱枕", cat(), 103, bottom=268)
     return r
 
 
