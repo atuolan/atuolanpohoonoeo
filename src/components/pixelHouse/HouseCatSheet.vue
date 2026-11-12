@@ -45,15 +45,15 @@ const props = defineProps<{
   busy: boolean;
 }>();
 const emit = defineEmits<{
-  (e: "close"): void;
-  (e: "adopt", name: string, color: CatColor): void;
-  (e: "care", id: string, kind: CatCare): void;
-  (e: "rename", id: string, name: string): void;
-  (e: "buy", id: SupplyId): void;
-  (e: "insurance"): void;
-  (e: "checkup", id: string): void;
-  (e: "vet", id: string): void;
-  (e: "train", id: string): void;
+  close: [];
+  adopt: [name: string, color: CatColor];
+  care: [id: string, kind: CatCare];
+  rename: [id: string, name: string];
+  buy: [id: SupplyId];
+  insurance: [];
+  checkup: [id: string];
+  vet: [id: string];
+  train: [id: string];
 }>();
 
 const tab = ref<string>("adopt");

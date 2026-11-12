@@ -59,6 +59,8 @@ export const VET_SERIOUS = 5_000;
 export const VET_SERIOUS_AFTER = 2 * DAY;
 /** 帶去醫院之後多久回家 */
 export const VET_STAY_MS = 30 * 60_000;
+/** 看完醫生回家後這段時間不會再病 */
+export const VET_RECOVER_MS = 7 * DAY;
 /** 從醫院回來心情掉一點 */
 export const VET_MOOD = -10;
 
@@ -69,15 +71,15 @@ export function vetCost(cat: CatState, now: number, insured: boolean): number {
 }
 
 /**
- * 這一小時生病的機率：照顧不好才會病（看得出原因、可以預防），健康檢查有效時低很多。
- * 好好照顧又有做健康檢查：大約一年病一次；餓著、髒著放好幾天：幾天內就會病。
+ * 這一小時生病的機率：照顧不好病得更常（看得出原因、可以預防），健康檢查有效時低很多。
+ * 好好照顧：大約一個月病一次；再做健康檢查：大約三個月一次；餓著、髒著放好幾天：一兩天內就會病。
  */
 export function sickRiskPerHour(
   levels: { food: number; clean: number },
   home: { messes: number; boxFull: boolean },
   checkup: boolean,
 ): number {
-  let risk = 0.0004;
+  let risk = 0.0014;
   if (levels.food < 20) risk += 0.006;
   if (levels.clean < 20) risk += 0.004;
   risk += home.messes * 0.001;
@@ -292,7 +294,7 @@ export function simulatePets(home: PetHome, to: number, opts: { live: boolean },
         }
         cat = h.cats.find((c) => c.id === id)!;
       }
-      if (!cat.sickSince) {
+      if (!cat.sickSince && cat.vetUntil + VET_RECOVER_MS <= t) {
         const risk = sickRiskPerHour(
           { food: catStat(cat, "food", t), clean: catStat(cat, "clean", t) },
           { messes: Object.keys(h.messes).length, boxFull: h.box >= boxLimit(cat) },

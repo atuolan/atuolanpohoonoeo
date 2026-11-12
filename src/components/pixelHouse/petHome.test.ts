@@ -147,10 +147,17 @@ describe("生病", () => {
   it("好好照顧很少病；餓著、髒著、便便沒清、貓砂盆滿了機率變高；健康檢查有效時低很多", () => {
     const good = sickRiskPerHour({ food: 80, clean: 80 }, { messes: 0, boxFull: false }, false);
     const bad = sickRiskPerHour({ food: 10, clean: 10 }, { messes: 3, boxFull: true }, false);
-    expect(bad).toBeGreaterThan(good * 20);
+    expect(bad).toBeGreaterThan(good * 10);
+    // 餓著、髒著、便便沒清、貓砂盆滿了：兩天內多半會病
+    expect(1 - (1 - bad) ** 48).toBeGreaterThan(0.5);
     expect(sickRiskPerHour({ food: 80, clean: 80 }, { messes: 0, boxFull: false }, true)).toBeLessThan(good);
-    // 好好照顧又有健康檢查：一年大約一次以下
-    expect(sickRiskPerHour({ food: 80, clean: 80 }, { messes: 0, boxFull: false }, true) * 24 * 365).toBeLessThan(1.2);
+    // 好好照顧：大約一個月一次；再加健康檢查：大約三個月一次
+    const month = 24 * 30;
+    expect(good * month).toBeGreaterThan(0.8);
+    expect(good * month).toBeLessThan(1.2);
+    const checked = sickRiskPerHour({ food: 80, clean: 80 }, { messes: 0, boxFull: false }, true) * month;
+    expect(checked).toBeGreaterThan(0.25);
+    expect(checked).toBeLessThan(0.45);
   });
 
   it("看醫生：病了兩天以上比較貴，有保險打對折；沒病是 0", () => {
@@ -167,6 +174,14 @@ describe("生病", () => {
     expect(after.sickSince).toBe(0);
     expect(after.vetUntil).toBe(T0 + VET_STAY_MS);
     expect(catStat(after, "mood", T0)).toBeLessThan(catStat(h.cats[0], "mood", T0));
+  });
+
+  it("看完醫生回家一週內不會再病，一週後才會", () => {
+    const h = homeWith([kitty("a", { vetUntil: T0 })], { simAt: T0 });
+    const week = simulatePets(h, T0 + 6 * DAY, { live: true }, () => 0);
+    expect(week.home.cats[0].sickSince).toBe(0);
+    const later = simulatePets(week.home, T0 + 8 * DAY, { live: true }, () => 0);
+    expect(later.home.cats[0].sickSince).toBeGreaterThan(T0 + 6 * DAY);
   });
 });
 
