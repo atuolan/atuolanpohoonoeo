@@ -32,7 +32,7 @@ import {
 import { ROOM_W, type RoomId, type Scene } from "./houseData";
 import { countDaily, dailyLeft, loadHouseLifeState, rollDay, saveHouseLifeState } from "./houseLife";
 import { followAnchor, planRoute, type Spot } from "./houseLogic";
-import { DOG_BOWL_SPOT, LITTER_SPOT, PAD_SPOT, SPECIES_INFO } from "./petHome";
+import { DOG_BOWL_SPOT, FERRET_BOWL_SPOT, LITTER_SPOT, PAD_SPOT, SPECIES_INFO } from "./petHome";
 import type { PetHomeStore } from "./usePetHome";
 import { stripX } from "./useHouseResident";
 import { earnCoins } from "./wardrobeShop";
@@ -51,6 +51,10 @@ const LITTER_ACT = "litter";
 const URGE_ACT = "urge";
 
 export type HouseCat = ReturnType<typeof useHouseCat>;
+
+/** 一起睡的時候往左右錯開幾格（房間格子） */
+const SLEEP_NUDGE = [0, -13, 13];
+const BED_NUDGE = [0, -13, -26];
 
 export function useHouseCat(
   catId: Ref<string | null>,
@@ -74,6 +78,8 @@ export function useHouseCat(
     grantFind: (id: string) => void;
     notify: (text: string) => void;
   },
+  /** 第幾格（0～2）：大家一起睡同一個地方時錯開一點，不會疊成一隻 */
+  slot = 0,
 ) {
   const cat = computed<CatState | undefined>(() => (catId.value ? store.catById(catId.value) : undefined));
   const me = reactive<Spot>({ room: "living", x: 30, y: 192 });
@@ -132,10 +138,15 @@ export function useHouseCat(
     if (key === URGE_ACT) return { ...me };
     // 狗碗在貓碗右邊：站在碗左邊，頭朝右低下去吃
     if (key === "eat" && isDog.value) return { room: DOG_BOWL_SPOT.room, x: DOG_BOWL_SPOT.x - 6, y: DOG_BOWL_SPOT.y + 7 };
+    // 雪貂的碗在貓碗左邊
+    if (key === "eat" && cat.value?.species === "ferret") return { room: FERRET_BOWL_SPOT.room, x: FERRET_BOWL_SPOT.x - 6, y: FERRET_BOWL_SPOT.y + 7 };
     const a = CAT_ACTS[key];
     if (!a) return { ...me };
     const p = followAnchor([a.x, a.y], a.anchor, deps.current(a.room), deps.defaults(a.room));
-    return { room: a.room, x: p.x, y: p.y };
+    // 床的右邊是床尾：往左排（不然第三隻會掉到床外面）
+    const nudges = key === "nap-bed" ? BED_NUDGE : SLEEP_NUDGE;
+    const nudge = a.pose === "sleep" ? nudges[slot % nudges.length] : 0;
+    return { room: a.room, x: Math.min(Math.max(p.x + nudge, 10), ROOM_W - 10), y: p.y };
   }
 
   function pickNext(): string {
@@ -155,7 +166,7 @@ export function useHouseCat(
   }
 
   function dwell(key: string) {
-    return catDwellMs(key, Math.random, deps.calm.value);
+    return catDwellMs(key, Math.random, deps.calm.value, cat.value?.species);
   }
 
   function schedule(ms: number) {
@@ -340,7 +351,7 @@ export function useHouseCat(
       if (r.result !== "box") return;
       showFx("heart");
       const place = c.species === "dog" ? "尿布墊" : "貓砂盆";
-      const snack = c.species === "dog" ? "一根潔牙骨" : "一條貓條";
+      const snack = c.species === "dog" ? "一根潔牙骨" : c.species === "ferret" ? "一條營養膏" : "一條貓條";
       deps.notify(`做得好！${c.name}在${place}上了，訓練度 +${r.trained}${r.trained > 10 ? `（用了${snack}當獎勵）` : ""}`);
     });
     return true;
@@ -449,9 +460,15 @@ export function useHouseCat(
     const state = rollDay(loadHouseLifeState(now), now);
     const coins = rollCatGift(catLevels(c, now.getTime()), dailyLeft(state, "catGift", CAT_GIFT_DAILY_LIMIT), Math.random, c.affinity, !!c.sickSince);
     if (coins <= 0) return;
+    // 雪貂：叼走東西藏起來，要你去找（已經藏了一處就先不藏）
+    if (c.species === "ferret" && store.home.value.stash) return;
     const counted = countDaily(state, "catGift", CAT_GIFT_DAILY_LIMIT, now);
     if (!counted) return;
     saveHouseLifeState(counted);
+    if (c.species === "ferret") {
+      if (store.hide(c.name, Math.round(coins * 1.5))) deps.notify(`${c.name}叼走了什麼東西，藏起來了……找找看`);
+      return;
+    }
     const finds = deps.unownedFinds();
     const findId = pickCatFind(finds.map((f) => f.id));
     if (findId) {

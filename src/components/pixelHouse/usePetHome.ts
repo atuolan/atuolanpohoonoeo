@@ -30,7 +30,9 @@ import {
   COVER_DAYS,
   doToilet,
   INSURANCE_PRICE,
+  hideStash,
   MESS_BY_ID,
+  STASH_BY_ID,
   roams,
   roomFor,
   simulatePets,
@@ -45,7 +47,7 @@ import {
   type SupplyId,
   type ToiletResult,
 } from "./petHome";
-import { payCoins } from "./wardrobeShop";
+import { earnCoins, payCoins } from "./wardrobeShop";
 
 const DAY = 24 * 3_600_000;
 
@@ -81,6 +83,9 @@ export function usePetHome(deps: { notify: (text: string) => void }) {
   function tellEvents(events: PetEvent[]) {
     const sick = [...new Set(events.filter((e) => e.kind === "sick").map((e) => (e as { catId: string }).catId))];
     const floor = events.filter((e) => e.kind === "floor").length;
+    for (const e of events) {
+      if (e.kind === "shed") deps.notify(e.ok ? `${nameOf(e.catId)}蛻皮了，蛻得很完整` : `${nameOf(e.catId)}蛻皮蛻不乾淨（飼養箱太乾），生病了`);
+    }
     if (sick.length) deps.notify(`${sick.map(nameOf).join("、")}生病了，點牠看看要不要帶去看醫生`);
     if (floor) deps.notify(`你不在的時候，地上多了 ${floor} 灘便便`);
     const out = [...new Set(events.flatMap((e) => (e.kind === "out" ? [SUPPLIES[e.supply].name] : [])))];
@@ -115,7 +120,7 @@ export function usePetHome(deps: { notify: (text: string) => void }) {
   // ===== 領養、買東西 =====
 
   const fullMsg = (species: PetSpecies) =>
-    SPECIES_INFO[species].roams ? `貓和狗加起來最多養 ${speciesMax(species)} 隻` : `${SPECIES_NAMES[species]}最多養 ${speciesMax(species)} 隻`;
+    SPECIES_INFO[species].roams ? `貓、狗、雪貂加起來最多養 ${speciesMax(species)} 隻` : `倉鼠、天竺鼠、蜜袋鼯、蛇加起來最多養 ${speciesMax(species)} 隻`;
 
   async function adopt(name: string, color: PetColor, species: PetSpecies = "cat"): Promise<string | null> {
     if (!roomFor(home.value, species)) return fullMsg(species);
@@ -136,7 +141,7 @@ export function usePetHome(deps: { notify: (text: string) => void }) {
 
   async function buy(id: SupplyId): Promise<string | null> {
     const s = SUPPLIES[id];
-    const why = await pay(s.price, `${s.name} ${s.pack} ${s.unit}`, `pixel-house:${s.species}:${id}`);
+    const why = await pay(s.price, `${s.name} ${s.pack} ${s.unit}`, `pixel-house:${s.users[0]}:${id}`);
     if (why) return why;
     set({ ...home.value, stock: { ...home.value.stock, [id]: home.value.stock[id] + s.pack } });
     return null;
@@ -179,7 +184,7 @@ export function usePetHome(deps: { notify: (text: string) => void }) {
   function careSupply(cat: CatState, kind: CatCare): SupplyId | null {
     if (kind === "can") return "can";
     if (kind === "treat") return SPECIES_INFO[cat.species].snack;
-    if (kind === "wash" && cat.species === "hamster") return "bedding";
+    if (kind === "wash") return SPECIES_INFO[cat.species].cleanSupply;
     return null;
   }
 
@@ -191,7 +196,9 @@ export function usePetHome(deps: { notify: (text: string) => void }) {
     const cat = catById(id);
     if (!cat) return null;
     const now = Date.now();
-    if (kind === "wash" && catStat(cat, "clean", now) >= CAT_WASH_BELOW) return cat.species === "hamster" ? "籠子還很乾淨" : `${cat.name}還很乾淨`;
+    if (kind === "wash" && catStat(cat, "clean", now) >= CAT_WASH_BELOW)
+      return cat.species === "snake" ? "飼養箱還很濕潤" : roams(cat) ? `${cat.name}還很乾淨` : "籠子還很乾淨";
+    if (kind === "treat" && !SPECIES_INFO[cat.species].snack) return `${cat.name}不吃零食`;
     const supply = careSupply(cat, kind);
     if (supply && home.value.stock[supply] <= 0) return `沒有${SUPPLIES[supply].name}了，到「用品」買`;
     if (kind === "pet" && hamsterBites(cat)) {
@@ -218,6 +225,25 @@ export function usePetHome(deps: { notify: (text: string) => void }) {
   function dirtiest(now = Date.now()): CatState | null {
     const list = home.value.cats.filter((c) => roams(c) && awayUntil(c) <= now).sort((a, b) => catStat(a, "clean", now) - catStat(b, "clean", now));
     return list[0] ?? null;
+  }
+
+  // ===== 雪貂藏東西 =====
+
+  /** 雪貂叼走東西藏起來（已經有一處就不藏）。藏了回傳 true */
+  function hide(by: string, coins: number): boolean {
+    if (home.value.stash) return false;
+    set(hideStash(home.value, by, coins));
+    return !!home.value.stash;
+  }
+
+  /** 找到藏起來的東西：拿到裡面的金幣 */
+  async function findStash() {
+    const st = home.value.stash;
+    if (!st) return;
+    set({ ...home.value, stash: null });
+    const where = STASH_BY_ID[st.spot]?.where ?? "角落";
+    await earnCoins(st.coins, `小屋：在${where}找到${st.by}藏的東西`, "pixel-house:ferret:stash");
+    deps.notify(`在${where}找到${st.by || "雪貂"}藏的東西　＋${st.coins} 金幣`);
   }
 
   /** 帶狗出門散步（他在不在家外面先檢查）。做了回傳 null */
@@ -289,6 +315,8 @@ export function usePetHome(deps: { notify: (text: string) => void }) {
     eat,
     dirtiest,
     walk,
+    hide,
+    findStash,
     toilet,
     boxProblem,
     scoop,

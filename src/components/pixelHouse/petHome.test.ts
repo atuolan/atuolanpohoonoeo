@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { adoptCat, catStat, hamsterBites, hamsterPose, walkDog, WALK_MS, type CatState } from "./houseCat";
+import { adoptCat, cagedPose, catStat, gliderOut, hamsterBites, hamsterPose, walkDog, WALK_MS, type CatState } from "./houseCat";
 import { ROOM_H, ROOM_W } from "./houseData";
 import { defaultHouseLifeState, parseHouseLifeState } from "./houseLife";
 import {
@@ -35,6 +35,8 @@ import {
   MAX_CAGED,
   roomFor,
   SPECIES_INFO,
+  hideStash,
+  type PetStock,
 } from "./petHome";
 
 const T0 = 1_800_000_000_000;
@@ -406,5 +408,124 @@ describe("狗和倉鼠", () => {
     expect(hamsterBites(ham("h", { affinity: 5 }), () => 0.1)).toBe(true);
     expect(hamsterBites(ham("h", { affinity: 80 }), () => 0)).toBe(false);
     expect(hamsterBites(kitty("c", { affinity: 0 }), () => 0)).toBe(false);
+  });
+});
+
+describe("雪貂、天竺鼠、蜜袋鼯、蛇", () => {
+  const mk = (id: string, species: CatState["species"], color: string, patch: Partial<CatState> = {}): CatState => ({
+    ...adoptCat(id, color as CatState["color"], T0, () => 0.5, id, species),
+    personality: "lazy",
+    ...patch,
+  });
+  const full = (patch: Partial<PetStock> = {}): PetStock => ({ ...emptyStock(), ...patch });
+
+  it("價錢、上限：雪貂算在家裡走的（貓狗雪貂合計三隻），另外三種跟倉鼠一起算籠子（合計三隻）", () => {
+    expect(adoptPrice(1, "ferret")).toBe(20_000);
+    expect(adoptPrice(1, "glider")).toBe(12_000);
+    expect(adoptPrice(1, "snake")).toBe(8_000);
+    expect(adoptPrice(1, "guineaPig")).toBe(3_000);
+    let h: PetHome | null = emptyPetHome(T0);
+    for (const sp of ["cat", "dog", "ferret"] as const) h = addCat(h!, sp, sp === "cat" ? "orange" : sp === "dog" ? "shiba" : "sable", T0, Math.random, sp);
+    expect(roomFor(h!, "ferret")).toBe(false);
+    for (const [sp, c] of [["guineaPig", "ginger"], ["glider", "classic"], ["snake", "corn"]] as const) h = addCat(h!, sp, c, T0, Math.random, sp);
+    expect(h!.cats).toHaveLength(6);
+    expect(roomFor(h!, "hamster")).toBe(false);
+  });
+
+  it("雪貂用貓砂盆：用掉貓砂、貓砂盆會髒；吃雪貂糧", () => {
+    const h = homeWith([mk("f", "ferret", "sable", { training: 100 })], { stock: full({ litter: 5, ferretFood: 3 }) });
+    const r = doToilet(h, "f", T0, () => 0);
+    expect(r.result).toBe("box");
+    expect(r.home.stock.litter).toBe(4);
+    expect(r.home.box).toBe(1);
+    const fed = simulatePets(homeWith([mk("f", "ferret", "sable", { food: { v: 30, at: T0 } })], { stock: full({ ferretFood: 3, litter: 50 }), simAt: T0 }), T0 + HOUR, { live: false }, () => 0.999);
+    expect(fed.home.stock.ferretFood).toBe(2);
+  });
+
+  it("雪貂藏東西：一次一處，找到拿金幣；存檔讀回來還在", () => {
+    const h = hideStash(homeWith([mk("f", "ferret", "sable")]), "小貂", 30, () => 0);
+    expect(h.stash).toEqual({ spot: "stash-sofa", coins: 30, by: "小貂" });
+    expect(hideStash(h, "小貂", 99).stash!.coins).toBe(30);
+    const back = parsePetHome(JSON.parse(JSON.stringify(h)), null, T0);
+    expect(back.stash).toEqual(h.stash);
+    // 新的種類存檔讀回來還是同一種、同一個花色
+    const all = [mk("a", "ferret", "silver"), mk("b", "guineaPig", "panda"), mk("c", "glider", "white"), mk("d", "snake", "ball")];
+    const round = parsePetHome(JSON.parse(JSON.stringify(homeWith(all))), null, T0);
+    expect(round.cats.map((c) => [c.species, c.color])).toEqual(all.map((c) => [c.species, c.color]));
+    expect(parsePetHome({ cats: [], stash: { spot: "不存在", coins: 5 } }, null, T0).stash).toBeNull();
+  });
+
+  it("天竺鼠：牧草吃很多，一天自己吃一份蔬菜；沒有蔬菜好幾天容易生病", () => {
+    const g = mk("g", "guineaPig", "ginger", { vegAt: T0 - 2 * DAY });
+    const h = homeWith([g], { stock: full({ hay: 100, veg: 5, bedding: 2 }), simAt: T0 });
+    const r = simulatePets(h, T0 + 3 * DAY, { live: true }, () => 0.999);
+    expect(100 - r.home.stock.hay).toBeGreaterThanOrEqual(10);
+    expect(5 - r.home.stock.veg).toBe(3);
+    const noVeg = homeWith([{ ...g, vegAt: T0 - 5 * DAY }], { stock: full({ hay: 100 }), simAt: T0 });
+    const sick = (home: PetHome) => {
+      let n = 0;
+      for (let i = 0; i < 200; i++) if (simulatePets(home, T0 + DAY, { live: true }).events.some((e) => e.kind === "sick")) n++;
+      return n;
+    };
+    expect(sick(noVeg)).toBeGreaterThan(sick(homeWith([{ ...g, vegAt: T0 }], { stock: full({ hay: 100, veg: 30 }), simAt: T0 })));
+  });
+
+  it("蛇：一週吃一隻冷凍鼠；燈泡用完自己換，沒有燈泡會冷、說一聲", () => {
+    const sn = mk("s", "snake", "corn", { lampUntil: T0 + DAY, shedAt: T0 + 90 * DAY });
+    const h = homeWith([sn], { stock: full({ mouse: 10, bulb: 1 }), simAt: T0 });
+    const r = simulatePets(h, T0 + 28 * DAY, { live: true }, () => 0.999);
+    expect(10 - r.home.stock.mouse).toBeGreaterThanOrEqual(3);
+    expect(10 - r.home.stock.mouse).toBeLessThanOrEqual(5);
+    expect(r.home.stock.bulb).toBe(0);
+    expect(r.home.cats[0].lampUntil).toBe(T0 + DAY + 30 * DAY);
+    const cold = simulatePets(homeWith([sn], { stock: full({ mouse: 10 }), simAt: T0 }), T0 + 2 * DAY, { live: true }, () => 0.999);
+    expect(cold.events).toContainEqual({ kind: "out", supply: "bulb" });
+    expect(cold.events.filter((e) => e.kind === "out")).toHaveLength(1);
+  });
+
+  it("蛇蛻皮：飼養箱夠濕就順利，太乾會生病", () => {
+    const wet = mk("s", "snake", "corn", { shedAt: T0 + HOUR, lampUntil: T0 + 30 * DAY, clean: { v: 100, at: T0 } });
+    const ok = simulatePets(homeWith([wet], { stock: full({ mouse: 5 }), simAt: T0 }), T0 + 2 * HOUR, { live: true }, () => 0.999);
+    expect(ok.events).toContainEqual({ kind: "shed", catId: "s", ok: true });
+    expect(ok.home.cats[0].shedAt).toBeGreaterThan(T0 + 17 * DAY);
+    const dry = simulatePets(homeWith([{ ...wet, clean: { v: 10, at: T0 } }], { stock: full({ mouse: 5 }), simAt: T0 }), T0 + 2 * HOUR, { live: true }, () => 0.999);
+    expect(dry.events).toContainEqual({ kind: "shed", catId: "s", ok: false });
+    expect(dry.home.cats[0].sickSince).toBeGreaterThan(0);
+  });
+
+  it("保溫燈泡夠幾天：裝著的加上庫存", () => {
+    const sn = mk("s", "snake", "corn", { lampUntil: T0 + 10 * DAY });
+    expect(stockDays(homeWith([sn], { stock: full({ bulb: 1 }), simAt: T0 }), "bulb")).toBe(40);
+    expect(stockDays(homeWith([sn], { stock: full(), simAt: T0 + 11 * DAY }), "bulb")).toBe(0);
+  });
+
+  it("籠子裡的姿勢：蜜袋鼯白天窩在睡袋；天竺鼠開心偶爾跳；蛇大多盤著", () => {
+    const gl = mk("gl", "glider", "classic");
+    expect(cagedPose(gl, "day", false, T0)).toBe("pouch");
+    const nights = Array.from({ length: 60 }, (_, i) => cagedPose(gl, "night", false, T0 + i * 600_000));
+    expect(nights.some((p) => p === "climb")).toBe(true);
+    const gp = mk("gp", "guineaPig", "ginger", { personality: "playful" });
+    const days = Array.from({ length: 80 }, (_, i) => cagedPose(gp, "day", false, T0 + i * 600_000, 90));
+    expect(days.some((p) => p === "popcorn")).toBe(true);
+    expect(cagedPose(gp, "day", false, T0, 10)).not.toBe("popcorn");
+    const sn = mk("sn", "snake", "corn");
+    expect(cagedPose({ ...sn, sickSince: T0 }, "night", false, T0)).toBe("coil");
+  });
+
+  it("蜜袋鼯跑到他身上：晚上在肩上、白天熟了在口袋；他不在或在睡就不會", () => {
+    const gl = mk("gl", "glider", "classic", { affinity: 100, personality: "clingy" });
+    const nights = Array.from({ length: 60 }, (_, i) => gliderOut(gl, "night", false, T0 + i * 600_000, true));
+    expect(nights.filter((w) => w === "shoulder").length).toBeGreaterThan(20);
+    expect(nights.some((w) => w === "pocket")).toBe(false);
+    const days = Array.from({ length: 60 }, (_, i) => gliderOut(gl, "day", false, T0 + i * 600_000, true));
+    expect(days.some((w) => w === "pocket")).toBe(true);
+    expect(gliderOut(gl, "night", false, T0, false)).toBeNull();
+    expect(gliderOut({ ...gl, affinity: 10 }, "day", false, T0, true)).toBeNull();
+  });
+
+  it("看醫生照種類：天竺鼠便宜、雪貂跟貓一樣", () => {
+    expect(vetCost({ ...mk("g", "guineaPig", "ginger"), sickSince: T0 }, T0, false)).toBe(1_000);
+    expect(vetCost({ ...mk("f", "ferret", "sable"), sickSince: T0 }, T0, false)).toBe(VET_MILD);
+    expect(checkupPrice("snake")).toBe(2_400);
   });
 });

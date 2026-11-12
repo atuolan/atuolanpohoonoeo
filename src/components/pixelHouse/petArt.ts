@@ -3,7 +3,7 @@
  *
  * 省電：倉鼠跑滾輪只用 CSS 換兩張圖（opacity），不用計時器；籠子在畫面外就停。
  */
-import { CAT_ART, CAT_H, CAT_W, type CatPose, type HamsterPose, type PetSpecies } from "./houseCat";
+import { CAT_ART, CAT_H, CAT_W, type CagePose, type CatPose, type HamsterPose, type PetSpecies } from "./houseCat";
 
 // ===== 狗：22×13，面向右，腳底在最下面一列 =====
 
@@ -89,9 +89,75 @@ export const DOG_ART: Record<CatPose, string[]> = {
   ],
 };
 
+// ===== 雪貂：22×9，身體長、腳短；眼睛那圈是深色的面罩 =====
+
+export const FERRET_W = 22;
+export const FERRET_H = 9;
+
+/** o 外框、b 身體、s 深色（腳、尾巴、面罩）、w 臉、e 眼睛、n 鼻子、c 閉著的眼睛 */
+export const FERRET_ART: Record<CatPose, string[]> = {
+  "walk-a": [
+    "................oo.oo.",
+    "...............obboso.",
+    "ss.............osewseo",
+    ".so.oooooooooooobwwwwn",
+    "..osbbbbbbbbbbbbbbwwo.",
+    "...obbbbbbbbbbbbbboo..",
+    "...osooooooooooso.....",
+    "...oso........oso.....",
+    "...ooo........ooo.....",
+  ],
+  "walk-b": [
+    "................oo.oo.",
+    "...............obboso.",
+    "ss.............osewseo",
+    ".so.oooooooooooobwwwwn",
+    "..osbbbbbbbbbbbbbbwwo.",
+    "...obbbbbbbbbbbbbboo..",
+    "...ooosooooooosooo....",
+    ".....oso....oso.......",
+    ".....ooo....ooo.......",
+  ],
+  sit: [
+    "................oo.oo.",
+    "...............obboso.",
+    "...............osewseo",
+    "..............obbwwwwn",
+    ".............obbbbwwo.",
+    "ss.........oobbbbboo..",
+    ".so.....oobbbbbbbbo...",
+    "..osooobbbbbbbbbsso...",
+    "...ooooooooooooooo....",
+  ],
+  sleep: [
+    "......................",
+    "......................",
+    "......................",
+    "......oooooooooo.oo...",
+    "....oobbbbbbbbbbobboo.",
+    "...obbbbbbbbbbbbocwsoo",
+    "ssobbbbbbbbbbbbbbowwwn",
+    ".sooooooooooooooooooo.",
+    "......................",
+  ],
+  eat: [
+    "......................",
+    "......................",
+    "ss....................",
+    ".so.oooooooooo........",
+    "..osbbbbbbbbbbbo.oo.oo",
+    "...obbbbbbbbbbbbobboso",
+    "...obbbbbbbbbbbbosewse",
+    "...osoooooooosooobwwwn",
+    "...ooo.......ooo.oooo.",
+  ],
+};
+
 /** 會在家裡走的：這種動物的圖和大小 */
 export function walkerArt(species: PetSpecies): { art: Record<CatPose, string[]>; w: number; h: number } {
-  return species === "dog" ? { art: DOG_ART, w: DOG_W, h: DOG_H } : { art: CAT_ART, w: CAT_W, h: CAT_H };
+  if (species === "dog") return { art: DOG_ART, w: DOG_W, h: DOG_H };
+  if (species === "ferret") return { art: FERRET_ART, w: FERRET_W, h: FERRET_H };
+  return { art: CAT_ART, w: CAT_W, h: CAT_H };
 }
 
 // ===== 倉鼠：11×9 =====
@@ -289,3 +355,329 @@ export const PAD_ART: Record<"ready" | "empty", { rows: string[]; palette: Recor
 
 /** 狗碗：形狀跟貓碗一樣，藍色 */
 export const DOG_BOWL_PALETTE: Record<string, string> = { o: "#3B2A26", r: "#5A8FD8", k: "#8A5A33" };
+
+// ===== 天竺鼠（13×8）、蛇（14×7）、蜜袋鼯（9×8） =====
+
+export const GUINEA_ART: Record<"sit" | "eat" | "sleep", string[]> = {
+  sit: [
+    ".............",
+    "...ooooooo...",
+    "..obbbsssbbo.",
+    ".obbbsssbbebo",
+    "obbbbssbbbbbn",
+    "obbbbbbbbbbo.",
+    ".obbbbbbbbbo.",
+    "..ooo.ooo.oo.",
+  ],
+  eat: [
+    ".............",
+    "...ooooooo...",
+    "..obbbsssbbo.",
+    ".obbbsssbbebo",
+    "obbbbssbbbbbn",
+    "obbbbbbbbbboh",
+    ".obbbbbbbbboh",
+    "..ooo.ooo.oo.",
+  ],
+  sleep: [
+    ".............",
+    ".............",
+    "...ooooooo...",
+    "..obbbsssbbo.",
+    ".obbbsssbbcbo",
+    "obbbbbbbbbbbn",
+    "obbbbbbbbbbo.",
+    ".ooooooooooo.",
+  ],
+};
+
+export const SNAKE_ART: Record<"coil" | "stretch", string[]> = {
+  coil: [
+    "......oooo....",
+    ".....obsbeot..",
+    "..oooobooooo..",
+    ".obsbsbsbsbo..",
+    "obsoooooooobo.",
+    "obsbsbsbsbsbo.",
+    ".ooooooooooo..",
+  ],
+  stretch: [
+    "..............",
+    "..............",
+    "..oooooooooo..",
+    ".obsbsbsbsbeot",
+    "obsooooooooooo",
+    ".oo...........",
+    "..............",
+  ],
+};
+
+/** glide：張開手腳（爬籠子、滑翔到他肩上） */
+export const GLIDER_ART: Record<"sit" | "sleep" | "glide", string[]> = {
+  sit: [
+    ".oo...oo.",
+    "obo...obo",
+    "obbsssbbo",
+    "oebbsbbeo",
+    ".obbnbbo.",
+    "..owwwo..",
+    "..obwbo..",
+    "...ooo.ss",
+  ],
+  sleep: [
+    ".........",
+    ".........",
+    ".........",
+    "..ooooo..",
+    ".obbsbbo.",
+    "obcbsbcbo",
+    "obbbnbbbo",
+    ".ooooooss",
+  ],
+  glide: [
+    "....o....",
+    "...obo...",
+    "ooobsboo.",
+    "obbbsbbbo",
+    "owbbebbwo",
+    "ooobnboo.",
+    "...ooo...",
+    "....s....",
+  ],
+};
+
+// ===== 天竺鼠的木圍欄、蛇的飼養箱、蜜袋鼯的高籠子：都是 26×20，跟倉鼠籠一樣大，可以疊 =====
+
+export const PEN_PALETTE: Record<string, string> = { o: "#4A3328", m: "#B98B5E", d: "#8A5A33", y: "#F1DDB0", k: "#D9BC84", h: "#9BBF5A", g: "#6E9A3C", r: "#E8627A", f: "#C77A93" };
+export const PEN_ART: Record<"back" | "front", string[]> = {
+  back: [
+    "..........................",
+    "..........................",
+    "..........................",
+    "..........................",
+    "..........................",
+    "..........................",
+    "..........................",
+    "..........................",
+    "..........................",
+    "..........................",
+    "...................oooo...",
+    "..................orrrro..",
+    ".................orrrrrro.",
+    ".yykyyhghyyykyyyoffoofoyy.",
+    ".ykyyhgghykyyyykofo..ofoy.",
+    "..........................",
+    "..........................",
+    "..........................",
+    "..........................",
+    "..........................",
+  ],
+  front: [
+    "..........................",
+    "..........................",
+    "..........................",
+    "..........................",
+    "..........................",
+    "..........................",
+    "..........................",
+    "..........................",
+    "..........................",
+    "..........................",
+    "..........................",
+    "..........................",
+    "..........................",
+    "..........................",
+    "..........................",
+    "oooooooooooooooooooooooooo",
+    "omdmmdmmdmmdmmdmmdmmdmmdmo",
+    "ommmmmmmmmmmmmmmmmmmmmmmmo",
+    "omdmmdmmdmmdmmdmmdmmdmmdmo",
+    "oooooooooooooooooooooooooo",
+  ],
+};
+
+export const TANK_PALETTE: Record<string, string> = { o: "#3B2A26", m: "#8A5A33", l: "#CFE6F2", a: "#E6F2F8", y: "#F3D98B", z: "#F7C948", k: "#D9BC84", s: "#B98B5E", b: "#7A5A45", w: "#9CC7E6" };
+/** back-off：保溫燈沒有燈泡（燈是暗的） */
+export const TANK_ART: Record<"back" | "back-off" | "front", string[]> = {
+  back: [
+    ".........ooooo............",
+    "........ozzzzzo...........",
+    "........oyyyyyo...........",
+    ".mmmmmmmmmmmmmmmmmmmmmmmm.",
+    ".llllllllllllllllllllllll.",
+    ".l......................l.",
+    ".l......................l.",
+    ".l...............bb.....l.",
+    ".l.............bbb......l.",
+    ".l...........bbb........l.",
+    ".l.........bbb..........l.",
+    ".l.......bbb............l.",
+    ".l......bb..............l.",
+    ".l......................l.",
+    ".l................owwwo.l.",
+    ".lkkskkkskkkskkkskowwwoks.",
+    ".lkskkkskkkskkkskkkoookkl.",
+    ".mmmmmmmmmmmmmmmmmmmmmmmm.",
+    ".oooooooooooooooooooooooo.",
+    "..........................",
+  ],
+  "back-off": [
+    ".........ooooo............",
+    "........obbbbbo...........",
+    "........obbbbbo...........",
+    ".mmmmmmmmmmmmmmmmmmmmmmmm.",
+    ".llllllllllllllllllllllll.",
+    ".l......................l.",
+    ".l......................l.",
+    ".l...............bb.....l.",
+    ".l.............bbb......l.",
+    ".l...........bbb........l.",
+    ".l.........bbb..........l.",
+    ".l.......bbb............l.",
+    ".l......bb..............l.",
+    ".l......................l.",
+    ".l................owwwo.l.",
+    ".lkkskkkskkkskkkskowwwoks.",
+    ".lkskkkskkkskkkskkkoookkl.",
+    ".mmmmmmmmmmmmmmmmmmmmmmmm.",
+    ".oooooooooooooooooooooooo.",
+    "..........................",
+  ],
+  front: [
+    "..........................",
+    "..........................",
+    "..........................",
+    "..........................",
+    "..........................",
+    "..a.....................a.",
+    "..a.....................a.",
+    "...a......................",
+    "..........................",
+    "..........................",
+    "..........................",
+    "..........................",
+    "..........................",
+    "..........................",
+    "..........................",
+    "..........................",
+    "..........................",
+    "..........................",
+    "..........................",
+    "..........................",
+  ],
+};
+
+export const TALL_PALETTE: Record<string, string> = { o: "#4A3328", g: "#A9B4C2", h: "#D8DEE6", p: "#9CC7A0", d: "#6E9A70", u: "#E8A0B4", v: "#C77A93", m: "#B98B5E" };
+/** back：上面的睡袋和兩根棲木；front：鐵絲和底盤 */
+export const TALL_ART: Record<"back" | "front", string[]> = {
+  back: [
+    "..........................",
+    "..........................",
+    "..........................",
+    "................mmmmmmm...",
+    "..................uuuu....",
+    ".................uuuuuu...",
+    ".................uvvvvu...",
+    ".................uuuuuu...",
+    "..................uuuu....",
+    "..........................",
+    "..........................",
+    "..........................",
+    "..mmmmmmmmmm..............",
+    "..........................",
+    "..........................",
+    "..........................",
+    "..........................",
+    "..........................",
+    "..........................",
+    "..........................",
+  ],
+  front: [
+    "oooooooooooooooooooooooooo",
+    "ohhhhhhhhhhhhhhhhhhhhhhhho",
+    "og...g....g....g....g...go",
+    "og...g....g....g....g...go",
+    "og...g....g....g....g...go",
+    "og...g....g....g....g...go",
+    "og...g....g....g....g...go",
+    "og...g....g....g....g...go",
+    "og...g....g....g....g...go",
+    "og...g....g....g....g...go",
+    "og...g....g....g....g...go",
+    "og...g....g....g....g...go",
+    "og...g....g....g....g...go",
+    "og...g....g....g....g...go",
+    "og...g....g....g....g...go",
+    "og...g....g....g....g...go",
+    "oppppppppppppppppppppppppo",
+    "opppppppppppppppppppppppdo",
+    "oddddddddddddddddddddddddo",
+    ".oooooooooooooooooooooooo.",
+  ],
+};
+
+/** 雪貂藏起來的東西：露出一角的襪子和一枚金幣 */
+export const STASH_ART = {
+  rows: [
+    "....oo..",
+    "...orro.",
+    "..orwro.",
+    ".orrro.y",
+    "orrro.yy",
+    ".ooo...y",
+  ],
+  palette: { o: "#3B2A26", r: "#E8627A", w: "#FBF7EE", y: "#F3D98B" } as Record<string, string>,
+};
+
+// ===== 籠子裡要畫什麼 =====
+
+export type CagedSpecies = "hamster" | "guineaPig" | "glider" | "snake";
+
+/** 籠子的後面、前面（倉鼠籠另外有滾輪）和調色盤 */
+export const CAGE_DEFS: Record<CagedSpecies, { back: string[]; backOff?: string[]; front: string[]; palette: Record<string, string> }> = {
+  hamster: { back: [], front: [], palette: CAGE_PALETTE },
+  guineaPig: { back: PEN_ART.back, front: PEN_ART.front, palette: PEN_PALETTE },
+  glider: { back: TALL_ART.back, front: TALL_ART.front, palette: TALL_PALETTE },
+  snake: { back: TANK_ART.back, backOff: TANK_ART["back-off"], front: TANK_ART.front, palette: TANK_PALETTE },
+};
+
+/** 籠子裡的動物：用哪幾張圖（兩張就是輪流換）、放在籠子的哪裡、大小、要不要原地跳 */
+export interface CageSprite {
+  frames: string[];
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  hop?: boolean;
+}
+
+/** 這個姿勢畫什麼（回傳圖的名字，畫面那邊照花色畫好）。null = 看不到（蜜袋鼯窩在睡袋裡） */
+export function cageSprite(species: CagedSpecies, pose: CagePose): CageSprite | null {
+  if (species === "hamster") {
+    const run = pose === "run";
+    const at = run ? CAGE_RUNNER : CAGE_SITTER;
+    return { frames: hamsterFrames(pose as HamsterPose), x: at.x, y: at.y, w: HAMSTER_W, h: HAMSTER_H };
+  }
+  if (species === "guineaPig") {
+    const frame = pose === "eat" ? "eat" : pose === "sleep" ? "sleep" : "sit";
+    return { frames: [frame], x: 3, y: 8, w: 13, h: 8, hop: pose === "popcorn" };
+  }
+  if (species === "glider") {
+    if (pose === "pouch") return null;
+    if (pose === "climb") return { frames: ["glide"], x: 7, y: 3, w: 9, h: 8, hop: true };
+    return { frames: ["sit"], x: 3, y: 4, w: 9, h: 8 };
+  }
+  return pose === "stretch" ? { frames: ["stretch"], x: 4, y: 9, w: 14, h: 7 } : { frames: ["coil"], x: 4, y: 9, w: 14, h: 7 };
+}
+
+/** 籠子裡的動物的圖（照種類） */
+export function cagedArt(species: CagedSpecies): Record<string, string[]> {
+  return species === "hamster" ? HAMSTER_ART : species === "guineaPig" ? GUINEA_ART : species === "glider" ? GLIDER_ART : SNAKE_ART;
+}
+
+/** 籠子最上面空著幾列（天竺鼠的圍欄比較矮）：疊的時候上面那個要貼著放，不要浮在半空中 */
+export function cageTopRow(species: CagedSpecies): number {
+  const d = species === "hamster" ? { back: CAGE_ART.back, front: CAGE_ART.front } : CAGE_DEFS[species];
+  for (let y = 0; y < CAGE_H; y++) if (/[^.]/.test(d.back[y] ?? "") || /[^.]/.test(d.front[y] ?? "")) return y;
+  return 0;
+}
