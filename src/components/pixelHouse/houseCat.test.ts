@@ -19,8 +19,12 @@ import {
   CAT_FEED_GAIN,
   CAT_GIFT_COINS,
   CAT_H,
+  CAT_FIND_CHANCE,
+  CAT_FOLLOW,
   CAT_RUB,
   CAT_W,
+  pickCatFind,
+  PERCH_FLOOR_Y,
   CAT_WEIGHTS,
 } from "./houseCat";
 import { ROOM_H, ROOM_W } from "./houseData";
@@ -118,7 +122,7 @@ describe("貓會做的事", () => {
       expect(a.y, key).toBeLessThan(ROOM_H);
     }
     for (const weights of Object.values(CAT_WEIGHTS)) {
-      for (const key of Object.keys(weights)) expect(key === CAT_RUB || !!CAT_ACTS[key], key).toBe(true);
+      for (const key of Object.keys(weights)) expect(key === CAT_RUB || key === CAT_FOLLOW || !!CAT_ACTS[key], key).toBe(true);
     }
   });
 
@@ -147,5 +151,38 @@ describe("貓會做的事", () => {
     expect(catDwellMs("nap-sofa", () => 1)).toBe(90_000);
     expect(catDwellMs("nap-sofa", () => 0, true)).toBe(160_000);
     expect(catDwellMs(CAT_RUB, () => 0)).toBeLessThan(40_000);
+  });
+
+  it("窗台在地板上面、跟著窗戶走；他不在家不會跟著他走", () => {
+    for (const key of ["sill-living", "sill-bedroom"]) {
+      const a = CAT_ACTS[key];
+      expect(a.perch, key).toBe(true);
+      expect(a.anchor).toBe("window");
+      expect(a.y).toBeLessThan(PERCH_FLOOR_Y);
+    }
+    for (let i = 0; i < 50; i++) expect(pickCatAct({ ...base, residentHome: false }, () => i / 50)).not.toBe(CAT_FOLLOW);
+  });
+
+  it("跟著他走一陣子就換別的事", () => {
+    expect(catDwellMs(CAT_FOLLOW, () => 0)).toBe(30_000);
+    expect(catDwellMs(CAT_FOLLOW, () => 1)).toBe(60_000);
+  });
+});
+
+describe("貓叼回來的小擺件", () => {
+  it("還有沒拿到的才會叼，機率沒中就是金幣", () => {
+    expect(pickCatFind([], () => 0)).toBeNull();
+    expect(pickCatFind(["cat-yarn", "cat-feather"], () => CAT_FIND_CHANCE)).toBeNull();
+    expect(pickCatFind(["cat-yarn", "cat-feather"], () => 0)).toBe("cat-yarn");
+    let n = 0;
+    expect(pickCatFind(["cat-yarn", "cat-feather"], () => (n++ ? 0.999 : 0))).toBe("cat-feather");
+  });
+
+  it("decor.json 裡的小擺件價錢是 0、標成貓叼回來的", async () => {
+    const { readFileSync } = await import("node:fs");
+    const defs = JSON.parse(readFileSync("public/pixel-house/decor/decor.json", "utf-8")) as { id: string; price: number; catOnly?: boolean }[];
+    const finds = defs.filter((d) => d.catOnly);
+    expect(finds.map((d) => d.id).sort()).toEqual(["cat-feather", "cat-flower", "cat-yarn"]);
+    for (const d of finds) expect(d.price).toBe(0);
   });
 });

@@ -110,7 +110,7 @@ function saveName() {
       </div>
 
       <p class="cs-note" role="status">
-        {{ message || (listless ? `${cat.name}沒精神，餵牠、陪牠玩一下就好了。` : "不照顧牠也不會跑掉，只是會沒精神。") }}
+        {{ message || (listless ? `${cat.name}沒精神，餵牠、陪牠玩一下就好了。` : "也可以直接點廚房的碗餵牠、點浴缸幫牠洗澡。") }}
       </p>
 
       <div class="cs-actions">

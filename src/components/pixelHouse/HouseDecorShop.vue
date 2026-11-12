@@ -123,12 +123,15 @@ watch(
   },
 );
 
+/** 貓叼回來的擺件不賣：帶回家了才出現在清單裡（可以收起來、擺出來） */
+const shown = computed(() => props.defs.filter((d) => !d.catOnly || isOwned(d.id)));
+
 function isOwned(id: string): boolean {
   return id in props.owned;
 }
 
 async function buy(d: DecorDef) {
-  if (busy.value || isOwned(d.id)) return;
+  if (busy.value || isOwned(d.id) || d.catOnly) return;
   busy.value = d.id;
   message.value = "";
   try {
@@ -221,7 +224,7 @@ function zoom(d: DecorDef): number {
         </div>
 
         <ul v-else class="ds-list">
-          <li v-for="d in defs" :key="d.id" class="ds-item">
+          <li v-for="d in shown" :key="d.id" class="ds-item">
             <div class="ds-thumb">
               <img
                 :src="`${asset}decor/${d.id}.png`"
@@ -232,7 +235,7 @@ function zoom(d: DecorDef): number {
             </div>
             <div class="ds-info">
               <div class="ds-name">{{ d.name }}</div>
-              <div class="ds-sub">{{ roomNames[d.room] }}．{{ d.wall ? "掛在牆上" : "放在地上或家具上" }}</div>
+              <div class="ds-sub">{{ roomNames[d.room] }}．{{ d.catOnly ? "貓叼回來的" : d.wall ? "掛在牆上" : "放在地上或家具上" }}</div>
             </div>
             <div class="ds-actions">
               <template v-if="isOwned(d.id)">
@@ -245,7 +248,7 @@ function zoom(d: DecorDef): number {
             </div>
           </li>
         </ul>
-        <p v-if="tab === 'decor' && !defs.length" class="ds-note">現在沒有擺件可以買。</p>
+        <p v-if="tab === 'decor' && !shown.length" class="ds-note">現在沒有擺件可以買。</p>
       </section>
     </div>
   </Transition>

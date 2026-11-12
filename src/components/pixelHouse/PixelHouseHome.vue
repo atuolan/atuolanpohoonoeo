@@ -173,6 +173,15 @@ interface RenderItem extends LayoutItem {
   action?: FurnitureAction;
 }
 
+/** 有沒有養貓（貓在下面才建好；家具這邊要先知道，浴缸才能點） */
+const catAdopted = ref(false);
+/** 有養貓：點浴缸是幫牠洗澡（泡澡還沒開放） */
+const WASH_CAT = "__wash-cat__";
+function actionOf(room: RoomId, id: string): FurnitureAction | undefined {
+  if (room === "bath" && id === "bathtub" && catAdopted.value) return { kind: "app", app: WASH_CAT, to: "幫貓洗澡" };
+  return FURNITURE_ACTIONS[room][id];
+}
+
 function itemsOf(room: RoomId): RenderItem[] {
   const layout = layouts[room];
   if (!layout) return [];
@@ -187,7 +196,7 @@ function itemsOf(room: RoomId): RenderItem[] {
       py: cur[it.id].y,
       zone: it.wall ? ("wall" as ItemZone) : itemZone(room, it.id, it.y + it.h, ft),
       depth: 0,
-      action: FURNITURE_ACTIONS[room][it.id],
+      action: actionOf(room, it.id),
     }));
   const depths = itemDepths(
     room,
@@ -503,8 +512,21 @@ const kitty = useHouseCat({
   residentHome: computed(() => isHome.value),
   residentAsleep: computed(() => isHome.value && lying.value),
   residentSpot: () => ({ room: life.me.room, x: life.me.x, y: life.me.y }),
+  residentKey: computed(() => `${life.me.room}:${life.me.x}:${life.me.y}`),
+  unownedFinds: () => decorDefs.value.filter((d) => d.catOnly && !(d.id in state.decor)).map((d) => ({ id: d.id, name: d.name })),
+  grantFind: (id) => {
+    state.decor = { ...state.decor, [id]: true };
+    persist();
+  },
   notify: play.showNotice,
 });
+watch(() => !!kitty.cat.value, (v) => (catAdopted.value = v), { immediate: true });
+
+/** 點碗、點浴缸：直接照顧牠（不用打開面板）；沒做成的原因顯示在下面那一列 */
+async function careFromRoom(kind: CatCare) {
+  const why = await kitty.care(kind);
+  if (why) play.showNotice(why);
+}
 /** 貓走路換腳（跟他共用同一個計時器，只在牠走路時加） */
 const catFrame = ref(0);
 const catSheetOpen = ref(false);
@@ -763,6 +785,12 @@ function onItemClick(it: { room: RoomId; id: string; name: string; action?: Furn
   // 信箱裡有今天的信：這次點是收信，不打開訊息
   if (it.room === "living" && it.id === "mailbox" && chores.mailReady.value && chores.takeMail()) return;
   const action = it.action;
+  if (action.kind === "app" && action.app === WASH_CAT) {
+    flashKey.value = `${it.room}:${it.id}`;
+    setTimeout(() => (flashKey.value = null), 160);
+    void careFromRoom("wash");
+    return;
+  }
   flashKey.value = `${it.room}:${it.id}`;
   setTimeout(() => {
     flashKey.value = null;
@@ -1410,7 +1438,15 @@ function labelStyle(room: RoomId, it: RenderItem) {
       </div>
 
       <!-- 貓的飼料碗（有養貓才有） -->
-      <img v-if="kitty.cat.value" class="ph-bowl" :src="kitty.act.value === 'eat' ? bowlImages.full : bowlImages.empty" :style="bowlStyle" alt="" draggable="false" />
+      <button
+        v-if="kitty.cat.value && !editMode"
+        class="ph-bowl"
+        :style="bowlStyle"
+        :aria-label="`${kitty.cat.value.name}的飼料碗，點了餵飼料`"
+        @click.stop="careFromRoom('feed')"
+      >
+        <img :src="kitty.act.value === 'eat' ? bowlImages.full : bowlImages.empty" alt="" draggable="false" />
+      </button>
 
       <!-- 貓：點了打開照顧牠的面板 -->
       <div v-if="kitty.cat.value && loaded" class="ph-cat" :class="{ 'is-offscreen': !catOnScreen }" :style="catStyle">
@@ -1845,10 +1881,30 @@ function labelStyle(room: RoomId, it: RenderItem) {
 
 .ph-bowl {
   position: absolute;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  z-index: 2;
+}
+
+.ph-bowl::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 44px;
+  height: 44px;
+  transform: translate(-50%, -50%);
+}
+
+.ph-bowl img {
+  display: block;
+  width: 100%;
+  height: 100%;
   image-rendering: crisp-edges;
   image-rendering: pixelated;
   pointer-events: none;
-  z-index: 2;
   -webkit-user-drag: none;
 }
 

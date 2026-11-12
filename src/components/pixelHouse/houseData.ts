@@ -136,6 +136,8 @@ export interface DecorDef {
   h: number;
   /** 掛在牆上的 */
   wall: boolean;
+  /** 貓叼回來的：商店不賣，只能等貓帶回家 */
+  catOnly?: boolean;
 }
 
 /**

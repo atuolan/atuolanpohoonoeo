@@ -4,7 +4,7 @@
  * 省電：跟他一樣，一次只有一個一次性的計時器（40～90 秒才換一件事），走路交給 CSS 補間；
  * 數值照時間差算，不用計時器扣；畫面切到背景時 pause() 全停。
  */
-import { computed, onUnmounted, reactive, ref, type Ref } from "vue";
+import { computed, onUnmounted, reactive, ref, watch, type Ref } from "vue";
 import {
   adoptCat,
   careCat,
@@ -17,8 +17,13 @@ import {
   CAT_FEED_BELOW,
   CAT_FEED_COINS,
   CAT_GIFT_DAILY_LIMIT,
+  CAT_FOLLOW,
+  CAT_FOLLOW_LABEL,
+  CAT_JUMP_MS,
   CAT_RUB,
   CAT_RUB_LABEL,
+  PERCH_FLOOR_Y,
+  pickCatFind,
   CAT_SPEED,
   CAT_WASH_BELOW,
   pickCatAct,
@@ -30,11 +35,13 @@ import {
 } from "./houseCat";
 import { ROOM_W, type RoomId, type Scene } from "./houseData";
 import { countDaily, dailyLeft, loadHouseLifeState, rollDay, saveHouseLifeState } from "./houseLife";
-import { followAnchor, planRoute, type Leg, type Spot } from "./houseLogic";
+import { followAnchor, planRoute, type Spot } from "./houseLogic";
 import { stripX } from "./useHouseResident";
 import { earnCoins, payCoins } from "./wardrobeShop";
 
 type Pos = { x: number; y: number };
+/** 一段路；jump = 跳上跳下（窗台），用固定的短時間 */
+type CatLeg = Spot & { jump?: boolean };
 export type CatFx = "heart" | "bubble" | "note";
 
 const FX_MS = 1600;
@@ -48,6 +55,12 @@ export function useHouseCat(deps: {
   residentHome: Ref<boolean>;
   residentAsleep: Ref<boolean>;
   residentSpot: () => Spot;
+  /** 他站的位置變了就會變（他每走一段變一次）：「跟著他走」時重新找路 */
+  residentKey: Ref<string>;
+  /** 還沒拿到的、只有貓會叼回來的小擺件 */
+  unownedFinds: () => { id: string; name: string }[];
+  /** 拿到一件（擺出來） */
+  grantFind: (id: string) => void;
   notify: (text: string) => void;
 }) {
   const cat = ref<CatState | null>(loadHouseLifeState().cat);
@@ -86,7 +99,7 @@ export function useHouseCat(deps: {
 
   /** 這件事在哪：固定的照設計稿（家具搬了跟著走）；蹭他是他現在站的地方旁邊 */
   function spotOf(key: string): Spot {
-    if (key === CAT_RUB) {
+    if (key === CAT_RUB || key === CAT_FOLLOW) {
       const r = deps.residentSpot();
       const side = r.x > ROOM_W / 2 ? -14 : 14;
       return { room: r.room, x: Math.min(Math.max(r.x + side, 10), ROOM_W - 10), y: Math.min(r.y + 3, 276) };
@@ -122,22 +135,38 @@ export function useHouseCat(deps: {
     }, ms);
   }
 
-  function goTo(key: string) {
+  /** 從現在的位置到這件事的路：在窗台上就先跳下來；要去窗台就走到下面再跳上去 */
+  function routeTo(key: string): CatLeg[] {
+    const target = spotOf(key);
+    const legs: CatLeg[] = [];
+    let from: Spot = { ...me };
+    if (me.y < PERCH_FLOOR_Y - 4) {
+      from = { room: me.room, x: me.x, y: PERCH_FLOOR_Y };
+      legs.push({ ...from, jump: true });
+    }
+    if (CAT_ACTS[key]?.perch) {
+      const below = { room: target.room, x: target.x, y: PERCH_FLOOR_Y };
+      legs.push(...planRoute(from, below), { ...target, jump: true });
+    } else legs.push(...planRoute(from, target));
+    return legs;
+  }
+
+  function goTo(key: string, onArrive?: () => void) {
     clearTimers();
     playing.value = false;
-    const target = spotOf(key);
     act.value = key;
     walking.value = true;
-    runLegs(planRoute({ ...me }, target), () => {
+    runLegs(routeTo(key), () => {
       walking.value = false;
       moveMs.value = 0;
+      onArrive?.();
       // 吃飯：頭要朝著碗（碗在右邊）
       if (key === "eat") facing.value = 1;
       schedule(catDwellMs(key, Math.random, deps.calm.value));
     });
   }
 
-  function runLegs(legs: Leg[], done: () => void) {
+  function runLegs(legs: CatLeg[], done: () => void) {
     if (dead) return;
     const [leg, ...rest] = legs;
     if (!leg) {
@@ -151,10 +180,10 @@ export function useHouseCat(deps: {
       runLegs(rest, done);
       return;
     }
-    const ms = Math.round((dist / CAT_SPEED) * 1000);
+    const ms = leg.jump ? CAT_JUMP_MS : Math.round((dist / CAT_SPEED) * 1000);
     moveMs.value = ms;
     if (Math.abs(dx) > 2) facing.value = dx > 0 ? 1 : -1;
-    Object.assign(me, leg);
+    Object.assign(me, { room: leg.room, x: leg.x, y: leg.y });
     legTimer = setTimeout(() => runLegs(rest, done), ms);
   }
 
@@ -245,7 +274,9 @@ export function useHouseCat(deps: {
     if (kind === "wash") {
       if (levels.value.clean >= CAT_WASH_BELOW) return `${c.name}還很乾淨`;
       saveCat(careCat(c, "wash", Date.now()));
-      showFx("bubble");
+      // 走去浴室，到了才冒泡泡
+      if (paused) showFx("bubble");
+      else goTo("sit-bath", () => showFx("bubble"));
       return null;
     }
     saveCat(careCat(c, kind, Date.now()));
@@ -267,16 +298,38 @@ export function useHouseCat(deps: {
     const counted = countDaily(state, "catGift", CAT_GIFT_DAILY_LIMIT, now);
     if (!counted) return;
     saveHouseLifeState(counted);
+    // 有時候是商店沒賣的小擺件（拿過的不會再叼）
+    const finds = deps.unownedFinds();
+    const findId = pickCatFind(finds.map((f) => f.id));
+    if (findId) {
+      deps.grantFind(findId);
+      deps.notify(`${c.name}叼了一個${finds.find((f) => f.id === findId)?.name ?? "東西"}回來！已經擺出來了`);
+      return;
+    }
     await earnCoins(coins, `小屋：${c.name}叼回來的`, "pixel-house:cat:gift");
     deps.notify(`${c.name}叼了東西回來　＋${coins} 金幣`);
   }
+
+  // 跟著他走：他每走一段（站的位置變了），牠就重新找路跟過去。不是一直算，是他動了才算一次
+  watch(deps.residentKey, () => {
+    if (act.value !== CAT_FOLLOW || paused || dead || !started || !cat.value) return;
+    if (legTimer) clearTimeout(legTimer);
+    legTimer = null;
+    walking.value = true;
+    runLegs(routeTo(CAT_FOLLOW), () => {
+      walking.value = false;
+      moveMs.value = 0;
+      // 第一次走到之前就被叫去改路：到了才開始算這件事做多久
+      if (!nextTimer) schedule(catDwellMs(CAT_FOLLOW, Math.random, deps.calm.value));
+    });
+  });
 
   /** 現在用哪張圖 */
   function poseAt(frame: number): CatPose {
     if (walking.value) return frame % 2 ? "walk-b" : "walk-a";
     if (playing.value) return "sit";
     if (listless.value) return "sleep";
-    if (act.value === CAT_RUB) return "sit";
+    if (act.value === CAT_RUB || act.value === CAT_FOLLOW) return "sit";
     return CAT_ACTS[act.value]?.pose ?? "sit";
   }
 
@@ -285,6 +338,7 @@ export function useHouseCat(deps: {
     if (walking.value) return "走來走去";
     if (listless.value) return "沒精神，趴著";
     if (act.value === CAT_RUB) return CAT_RUB_LABEL;
+    if (act.value === CAT_FOLLOW) return CAT_FOLLOW_LABEL;
     return CAT_ACTS[act.value]?.label ?? "";
   });
 

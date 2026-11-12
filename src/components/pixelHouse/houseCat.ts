@@ -230,6 +230,15 @@ export function rollCatGift(levels: Record<CatStatKey, number>, left: number, ra
   return Math.min(hi, lo + Math.floor(rand() * (hi - lo + 1)));
 }
 
+/** 叼東西回來時，有多少機會是商店沒賣的小擺件（還有沒拿到的才會） */
+export const CAT_FIND_CHANCE = 0.3;
+
+/** 這次叼回來的是哪件小擺件；不是擺件（叼金幣）回傳 null */
+export function pickCatFind(unowned: ReadonlyArray<string>, rand: () => number = Math.random): string | null {
+  if (!unowned.length || rand() >= CAT_FIND_CHANCE) return null;
+  return unowned[Math.min(unowned.length - 1, Math.floor(rand() * unowned.length))];
+}
+
 // ===== 牠會做的事 =====
 
 export interface CatActDef {
@@ -243,7 +252,14 @@ export interface CatActDef {
   label: string;
   /** 原地跳（玩耍） */
   hop?: boolean;
+  /** 在地板上面（窗台）：先走到下面，再跳上去；離開時先跳下來 */
+  perch?: boolean;
 }
+
+/** 跳上窗台前、跳下來後站的地方（靠牆的地板） */
+export const PERCH_FLOOR_Y = 162;
+/** 跳一下多久（毫秒） */
+export const CAT_JUMP_MS = 320;
 
 /** 固定位置的事。「蹭他」和「跟著他」的位置是他現在在哪，另外算 */
 export const CAT_ACTS: Record<string, CatActDef> = {
@@ -257,16 +273,22 @@ export const CAT_ACTS: Record<string, CatActDef> = {
   "nap-bedroom-rug": { room: "bedroom", x: 46, y: 266, anchor: "rug", pose: "sleep", label: "在地毯上打盹" },
   "sit-bedroom": { room: "bedroom", x: 60, y: 174, pose: "sit", label: "坐著發呆" },
   "sit-bath": { room: "bath", x: 50, y: 248, anchor: "bath-mat", pose: "sit", label: "坐在浴墊上" },
+  // 窗台：盆栽和花瓶中間那一小塊（跟著窗戶走）
+  "sill-living": { room: "living", x: 38, y: 91, anchor: "window", pose: "sit", label: "在窗台看外面", perch: true },
+  "sill-bedroom": { room: "bedroom", x: 67, y: 87, anchor: "window", pose: "sit", label: "在窗台看外面", perch: true },
 };
 
 /** 走到他旁邊蹭他（位置是他現在站的地方旁邊） */
 export const CAT_RUB = "rub";
 export const CAT_RUB_LABEL = "蹭蹭";
+/** 跟著他走：他走到哪、牠跟到哪（他每走一段才重新找路，不是一直算） */
+export const CAT_FOLLOW = "follow";
+export const CAT_FOLLOW_LABEL = "跟在旁邊";
 
 /** 白天、黃昏、晚上各做什麼的機率 */
 export const CAT_WEIGHTS: Record<Scene, Record<string, number>> = {
-  day: { "nap-sofa": 3, "nap-rug": 2, "nap-bedroom-rug": 2, "sit-living": 2, "sit-kitchen": 1, "sit-bedroom": 1, "sit-bath": 1, "play-living": 2, [CAT_RUB]: 3 },
-  dusk: { "nap-sofa": 2, "nap-rug": 1, "sit-living": 2, "sit-kitchen": 3, "sit-bedroom": 1, "play-living": 2, [CAT_RUB]: 3 },
+  day: { "nap-sofa": 3, "nap-rug": 2, "nap-bedroom-rug": 2, "sit-living": 1, "sit-kitchen": 1, "sit-bedroom": 1, "sit-bath": 1, "play-living": 2, "sill-living": 2, "sill-bedroom": 2, [CAT_RUB]: 2, [CAT_FOLLOW]: 2 },
+  dusk: { "nap-sofa": 2, "nap-rug": 1, "sit-living": 1, "sit-kitchen": 3, "sit-bedroom": 1, "play-living": 2, "sill-living": 2, "sill-bedroom": 1, [CAT_RUB]: 2, [CAT_FOLLOW]: 2 },
   night: { "nap-bed": 6, "nap-sofa": 3, "nap-rug": 2, "nap-bedroom-rug": 2, "sit-bedroom": 1 },
 };
 
@@ -286,7 +308,7 @@ export function pickCatAct(
   if (opts.residentAsleep) return "nap-bed";
   const weights = CAT_WEIGHTS[opts.scene];
   let keys = Object.keys(weights).filter((k) => k !== opts.current);
-  if (!opts.residentHome) keys = keys.filter((k) => k !== CAT_RUB);
+  if (!opts.residentHome) keys = keys.filter((k) => k !== CAT_RUB && k !== CAT_FOLLOW);
   if (opts.listless) keys = keys.filter((k) => LISTLESS_ACTS.includes(k));
   if (!keys.length) return LISTLESS_ACTS.find((k) => k !== opts.current) ?? LISTLESS_ACTS[0];
   const total = keys.reduce((sum, k) => sum + weights[k], 0);
@@ -300,7 +322,8 @@ export function pickCatAct(
 
 /** 每件事做多久（毫秒）：40～90 秒；蹭他短一點；「少走動」再乘 4 倍 */
 export function catDwellMs(act: string, rand: () => number = Math.random, calm = false): number {
-  const base = act === CAT_RUB ? 12_000 + rand() * 10_000 : act === "eat" ? 8_000 : 40_000 + rand() * 50_000;
+  const base =
+    act === CAT_RUB ? 12_000 + rand() * 10_000 : act === "eat" ? 8_000 : act === CAT_FOLLOW ? 30_000 + rand() * 30_000 : 40_000 + rand() * 50_000;
   return calm ? base * 4 : base;
 }
 
