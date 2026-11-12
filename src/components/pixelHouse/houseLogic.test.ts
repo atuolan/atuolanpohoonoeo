@@ -99,29 +99,24 @@ describe("pickAct", () => {
 });
 
 describe("planRoute", () => {
-  const door = { x: 113, y: 158 };
   it("同一間後排直接走過去", () => {
-    expect(planRoute({ room: "living", x: 10, y: 160 }, { room: "living", x: 80, y: 160 }, door)).toEqual([
-      { room: "living", x: 80, y: 160 },
-    ]);
+    expect(planRoute({ room: "living", x: 10, y: 160 }, { room: "living", x: 80, y: 160 })).toEqual([{ room: "living", x: 80, y: 160 }]);
   });
   it("跨房間：走到邊上，從隔壁的邊上接著走，最後到目的地", () => {
-    const legs = planRoute({ room: "living", x: 81, y: 158 }, { room: "kitchen", x: 113, y: 160 }, door);
-    const last = legs[legs.length - 1];
-    expect(last).toEqual({ room: "kitchen", x: 113, y: 160 });
-    expect(legs.some((l) => l.room === "bedroom")).toBe(true);
-    expect(legs.some((l) => l.teleport)).toBe(false);
+    const legs = planRoute({ room: "kitchen", x: 113, y: 160 }, { room: "bedroom", x: 66, y: 157 });
+    expect(legs[legs.length - 1]).toEqual({ room: "bedroom", x: 66, y: 157 });
+    expect(legs.some((l) => l.room === "living")).toBe(true);
   });
-  it("進浴室：走到臥室的門，穿過去", () => {
-    const legs = planRoute({ room: "living", x: 81, y: 158 }, { room: "bath", x: 85, y: 158 }, door);
-    const tp = legs.findIndex((l) => l.teleport);
-    expect(legs[tp - 1]).toMatchObject({ room: "bedroom", x: 113, y: 158 });
-    expect(legs[tp].room).toBe("bath");
+  it("浴室在臥室右邊：從臥室的右邊走過去，出現在浴室的左邊", () => {
+    const legs = planRoute({ room: "bedroom", x: 66, y: 157 }, { room: "bath", x: 85, y: 158 });
+    const enter = legs.findIndex((l) => l.room === "bath");
+    expect(legs[enter - 1]).toMatchObject({ room: "bedroom", x: 130 });
+    expect(legs[enter]).toMatchObject({ room: "bath", x: 0 });
     expect(legs[legs.length - 1]).toEqual({ room: "bath", x: 85, y: 158 });
   });
-  it("出浴室：從門穿回臥室再走", () => {
-    const legs = planRoute({ room: "bath", x: 85, y: 158 }, { room: "kitchen", x: 27, y: 158 }, door);
-    expect(legs.find((l) => l.teleport)).toMatchObject({ room: "bedroom", x: 113, y: 158 });
+  it("出浴室：往左一間一間走回去", () => {
+    const legs = planRoute({ room: "bath", x: 85, y: 158 }, { room: "kitchen", x: 27, y: 158 });
+    expect(legs.map((l) => l.room).filter((r, n, a) => r !== a[n - 1])).toEqual(["bath", "bedroom", "living", "kitchen"]);
     expect(legs[legs.length - 1]).toEqual({ room: "kitchen", x: 27, y: 158 });
   });
 });
@@ -363,6 +358,6 @@ describe("snapRoomIndex：放開後停在哪一間", () => {
   });
   it("第一間往右撥、最後一間往左撥：留在原地", () => {
     expect(snapRoomIndex(W / 2, 2, 0, W)).toBe(0);
-    expect(snapRoomIndex(W * 2.5, -2, 2, W)).toBe(2);
+    expect(snapRoomIndex(W * 3.5, -2, 3, W)).toBe(3);
   });
 });

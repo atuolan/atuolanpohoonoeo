@@ -194,10 +194,8 @@ export function dwellMs(act: string, rand: () => number = Math.random, calm = fa
 
 // ===== 走哪條路 =====
 
-/** 一段路：走到 (x, y)；teleport 是穿過浴室的門，直接出現在另一邊 */
-export interface Leg extends Spot {
-  teleport?: boolean;
-}
+/** 一段路：走到 (x, y) */
+export type Leg = Spot;
 
 const FRONT_ROW_Y = 225;
 const CROSS_Y = 200;
@@ -214,47 +212,29 @@ export function pathIn(room: RoomId, p: Pos, q: Pos): Leg[] {
   ];
 }
 
-/**
- * 從 from 走到 to 的整條路。客廳｜臥室｜廚房排一排，走到房間邊上就到隔壁；
- * 浴室要走到臥室的門（bathDoor），穿過去出現在浴室門口。
- */
-export function planRoute(from: Spot, to: Spot, bathDoor: Pos): Leg[] {
+/** 從 from 走到 to 的整條路。四間排一排，走到房間邊上就到隔壁。 */
+export function planRoute(from: Spot, to: Spot): Leg[] {
   const legs: Leg[] = [];
   let pos: Spot = { ...from };
-  const BATH_ENTRY = { x: 118, y: 176 };
-
-  if (pos.room === "bath" && to.room !== "bath") {
-    legs.push(...pathIn("bath", pos, BATH_ENTRY));
-    legs.push({ room: "bedroom", ...bathDoor, teleport: true });
-    pos = { room: "bedroom", ...bathDoor };
-  }
-  const targetStripRoom: RoomId = to.room === "bath" ? "bedroom" : to.room;
-  if (pos.room !== "bath") {
-    let idx = STRIP_ROOMS.indexOf(pos.room);
-    const end = STRIP_ROOMS.indexOf(targetStripRoom);
-    while (idx !== end) {
-      const dir = Math.sign(end - idx);
-      const room = STRIP_ROOMS[idx];
-      const exitX = dir > 0 ? ROOM_W : 0;
-      legs.push(...pathIn(room, pos, { x: exitX, y: CROSS_Y }));
-      idx += dir;
-      // 隔壁房間的邊上就是同一個點，接著走進去
-      pos = { room: STRIP_ROOMS[idx], x: dir > 0 ? 0 : ROOM_W, y: CROSS_Y };
-      legs.push({ ...pos });
-    }
-    if (to.room === "bath") {
-      legs.push(...pathIn("bedroom", pos, bathDoor));
-      legs.push({ room: "bath", ...BATH_ENTRY, teleport: true });
-      pos = { room: "bath", ...BATH_ENTRY };
-    }
+  let idx = STRIP_ROOMS.indexOf(pos.room);
+  const end = STRIP_ROOMS.indexOf(to.room);
+  while (idx !== end) {
+    const dir = Math.sign(end - idx);
+    const room = STRIP_ROOMS[idx];
+    const exitX = dir > 0 ? ROOM_W : 0;
+    legs.push(...pathIn(room, pos, { x: exitX, y: CROSS_Y }));
+    idx += dir;
+    // 隔壁房間的邊上就是同一個點，接著走進去
+    pos = { room: STRIP_ROOMS[idx], x: dir > 0 ? 0 : ROOM_W, y: CROSS_Y };
+    legs.push({ ...pos });
   }
   legs.push(...pathIn(to.room, pos, to));
   return legs;
 }
 
-/** 房間在橫條裡的位置（浴室算臥室） */
+/** 房間在橫條裡排第幾間 */
 export function stripIndex(room: RoomId): number {
-  return STRIP_ROOMS.indexOf(room === "bath" ? "bedroom" : room);
+  return STRIP_ROOMS.indexOf(room);
 }
 
 /**

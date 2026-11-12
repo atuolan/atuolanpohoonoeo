@@ -3,7 +3,7 @@
  * 跟真實狀態連動：在睡就去床上睡、在忙就坐電腦前、出門或約會就不在家。
  */
 import { onUnmounted, reactive, ref, type Ref } from "vue";
-import { ACTS, WALK_SPEED, type RoomId, type Scene } from "./houseData";
+import { ACTS, ROOM_W, STRIP_ROOMS, WALK_SPEED, type RoomId, type Scene } from "./houseData";
 import { actSpot, dwellMs, pickAct, planRoute, type Leg, type ResidentStatus, type Spot } from "./houseLogic";
 
 type Pos = { x: number; y: number };
@@ -58,14 +58,6 @@ export function useHouseResident(deps: ResidentDeps) {
     return actSpot(a, deps.current(a.room), deps.defaults(a.room));
   }
 
-  /** 臥室通往浴室的門口（門搬了跟著走） */
-  function bathDoor(): Pos {
-    const cur = deps.current("bedroom").door;
-    const def = deps.defaults("bedroom").door;
-    const dx = cur && def ? cur.x - def.x : 0;
-    return { x: Math.min(Math.max(113 + dx, 6), 124), y: 158 };
-  }
-
   function schedule(ms: number) {
     if (nextTimer) clearTimeout(nextTimer);
     nextTimer = setTimeout(() => {
@@ -83,7 +75,7 @@ export function useHouseResident(deps: ResidentDeps) {
   function goTo(key: string) {
     clearTimers();
     const target = spotOf(key);
-    const legs = planRoute({ ...me }, target, bathDoor());
+    const legs = planRoute({ ...me }, target);
     act.value = key;
     crossing.value = target.room !== me.room;
     heading.value = target.room;
@@ -103,15 +95,8 @@ export function useHouseResident(deps: ResidentDeps) {
       done();
       return;
     }
-    if (leg.teleport) {
-      moveMs.value = 0;
-      Object.assign(me, { room: leg.room, x: leg.x, y: leg.y });
-      legTimer = setTimeout(() => runLegs(rest, done), 120);
-      return;
-    }
     // 跨房間時隔壁的邊上是同一個點，換算成同一條橫條上的距離
-    const sameStrip = (leg.room === "bath") === (me.room === "bath");
-    const dx = sameStrip ? stripX(leg) - stripX(me) : 0;
+    const dx = stripX(leg) - stripX(me);
     const dy = leg.y - me.y;
     const dist = Math.hypot(dx, dy);
     if (dist < 1) {
@@ -209,8 +194,7 @@ export function useHouseResident(deps: ResidentDeps) {
   return { me, act, walking, facing, moveMs, heading, home, crossing, depthY, start, pause, resume, leave, onStatusChange };
 }
 
-/** 橫條上的 x（房間格子）：客廳 0、臥室 130、廚房 260；浴室自己一張 */
+/** 橫條上的 x（房間格子）：第幾間 × 一間的寬度 + 房間裡的 x */
 export function stripX(p: { room: RoomId; x: number }): number {
-  const idx = p.room === "living" ? 0 : p.room === "kitchen" ? 2 : 1;
-  return p.room === "bath" ? p.x : idx * 130 + p.x;
+  return STRIP_ROOMS.indexOf(p.room) * ROOM_W + p.x;
 }

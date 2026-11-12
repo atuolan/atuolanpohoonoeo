@@ -104,6 +104,28 @@ function itemStyle(it: RoomItem) {
   return style;
 }
 
+/**
+ * 可以點的家具右上角的小亮點（5×5 格的像素菱形）：不用按「？」也看得出哪些會打開東西。
+ * 不會動（省電），編輯擺設時不顯示。
+ */
+const MARK = 5;
+const MARK_SRC =
+  "data:image/svg+xml," +
+  encodeURIComponent(
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 5 5" shape-rendering="crispEdges">` +
+      `<path d="M2 0h1v1h1v1h1v1h-1v1h-1v1h-1v-1h-1v-1h-1v-1h1v-1h1z" fill="#3B2A26"/>` +
+      `<path d="M2 1h1v1h1v1h-1v1h-1v-1h-1v-1h1z" fill="#FFE08A"/>` +
+      `<rect x="2" y="1" width="1" height="1" fill="#FFF8DC"/></svg>`,
+  );
+function markStyle(it: RoomItem) {
+  return {
+    left: `${Math.min(Math.max(it.px + it.w - MARK + 1, 0), 130 - MARK)}px`,
+    top: `${Math.max(it.py - 2, 0)}px`,
+    width: `${MARK}px`,
+    height: `${MARK}px`,
+  };
+}
+
 const emit = defineEmits<{ (e: "item-click", it: RoomItem): void }>();
 </script>
 
@@ -137,6 +159,11 @@ const emit = defineEmits<{ (e: "item-click", it: RoomItem): void }>();
       :style="itemStyle(it)"
       @click="emit('item-click', it)"
     />
+    <template v-if="!editMode">
+      <template v-for="it in items" :key="`mark-${it.id}`">
+        <img v-if="it.action && !hidden(it.id)" class="ph-px ph-mark" :src="MARK_SRC" alt="" aria-hidden="true" draggable="false" :style="markStyle(it)" />
+      </template>
+    </template>
   </div>
 </template>
 
@@ -175,6 +202,12 @@ const emit = defineEmits<{ (e: "item-click", it: RoomItem): void }>();
   cursor: grabbing;
   filter: drop-shadow(1px 1.4px 0 rgba(43, 30, 27, 0.4));
   z-index: 5;
+}
+
+/* 在所有家具上面（同一層裡） */
+.ph-mark {
+  z-index: 4;
+  opacity: 0.92;
 }
 
 .ph-item.is-flash {
