@@ -15,8 +15,50 @@ import { computed, onMounted, onUnmounted, reactive, ref, watch } from "vue";
 import { GIFTS, GIFT_ART, type GiftKind } from "./houseLines";
 import { pixelSvg } from "./pixelArt";
 import HouseCatSheet from "./HouseCatSheet.vue";
-import { BOWL_ART, BOWL_PALETTE, BOWL_SPOT, CAT_ART, CAT_COLORS, CAT_H, CAT_W, type CatCare, type CatColor, type CatPose } from "./houseCat";
-import { BOX_FULL_NEAT, ICON_ART, LITTER_ART, LITTER_SPOT, MAX_CATS, MESS_ART, MESS_BY_ID, type MessKind } from "./petHome";
+import {
+  awayUntil,
+  BOWL_ART,
+  BOWL_PALETTE,
+  BOWL_SPOT,
+  catLevels,
+  catListless,
+  hamsterPose,
+  SPECIES_COLORS,
+  type CatCare,
+  type CatPose,
+  type PetColor,
+  type PetSpecies,
+} from "./houseCat";
+import {
+  CAGE_ART,
+  CAGE_H,
+  CAGE_PALETTE,
+  CAGE_RUNNER,
+  CAGE_SITTER,
+  CAGE_W,
+  CAGE_WHEEL,
+  DOG_BOWL_PALETTE,
+  HAMSTER_ART,
+  HAMSTER_H,
+  HAMSTER_W,
+  hamsterFrames,
+  PAD_ART,
+  walkerArt,
+} from "./petArt";
+import {
+  BOX_FULL_NEAT,
+  CAGE_SPOTS,
+  DOG_BOWL_SPOT,
+  ICON_ART,
+  LITTER_ART,
+  LITTER_SPOT,
+  MAX_WALKERS,
+  MESS_ART,
+  MESS_BY_ID,
+  PAD_SPOT,
+  roams,
+  type MessKind,
+} from "./petHome";
 import { useHouseCat, type HouseCat } from "./useHouseCat";
 import { usePetHome } from "./usePetHome";
 import { DIRT_ART, DIRT_BY_ID, choreAct, type DirtKind } from "./houseChores";
@@ -175,12 +217,12 @@ interface RenderItem extends LayoutItem {
   action?: FurnitureAction;
 }
 
-/** 有沒有養貓（貓在下面才建好；家具這邊要先知道，浴缸才能點） */
+/** 有沒有養貓或狗（在下面才建好；家具這邊要先知道，浴缸才能點） */
 const catAdopted = ref(false);
-/** 有養貓：點浴缸是幫牠洗澡（泡澡還沒開放） */
+/** 有養貓狗：點浴缸是幫牠洗澡（泡澡還沒開放） */
 const WASH_CAT = "__wash-cat__";
 function actionOf(room: RoomId, id: string): FurnitureAction | undefined {
-  if (room === "bath" && id === "bathtub" && catAdopted.value) return { kind: "app", app: WASH_CAT, to: "幫貓洗澡" };
+  if (room === "bath" && id === "bathtub" && catAdopted.value) return { kind: "app", app: WASH_CAT, to: "幫寵物洗澡" };
   return FURNITURE_ACTIONS[room][id];
 }
 
@@ -444,6 +486,8 @@ async function refreshResident() {
 
 watch(status, (next, prev) => {
   if (!loaded.value || !residentId.value) return;
+  // 陪狗散步中：回來的時間到了 syncWalk 會照當時的狀態讓他進門
+  if (walkUntil.value > Date.now() && next !== "away" && next !== "date") return;
   life.onStatusChange(next, prev);
 });
 
@@ -505,7 +549,7 @@ const dirtSpots = computed(() =>
 );
 const dirtImages = Object.fromEntries(Object.entries(DIRT_ART).map(([k, a]) => [k, pixelSvg(a.rows, a.palette)])) as Record<DirtKind, string>;
 
-// ===== 貓（最多三隻；貓糧、貓砂、貓砂盆、便便、看醫生在 usePetHome） =====
+// ===== 寵物（貓狗最多三隻、倉鼠最多三隻；用品、貓砂盆、便便、看醫生、散步在 usePetHome） =====
 const pets = usePetHome({ notify: play.showNotice });
 const catDeps = {
   scene,
@@ -524,20 +568,26 @@ const catDeps = {
   },
   notify: play.showNotice,
 };
-/** 三格，每格一隻（還沒養的格子什麼都不做） */
-const kitties: HouseCat[] = Array.from({ length: MAX_CATS }, (_, i) =>
-  useHouseCat(computed(() => pets.home.value.cats[i]?.id ?? null), pets, catDeps),
+/** 會在家裡走的（貓、狗）照領養的順序排；倉鼠住籠子，不在這裡 */
+const walkerIds = computed(() => pets.home.value.cats.filter(roams).map((c) => c.id));
+/** 三格，每格一隻貓或狗（還沒養的格子什麼都不做） */
+const kitties: HouseCat[] = Array.from({ length: MAX_WALKERS }, (_, i) =>
+  useHouseCat(computed(() => walkerIds.value[i] ?? null), pets, catDeps),
 );
-watch(() => pets.home.value.cats.length > 0, (v) => (catAdopted.value = v), { immediate: true });
+watch(() => walkerIds.value.length > 0, (v) => (catAdopted.value = v), { immediate: true });
 const kittyOf = (id: string) => kitties.find((k) => k.catId.value === id);
+const hasSpecies = (sp: PetSpecies) => pets.home.value.cats.some((c) => c.species === sp);
+const hasCat = computed(() => hasSpecies("cat"));
+const hasDog = computed(() => hasSpecies("dog"));
 
 /** 點碗、點浴缸：沒做成的原因顯示在下面那一列 */
-function onBowlTap() {
-  const n = pets.home.value.stock.kibble;
+function onBowlTap(dog = false) {
+  const n = dog ? pets.home.value.stock.dogFood : pets.home.value.stock.kibble;
+  const food = dog ? "狗糧" : "貓糧";
   if (n <= 0) {
-    play.showNotice("貓糧吃完了，買一點吧");
+    play.showNotice(`${food}吃完了，買一點吧`);
     openCatSheet("supplies");
-  } else play.showNotice(`碗裡有貓糧，牠們餓了會自己來吃（還有 ${n} 份）`);
+  } else play.showNotice(`碗裡有${food}，餓了會自己來吃（還有 ${n} 份）`);
 }
 function washFromTub() {
   const c = pets.dirtiest();
@@ -554,6 +604,15 @@ function onLitterTap() {
     openCatSheet("supplies");
   } else play.showNotice(`貓砂盆很乾淨（貓砂還有 ${pets.home.value.stock.litter} 次）`);
 }
+/** 點尿布墊：有狗在等著上廁所就帶牠過去 */
+function onPadTap() {
+  if (kitties.some((k) => k.isDog.value && k.guideToBox())) return;
+  const n = pets.home.value.stock.pad;
+  if (n <= 0) {
+    play.showNotice("沒有尿布墊了，買一點吧");
+    openCatSheet("supplies");
+  } else play.showNotice(`狗想上廁所時，點牠再點這裡（尿布墊還有 ${n} 片）`);
+}
 function onCatTap(k: HouseCat) {
   if (editMode.value || !k.cat.value) return;
   if (k.tap()) return;
@@ -569,13 +628,14 @@ const catBusy = ref(false);
 const catNow = ref(Date.now());
 
 /** 每種花色的圖（用到才畫）。每個姿勢都先放著、只顯示一張：換姿勢時不用臨時解碼圖片（會卡一下） */
-const catImageCache = new Map<CatColor, Record<CatPose, string>>();
-function catImages(color: CatColor): Record<CatPose, string> {
-  let imgs = catImageCache.get(color);
+const catImageCache = new Map<string, Record<CatPose, string>>();
+function catImages(species: PetSpecies, color: PetColor): Record<CatPose, string> {
+  const key = `${species}:${color}`;
+  let imgs = catImageCache.get(key);
   if (!imgs) {
-    const palette = CAT_COLORS[color].palette;
-    imgs = Object.fromEntries(Object.entries(CAT_ART).map(([pose, rows]) => [pose, pixelSvg(rows, palette)])) as Record<CatPose, string>;
-    catImageCache.set(color, imgs);
+    const palette = SPECIES_COLORS[species][color]?.palette ?? {};
+    imgs = Object.fromEntries(Object.entries(walkerArt(species).art).map(([pose, rows]) => [pose, pixelSvg(rows, palette)])) as Record<CatPose, string>;
+    catImageCache.set(key, imgs);
   }
   return imgs;
 }
@@ -593,7 +653,12 @@ function catStyle(k: HouseCat) {
     zIndex: !isHome.value || k.me.y >= meDepth.value || k.me.room !== life.me.room ? 4 : 2,
   };
 }
-const catBox = computed(() => ({ width: `${u(CAT_W)}px`, height: `${u(CAT_H)}px`, left: `${-u(CAT_W / 2)}px`, top: `${-u(CAT_H)}px` }));
+/** 圖的大小（狗比貓大一點）：腳底在 (0, 0) */
+function catBox(species: PetSpecies) {
+  const { w, h } = walkerArt(species);
+  return { width: `${u(w)}px`, height: `${u(h)}px`, left: `${-u(w / 2)}px`, top: `${-u(h)}px` };
+}
+const spriteH = (k: HouseCat) => walkerArt(k.cat.value?.species ?? "cat").h;
 
 /** 飼料碗：有養貓才放；有貓糧時碗裡是滿的 */
 const bowlImages = { empty: pixelSvg(BOWL_ART.empty, BOWL_PALETTE), full: pixelSvg(BOWL_ART.full, BOWL_PALETTE) };
@@ -603,6 +668,77 @@ const bowlStyle = computed(() => ({
   width: `${u(BOWL_ART.empty[0].length)}px`,
   height: `${u(BOWL_ART.empty.length)}px`,
 }));
+
+/** 狗碗：在貓碗右邊，藍色 */
+const dogBowlImages = { empty: pixelSvg(BOWL_ART.empty, DOG_BOWL_PALETTE), full: pixelSvg(BOWL_ART.full, DOG_BOWL_PALETTE) };
+const dogBowlStyle = computed(() => ({
+  left: `${u(stripX(DOG_BOWL_SPOT))}px`,
+  top: `${u(DOG_BOWL_SPOT.y)}px`,
+  width: `${u(BOWL_ART.empty[0].length)}px`,
+  height: `${u(BOWL_ART.empty.length)}px`,
+}));
+
+/** 尿布墊（浴室，浴墊下面）：沒有了只剩一個框；有狗等著被帶過去時亮起來 */
+const padImages = { ready: pixelSvg(PAD_ART.ready.rows, PAD_ART.ready.palette), empty: pixelSvg(PAD_ART.empty.rows, PAD_ART.empty.palette) };
+const padStyle = computed(() => ({
+  left: `${u(stripX(PAD_SPOT))}px`,
+  top: `${u(PAD_SPOT.y)}px`,
+  width: `${u(PAD_ART.ready.rows[0].length)}px`,
+  height: `${u(PAD_ART.ready.rows.length)}px`,
+}));
+const padWanted = computed(() => kitties.some((k) => k.isDog.value && k.picked.value));
+
+/** 倉鼠籠（客廳角落，疊起來）：籠子的圖只畫一次，倉鼠照花色畫 */
+const cageImages = Object.fromEntries(Object.entries(CAGE_ART).map(([k, rows]) => [k, pixelSvg(rows, CAGE_PALETTE)])) as Record<keyof typeof CAGE_ART, string>;
+const hamsterImageCache = new Map<string, Record<keyof typeof HAMSTER_ART, string>>();
+function hamsterImages(color: PetColor) {
+  let imgs = hamsterImageCache.get(color);
+  if (!imgs) {
+    const palette = SPECIES_COLORS.hamster[color]?.palette ?? {};
+    imgs = Object.fromEntries(Object.entries(HAMSTER_ART).map(([k, rows]) => [k, pixelSvg(rows, palette)])) as Record<keyof typeof HAMSTER_ART, string>;
+    hamsterImageCache.set(color, imgs);
+  }
+  return imgs;
+}
+/**
+ * 每個籠子現在的樣子。倉鼠不走路、沒有自己的計時器：跟著時鐘（一分鐘一次）重算姿勢；
+ * 跑滾輪是 CSS 輪流換兩張圖，籠子在畫面外就停。
+ */
+const cages = computed(() => {
+  const t = now.value.getTime();
+  return pets.home.value.cats
+    .filter((c) => c.species === "hamster")
+    .slice(0, CAGE_SPOTS.length)
+    .map((c, i) => {
+      const spot = CAGE_SPOTS[i];
+      const away = awayUntil(c) > t;
+      const listless = catListless(catLevels(c, t), !!c.sickSince);
+      const pose = hamsterPose(c, scene.value, listless, t);
+      const run = pose === "run";
+      const pos = run ? CAGE_RUNNER : CAGE_SITTER;
+      return {
+        cat: c,
+        away,
+        run,
+        frames: hamsterFrames(pose).map((f) => hamsterImages(c.color)[f]),
+        sick: !!c.sickSince,
+        x: stripX(spot),
+        style: {
+          left: `${u(stripX(spot))}px`,
+          top: `${u(spot.y)}px`,
+          width: `${u(CAGE_W)}px`,
+          height: `${u(CAGE_H)}px`,
+        },
+        hamStyle: { left: `${u(pos.x)}px`, top: `${u(pos.y)}px`, width: `${u(HAMSTER_W)}px`, height: `${u(HAMSTER_H)}px` },
+        label: away ? "在醫院" : c.sickSince ? "生病了" : run ? "在跑滾輪" : pose === "sleep" ? "在睡覺" : pose === "eat" ? "在吃東西" : "醒著",
+      };
+    });
+});
+const cageWheelStyle = computed(() => ({ left: `${u(CAGE_WHEEL.x)}px`, top: `${u(CAGE_WHEEL.y)}px`, width: `${u(11)}px`, height: `${u(11)}px` }));
+function cageOnScreen(x: number): boolean {
+  const left = u(x) + stripOffset.value - scrollX.value;
+  return left > -u(CAGE_W) && left < stageW.value;
+}
 
 /** 貓砂盆（浴室）：乾淨、髒、沒貓砂 */
 const litterImages = Object.fromEntries(Object.entries(LITTER_ART).map(([k, a]) => [k, pixelSvg(a.rows, a.palette)])) as Record<keyof typeof LITTER_ART, string>;
@@ -614,7 +750,7 @@ const litterStyle = computed(() => ({
   height: `${u(LITTER_ART.clean.rows.length)}px`,
 }));
 /** 有貓在等著被帶去貓砂盆：貓砂盆亮起來 */
-const litterWanted = computed(() => kitties.some((k) => k.picked.value));
+const litterWanted = computed(() => kitties.some((k) => !k.isDog.value && k.picked.value));
 
 /** 地上的便便（點了清掉，沒有錢） */
 const messImages = Object.fromEntries(Object.entries(MESS_ART).map(([k, a]) => [k, pixelSvg(a.rows, a.palette)])) as Record<MessKind, string>;
@@ -650,6 +786,8 @@ function openCatSheet(focus: string | null = null) {
 async function catAction(run: () => Promise<string | null> | string | null, after?: () => void) {
   if (catBusy.value) return;
   catBusy.value = true;
+  // 先清掉：同一句話再出現一次（換一隻摸）也看得到
+  catMessage.value = "";
   try {
     const why = await run();
     catMessage.value = why ?? "";
@@ -660,16 +798,25 @@ async function catAction(run: () => Promise<string | null> | string | null, afte
   }
 }
 
-function adoptCat(name: string, color: CatColor) {
+function adoptCat(name: string, color: PetColor, species: PetSpecies) {
   void catAction(
-    () => pets.adopt(name, color),
+    () => pets.adopt(name, color, species),
     () => (catMessage.value = ""),
   );
 }
 
 function careCat(id: string, kind: CatCare) {
   const k = kittyOf(id);
-  if (!k) return;
+  if (!k) {
+    // 倉鼠：在籠子裡，沒有動畫，照顧完面板留著
+    void catAction(() => {
+      const why = pets.care(id, kind);
+      if (why === "bite") return "被咬了一口！牠還跟你不太熟，多餵幾次葵花子";
+      if (why) return why;
+      return kind === "wash" ? "換好木屑了，籠子乾乾淨淨" : kind === "treat" ? "牠抱著葵花子啃得好開心" : "牠瞇起眼睛，好像很舒服";
+    });
+    return;
+  }
   void catAction(
     () => k.care(kind),
     () => {
@@ -689,7 +836,49 @@ function trainCat(id: string) {
     () => {
       catSheetOpen.value = false;
       scrollToRoom(stripIndex(k.me.room));
-      play.showNotice(`${k.cat.value?.name ?? "牠"}想上廁所了：點牠，再點浴室的貓砂盆`);
+      play.showNotice(`${k.cat.value?.name ?? "牠"}想上廁所了：點牠，再點浴室的${k.isDog.value ? "尿布墊" : "貓砂盆"}`);
+    },
+  );
+}
+
+// ===== 狗散步：他帶狗出門，兩個都不在家 =====
+
+/** 他陪狗散步到什麼時候（0 = 沒有）。不另外存檔：從狗的 outUntil 算出來 */
+const walkUntil = ref(0);
+const walkDogName = ref("狗");
+let walkTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** 打開小屋、回到前景時對一下：狗還在外面 → 他也不在家；時間到了 → 他從大門回來 */
+function syncWalk() {
+  const t = Date.now();
+  const out = pets.home.value.cats.filter((c) => c.species === "dog" && c.outUntil > Math.max(c.vetUntil, t));
+  const until = Math.max(0, ...out.map((c) => c.outUntil));
+  if (out.length) walkDogName.value = out.map((c) => c.name).join("、");
+  if (walkTimer) clearTimeout(walkTimer);
+  walkTimer = null;
+  if (until > t) {
+    walkUntil.value = until;
+    if (life.home.value) life.leave();
+    walkTimer = setTimeout(syncWalk, until - t);
+    return;
+  }
+  if (!walkUntil.value) return;
+  walkUntil.value = 0;
+  if (document.hidden || !residentId.value || !loaded.value) return;
+  if (status.value !== "away" && status.value !== "date" && !life.home.value) life.start(true);
+}
+
+function walkDog(id: string) {
+  void catAction(
+    () => {
+      if (!isHome.value) return `${pronoun.value}不在家，等${pronoun.value}回來再去散步`;
+      if (lying.value || status.value === "sleep") return `${pronoun.value}在睡覺`;
+      if (status.value === "busy") return `${pronoun.value}在忙，等一下再去`;
+      return pets.walk(id);
+    },
+    () => {
+      catSheetOpen.value = false;
+      syncWalk();
     },
   );
 }
@@ -909,14 +1098,14 @@ function onItemClick(it: { room: RoomId; id: string; name: string; action?: Furn
     flashKey.value = null;
     if (action.kind === "enter-bath") scrollToRoom(stripIndex("bath"));
     else if (action.kind === "choose") {
-      // 還沒養貓：客廳大門多一個「領養一隻貓」
+      // 還沒養寵物：客廳大門多一個「領養寵物」
       // 有貓生病：大門多一個「帶去看醫生」
       const sickCat = pets.home.value.cats.find((c) => c.sickSince && c.vetUntil <= Date.now());
       const adopt =
         it.room !== "living" || it.id !== "door"
           ? []
           : [
-              ...(pets.home.value.cats.length ? [] : [{ app: ADOPT_OPTION, label: "領養一隻貓" }]),
+              ...(pets.home.value.cats.length ? [] : [{ app: ADOPT_OPTION, label: "領養寵物" }]),
               ...(sickCat ? [{ app: `${VET_OPTION}${sickCat.id}`, label: `帶${sickCat.name}去看醫生` }] : []),
             ];
       choosing.value = { name: it.name, options: [...action.options, ...adopt] };
@@ -1176,6 +1365,7 @@ const meLine = computed(() => {
   if (!residentId.value) return "還沒有人住進來｜到設定 › 主頁 選一位";
   if (status.value === "date") return `${p}出門約會了`;
   if (status.value === "away") return `${p}出門了`;
+  if (walkUntil.value) return `${p}帶${walkDogName.value}出門散步了，大約 ${Math.max(1, Math.ceil((walkUntil.value - now.value.getTime()) / 60_000))} 分鐘後回來`;
   if (life.walking.value) {
     return life.crossing.value ? `${p}正在走去${ROOM_NAMES[life.heading.value]}` : `${p}在${ROOM_NAMES[life.heading.value]}走動`;
   }
@@ -1237,13 +1427,18 @@ function syncFrameTimer() {
 }
 let timersOn = false;
 let catTick = 0;
+let clockTicks = 0;
 watch(() => life.walking.value || kitties.some((k) => k.walking.value), syncFrameTimer);
 
 function startTimers() {
   stopTimers();
   timersOn = true;
   syncFrameTimer();
-  clockTimer = setInterval(() => (now.value = new Date()), 60_000);
+  clockTimer = setInterval(() => {
+    now.value = new Date();
+    // 只有倉鼠（沒有會走的貓狗幫忙算）：每 10 分鐘判斷一次生病
+    if (++clockTicks % 10 === 0 && pets.home.value.cats.length && !walkerIds.value.length) pets.liveTick();
+  }, 60_000);
   statusTimer = setInterval(() => void refreshResident(), 30_000);
 }
 
@@ -1272,7 +1467,10 @@ function onVisibilityChange() {
   // 關著的那段時間：牠們自己吃、自己上廁所、可能生病
   pets.catchUp();
   for (const k of kitties) k.resume();
-  void refreshResident().then(() => life.resume());
+  void refreshResident().then(() => {
+    life.resume();
+    syncWalk();
+  });
 }
 let started = false;
 
@@ -1295,6 +1493,8 @@ onMounted(async () => {
   if (residentId.value && status.value !== "away" && status.value !== "date") life.start();
   pets.catchUp();
   for (const k of kitties) k.start();
+  // 關掉小屋時他正陪狗散步：還沒回來的話他也不在家
+  syncWalk();
   // 一打開從客廳開始（不跟著他跑；想看他點下面的提示）；從 App 回來接著看剛剛那間
   scrollToRoom(stripIndex(getLastHouseRoom() ?? HOME_ROOM), 0);
   // 第一次打開小屋：先看一次怎麼玩
@@ -1309,6 +1509,7 @@ onUnmounted(() => {
   stopAnim();
   resizeObs?.disconnect();
   stopTimers();
+  if (walkTimer) clearTimeout(walkTimer);
   document.removeEventListener("visibilitychange", onVisibilityChange);
   if (longPressTimer) clearTimeout(longPressTimer);
   window.removeEventListener(CHAT_UNREAD_CHANGED_EVENT, onChatEvent);
@@ -1564,11 +1765,48 @@ function labelStyle(room: RoomId, it: RenderItem) {
 
       <template v-if="pets.home.value.cats.length && !editMode">
         <!-- 貓的飼料碗：有貓糧時是滿的 -->
-        <button class="ph-bowl" :style="bowlStyle" :aria-label="`貓的飼料碗，貓糧還有 ${pets.home.value.stock.kibble} 份`" @click.stop="onBowlTap">
+        <button v-if="hasCat" class="ph-bowl" :style="bowlStyle" :aria-label="`貓的飼料碗，貓糧還有 ${pets.home.value.stock.kibble} 份`" @click.stop="onBowlTap(false)">
           <img :src="pets.home.value.stock.kibble > 0 ? bowlImages.full : bowlImages.empty" alt="" draggable="false" />
+        </button>
+        <!-- 狗碗（藍色，在貓碗右邊） -->
+        <button v-if="hasDog" class="ph-bowl" :style="dogBowlStyle" :aria-label="`狗碗，狗糧還有 ${pets.home.value.stock.dogFood} 份`" @click.stop="onBowlTap(true)">
+          <img :src="pets.home.value.stock.dogFood > 0 ? dogBowlImages.full : dogBowlImages.empty" alt="" draggable="false" />
+        </button>
+        <!-- 狗的尿布墊：有狗在等著上廁所時是帶牠過去 -->
+        <button
+          v-if="hasDog"
+          class="ph-bowl ph-litter"
+          :class="{ 'is-wanted': padWanted }"
+          :style="padStyle"
+          :aria-label="padWanted ? '尿布墊，點了帶牠過來' : `尿布墊，還有 ${pets.home.value.stock.pad} 片`"
+          @click.stop="onPadTap"
+        >
+          <img :src="pets.home.value.stock.pad > 0 ? padImages.ready : padImages.empty" alt="" draggable="false" />
+        </button>
+        <!-- 倉鼠籠：疊在客廳角落，最下面那個最後畫（蓋住上面那個的底）。點了打開照顧牠的面板 -->
+        <button
+          v-for="c in [...cages].reverse()"
+          :key="c.cat.id"
+          class="ph-cage"
+          :class="{ 'is-run': c.run && !c.away, 'is-offscreen': !cageOnScreen(c.x) }"
+          :style="c.style"
+          :aria-label="`${c.cat.name}的籠子，${c.label}，點了照顧牠`"
+          @click.stop="openCatSheet(c.cat.id)"
+        >
+          <img :src="cageImages.back" class="ph-cage-layer" alt="" draggable="false" />
+          <span class="ph-cage-wheel" :style="cageWheelStyle">
+            <img :src="cageImages['wheel-a']" class="ph-flip-a" alt="" draggable="false" />
+            <img :src="cageImages['wheel-b']" class="ph-flip-b" alt="" draggable="false" />
+          </span>
+          <span v-if="!c.away" class="ph-cage-ham" :style="c.hamStyle">
+            <img v-for="(src, i) in c.frames" :key="i" :src="src" :class="c.frames.length > 1 ? (i ? 'ph-flip-b' : 'ph-flip-a') : ''" alt="" draggable="false" />
+          </span>
+          <img :src="cageImages.front" class="ph-cage-layer" alt="" draggable="false" />
+          <img v-if="c.sick && !c.away" class="ph-cage-icon" :src="iconImages.sick" :style="{ width: `${u(5)}px`, height: `${u(8)}px` }" alt="" draggable="false" />
         </button>
         <!-- 貓砂盆：點了鏟一鏟；有貓在等著上廁所時是帶牠過去 -->
         <button
+          v-if="hasCat"
           class="ph-bowl ph-litter"
           :class="{ 'is-wanted': litterWanted }"
           :style="litterStyle"
@@ -1592,9 +1830,9 @@ function labelStyle(room: RoomId, it: RenderItem) {
             :class="{ 'is-offscreen': !catOnScreen(k) }"
             :style="catStyle(k)"
           >
-            <div class="ph-cat-sprite" :class="{ 'is-hop': k.hop.value }" :style="{ ...catBox, transform: k.facing.value < 0 ? 'scaleX(-1)' : undefined }">
+            <div class="ph-cat-sprite" :class="{ 'is-hop': k.hop.value }" :style="{ ...catBox(k.cat.value.species), transform: k.facing.value < 0 ? 'scaleX(-1)' : undefined }">
               <img
-                v-for="(src, pose) in catImages(k.cat.value.color)"
+                v-for="(src, pose) in catImages(k.cat.value.species, k.cat.value.color)"
                 v-show="pose === k.poseAt(catFrame)"
                 :key="pose"
                 :src="src"
@@ -1604,8 +1842,8 @@ function labelStyle(room: RoomId, it: RenderItem) {
             </div>
             <button
               class="ph-cat-hit"
-              :style="catBox"
-              :aria-label="`${k.cat.value.name}，${k.label.value}，${k.urge.value ? '點了選牠，再點貓砂盆' : '點了照顧牠'}`"
+              :style="catBox(k.cat.value.species)"
+              :aria-label="`${k.cat.value.name}，${k.label.value}，${k.urge.value ? `點了選牠，再點${k.isDog.value ? '尿布墊' : '貓砂盆'}` : '點了照顧牠'}`"
               @click.stop="onCatTap(k)"
             ></button>
             <!-- 頭上：想上廁所（驚嘆號）、生病（溫度計）。靜態的圖，不動 -->
@@ -1614,11 +1852,11 @@ function labelStyle(room: RoomId, it: RenderItem) {
               class="ph-cat-icon"
               :class="{ 'is-picked': k.picked.value }"
               :src="k.urge.value ? iconImages.urge : iconImages.sick"
-              :style="{ top: `${-u(CAT_H) - u(11)}px`, width: `${u(5)}px`, height: `${u(k.urge.value ? 9 : 8)}px`, left: `${-u(2.5)}px` }"
+              :style="{ top: `${-u(spriteH(k)) - u(11)}px`, width: `${u(5)}px`, height: `${u(k.urge.value ? 9 : 8)}px`, left: `${-u(2.5)}px` }"
               alt=""
               draggable="false"
             />
-            <div v-if="k.fx.value" :key="k.fxKey.value" class="ph-fx ph-cat-fx" :class="`is-${k.fx.value}`" :style="{ top: `${-u(CAT_H)}px` }" aria-hidden="true">
+            <div v-if="k.fx.value" :key="k.fxKey.value" class="ph-fx ph-cat-fx" :class="`is-${k.fx.value}`" :style="{ top: `${-u(spriteH(k))}px` }" aria-hidden="true">
               <span></span><span></span><span></span>
             </div>
           </div>
@@ -1727,6 +1965,7 @@ function labelStyle(room: RoomId, it: RenderItem) {
         @checkup="(id) => catAction(() => pets.checkup(id))"
         @vet="(id) => catAction(() => pets.goVet(id))"
         @train="trainCat"
+        @walk="walkDog"
       />
 
       <HouseAppsSheet
@@ -2067,6 +2306,68 @@ function labelStyle(room: RoomId, it: RenderItem) {
   width: 44px;
   height: 44px;
   transform: translate(-50%, -50%);
+}
+
+/* 倉鼠籠：後面（木屑）、滾輪、倉鼠、前面（鐵絲、底盤）疊起來 */
+.ph-cage {
+  position: absolute;
+  max-width: none;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  z-index: 2;
+}
+
+.ph-cage img,
+.ph-cage-wheel,
+.ph-cage-ham {
+  position: absolute;
+  image-rendering: crisp-edges;
+  image-rendering: pixelated;
+  pointer-events: none;
+  -webkit-user-drag: none;
+}
+
+.ph-cage-layer {
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.ph-cage-wheel img,
+.ph-cage-ham img {
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.ph-cage-icon {
+  right: 0;
+  top: -6px;
+}
+
+/* 跑滾輪：兩張圖輪流（只動 opacity，不重畫）。沒在跑的時候只顯示第一張 */
+.ph-cage .ph-flip-b {
+  opacity: 0;
+}
+
+.ph-cage.is-run .ph-flip-a {
+  animation: ph-flip-a 300ms steps(1, end) infinite;
+}
+
+.ph-cage.is-run .ph-flip-b {
+  animation: ph-flip-b 300ms steps(1, end) infinite;
+}
+
+@keyframes ph-flip-a {
+  0% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+@keyframes ph-flip-b {
+  0% { opacity: 0; }
+  50% { opacity: 1; }
 }
 
 .ph-litter.is-wanted img {
@@ -2492,6 +2793,8 @@ function labelStyle(room: RoomId, it: RenderItem) {
 
 /* 他不在畫面上（在別間）：跳、Z、蒸氣都先停，滑過去看到了再動 */
 .is-offscreen .ph-cat-sprite.is-hop,
+.ph-cage.is-offscreen .ph-flip-a,
+.ph-cage.is-offscreen .ph-flip-b,
 .is-offscreen.ph-gift,
 .is-offscreen.ph-steam i,
 .is-offscreen .ph-zs span,
@@ -2505,6 +2808,8 @@ function labelStyle(room: RoomId, it: RenderItem) {
   .ph-steam i,
   .ph-gift,
   .ph-cat-sprite.is-hop,
+  .ph-cage .ph-flip-a,
+  .ph-cage .ph-flip-b,
   .ph-me-menu {
     animation: none;
   }

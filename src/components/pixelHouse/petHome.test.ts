@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { adoptCat, catStat, type CatState } from "./houseCat";
+import { adoptCat, catStat, hamsterBites, hamsterPose, walkDog, WALK_MS, type CatState } from "./houseCat";
 import { ROOM_H, ROOM_W } from "./houseData";
 import { defaultHouseLifeState, parseHouseLifeState } from "./houseLife";
 import {
@@ -29,6 +29,12 @@ import {
   VET_STAY_MS,
   vetCost,
   type PetHome,
+  emptyStock,
+  catsHome,
+  checkupPrice,
+  MAX_CAGED,
+  roomFor,
+  SPECIES_INFO,
 } from "./petHome";
 
 const T0 = 1_800_000_000_000;
@@ -72,10 +78,10 @@ describe("用品", () => {
       expect(s.price).toBeGreaterThan(0);
       expect(s.pack).toBeGreaterThan(0);
     }
-    const h = homeWith([kitty("a"), kitty("b")], { stock: { kibble: 20, can: 0, treat: 0, litter: 16 } });
+    const h = homeWith([kitty("a"), kitty("b")], { stock: { ...emptyStock(), kibble: 20, litter: 16 } });
     expect(stockDays(h, "kibble")).toBe(5);
     expect(stockDays(h, "litter")).toBe(2);
-    expect(stockDays(homeWith([kitty("a", { personality: "glutton" })], { stock: { kibble: 26, can: 0, treat: 0, litter: 0 } }), "kibble")).toBe(10);
+    expect(stockDays(homeWith([kitty("a", { personality: "glutton" })], { stock: { ...emptyStock(), kibble: 26, litter: 0 } }), "kibble")).toBe(10);
     expect(stockDays(emptyPetHome(T0), "kibble")).toBe(Infinity);
   });
 });
@@ -187,16 +193,16 @@ describe("生病", () => {
 
 describe("補算一段時間", () => {
   it("有貓糧：餓了自己吃，庫存變少；貓糧吃完會說一聲，之後就開始餓", () => {
-    const h = homeWith([kitty("a")], { stock: { kibble: 3, can: 0, treat: 0, litter: 100 }, simAt: T0 });
+    const h = homeWith([kitty("a")], { stock: { ...emptyStock(), kibble: 3, litter: 100 }, simAt: T0 });
     const r = simulatePets(h, T0 + 3 * DAY, { live: false }, () => 0.999);
     expect(r.home.stock.kibble).toBe(0);
-    expect(r.events.some((e) => e.kind === "kibble-out")).toBe(true);
+    expect(r.events.some((e) => e.kind === "out" && e.supply === "kibble")).toBe(true);
     expect(catStat(r.home.cats[0], "food", T0 + 3 * DAY)).toBeLessThan(20);
     expect(r.home.simAt).toBe(T0 + 3 * DAY);
   });
 
   it("夠吃的話一直不會餓（一天大約兩份）", () => {
-    const h = homeWith([kitty("a")], { stock: { kibble: 100, can: 0, treat: 0, litter: 100 }, simAt: T0 });
+    const h = homeWith([kitty("a")], { stock: { ...emptyStock(), kibble: 100, litter: 100 }, simAt: T0 });
     const r = simulatePets(h, T0 + 5 * DAY, { live: false }, () => 0.999);
     expect(catStat(r.home.cats[0], "food", T0 + 5 * DAY)).toBeGreaterThan(30);
     expect(100 - r.home.stock.kibble).toBeGreaterThanOrEqual(8);
@@ -204,7 +210,7 @@ describe("補算一段時間", () => {
   });
 
   it("關著的時候自己上廁所：大約每 6 小時一次", () => {
-    const h = homeWith([kitty("a", { toiletAt: T0 + HOUR })], { stock: { kibble: 100, can: 0, treat: 0, litter: 100 }, simAt: T0 });
+    const h = homeWith([kitty("a", { toiletAt: T0 + HOUR })], { stock: { ...emptyStock(), kibble: 100, litter: 100 }, simAt: T0 });
     const r = simulatePets(h, T0 + DAY, { live: false }, () => 0);
     expect(r.home.box).toBeGreaterThanOrEqual(3);
     expect(r.home.box).toBeLessThanOrEqual(5);
@@ -265,9 +271,140 @@ describe("存檔", () => {
       T0,
     );
     expect(pets.cats.map((c) => c.id)).toEqual(["x", "y", "z"]);
-    expect(pets.stock).toEqual({ kibble: 5, can: 0, treat: 0, litter: 0 });
+    expect(pets.stock).toEqual({ ...emptyStock(), kibble: 5, litter: 0 });
     expect(pets.messes).toEqual({ "mess-bath": "pee" });
     // 有新版就不看舊版
     expect(parsePetHome({ cats: [] }, cat, T0).cats).toEqual([]);
+  });
+});
+
+describe("狗和倉鼠", () => {
+  const dog = (id: string, patch: Partial<CatState> = {}): CatState => ({ ...adoptCat(id, "shiba", T0, () => 0.5, id, "dog"), personality: "lazy", ...patch });
+  const ham = (id: string, patch: Partial<CatState> = {}): CatState => ({ ...adoptCat(id, "golden", T0, () => 0.5, id, "hamster"), personality: "lazy", ...patch });
+
+  it("價錢：第一隻免費（不管哪種），之後狗 32,000、倉鼠 1,500", () => {
+    expect(adoptPrice(0, "dog")).toBe(0);
+    expect(adoptPrice(1, "dog")).toBe(32_000);
+    expect(adoptPrice(1, "hamster")).toBe(1_500);
+  });
+
+  it("貓狗加起來最多三隻，倉鼠另外最多三隻", () => {
+    let h: PetHome | null = emptyPetHome(T0);
+    h = addCat(h, "咪", "orange", T0, Math.random, "cat");
+    h = addCat(h!, "旺", "shiba", T0, Math.random, "dog");
+    h = addCat(h!, "財", "black", T0, Math.random, "dog");
+    expect(addCat(h!, "第四隻", "orange", T0, Math.random, "cat")).toBeNull();
+    expect(addCat(h!, "第四隻", "white", T0, Math.random, "dog")).toBeNull();
+    for (let i = 0; i < MAX_CAGED; i++) h = addCat(h!, `鼠${i}`, "golden", T0, Math.random, "hamster");
+    expect(h!.cats).toHaveLength(6);
+    expect(addCat(h!, "鼠鼠", "gray", T0, Math.random, "hamster")).toBeNull();
+    expect(roomFor(h!, "hamster")).toBe(false);
+  });
+
+  it("花色不是這個種類的：用這個種類的第一種", () => {
+    expect(adoptCat("", "orange", T0, () => 0.5, "x", "dog").color).toBe("shiba");
+    expect(adoptCat("", "orange", T0, () => 0.5, "x", "hamster").color).toBe("golden");
+  });
+
+  it("新手包照種類送", () => {
+    const h = addCat(emptyPetHome(T0), "旺", "shiba", T0, Math.random, "dog")!;
+    expect(h.stock).toEqual({ ...emptyStock(), ...SPECIES_INFO.dog.starter });
+    const h2 = addCat(h, "鼠", "golden", T0, Math.random, "hamster")!;
+    expect(h2.stock.pellet).toBe(SPECIES_INFO.hamster.starter.pellet);
+    expect(h2.stock.dogFood).toBe(SPECIES_INFO.dog.starter.dogFood);
+  });
+
+  it("存檔讀回來：種類、散步時間都在；舊的貓沒有種類就是貓", () => {
+    const d = dog("d", { walkedAt: T0 - HOUR, outUntil: T0 + 10 });
+    const back = parsePetHome(JSON.parse(JSON.stringify({ cats: [d, ham("h"), { name: "咪", color: "gray", id: "c" }] })), null, T0);
+    expect(back.cats.map((c) => c.species)).toEqual(["dog", "hamster", "cat"]);
+    expect(back.cats[0]).toMatchObject({ walkedAt: T0 - HOUR, outUntil: T0 + 10, color: "shiba" });
+    // 花色跟種類對不上：壞掉的，丟掉
+    expect(parsePetHome({ cats: [{ species: "dog", color: "orange", id: "q" }] }, null, T0).cats).toEqual([]);
+  });
+
+  it("狗用尿布墊：用掉一片，不會弄髒貓砂盆；沒有尿布墊就上在地上", () => {
+    const h = homeWith([dog("d", { training: 100 })], { stock: { ...emptyStock(), pad: 2 } });
+    const r = doToilet(h, "d", T0, () => 0);
+    expect(r.result).toBe("box");
+    expect(r.home.stock.pad).toBe(1);
+    expect(r.home.box).toBe(0);
+    const none = doToilet(homeWith([dog("d", { training: 100 })], { stock: emptyStock() }), "d", T0, () => 0);
+    expect(none.result).toBe("floor");
+  });
+
+  it("狗帶去尿布墊訓練：獎勵用潔牙骨", () => {
+    const h = homeWith([dog("d")], { stock: { ...emptyStock(), pad: 5, chew: 1, treat: 3 } });
+    const r = doToilet(h, "d", T0, () => 0.9, { guided: true, useTreat: true });
+    expect(r.trained).toBe(TRAIN_GAIN + TRAIN_TREAT_BONUS);
+    expect(r.home.stock.chew).toBe(0);
+    expect(r.home.stock.treat).toBe(3);
+  });
+
+  it("散步：心情變好、出門半小時、路上上過廁所；不在家的時候不補算", () => {
+    const d = dog("d", { mood: { v: 40, at: T0 } });
+    const w = walkDog(d, T0, () => 0.5);
+    expect(catStat(w, "mood", T0)).toBe(40 + 25);
+    expect(w.outUntil).toBe(T0 + WALK_MS);
+    expect(w.toiletAt).toBeGreaterThan(T0 + 4 * HOUR);
+    expect(catsHome(homeWith([w]), T0 + 10 * 60_000)).toHaveLength(0);
+    expect(catsHome(homeWith([w]), T0 + WALK_MS)).toHaveLength(1);
+  });
+
+  it("太久沒散步：心情掉得比較快", () => {
+    const fresh = dog("a", { walkedAt: T0 });
+    const stale = dog("b", { walkedAt: T0 - 2 * DAY });
+    const h = homeWith([fresh, stale], { stock: { ...emptyStock(), dogFood: 100, pad: 100 }, simAt: T0 });
+    const r = simulatePets(h, T0 + 10 * HOUR, { live: true }, () => 0.999);
+    const mood = (id: string) => catStat(r.home.cats.find((c) => c.id === id)!, "mood", T0 + 10 * HOUR);
+    expect(mood("a") - mood("b")).toBeGreaterThan(30);
+  });
+
+  it("倉鼠在籠子裡：小屋開著也自己吃鼠糧；不上廁所、不會在地上留便便", () => {
+    const h = homeWith([ham("h", { food: { v: 30, at: T0 }, toiletAt: T0 })], { stock: { ...emptyStock(), pellet: 10 }, simAt: T0 });
+    const live = simulatePets(h, T0 + 2 * HOUR, { live: true }, () => 0.999);
+    expect(live.home.stock.pellet).toBe(9);
+    const off = simulatePets(h, T0 + 3 * DAY, { live: false }, () => 0.999);
+    expect(off.home.messes).toEqual({});
+    expect(off.home.stock.litter).toBe(0);
+  });
+
+  it("倉鼠的籠子大約一週才要換木屑；用品大約夠幾天", () => {
+    const h = ham("h", { clean: { v: 100, at: T0 } });
+    expect(catStat(h, "clean", T0 + 3 * DAY)).toBeGreaterThan(50);
+    expect(catStat(h, "clean", T0 + 8 * DAY)).toBe(0);
+    const home = homeWith([h], { stock: { ...emptyStock(), pellet: 20, bedding: 2 } });
+    expect(stockDays(home, "pellet")).toBe(10);
+    expect(stockDays(home, "bedding")).toBe(14);
+    expect(stockDays(home, "kibble")).toBe(Infinity);
+  });
+
+  it("看醫生、健康檢查：倉鼠便宜、狗貴一點", () => {
+    const sick = (c: CatState) => ({ ...c, sickSince: T0 });
+    expect(vetCost(sick(ham("h")), T0, false)).toBe(800);
+    expect(vetCost(sick(dog("d")), T0, false)).toBe(2_400);
+    expect(vetCost(sick(kitty("c")), T0, false)).toBe(VET_MILD);
+    expect(checkupPrice("hamster")).toBe(1_200);
+    expect(checkupPrice("cat")).toBe(3_000);
+  });
+
+  it("用完了會說是哪一樣", () => {
+    const h = homeWith([dog("d")], { stock: { ...emptyStock(), dogFood: 1, pad: 100 }, simAt: T0 });
+    const r = simulatePets(h, T0 + 2 * DAY, { live: false }, () => 0.999);
+    expect(r.events).toContainEqual({ kind: "out", supply: "dogFood" });
+  });
+
+  it("倉鼠：白天睡、晚上常跑滾輪；生病只會睡", () => {
+    const h = ham("h");
+    const nights = Array.from({ length: 50 }, (_, i) => hamsterPose(h, "night", false, T0 + i * 600_000));
+    expect(nights.filter((p) => p === "run").length).toBeGreaterThan(15);
+    expect(hamsterPose(h, "day", false, T0)).toBe("sleep");
+    expect(hamsterPose({ ...h, sickSince: T0 }, "night", false, T0)).toBe("sleep");
+  });
+
+  it("倉鼠還不熟會咬人，熟了就不會；貓狗不會", () => {
+    expect(hamsterBites(ham("h", { affinity: 5 }), () => 0.1)).toBe(true);
+    expect(hamsterBites(ham("h", { affinity: 80 }), () => 0)).toBe(false);
+    expect(hamsterBites(kitty("c", { affinity: 0 }), () => 0)).toBe(false);
   });
 });
