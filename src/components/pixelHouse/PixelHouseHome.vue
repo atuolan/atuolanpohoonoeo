@@ -71,7 +71,9 @@ import HouseGuide, { type GuideAction } from "./HouseGuide.vue";
 import HouseRoom from "./HouseRoom.vue";
 import HouseWardrobe from "./HouseWardrobe.vue";
 import type { PartSlot } from "./wardrobeData";
-import PixelWaveMenu from "./PixelWaveMenu.vue";
+import PixelWaveMenu, { type MenuTodo } from "./PixelWaveMenu.vue";
+import { houseTodos, type Ledger, type TodoIcon } from "./houseTodo";
+import { loadTodayLedger } from "./wardrobeShop";
 import {
   ACTS,
   CHAR_HEIGHT,
@@ -1137,13 +1139,54 @@ function toggleDock() {
   persist();
 }
 
-function pickDialApp(app: string) {
+// ===== 小屋待辦（右上的轉盤） =====
+
+/** 每一項的小圖：沿用小屋裡本來就有的圖 */
+const todoIcons = computed<Record<TodoIcon, string>>(() => ({
+  sick: iconImages.sick,
+  urge: iconImages.urge,
+  poop: messImages.poop,
+  litter: litterImages.dirty,
+  walk: catImages("dog", "shiba")["walk-a"],
+  cage: cageImages.front,
+  supply: bowlImages.empty,
+  dirt: dirtImages.dust,
+  letter: giftImages.note,
+  dish: giftImages.dish,
+}));
+
+/** 跟著時鐘（一分鐘一次）和小屋的狀態重算；沒打開也要算，轉盤上的紅點要用 */
+const todoList = computed(() =>
+  houseTodos({
+    now: now.value.getTime(),
+    pets: pets.home.value,
+    urging: kitties.flatMap((k) =>
+      k.urge.value && k.cat.value ? [{ id: k.cat.value.id, name: k.cat.value.name, room: k.me.room, place: k.isDog.value ? "尿布墊" : "貓砂盆" }] : [],
+    ),
+    dirt: Object.keys(chores.dirt.value),
+    mailReady: chores.mailReady.value,
+    gifts: play.gifts.value,
+    pronoun: pronoun.value,
+  }),
+);
+const menuTodos = computed<MenuTodo[]>(() => todoList.value.map((t) => ({ key: t.key, text: t.text, note: t.note, tone: t.tone, icon: todoIcons.value[t.icon] })));
+
+/** 今天在小屋的收支：打開待辦時讀一次 */
+const ledger = ref<Ledger | null>(null);
+watch(menuOpen, (open) => {
+  if (!open) return;
+  now.value = new Date();
+  void loadTodayLedger().then((l) => (ledger.value = l));
+});
+
+function onTodo(key: string) {
+  const item = todoList.value.find((t) => t.key === key);
   menuOpen.value = false;
-  if (app === "__all__") {
-    openSheet("apps");
-    return;
-  }
-  emit("navigate", app);
+  if (!item) return;
+  const go = item.go;
+  if (go.kind === "room") scrollToRoom(stripIndex(go.room));
+  else if (go.kind === "pet") openCatSheet(go.id);
+  else openCatSheet("supplies");
 }
 
 function pickSheetApp(app: string) {
@@ -1374,7 +1417,6 @@ const meLine = computed(() => {
 
 const hint = computed(() => {
   if (editMode.value) return "拖動家具，好了按「完成」";
-  if (menuOpen.value) return "選一個 App";
   if (showAll.value) return "虛線框都可以點";
   if (play.notice.value) return play.notice.value;
   if (!isHome.value || meVisible.value) return meLine.value;
@@ -1917,10 +1959,12 @@ function labelStyle(room: RoomId, it: RenderItem) {
       <PixelWaveMenu
         v-if="!editMode"
         :open="menuOpen"
-        :badges="badges"
+        :todos="menuTodos"
+        :ledger="ledger"
+        :status="meLine"
         @toggle="menuOpen = !menuOpen; showAll = false"
         @close="menuOpen = false"
-        @pick="pickDialApp"
+        @todo="onTodo"
         @decor="menuOpen = false; decorOpen = true"
         @wardrobe="menuOpen = false; openWardrobe(null)"
         @edit-layout="enterEdit"
@@ -1933,8 +1977,8 @@ function labelStyle(room: RoomId, it: RenderItem) {
         <button class="ph-edit-btn is-primary" @click="finishEdit">完成</button>
       </div>
       <template v-else>
-        <!-- 他在哪、在做什麼：在房間列下面；他不在畫面上時點了滑過去 -->
-        <button class="ph-hint" aria-live="polite" @click="hintTap">{{ hint }}</button>
+        <!-- 他在哪、在做什麼：在房間列下面；他不在畫面上時點了滑過去。待辦打開時藏起來（會蓋到面板，待辦裡也有寫） -->
+        <button v-show="!menuOpen" class="ph-hint" aria-live="polite" @click="hintTap">{{ hint }}</button>
         <HouseDock :open="state.dockOpen" :badges="badges" @toggle="toggleDock" @pick="emit('navigate', $event)" @house="openSheet('house')" @all="openSheet('apps')" />
       </template>
 
