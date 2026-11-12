@@ -6,6 +6,7 @@ import {
   choreKey,
   claimMail,
   cleanCoins,
+  CHORE_GAP_MS,
   CHORE_WAIT_MS,
   CLEAN_COINS,
   deedsToClaim,
@@ -92,7 +93,7 @@ describe("髒污", () => {
 
 describe("他自己打掃", () => {
   const dirt = { "k-dishes": 1, "l-dust-a": 1 };
-  const base = { night: false, openMs: CHORE_WAIT_MS, room: "living" as const, current: null };
+  const base = { night: false, openMs: CHORE_WAIT_MS, sinceLastMs: CHORE_GAP_MS, room: "living" as const, current: null };
 
   it("打掃的動作：站在髒污旁邊、有字", () => {
     const act = choreAct(choreKey("k-dishes"))!;
@@ -108,6 +109,14 @@ describe("他自己打掃", () => {
     expect(pickChore(dirt, { ...base, openMs: CHORE_WAIT_MS - 1 }, () => 0)).toBeNull();
     expect(pickChore({}, base, () => 0)).toBeNull();
     expect(pickChore(dirt, base, () => 0.9)).toBeNull();
+  });
+
+  it("掃完一處要隔四小時才會再掃", () => {
+    expect(CHORE_GAP_MS).toBe(4 * 60 * 60 * 1000);
+    expect(pickChore(dirt, { ...base, sinceLastMs: CHORE_GAP_MS - 1 }, () => 0)).toBeNull();
+    expect(pickChore(dirt, { ...base, sinceLastMs: CHORE_GAP_MS }, () => 0)).not.toBeNull();
+    // 還沒掃過（或時間被往回調）：可以掃
+    expect(pickChore(dirt, { ...base, sinceLastMs: Infinity }, () => 0)).not.toBeNull();
   });
 
   it("同一間的優先；不會連續掃同一處", () => {

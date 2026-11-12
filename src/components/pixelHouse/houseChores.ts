@@ -114,6 +114,8 @@ const CHORE_PREFIX = "clean:";
 export const CHORE_CHANCE = 0.2;
 /** 小屋打開（或回到前景）多久之後他才會開始打掃：留時間給你自己點 */
 export const CHORE_WAIT_MS = 45_000;
+/** 他掃完一處之後，隔多久才會再掃下一處 */
+export const CHORE_GAP_MS = 4 * 60 * 60 * 1000;
 
 export function choreKey(dirtId: string): string {
   return CHORE_PREFIX + dirtId;
@@ -134,14 +136,14 @@ export function choreAct(actKey: string): ActDef | undefined {
 
 /**
  * 他要不要去打掃、掃哪一處。回傳動作的 key，不掃回傳 null。
- * 晚上不掃；剛打開小屋不掃；有機率；同一間的優先（比較像順手收一下）。
+ * 晚上不掃；剛打開小屋不掃；上次掃完還沒隔夠久不掃；有機率；同一間的優先（比較像順手收一下）。
  */
 export function pickChore(
   dirt: DirtMap,
-  opts: { night: boolean; openMs: number; room: RoomId | null; current: string | null },
+  opts: { night: boolean; openMs: number; sinceLastMs: number; room: RoomId | null; current: string | null },
   rand: () => number = Math.random,
 ): string | null {
-  if (opts.night || opts.openMs < CHORE_WAIT_MS) return null;
+  if (opts.night || opts.openMs < CHORE_WAIT_MS || opts.sinceLastMs < CHORE_GAP_MS) return null;
   const ids = Object.keys(dirt).filter((id) => DIRT_BY_ID[id] && choreKey(id) !== opts.current);
   if (!ids.length || rand() >= CHORE_CHANCE) return null;
   const same = ids.filter((id) => DIRT_BY_ID[id].room === opts.room);

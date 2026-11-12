@@ -23,6 +23,8 @@ export interface HouseLifeState {
   dirtAt: number;
   /** 信箱每天一封信：上次哪天領的、連續幾天 */
   mail: MailState;
+  /** 他上次自己打掃完是什麼時候（毫秒；0 = 還沒掃過）：隔一段時間才會再掃 */
+  choreAt: number;
   /** 在別的 App 做了什麼可以回小屋領獎勵：種類 → 哪一天做的 */
   deeds: Record<string, string>;
   /** 他忙完帶錢回來：最後一次發過的是哪一趟（聊天裡暫離的 id） */
@@ -48,6 +50,7 @@ export function defaultHouseLifeState(now: Date = new Date()): HouseLifeState {
     // 第一次打開就先有幾處可以掃
     dirtAt: now.getTime() - DIRT_FIRST * DIRT_INTERVAL_MS,
     mail: { last: "", streak: 0 },
+    choreAt: 0,
     deeds: {},
     paidAway: "",
   };
@@ -72,6 +75,7 @@ export function parseHouseLifeState(raw: unknown, now: Date = new Date()): House
     dirt: parseDirt(r.dirt),
     dirtAt: typeof r.dirtAt === "number" && Number.isFinite(r.dirtAt) ? r.dirtAt : base.dirtAt,
     mail: parseMail(r.mail),
+    choreAt: typeof r.choreAt === "number" && Number.isFinite(r.choreAt) && r.choreAt > 0 ? r.choreAt : 0,
     deeds: parseDeeds(r.deeds),
     paidAway: typeof r.paidAway === "string" ? r.paidAway : "",
   };

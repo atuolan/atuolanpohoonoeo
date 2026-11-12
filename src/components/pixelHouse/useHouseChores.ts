@@ -42,6 +42,8 @@ export function useHouseChores(deps: {
   const mailReady = ref(false);
   /** 小屋這次打開（或回到前景）的時間：他過一陣子才開始打掃 */
   let openedAt = Date.now();
+  /** 他上次自己打掃完的時間（跟存檔一樣；隔 4 小時才會再掃） */
+  let choreAt = 0;
 
   /** 照時間差補上新的髒污、看今天的信領了沒（打開、回到前景、他換一件事時叫） */
   function refresh() {
@@ -50,6 +52,7 @@ export function useHouseChores(deps: {
     const next = accrueDirt(state.dirt, state.dirtAt, now.getTime());
     if (next.dirt !== state.dirt || next.dirtAt !== state.dirtAt) saveHouseLifeState({ ...state, ...next });
     dirt.value = next.dirt;
+    choreAt = state.choreAt;
     mailReady.value = !clockWentBack(state, now) && mailWaiting(state.mail, now);
   }
 
@@ -70,7 +73,10 @@ export function useHouseChores(deps: {
       return;
     }
     const { [id]: _gone, ...rest } = state.dirt;
-    const { state: counted, paid } = payCapped({ ...state, dirt: rest }, "cleanCoins", CLEAN_DAILY_CAP, cleanCoins(by), now);
+    // 他掃的：記下時間，隔一段時間才會再掃
+    if (by === "resident") choreAt = now.getTime();
+    const cleaned = { ...state, dirt: rest, choreAt: by === "resident" ? choreAt : state.choreAt };
+    const { state: counted, paid } = payCapped(cleaned, "cleanCoins", CLEAN_DAILY_CAP, cleanCoins(by), now);
     // 先存再發錢：連點兩下不會領兩次
     saveHouseLifeState(counted);
     dirt.value = rest;
@@ -86,14 +92,19 @@ export function useHouseChores(deps: {
 
   // ===== 他自己打掃 =====
 
-  /** 他挑下一件事之前問：要不要去打掃 */
-  function pickExtra(current: string, room: RoomId): string | null {
-    if (!deps.free.value) return null;
-    return pickChore(dirt.value, { night: deps.scene.value === "night", openMs: Date.now() - openedAt, room, current });
-  }
-
   /** 他走到了、正在清的那一處（走到一半被叫去睡覺就不算） */
   let doing: string | null = null;
+
+  /** 他挑下一件事之前問：要不要去打掃 */
+  function pickExtra(current: string, room: RoomId): string | null {
+    // 剛掃完一處（這時候還沒記下時間）：不接著掃下一處
+    if (!deps.free.value || doing) return null;
+    const now = Date.now();
+    // 手機時間被往回調（上次掃的時間在未來）：當作隔夠久了，不然會很久都不掃；錢那邊另外有擋
+    const sinceLastMs = choreAt > now ? Infinity : now - choreAt;
+    return pickChore(dirt.value, { night: deps.scene.value === "night", openMs: now - openedAt, sinceLastMs, room, current });
+  }
+
   watch(deps.walking, (now, was) => {
     if (now || !was) return;
     const id = choreDirtId(deps.act.value);
