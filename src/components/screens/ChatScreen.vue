@@ -7756,7 +7756,7 @@ async function runAIResponseOnce(
           const _diagStr = _diagParts.length > 0 ? "\n診斷: " + _diagParts.join(" | ") : "";
           console.warn("[ChatScreen] 空回應診斷", generationDiagnostics);
           messages.value[msgIndex].content =
-            "[空回應] API 返回了空內容" + _diagStr + "\n請查看串流視窗「調試資訊」並複製診斷 JSON，或開啟開發者工具 Console 查看完整污染定位結果。";
+            "[空回應] API 返回了空內容" + _diagStr + "\n要回報的話：設定 → 開發者選項 → 複製診斷報告，貼給開發者。";
           messages.value[msgIndex].isStreaming = false;
         }
       } else {
