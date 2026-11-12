@@ -86,19 +86,20 @@ export const CAT_ART: Record<CatPose, string[]> = {
     ".obbbbbbbbbooooo..",
     "..ooooooooo.......",
   ],
+  // 低頭吃飯：前後腳都踩在地上，頭低到碗的高度
   eat: [
     "..o...............",
     ".obo..............",
-    "obo...............",
     "obo...............",
     "obo..ooooooo......",
     "obo.obsbsbbboo.oo.",
     ".obbbbbbbbbobooobo",
     "..obbbbbbbbobbbbbo",
     "..obbbbbbbbobebbeo",
-    "..oooboooooobbbnbo",
-    "....owo.....ooooo.",
-    "....ooo...........",
+    "..obbbbbbbbobbbnbo",
+    "..oboooooboooooooo",
+    "..owo...owo.......",
+    "..ooo...ooo.......",
   ],
 };
 
@@ -108,8 +109,8 @@ export const BOWL_ART: Record<"empty" | "full", string[]> = {
   full: ["..okkkko..", "oooooooooo", "orrrrrrrro", ".orrrrrro.", "..oooooo.."],
 };
 export const BOWL_PALETTE: Record<string, string> = { o: "#3B2A26", r: "#E8627A", k: "#9A6A3A" };
-/** 碗放在廚房的哪裡（房間格子，左上角）：冰箱前面的地上 */
-export const BOWL_SPOT = { room: "kitchen" as RoomId, x: 106, y: 170 };
+/** 碗放在廚房的哪裡（房間格子，左上角）：冰箱前面的地上（避開右邊換房間的箭頭） */
+export const BOWL_SPOT = { room: "kitchen" as RoomId, x: 94, y: 186 };
 
 // ===== 數值：照時間差算 =====
 
@@ -251,7 +252,7 @@ export const CAT_ACTS: Record<string, CatActDef> = {
   "sit-living": { room: "living", x: 30, y: 192, pose: "sit", label: "坐著發呆" },
   "play-living": { room: "living", x: 96, y: 184, pose: "sit", label: "自己玩", hop: true },
   "sit-kitchen": { room: "kitchen", x: 40, y: 186, pose: "sit", label: "看你們煮什麼" },
-  eat: { room: "kitchen", x: 101, y: 176, pose: "eat", label: "吃飯" },
+  eat: { room: "kitchen", x: 89, y: 192, pose: "eat", label: "吃飯" },
   "nap-bed": { room: "bedroom", x: 50, y: 230, anchor: "bed", pose: "sleep", label: "在床上睡覺" },
   "nap-bedroom-rug": { room: "bedroom", x: 46, y: 266, anchor: "rug", pose: "sleep", label: "在地毯上打盹" },
   "sit-bedroom": { room: "bedroom", x: 60, y: 174, pose: "sit", label: "坐著發呆" },
