@@ -1,9 +1,10 @@
 <script setup lang="ts">
 /**
- * 像素小屋主頁（設計稿「三房：客廳｜臥室｜廚房＋浴室」）
+ * 像素小屋主頁：廚房｜客廳｜臥室｜浴室
  *
- * - 客廳、臥室、廚房排成一條，左右自由滑，停在哪就是哪；浴室從臥室的門進去，蓋在上面
- * - 家具就是 App：點了打開；長按房間進入編輯，可以拖動家具（牆上的在牆上、地上的在地上）
+ * - 四間排成一條左右滑，放開會停在最近的那一間；一打開在客廳，臥室右邊的門過去就是浴室
+ * - 下面一排固定的常用 App、「小屋」（換外觀、擺件商店、移動家具、怎麼玩）、「全部 App」
+ * - 家具也是 App 的入口：可以點的右上角有小亮點；長按房間進入編輯，可以拖動家具（牆上的在牆上、地上的在地上）
  * - 他自己在屋裡走來走去，跟聊天裡的真實狀態連動（睡覺、忙碌、出門、約會）
  */
 import { CHAT_UNREAD_CHANGED_EVENT, loadAllChats, loadChatsByCharacter, resolvePreferredDirectChat } from "@/storage/chatStorage";
@@ -13,6 +14,7 @@ import { useHomeBadgesStore } from "@/stores/homeBadges";
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from "vue";
 import HouseAppsSheet from "./HouseAppsSheet.vue";
 import HouseDecorShop from "./HouseDecorShop.vue";
+import HouseDock from "./HouseDock.vue";
 import HouseGuide, { type GuideAction } from "./HouseGuide.vue";
 import HouseRoom from "./HouseRoom.vue";
 import HouseWardrobe from "./HouseWardrobe.vue";
@@ -22,6 +24,7 @@ import {
   ACTS,
   CHAR_HEIGHT,
   FURNITURE_ACTIONS,
+  HOME_ROOM,
   itemZone,
   moveGroupOf,
   ROOM_H,
@@ -35,8 +38,8 @@ import {
   type ItemZone,
   type RoomId,
 } from "./houseData";
-import { clampGroupMove, clampPlacement, followAnchor, itemDepths, itemsInFront, pickDefaultResident, residentStatus, sceneAt, stripIndex, type ResidentStatus } from "./houseLogic";
-import { loadCustomParts, loadPixelHouseState, PIXEL_HOUSE_CHANGED_EVENT, savePixelHouseState, type PixelHouseState } from "./houseState";
+import { clampGroupMove, clampPlacement, followAnchor, itemDepths, itemsInFront, pickDefaultResident, residentStatus, sceneAt, snapRoomIndex, stripIndex, type ResidentStatus } from "./houseLogic";
+import { getLastHouseRoom, loadCustomParts, loadPixelHouseState, setLastHouseRoom, PIXEL_HOUSE_CHANGED_EVENT, savePixelHouseState, type PixelHouseState } from "./houseState";
 import { autoSleepSource, composeLook, SLEEP_POSE, loadDollManifest, loadWardrobeCatalog, type ComposedLook } from "./dollCompose";
 import { defaultOutfit, type CustomPart, type DollManifest, type DollPose, type Outfit, type WardrobeCatalog } from "./wardrobeLogic";
 import { stripX, useHouseResident } from "./useHouseResident";
@@ -208,7 +211,6 @@ const roomPx = computed(() => ROOM_W * s.value);
 const stripPx = computed(() => roomPx.value * STRIP_ROOMS.length);
 const maxScroll = computed(() => Math.max(0, stripPx.value - stageW.value));
 const stripOffset = computed(() => (stripPx.value < stageW.value ? (stageW.value - stripPx.value) / 2 : 0));
-const bathLeft = computed(() => (stageW.value - roomPx.value) / 2);
 const u = (n: number) => n * s.value;
 
 let resizeObs: ResizeObserver | null = null;
@@ -246,26 +248,10 @@ function animateTo(target: number, ms = 420) {
   anim = requestAnimationFrame(step);
 }
 
-function fling(v: number) {
-  stopAnim();
-  let vel = v;
-  let last: number | null = null;
-  const step = (t: number) => {
-    const dt = last === null ? 16 : Math.max(0, t - last);
-    last = t;
-    const next = clampScroll(scrollX.value - vel * dt);
-    const hitEdge = next === 0 || next === maxScroll.value;
-    scrollX.value = next;
-    vel *= Math.pow(0.94, dt / 16);
-    anim = Math.abs(vel) > 0.02 && !hitEdge ? requestAnimationFrame(step) : 0;
-  };
-  anim = requestAnimationFrame(step);
-}
-
 /** 畫面中間是哪一間 */
 const viewIdx = computed(() => {
-  // 三間都看得到（寬螢幕）就算在客廳
-  if (maxScroll.value <= 2) return 0;
+  // 四間都看得到（寬螢幕）就算在客廳
+  if (maxScroll.value <= 2) return stripIndex(HOME_ROOM);
   const center = scrollX.value + stageW.value / 2 - stripOffset.value;
   return Math.min(Math.max(Math.floor(center / roomPx.value), 0), STRIP_ROOMS.length - 1);
 });
@@ -276,17 +262,6 @@ function scrollToRoom(idx: number, ms = 420) {
     stopAnim();
     scrollX.value = clampScroll(target);
   } else animateTo(target, ms);
-}
-
-// ===== 浴室 =====
-const bathOpen = ref(false);
-function openBath() {
-  bathOpen.value = true;
-  showAll.value = false;
-}
-function closeBath() {
-  bathOpen.value = false;
-  scrollToRoom(STRIP_ROOMS.indexOf("bedroom"));
 }
 
 // ===== 時間的光線 =====
@@ -368,11 +343,7 @@ const roomSkins = computed(() => {
 /** 去看：關掉商店，滑到那間房，那件家具閃一下 */
 function showItem(room: RoomId, id: string) {
   decorOpen.value = false;
-  if (room === "bath") openBath();
-  else {
-    bathOpen.value = false;
-    scrollToRoom(stripIndex(room));
-  }
+  scrollToRoom(stripIndex(room));
   flashKey.value = `${room}:${id}`;
   setTimeout(() => {
     if (flashKey.value === `${room}:${id}`) flashKey.value = null;
@@ -463,7 +434,6 @@ const frame = ref(0);
 let frameTimer: ReturnType<typeof setInterval> | null = null;
 
 const isHome = computed(() => !!residentId.value && life.home.value && loaded.value);
-const meInBath = computed(() => life.me.room === "bath");
 const meAct = computed(() => ACTS[life.act.value]);
 const lying = computed(() => !life.walking.value && life.act.value === "sleep");
 
@@ -564,8 +534,6 @@ const spriteStyle = computed(() => {
 
 const meVisible = computed(() => {
   if (!isHome.value) return false;
-  if (meInBath.value) return bathOpen.value;
-  if (bathOpen.value) return false;
   const x = u(mePos.value.x) + stripOffset.value - scrollX.value;
   return x > -20 && x < stageW.value + 20;
 });
@@ -585,9 +553,8 @@ const meDepth = computed(() => {
 const frontIds = computed(() => {
   const out = {} as Record<RoomId, string[]>;
   for (const room of ALL_ROOMS) {
-    // 他在橫條上時三間都算（走到房間邊上會跨到隔壁），在浴室時只算浴室
-    const same = (room === "bath") === meInBath.value;
-    out[room] = isHome.value && same ? itemsInFront(Object.fromEntries(roomItems.value[room].map((i) => [i.id, i.depth])), meDepth.value) : [];
+    // 每間都算（走到房間邊上會跨到隔壁）
+    out[room] = isHome.value ? itemsInFront(Object.fromEntries(roomItems.value[room].map((i) => [i.id, i.depth])), meDepth.value) : [];
   }
   return out;
 });
@@ -596,7 +563,7 @@ const steam = computed(() => {
   const a = meAct.value;
   if (!a?.steam || life.walking.value) return null;
   const p = followAnchor(a.steam, a.anchor, currentOf(a.room), defaultsOf(a.room));
-  return { x: a.room === "bath" ? p.x : stripX({ room: a.room, x: p.x }), y: p.y, inBath: a.room === "bath" };
+  return { x: stripX({ room: a.room, x: p.x }), y: p.y };
 });
 
 const bubbleText = computed(() => {
@@ -616,7 +583,7 @@ function onItemClick(it: { room: RoomId; id: string; name: string; action?: Furn
   flashKey.value = `${it.room}:${it.id}`;
   setTimeout(() => {
     flashKey.value = null;
-    if (action.kind === "enter-bath") openBath();
+    if (action.kind === "enter-bath") scrollToRoom(stripIndex("bath"));
     else if (action.kind === "choose") choosing.value = { name: it.name, options: action.options };
     else if (action.kind === "wardrobe") openWardrobe(action.slot as PartSlot);
     else emit("navigate", action.app);
@@ -626,15 +593,29 @@ function onItemClick(it: { room: RoomId; id: string; name: string; action?: Furn
 // ===== 側邊選單、全部 App =====
 const menuOpen = ref(false);
 const sheetOpen = ref(false);
+/** 面板現在是「全部 App」還是「小屋」 */
+const sheetMode = ref<"apps" | "house">("apps");
+function openSheet(mode: "apps" | "house") {
+  menuOpen.value = false;
+  showAll.value = false;
+  sheetMode.value = mode;
+  sheetOpen.value = true;
+}
 const homeBadges = useHomeBadgesStore();
 const badges = computed(() => homeBadges.badges);
 /** 有未讀訊息：客廳的信箱露出一封信 */
 const hasMail = computed(() => (badges.value.message ?? 0) > 0);
 
+/** 下面那一排 App：展開或收成小按鈕，記住 */
+function toggleDock() {
+  state.dockOpen = !state.dockOpen;
+  persist();
+}
+
 function pickDialApp(app: string) {
   menuOpen.value = false;
   if (app === "__all__") {
-    sheetOpen.value = true;
+    openSheet("apps");
     return;
   }
   emit("navigate", app);
@@ -699,7 +680,7 @@ function finishEdit() {
 }
 
 function resetRoom() {
-  const room: RoomId = bathOpen.value ? "bath" : STRIP_ROOMS[viewIdx.value];
+  const room: RoomId = STRIP_ROOMS[viewIdx.value];
   delete state.placements[room];
   persist();
 }
@@ -710,6 +691,8 @@ interface PointerState {
   startX: number;
   startY: number;
   startScroll: number;
+  /** 開始滑的時候在哪一間 */
+  startIdx: number;
   lastX: number;
   lastT: number;
   vel: number;
@@ -721,7 +704,7 @@ let longPressTimer: ReturnType<typeof setTimeout> | null = null;
 let suppressClick = false;
 
 /** 蓋在房間上的面板（全部 App、衣櫃、擺件商店、側邊選單）：在上面滑不要帶動房間 */
-const OVERLAY_SELECTOR = ".ph-sheet-wrap, .wd-wrap, .ds-wrap, .pw-root";
+const OVERLAY_SELECTOR = ".ph-sheet-wrap, .wd-wrap, .ds-wrap, .pw-root, .ph-dock, .ph-dock-fab, .ph-tabs";
 
 function onPointerDown(e: PointerEvent) {
   if (ptr || (e.pointerType === "mouse" && e.button !== 0)) return;
@@ -732,6 +715,7 @@ function onPointerDown(e: PointerEvent) {
     startX: e.clientX,
     startY: e.clientY,
     startScroll: scrollX.value,
+    startIdx: viewIdx.value,
     lastX: e.clientX,
     lastT: performance.now(),
     vel: 0,
@@ -791,7 +775,6 @@ function onPointerMove(e: PointerEvent) {
     state.placements[room] = { ...(state.placements[room] ?? {}), [it.id]: [pos.x, pos.y] };
     return;
   }
-  if (bathOpen.value) return;
   const t = performance.now();
   const dt = Math.max(1, t - ptr.lastT);
   ptr.vel = 0.8 * ((e.clientX - ptr.lastX) / dt) + 0.2 * ptr.vel;
@@ -812,8 +795,11 @@ function onPointerUp(e: PointerEvent) {
   if (p.item) {
     dragging.value = null;
     if (p.moved) persist();
-  } else if (p.moved && !bathOpen.value && performance.now() - p.lastT < 80) {
-    fling(p.vel);
+  } else if (p.moved && maxScroll.value > 2) {
+    // 停在最近的那一間（放開前手指停住了就不算速度）
+    const vel = performance.now() - p.lastT < 80 ? p.vel : 0;
+    const center = scrollX.value + stageW.value / 2 - stripOffset.value;
+    scrollToRoom(snapRoomIndex(center, vel, p.startIdx, roomPx.value), 300);
   }
   if (p.moved) suppressClick = true;
   if (suppressClick) setTimeout(() => (suppressClick = false), 0);
@@ -835,18 +821,17 @@ const tabs = computed(() => {
     room,
     i,
     name: ROOM_NAMES[room],
-    current: !bathOpen.value ? viewIdx.value === i : room === "bedroom",
+    current: viewIdx.value === i,
     here: meTab === i,
   }));
 });
 
 function goTab(i: number) {
-  if (bathOpen.value) bathOpen.value = false;
   scrollToRoom(i);
 }
 
-const canLeft = computed(() => !bathOpen.value && !editMode.value && scrollX.value > 2);
-const canRight = computed(() => !bathOpen.value && !editMode.value && scrollX.value < maxScroll.value - 2);
+const canLeft = computed(() => !editMode.value && scrollX.value > 2);
+const canRight = computed(() => !editMode.value && scrollX.value < maxScroll.value - 2);
 
 const meLine = computed(() => {
   const p = pronoun.value;
@@ -875,11 +860,6 @@ function hintTap() {
 /** 畫面滑到他在的那一間 */
 function findResident() {
   if (!isHome.value) return;
-  if (meInBath.value) {
-    openBath();
-    return;
-  }
-  bathOpen.value = false;
   scrollToRoom(stripIndex(life.me.room));
 }
 
@@ -947,8 +927,8 @@ onMounted(async () => {
   await ensureResident();
   await refreshResident();
   if (residentId.value && status.value !== "away" && status.value !== "date") life.start();
-  // 一打開都從客廳開始（不跟著他跑；想看他點下面的提示）
-  scrollToRoom(0, 0);
+  // 一打開從客廳開始（不跟著他跑；想看他點下面的提示）；從 App 回來接著看剛剛那間
+  scrollToRoom(stripIndex(getLastHouseRoom() ?? HOME_ROOM), 0);
   // 第一次打開小屋：先看一次怎麼玩
   if (!state.guideSeen) guideOpen.value = true;
   started = true;
@@ -957,6 +937,7 @@ onMounted(async () => {
 });
 
 onUnmounted(() => {
+  if (started) setLastHouseRoom(STRIP_ROOMS[viewIdx.value]);
   stopAnim();
   resizeObs?.disconnect();
   stopTimers();
@@ -995,7 +976,6 @@ function measureLabel(key: string, el: unknown) {
 }
 /** 這間房的左邊在畫面上的哪裡 */
 function roomScreenLeft(room: RoomId): number {
-  if (room === "bath") return bathLeft.value;
   return stripOffset.value - scrollX.value + stripIndex(room) * roomPx.value;
 }
 
@@ -1003,7 +983,7 @@ function roomScreenLeft(room: RoomId): number {
 const labelLayout = computed(() => {
   const out: Record<string, { x: number; y: number } | null> = {};
   if (!showAll.value) return out;
-  const rooms: RoomId[] = bathOpen.value ? ["bath"] : STRIP_ROOMS;
+  const rooms: RoomId[] = STRIP_ROOMS;
   const entries: { key: string; x: number; y: number; w: number; h: number }[] = [];
   for (const room of rooms) {
     for (const it of clickableInView(room)) {
@@ -1043,7 +1023,7 @@ function labelStyle(room: RoomId, it: RenderItem) {
   const pos = labelLayout.value[`${room}:${it.id}`];
   if (!pos) return { left: "0px", top: "0px", visibility: "hidden" as const };
   // 標籤放在橫條（或浴室）裡：畫面座標換回那一層的座標
-  const layerLeft = room === "bath" ? bathLeft.value : stripOffset.value - scrollX.value;
+  const layerLeft = stripOffset.value - scrollX.value;
   return { left: `${pos.x - layerLeft}px`, top: `${pos.y}px` };
 }
 </script>
@@ -1057,7 +1037,7 @@ function labelStyle(room: RoomId, it: RenderItem) {
     @click.capture="onClickCapture"
     @scroll.capture="onNativeScroll"
   >
-    <!-- 三間房排成一條 -->
+    <!-- 四間房排成一條 -->
     <div
       class="ph-strip"
       :style="{ width: `${stripPx}px`, transform: `translate3d(${stripOffset - scrollX}px, 0, 0)` }"
@@ -1086,12 +1066,12 @@ function labelStyle(room: RoomId, it: RenderItem) {
           @item-click="onItemClick"
         />
         <!-- 「？」：所有可以點的地方 -->
-        <template v-if="showAll && !bathOpen">
+        <template v-if="showAll">
           <div v-for="it in clickableInView(room)" :key="`hint-${it.id}`" class="ph-spot" :style="itemStyle(it)" aria-hidden="true"></div>
         </template>
       </div>
       <!-- 「？」的標籤：放在所有房間上面，跨到隔壁房間也不會被切掉 -->
-      <template v-if="showAll && !bathOpen">
+      <template v-if="showAll">
         <template v-for="room in STRIP_ROOMS" :key="`labels-${room}`">
           <div
             v-for="it in clickableInView(room)"
@@ -1106,8 +1086,8 @@ function labelStyle(room: RoomId, it: RenderItem) {
         </template>
       </template>
 
-      <!-- 他（在客廳／臥室／廚房時） -->
-      <div v-if="isHome && !meInBath" class="ph-me" :style="meStyle">
+      <!-- 他 -->
+      <div v-if="isHome" class="ph-me" :style="meStyle">
         <div v-if="!lying" class="ph-me-shadow" :style="{ width: `${u(24)}px`, height: `${u(3.4)}px` }"></div>
         <div
           v-if="dollPose"
@@ -1151,7 +1131,7 @@ function labelStyle(room: RoomId, it: RenderItem) {
         </div>
       </div>
       <div
-        v-if="isHome && steam && !steam.inBath"
+        v-if="isHome && steam"
         class="ph-steam"
         :style="{ left: `${u(steam.x)}px`, top: `${u(steam.y)}px` }"
         aria-hidden="true"
@@ -1186,80 +1166,6 @@ function labelStyle(room: RoomId, it: RenderItem) {
       </div>
     </div>
 
-    <!-- 浴室：從臥室的門進去，蓋在上面 -->
-    <div
-      class="ph-bath"
-      :class="{ 'is-open': bathOpen }"
-      :style="{ left: `${bathLeft}px`, width: `${roomPx}px` }"
-    >
-      <HouseRoom
-        room="bath"
-        :asset="ASSET"
-        :scale="s"
-        :layers="layersOf('bath')"
-        :items="roomItems.bath"
-        :edit-mode="editMode"
-        :dragging="dragging"
-        :flash-key="flashKey"
-        :night="scene === 'night'"
-        :has-mail="hasMail"
-        :skins="roomSkins.bath"
-        pass="back"
-        :front-ids="frontIds.bath"
-        @item-click="onItemClick"
-      />
-      <template v-if="showAll && bathOpen">
-        <template v-for="it in clickableInView('bath')" :key="`hint-${it.id}`">
-          <div class="ph-spot" :style="itemStyle(it)" aria-hidden="true"></div>
-          <div
-            :ref="(el) => measureLabel(`bath:${it.id}`, el)"
-            class="ph-spot-label"
-            :style="labelStyle('bath', it)"
-            aria-hidden="true"
-          >
-            {{ it.name }} → {{ it.action?.to }}
-          </div>
-        </template>
-      </template>
-      <div v-if="isHome && meInBath" class="ph-me" :style="meStyle">
-        <div class="ph-me-shadow" :style="{ width: `${u(24)}px`, height: `${u(3.4)}px` }"></div>
-        <div v-if="dollPose" class="ph-me-sprite ph-doll" :style="spriteStyle">
-          <img v-for="(src, n) in dollFrames" v-show="n === dollFrame" :key="n" :src="src" alt="" draggable="false" />
-        </div>
-        <img v-else-if="dollChecked" class="ph-me-sprite" :src="spriteSrc" alt="" draggable="false" :style="spriteStyle" />
-        <button
-          class="ph-me-hit"
-          :style="{ width: `${spriteSize.w}px`, height: `${spriteSize.h}px`, left: `${-spriteSize.w / 2}px`, top: `${-spriteSize.h}px` }"
-          :aria-label="`${pronoun}，${meLine}，點了聊天`"
-          @click.stop="openChat"
-        ></button>
-        <div v-if="bubbleText && !editMode" class="ph-bubble" :class="{ 'is-unread': unread > 0 }" :style="{ top: `${-spriteSize.h - 34}px` }" aria-hidden="true">
-          {{ bubbleText }}
-        </div>
-      </div>
-      <div v-if="isHome && steam && steam.inBath" class="ph-steam" :style="{ left: `${u(steam.x)}px`, top: `${u(steam.y)}px` }" aria-hidden="true">
-        <i></i><i></i><i></i>
-      </div>
-      <div class="ph-front ph-front-bath">
-        <HouseRoom
-          room="bath"
-          :asset="ASSET"
-          :scale="s"
-          :layers="[]"
-          :items="roomItems.bath"
-          :edit-mode="editMode"
-          :dragging="dragging"
-          :flash-key="flashKey"
-          :night="scene === 'night'"
-          :has-mail="hasMail"
-          :skins="roomSkins.bath"
-          pass="front"
-          :front-ids="frontIds.bath"
-          @item-click="onItemClick"
-        />
-      </div>
-    </div>
-
     <!-- 時間的光線（multiply：白色＝不變） -->
     <div v-if="tintOn" class="ph-tint" :style="{ background: tint }" aria-hidden="true"></div>
 
@@ -1267,8 +1173,7 @@ function labelStyle(room: RoomId, it: RenderItem) {
     <div class="ph-ui">
       <!-- 左右換房間 -->
       <button v-if="canLeft" class="ph-arrow is-left" :aria-label="`去${ROOM_NAMES[STRIP_ROOMS[Math.max(0, viewIdx - 1)]]}`" @click="scrollToRoom(Math.max(0, viewIdx - 1))">◀</button>
-      <button v-if="canRight" class="ph-arrow is-right" :aria-label="`去${ROOM_NAMES[STRIP_ROOMS[Math.min(2, viewIdx + 1)]]}`" @click="scrollToRoom(Math.min(2, viewIdx + 1))">▶</button>
-      <button v-if="bathOpen" class="ph-leave-bath" @click="closeBath">◀ 回臥室</button>
+      <button v-if="canRight" class="ph-arrow is-right" :aria-label="`去${ROOM_NAMES[STRIP_ROOMS[Math.min(STRIP_ROOMS.length - 1, viewIdx + 1)]]}`" @click="scrollToRoom(Math.min(STRIP_ROOMS.length - 1, viewIdx + 1))">▶</button>
 
       <!-- 房間列：他在哪間有小紅牌 -->
       <div class="ph-tabs">
@@ -1278,7 +1183,7 @@ function labelStyle(room: RoomId, it: RenderItem) {
           class="ph-tab"
           :class="{ 'is-current': t.current }"
           :aria-current="t.current ? 'page' : undefined"
-          :aria-label="t.name + (t.here ? `，${pronoun}在這裡` + (meInBath ? '（浴室）' : '') : '')"
+          :aria-label="t.name + (t.here ? `，${pronoun}在這裡` : '')"
           @click="goTab(t.i)"
         >
           {{ t.name }}
@@ -1314,7 +1219,11 @@ function labelStyle(room: RoomId, it: RenderItem) {
         <button class="ph-edit-btn" @click="resetRoom">還原這間</button>
         <button class="ph-edit-btn is-primary" @click="finishEdit">完成</button>
       </div>
-      <button v-else class="ph-hint" aria-live="polite" @click="hintTap">{{ hint }}</button>
+      <template v-else>
+        <!-- 他在哪、在做什麼：在房間列下面；他不在畫面上時點了滑過去 -->
+        <button class="ph-hint" aria-live="polite" @click="hintTap">{{ hint }}</button>
+        <HouseDock :open="state.dockOpen" :badges="badges" @toggle="toggleDock" @pick="emit('navigate', $event)" @house="openSheet('house')" @all="openSheet('apps')" />
+      </template>
 
       <!-- 大門：商店還是外送 -->
       <div v-if="choosing" class="ph-choose-wrap" @click.self="choosing = null">
@@ -1329,6 +1238,7 @@ function labelStyle(room: RoomId, it: RenderItem) {
 
       <HouseAppsSheet
         :open="sheetOpen"
+        :mode="sheetMode"
         :badges="badges"
         @close="sheetOpen = false"
         @pick="pickSheetApp"
@@ -1424,11 +1334,6 @@ function labelStyle(room: RoomId, it: RenderItem) {
 .ph-front {
   z-index: 3;
   pointer-events: none;
-}
-
-.ph-front-bath {
-  position: absolute;
-  inset: 0;
 }
 
 .ph-spot {
@@ -1586,35 +1491,6 @@ function labelStyle(room: RoomId, it: RenderItem) {
 .ph-steam i:nth-child(3) { left: 9px; animation-delay: 1.32s; }
 
 /* ===== 浴室 ===== */
-.ph-bath {
-  position: absolute;
-  top: 0;
-  height: 100%;
-  overflow: hidden;
-  overflow: clip;
-  opacity: 0;
-  transform: scale(0.92);
-  transform-origin: 87% 43%;
-  pointer-events: none;
-  box-shadow: 0 0 0 100vmax #3b2a26;
-  visibility: hidden;
-  transition:
-    opacity 260ms ease,
-    transform 320ms cubic-bezier(0.3, 0.9, 0.3, 1),
-    visibility 0s linear 320ms;
-}
-
-.ph-bath.is-open {
-  opacity: 1;
-  transform: scale(1);
-  pointer-events: auto;
-  visibility: visible;
-  transition:
-    opacity 260ms ease,
-    transform 320ms cubic-bezier(0.3, 0.9, 0.3, 1),
-    visibility 0s;
-}
-
 .ph-tint {
   position: absolute;
   inset: 0;
@@ -1650,8 +1526,8 @@ function labelStyle(room: RoomId, it: RenderItem) {
 .ph-tab {
   position: relative;
   height: 36px;
-  min-width: 56px;
-  padding: 0 14px;
+  min-width: 48px;
+  padding: 0 11px;
   border: 0;
   border-radius: 999px;
   background: transparent;
@@ -1740,34 +1616,14 @@ function labelStyle(room: RoomId, it: RenderItem) {
 .ph-arrow.is-left { left: 6px; }
 .ph-arrow.is-right { right: 6px; }
 
-.ph-leave-bath {
-  position: absolute;
-  left: 12px;
-  top: calc(var(--ph-top) + 56px);
-  height: 40px;
-  padding: 0 16px;
-  border: 0;
-  border-radius: 999px;
-  background: var(--ui-glass);
-  -webkit-backdrop-filter: blur(10px);
-  backdrop-filter: blur(10px);
-  color: var(--ui-ink);
-  font-family: inherit;
-  font-size: 15px;
-  font-weight: 500;
-  cursor: pointer;
-  box-shadow: var(--ui-shadow);
-}
-
 .ph-hint {
   position: absolute;
-  left: 50%;
-  bottom: var(--ph-bottom);
-  transform: translateX(-50%);
-  width: min(300px, calc(100% - 92px));
-  min-height: 42px;
+  left: 12px;
+  top: calc(var(--ph-top) + 52px);
+  max-width: calc(100% - 24px);
+  min-height: 32px;
   box-sizing: border-box;
-  padding: 6px 16px;
+  padding: 5px 14px;
   border: 0;
   border-radius: 999px;
   background: var(--ui-dark);
@@ -1775,12 +1631,11 @@ function labelStyle(room: RoomId, it: RenderItem) {
   backdrop-filter: blur(10px);
   color: #fff;
   font-family: inherit;
-  font-size: 14px;
+  font-size: 13px;
   line-height: 18px;
   display: flex;
   align-items: center;
-  justify-content: center;
-  text-align: center;
+  text-align: left;
   box-shadow: var(--ui-shadow);
   cursor: pointer;
 }

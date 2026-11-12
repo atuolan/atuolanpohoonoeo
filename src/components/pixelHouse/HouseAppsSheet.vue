@@ -1,10 +1,15 @@
 <script setup lang="ts">
-/** 側邊選單裡的「全部 App」：所有 App、小屋的設定、還沒開放的家具功能 */
+/**
+ * 下面那一排打開的面板，兩種：
+ * - apps：「全部 App」——所有 App、還沒開放的家具功能
+ * - house：「小屋」——換外觀、擺件商店、移動家具、怎麼玩、全局美化、切回畫布，小屋自己的功能都在這一個地方
+ */
 import { DOCK_APP_CATALOG } from "@/components/dock/dockApps";
 import { COMING_SOON } from "./houseData";
 
 defineProps<{
   open: boolean;
+  mode: "apps" | "house";
   badges: Record<string, number>;
 }>();
 const emit = defineEmits<{
@@ -26,14 +31,14 @@ function badgeText(n: number): string {
 <template>
   <Transition name="ph-sheet">
     <div v-if="open" class="ph-sheet-wrap" @click.self="emit('close')">
-      <section class="ph-sheet" role="dialog" aria-label="全部 App">
+      <section class="ph-sheet" role="dialog" :aria-label="mode === 'house' ? '小屋' : '全部 App'">
         <header class="ph-sheet-head">
-          <h2>全部 App</h2>
+          <h2>{{ mode === "house" ? "小屋" : "全部 App" }}</h2>
           <button class="ph-sheet-close" aria-label="關閉" @click="emit('close')">×</button>
         </header>
 
         <div class="ph-sheet-body">
-          <div class="ph-app-grid">
+          <div v-if="mode === 'apps'" class="ph-app-grid">
             <button
               v-for="app in DOCK_APP_CATALOG"
               :key="app.id"
@@ -49,19 +54,18 @@ function badgeText(n: number): string {
             </button>
           </div>
 
-          <h3 class="ph-sheet-sub">小屋</h3>
-          <div class="ph-row-list">
-            <button class="ph-row" @click="emit('guide')">
-              <span>小屋怎麼玩</span><span class="ph-row-note">哪裡可以點、怎麼換裝、怎麼佈置</span>
-            </button>
+          <div v-if="mode === 'house'" class="ph-row-list">
             <button class="ph-row" @click="emit('wardrobe')">
-              <span>換外觀</span><span class="ph-row-note">也可以點浴室的鏡子</span>
+              <span>換外觀</span><span class="ph-row-note">髮型、衣服；也可以點浴室的鏡子</span>
             </button>
             <button class="ph-row" @click="emit('decor')">
-              <span>擺件商店</span><span class="ph-row-note">買新的擺件放進房間</span>
+              <span>擺件商店</span><span class="ph-row-note">買新的擺件、幫家具換款式</span>
             </button>
             <button class="ph-row" @click="emit('edit-layout')">
               <span>移動家具</span><span class="ph-row-note">也可以長按房間</span>
+            </button>
+            <button class="ph-row" @click="emit('guide')">
+              <span>小屋怎麼玩</span><span class="ph-row-note">哪裡可以點、怎麼換裝、怎麼佈置</span>
             </button>
             <button class="ph-row" @click="emit('global-theme')">
               <span>全局美化</span>
@@ -71,8 +75,8 @@ function badgeText(n: number): string {
             </button>
           </div>
 
-          <h3 class="ph-sheet-sub">還沒開放</h3>
-          <ul class="ph-soon">
+          <h3 v-if="mode === 'apps'" class="ph-sheet-sub">還沒開放</h3>
+          <ul v-if="mode === 'apps'" class="ph-soon">
             <li v-for="s in COMING_SOON" :key="s.label">
               <span>{{ s.label }}</span><span class="ph-row-note">{{ s.where }}</span>
             </li>
