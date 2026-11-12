@@ -23,6 +23,7 @@ import {
   PERCH_FLOOR_Y,
   pickCatFind,
   CAT_SPEED,
+  FERRET_SPEED,
   pickCatAct,
   type CatCare,
   type CatPose,
@@ -247,7 +248,8 @@ export function useHouseCat(
       runLegs(rest, done);
       return;
     }
-    const ms = leg.jump ? CAT_JUMP_MS : Math.round((dist / CAT_SPEED) * 1000);
+    const speed = cat.value?.species === "ferret" ? FERRET_SPEED : CAT_SPEED;
+    const ms = leg.jump ? CAT_JUMP_MS : Math.round((dist / speed) * 1000);
     moveMs.value = ms;
     if (Math.abs(dx) > 2) facing.value = dx > 0 ? 1 : -1;
     Object.assign(me, { room: leg.room, x: leg.x, y: leg.y });
@@ -497,6 +499,8 @@ export function useHouseCat(
   /** 現在用哪張圖 */
   function poseAt(frame: number): CatPose {
     if (walking.value) return frame % 2 ? "walk-b" : "walk-a";
+    // 雪貂開心的時候跳「雪貂舞」：拱著背左右蹦
+    if (cat.value?.species === "ferret" && hop.value) return "walk-b";
     if (playing.value || urge.value) return "sit";
     if (act.value === "eat") return "eat";
     if (listless.value) return "sleep";

@@ -89,67 +89,75 @@ export const DOG_ART: Record<CatPose, string[]> = {
   ],
 };
 
-// ===== 雪貂：22×9，身體長、腳短；眼睛那圈是深色的面罩 =====
+// ===== 雪貂：27×10，身體長、腳短；臉白、眼睛那條是深色的面罩 =====
 
-export const FERRET_W = 22;
-export const FERRET_H = 9;
+export const FERRET_W = 27;
+export const FERRET_H = 10;
 
-/** o 外框、b 身體、s 深色（腳、尾巴、面罩）、w 臉、e 眼睛、n 鼻子、c 閉著的眼睛 */
+/**
+ * o 外框、b 身體、h 背上深一點、d 腳和尾巴、m 面罩、w 臉和耳朵裡、e 眼睛、n 鼻子、c 閉著的眼睛。
+ * 走路是「彈著跑」：walk-a 拉長、walk-b 拱背；sit 是用後腳站起來張望；跳雪貂舞時用拱背那張。
+ */
 export const FERRET_ART: Record<CatPose, string[]> = {
   "walk-a": [
-    "................oo.oo.",
-    "...............obboso.",
-    "ss.............osewseo",
-    ".so.oooooooooooobwwwwn",
-    "..osbbbbbbbbbbbbbbwwo.",
-    "...obbbbbbbbbbbbbboo..",
-    "...osooooooooooso.....",
-    "...oso........oso.....",
-    "...ooo........ooo.....",
+    "...........................",
+    "...................oo......",
+    "..................owoo.....",
+    ".................obbbbbboo.",
+    "dd.oooooooooooooobmmmemwwo.",
+    ".ddohhhhhhhhhhhhhbbwwwwwwwn",
+    "..obbbbbbbbbbbbbbbbowwwwoo.",
+    "..oddoooooooooooodddoooo...",
+    ".odd..............odd......",
+    ".ooo...............ooo.....",
   ],
   "walk-b": [
-    "................oo.oo.",
-    "...............obboso.",
-    "ss.............osewseo",
-    ".so.oooooooooooobwwwwn",
-    "..osbbbbbbbbbbbbbbwwo.",
-    "...obbbbbbbbbbbbbboo..",
-    "...ooosooooooosooo....",
-    ".....oso....oso.......",
-    ".....ooo....ooo.......",
+    ".........oooooo............",
+    ".......oohhhhhhoo..oo......",
+    "......ohhhhhhhhhhoowoo.....",
+    ".....ohhbbbbbbbbbbbbbbboo..",
+    "dd..obbbbbbbbbbbbbbmmmemwwo",
+    ".ddobbbbbbbbbbbbbbbbbwwwwwn",
+    "..obbbbbbbbbbbbbbbbbbowwoo.",
+    "...oooooddoddoooooooooo....",
+    "........oddoddo............",
+    "........ooooooo............",
   ],
-  sit: [
-    "................oo.oo.",
-    "...............obboso.",
-    "...............osewseo",
-    "..............obbwwwwn",
-    ".............obbbbwwo.",
-    "ss.........oobbbbboo..",
-    ".so.....oobbbbbbbbo...",
-    "..osooobbbbbbbbbsso...",
-    "...ooooooooooooooo....",
+  "sit": [
+    "..............oo...........",
+    ".............owoo..........",
+    "............obbbbbboo......",
+    "............obmmmemwwo.....",
+    "............obbwwwwwwwn....",
+    ".............obwwwwwoo.....",
+    "............obbwwwbo.......",
+    "...........obbbbbbbo.......",
+    "dd........obbbbbbbdo.......",
+    ".ddoooooooodddoodddo.......",
   ],
-  sleep: [
-    "......................",
-    "......................",
-    "......................",
-    "......oooooooooo.oo...",
-    "....oobbbbbbbbbbobboo.",
-    "...obbbbbbbbbbbbocwsoo",
-    "ssobbbbbbbbbbbbbbowwwn",
-    ".sooooooooooooooooooo.",
-    "......................",
+  "sleep": [
+    "...........................",
+    "...........................",
+    "...........................",
+    "...........................",
+    "........ooooooooo..........",
+    "......oohhhhhhhhhoo.oo.....",
+    ".....ohhhhhhhhhhhhhowoo....",
+    "....ohbbbbbbbbbbbbbmmmmo...",
+    "....obdddddbbbbbbbbmcwwwn..",
+    ".....ooooodddddooooooooo...",
   ],
-  eat: [
-    "......................",
-    "......................",
-    "ss....................",
-    ".so.oooooooooo........",
-    "..osbbbbbbbbbbbo.oo.oo",
-    "...obbbbbbbbbbbbobboso",
-    "...obbbbbbbbbbbbosewse",
-    "...osoooooooosooobwwwn",
-    "...ooo.......ooo.oooo.",
+  "eat": [
+    "...........................",
+    "...ooooooooooo.............",
+    "dooohhhhhhhhhhooo..........",
+    ".ddobbbbbbbbbbbbbo.........",
+    "..obbbbbbbbbbbbbbboo..oo...",
+    "...obbbbbbbbbbbbbbbbooowoo.",
+    "...obbbbbbbbbbbbbbbbbbbbbbo",
+    "...oddoooooooooooddobmmmemo",
+    "..odd............oddobwwwwn",
+    "..ooo............ooo.owwoo.",
   ],
 };
 

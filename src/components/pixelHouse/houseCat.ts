@@ -54,9 +54,9 @@ export type PetColor = CatColor | DogColor | HamsterColor | FerretColor | Guinea
 type ColorTable<K extends string> = Record<K, { name: string; palette: Record<string, string> }>;
 
 export const FERRET_COLORS: ColorTable<FerretColor> = {
-  sable: { name: "貂色", palette: { o: "#3B2A26", b: "#E9D6B4", s: "#7A5A45", w: "#FBF7EE", e: "#2A1A14", n: "#E8A0A8", c: "#3B2A26" } },
-  albino: { name: "白化", palette: { o: "#6B5A52", b: "#FBF4E4", s: "#EFE3CC", w: "#FFFFFF", e: "#C2405A", n: "#F29CA3", c: "#6B5A52" } },
-  silver: { name: "銀灰", palette: { o: "#3F3A40", b: "#D3D3D8", s: "#77757F", w: "#FBF7EE", e: "#1F1D24", n: "#E8A0A8", c: "#3F3A40" } },
+  sable: { name: "貂色", palette: { o: "#3B2A26", b: "#E6CFA6", h: "#C9AE82", d: "#6E4B36", m: "#5A3A2A", w: "#FBF7EE", e: "#1F1D24", n: "#E8A0A8", c: "#1F1D24" } },
+  albino: { name: "白化", palette: { o: "#6B5A52", b: "#FBF4E4", h: "#F0E4CC", d: "#E6D6B8", m: "#F3E8D2", w: "#FFFFFF", e: "#C2405A", n: "#F29CA3", c: "#6B5A52" } },
+  silver: { name: "銀灰", palette: { o: "#3F3A40", b: "#D9D9DE", h: "#A9A9B3", d: "#4A4954", m: "#3F3A40", w: "#FBF7EE", e: "#1F1D24", n: "#E8A0A8", c: "#1F1D24" } },
 };
 
 export const GUINEA_COLORS: ColorTable<GuineaColor> = {
@@ -636,7 +636,7 @@ export function pickCatAct(
   const ferret = opts.species === "ferret";
   // 狗：跳不上窗台；比貓更常黏著他。雪貂：一天睡大半天，也不上窗台
   const speciesBias = (k: string) =>
-    dog ? (k === CAT_RUB || k === CAT_FOLLOW ? 1.8 : 1) : ferret ? (k.startsWith("nap-") ? 3 : k === "play-living" ? 1.5 : 1) : 1;
+    dog ? (k === CAT_RUB || k === CAT_FOLLOW ? 1.8 : 1) : ferret ? (k.startsWith("nap-") ? 3 : k === "play-living" ? 4 : 1) : 1;
   const weights = Object.fromEntries(Object.entries(CAT_WEIGHTS[opts.scene]).map(([k, w]) => [k, w * bias(k) * speciesBias(k)]));
   let keys = Object.keys(weights).filter((k) => k !== opts.current && !((dog || ferret) && CAT_ACTS[k]?.perch));
   if (!opts.residentHome) keys = keys.filter((k) => k !== CAT_RUB && k !== CAT_FOLLOW);
@@ -653,8 +653,8 @@ export function pickCatAct(
 
 /** 每件事做多久（毫秒）：40～90 秒；蹭他短一點；「少走動」再乘 4 倍 */
 export function catDwellMs(act: string, rand: () => number = Math.random, calm = false, species?: PetSpecies): number {
-  // 雪貂一睡就很久
-  const sleepy = species === "ferret" && act.startsWith("nap-") ? 2 : 1;
+  // 雪貂一睡就很久；醒著的時候靜不下來，換事情比貓勤快
+  const sleepy = species === "ferret" ? (act.startsWith("nap-") ? 2 : 0.6) : 1;
   const base =
     sleepy *
     (act === CAT_RUB ? 12_000 + rand() * 10_000 : act === "eat" ? 8_000 : act === CAT_FOLLOW ? 30_000 + rand() * 30_000 : 40_000 + rand() * 50_000);
@@ -663,6 +663,8 @@ export function catDwellMs(act: string, rand: () => number = Math.random, calm =
 
 /** 走路速度（房間格子／秒）：比他快一點 */
 export const CAT_SPEED = 38;
+/** 雪貂跑得快（彈著跑） */
+export const FERRET_SPEED = 62;
 
 // ===== 狗：散步 =====
 

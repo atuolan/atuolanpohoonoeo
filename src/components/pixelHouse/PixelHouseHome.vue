@@ -630,6 +630,8 @@ function onCatTap(k: HouseCat) {
 
 /** 貓走路換腳（跟他共用同一個計時器，只在有誰在走路時跑） */
 const catFrame = ref(0);
+/** 雪貂彈著跑：換腳快一倍（同一個計時器，每一格都換） */
+const fastFrame = ref(0);
 const catSheetOpen = ref(false);
 const catSheetFocus = ref<string | null>(null);
 const catMessage = ref("");
@@ -1568,7 +1570,10 @@ function syncFrameTimer() {
     frameTimer = setInterval(() => {
       if (life.walking.value) frame.value++;
       // 貓的腳步慢一半（每 220 毫秒換一格）
-      if (kitties.some((k) => k.walking.value) && ++catTick % 2 === 0) catFrame.value++;
+      if (kitties.some((k) => k.walking.value)) {
+        fastFrame.value++;
+        if (++catTick % 2 === 0) catFrame.value++;
+      }
     }, 110);
   }
   else if (!want && frameTimer) {
@@ -2000,10 +2005,14 @@ function labelStyle(room: RoomId, it: RenderItem) {
             :class="{ 'is-offscreen': !catOnScreen(k) }"
             :style="catStyle(k)"
           >
-            <div class="ph-cat-sprite" :class="{ 'is-hop': k.hop.value }" :style="{ ...catBox(k.cat.value.species), transform: k.facing.value < 0 ? 'scaleX(-1)' : undefined }">
+            <div
+              class="ph-cat-sprite"
+              :class="k.hop.value ? (k.cat.value.species === 'ferret' ? 'is-dance' : 'is-hop') : ''"
+              :style="{ ...catBox(k.cat.value.species), transform: k.facing.value < 0 ? 'scaleX(-1)' : undefined }"
+            >
               <img
                 v-for="(src, pose) in catImages(k.cat.value.species, k.cat.value.color)"
-                v-show="pose === k.poseAt(catFrame)"
+                v-show="pose === k.poseAt(k.cat.value.species === 'ferret' ? fastFrame : catFrame)"
                 :key="pose"
                 :src="src"
                 alt=""
@@ -2430,6 +2439,20 @@ function labelStyle(room: RoomId, it: RenderItem) {
 
 .ph-cat-sprite.is-hop {
   animation: ph-cat-hop 520ms steps(2, jump-none) infinite;
+}
+
+/* 雪貂舞：拱著背往旁邊蹦、跳回來（只動 translate，不影響左右翻） */
+.ph-cat-sprite.is-dance {
+  animation: ph-ferret-dance 900ms steps(6, jump-none) infinite;
+}
+
+@keyframes ph-ferret-dance {
+  0%, 100% { translate: 0 0; }
+  20% { translate: -4px -6px; }
+  40% { translate: -8px 0; }
+  60% { translate: -4px -5px; }
+  80% { translate: 0 0; }
+  90% { translate: 2px -3px; }
 }
 
 .ph-cat-hit {
@@ -2998,6 +3021,7 @@ function labelStyle(room: RoomId, it: RenderItem) {
 
 /* 他不在畫面上（在別間）：跳、Z、蒸氣都先停，滑過去看到了再動 */
 .is-offscreen .ph-cat-sprite.is-hop,
+.is-offscreen .ph-cat-sprite.is-dance,
 .ph-cage.is-offscreen .ph-flip-a,
 .ph-cage.is-offscreen.is-hop .ph-cage-ham,
 .ph-cage.is-offscreen .ph-flip-b,
@@ -3014,6 +3038,7 @@ function labelStyle(room: RoomId, it: RenderItem) {
   .ph-steam i,
   .ph-gift,
   .ph-cat-sprite.is-hop,
+  .ph-cat-sprite.is-dance,
   .ph-cage .ph-flip-a,
   .ph-cage.is-hop .ph-cage-ham,
   .ph-cage .ph-flip-b,
