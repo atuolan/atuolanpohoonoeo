@@ -16,7 +16,11 @@ import {
   CAT_COLORS,
   CAT_COLOR_IDS,
   CAT_DECAY_MS,
-  CAT_FEED_GAIN,
+  CAT_CARE_EFFECT,
+  CAT_PERSONALITY_IDS,
+  decayMult,
+  eatKibble,
+  KIBBLE_GAIN,
   CAT_GIFT_COINS,
   CAT_H,
   CAT_FIND_CHANCE,
@@ -31,6 +35,8 @@ import { ROOM_H, ROOM_W } from "./houseData";
 import { parseHouseLifeState } from "./houseLife";
 
 const T0 = 1_800_000_000_000;
+/** 測試用的貓：個性固定成「懶洋洋」（不影響數值掉的速度） */
+const kitty = (patch: Record<string, unknown> = {}) => ({ ...adoptCat("咪", "gray", T0, () => 0.5), personality: "lazy" as const, ...patch });
 const HOUR = 3_600_000;
 
 describe("貓的圖", () => {
@@ -68,36 +74,61 @@ describe("貓的數值", () => {
     expect(cleanCatName("咪  咪")).toBe("咪 咪");
   });
 
-  it("餵了變飽、摸了逗了心情變好、洗了變乾淨但有點不高興，都不超過 100", () => {
-    const hungry = { ...adoptCat("咪", "gray", T0), food: { v: 10, at: T0 } };
-    expect(catLevels(careCat(hungry, "feed", T0), T0).food).toBe(10 + CAT_FEED_GAIN);
-    const full = careCat(careCat(hungry, "feed", T0), "feed", T0);
-    expect(catLevels(full, T0).food).toBe(100);
-    const base = adoptCat("咪", "gray", T0);
+  it("吃貓糧、罐頭變飽，摸、逗、貓條心情和親密度變好，洗了變乾淨但有點不高興，都不超過 100", () => {
+    const hungry = kitty({ food: { v: 10, at: T0 } });
+    expect(catLevels(eatKibble(hungry, T0), T0).food).toBe(10 + KIBBLE_GAIN);
+    expect(catLevels(eatKibble(eatKibble(eatKibble(hungry, T0), T0), T0), T0).food).toBe(100);
+    expect(catLevels(careCat(hungry, "can", T0), T0).food).toBe(10 + CAT_CARE_EFFECT.can[0]);
+    const base = kitty();
     expect(catLevels(careCat(base, "pet", T0), T0).mood).toBeGreaterThan(80);
     expect(catLevels(careCat(base, "play", T0), T0).mood).toBeGreaterThan(catLevels(careCat(base, "pet", T0), T0).mood);
+    expect(careCat(base, "treat", T0).affinity).toBe(base.affinity + CAT_CARE_EFFECT.treat[2]);
+    expect(careCat({ ...base, affinity: 99 }, "treat", T0).affinity).toBe(100);
     const washed = careCat({ ...base, clean: { v: 20, at: T0 } }, "wash", T0);
     expect(catLevels(washed, T0).clean).toBe(100);
     expect(catLevels(washed, T0).mood).toBeLessThan(80);
   });
 
-  it("太餓或心情太差會沒精神；很久沒開也只是沒精神，餵一次就好", () => {
-    const cat = adoptCat("咪", "orange", T0);
+  it("太餓、心情太差、生病會沒精神；很久沒開也只是沒精神，餵一次就好", () => {
+    const cat = kitty();
     const later = T0 + 30 * 24 * HOUR;
     expect(catListless(catLevels(cat, T0))).toBe(false);
+    expect(catListless(catLevels(cat, T0), true)).toBe(true);
     expect(catListless(catLevels(cat, later))).toBe(true);
-    const cared = careCat(careCat(careCat(cat, "feed", later), "play", later), "pet", later);
+    const cared = careCat(careCat(eatKibble(cat, later), "play", later), "can", later);
     expect(catListless(catLevels(cared, later))).toBe(false);
   });
 
-  it("存檔：沒有貓、花色不認得是 null；數值壞掉用一半", () => {
+  it("個性和生病改數值掉的速度", () => {
+    expect(decayMult({ personality: "glutton", sickSince: 0 }, "food")).toBeCloseTo(1.3);
+    expect(decayMult({ personality: "neat", sickSince: 0 }, "clean")).toBeCloseTo(0.8);
+    expect(decayMult({ personality: "lazy", sickSince: 0 }, "food")).toBe(1);
+    expect(decayMult({ personality: "lazy", sickSince: 5 }, "food")).toBeCloseTo(1.5);
+    expect(decayMult({ personality: "lazy", sickSince: 5 }, "clean")).toBe(1);
+    const glutton = kitty({ personality: "glutton" });
+    expect(catLevels(glutton, T0 + 12 * HOUR).food).toBeLessThan(catLevels(kitty(), T0 + 12 * HOUR).food);
+  });
+
+  it("領養：個性隨機、還沒訓練、id 不一樣", () => {
+    const seen = new Set(Array.from({ length: 20 }, (_, i) => adoptCat("咪", "gray", T0, () => i / 20).personality));
+    expect(seen.size).toBe(CAT_PERSONALITY_IDS.length);
+    const a = adoptCat("咪", "gray", T0);
+    expect(a.training).toBe(0);
+    expect(a.sickSince).toBe(0);
+    expect(a.toiletAt).toBeGreaterThan(T0);
+    expect(adoptCat("咪", "gray", T0, () => 0.1).id).not.toBe(adoptCat("咪", "gray", T0, () => 0.2).id);
+  });
+
+  it("存檔：沒有貓、花色不認得是 null；數值壞掉用一半；舊版的貓補上新欄位、個性每次讀都一樣", () => {
     expect(parseCat(null, T0)).toBeNull();
     expect(parseCat({ name: "咪", color: "彩虹" }, T0)).toBeNull();
     const cat = parseCat({ name: "咪", color: "gray", food: { v: 999, at: T0 }, clean: "壞掉" }, T0)!;
     expect(cat.food.v).toBe(100);
     expect(cat.clean).toEqual({ v: 50, at: T0 });
-    expect(parseHouseLifeState({ cat: { name: "咪", color: "orange" } }).cat?.name).toBe("咪");
-    expect(parseHouseLifeState({}).cat).toBeNull();
+    expect(cat.id).toBe("cat-1");
+    expect(cat.training).toBe(0);
+    expect(parseCat({ name: "咪", color: "gray" }, T0)!.personality).toBe(cat.personality);
+    expect(parseCat({ name: "咪", color: "gray", personality: "neat", training: 300, affinity: -5 }, T0)).toMatchObject({ personality: "neat", training: 100, affinity: 0 });
   });
 });
 

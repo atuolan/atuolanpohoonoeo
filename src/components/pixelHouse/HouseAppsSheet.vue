@@ -13,15 +13,15 @@ defineProps<{
   badges: Record<string, number>;
 }>();
 const emit = defineEmits<{
-  (e: "close"): void;
-  (e: "pick", app: string): void;
-  (e: "edit-layout"): void;
-  (e: "wardrobe"): void;
-  (e: "decor"): void;
-  (e: "cat"): void;
-  (e: "global-theme"): void;
-  (e: "back-to-canvas"): void;
-  (e: "guide"): void;
+  close: [];
+  pick: [app: string];
+  "edit-layout": [];
+  wardrobe: [];
+  decor: [];
+  cat: [];
+  "global-theme": [];
+  "back-to-canvas": [];
+  guide: [];
 }>();
 
 function badgeText(n: number): string {

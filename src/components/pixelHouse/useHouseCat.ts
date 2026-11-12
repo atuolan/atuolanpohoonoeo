@@ -1,34 +1,29 @@
 /**
- * 小屋裡的貓：自己決定做什麼、走過去、待一陣子再換；可以領養、餵、洗、摸、逗。
+ * 小屋裡的一隻貓：自己決定做什麼、走過去、待一陣子再換；餓了去碗那邊吃、想上廁所時頭上冒驚嘆號、
+ * 生病時趴著、去醫院時不在家。牠的數值和家裡的用品在 usePetHome（好幾隻共用）。
  *
  * 省電：跟他一樣，一次只有一個一次性的計時器（40～90 秒才換一件事），走路交給 CSS 補間；
  * 數值照時間差算，不用計時器扣；畫面切到背景時 pause() 全停。
  */
 import { computed, onUnmounted, reactive, ref, watch, type Ref } from "vue";
 import {
-  adoptCat,
-  careCat,
   catDwellMs,
   catLevels,
   catListless,
-  cleanCatName,
   rollCatGift,
   CAT_ACTS,
-  CAT_FEED_BELOW,
-  CAT_FEED_COINS,
   CAT_GIFT_DAILY_LIMIT,
   CAT_FOLLOW,
   CAT_FOLLOW_LABEL,
   CAT_JUMP_MS,
   CAT_RUB,
   CAT_RUB_LABEL,
+  KIBBLE_HUNGRY,
   PERCH_FLOOR_Y,
   pickCatFind,
   CAT_SPEED,
-  CAT_WASH_BELOW,
   pickCatAct,
   type CatCare,
-  type CatColor,
   type CatPose,
   type CatState,
   type CatStatKey,
@@ -36,8 +31,10 @@ import {
 import { ROOM_W, type RoomId, type Scene } from "./houseData";
 import { countDaily, dailyLeft, loadHouseLifeState, rollDay, saveHouseLifeState } from "./houseLife";
 import { followAnchor, planRoute, type Spot } from "./houseLogic";
+import { LITTER_SPOT } from "./petHome";
+import type { PetHomeStore } from "./usePetHome";
 import { stripX } from "./useHouseResident";
-import { earnCoins, payCoins } from "./wardrobeShop";
+import { earnCoins } from "./wardrobeShop";
 
 type Pos = { x: number; y: number };
 /** 一段路；jump = 跳上跳下（窗台），用固定的短時間 */
@@ -45,25 +42,39 @@ type CatLeg = Spot & { jump?: boolean };
 export type CatFx = "heart" | "bubble" | "note";
 
 const FX_MS = 1600;
+/** 想上廁所：頭上冒驚嘆號等多久（點了牠之後再多給這麼久，讓你滑到浴室點貓砂盆） */
+export const URGE_MS = 15_000;
+/** 站在貓砂盆上的位置（腳） */
+const LITTER_ACT = "litter";
+/** 想上廁所：原地等 */
+const URGE_ACT = "urge";
 
-export function useHouseCat(deps: {
-  scene: Ref<Scene>;
-  calm: Ref<boolean>;
-  current: (room: RoomId) => Record<string, Pos>;
-  defaults: (room: RoomId) => Record<string, Pos>;
-  /** 他在家嗎、在睡覺嗎、現在站哪 */
-  residentHome: Ref<boolean>;
-  residentAsleep: Ref<boolean>;
-  residentSpot: () => Spot;
-  /** 他站的位置變了就會變（他每走一段變一次）：「跟著他走」時重新找路 */
-  residentKey: Ref<string>;
-  /** 還沒拿到的、只有貓會叼回來的小擺件 */
-  unownedFinds: () => { id: string; name: string }[];
-  /** 拿到一件（擺出來） */
-  grantFind: (id: string) => void;
-  notify: (text: string) => void;
-}) {
-  const cat = ref<CatState | null>(loadHouseLifeState().cat);
+export type HouseCat = ReturnType<typeof useHouseCat>;
+
+export function useHouseCat(
+  catId: Ref<string | null>,
+  store: PetHomeStore,
+  deps: {
+    scene: Ref<Scene>;
+    calm: Ref<boolean>;
+    current: (room: RoomId) => Record<string, Pos>;
+    defaults: (room: RoomId) => Record<string, Pos>;
+    /** 他在家嗎、在睡覺嗎、現在站哪 */
+    residentHome: Ref<boolean>;
+    residentAsleep: Ref<boolean>;
+    residentSpot: () => Spot;
+    /** 他站的位置變了就會變（他每走一段變一次）：「跟著他走」時重新找路 */
+    residentKey: Ref<string>;
+    /** 這間現在在畫面上嗎（想上廁所的小遊戲只在看得到的時候玩） */
+    inView: (room: RoomId) => boolean;
+    /** 還沒拿到的、只有貓會叼回來的小擺件 */
+    unownedFinds: () => { id: string; name: string }[];
+    /** 拿到一件（擺出來） */
+    grantFind: (id: string) => void;
+    notify: (text: string) => void;
+  },
+) {
+  const cat = computed<CatState | undefined>(() => (catId.value ? store.catById(catId.value) : undefined));
   const me = reactive<Spot>({ room: "living", x: 30, y: 192 });
   const act = ref("sit-living");
   const walking = ref(false);
@@ -72,14 +83,21 @@ export function useHouseCat(deps: {
   /** 摸、洗、逗的時候頭上冒的東西 */
   const fx = ref<CatFx | null>(null);
   const fxKey = ref(0);
-  /** 三個數值（打開面板、照顧完、牠換一件事時重算；不是每秒算） */
+  /** 數值（牠換一件事、照顧完時重算；不是每秒算） */
   const levels = ref<Record<CatStatKey, number>>({ food: 0, clean: 0, mood: 0 });
   /** 正在逗牠：原地跳一下 */
   const playing = ref(false);
+  /** 想上廁所（頭上冒驚嘆號）、已經點過牠（等你點貓砂盆） */
+  const urge = ref(false);
+  const picked = ref(false);
+  /** 在醫院（不在家） */
+  const away = ref(false);
 
   let nextTimer: ReturnType<typeof setTimeout> | null = null;
   let legTimer: ReturnType<typeof setTimeout> | null = null;
   let fxTimer: ReturnType<typeof setTimeout> | null = null;
+  let urgeTimer: ReturnType<typeof setTimeout> | null = null;
+  let awayTimer: ReturnType<typeof setTimeout> | null = null;
   let paused = false;
   let started = false;
   let dead = false;
@@ -87,14 +105,13 @@ export function useHouseCat(deps: {
   function refreshLevels() {
     if (cat.value) levels.value = catLevels(cat.value, Date.now());
   }
-  refreshLevels();
 
-  const listless = computed(() => !!cat.value && catListless(levels.value));
+  const sick = computed(() => !!cat.value?.sickSince);
+  const listless = computed(() => !!cat.value && catListless(levels.value, sick.value));
 
   function clearTimers() {
-    if (nextTimer) clearTimeout(nextTimer);
-    if (legTimer) clearTimeout(legTimer);
-    nextTimer = legTimer = null;
+    for (const t of [nextTimer, legTimer, urgeTimer]) if (t) clearTimeout(t);
+    nextTimer = legTimer = urgeTimer = null;
   }
 
   /** 這件事在哪：固定的照設計稿（家具搬了跟著走）；蹭他是他現在站的地方旁邊 */
@@ -104,6 +121,8 @@ export function useHouseCat(deps: {
       const side = r.x > ROOM_W / 2 ? -14 : 14;
       return { room: r.room, x: Math.min(Math.max(r.x + side, 10), ROOM_W - 10), y: Math.min(r.y + 3, 276) };
     }
+    if (key === LITTER_ACT) return { room: LITTER_SPOT.room, x: LITTER_SPOT.x + 9, y: LITTER_SPOT.y + 5 };
+    if (key === URGE_ACT) return { ...me };
     const a = CAT_ACTS[key];
     if (!a) return { ...me };
     const p = followAnchor([a.x, a.y], a.anchor, deps.current(a.room), deps.defaults(a.room));
@@ -112,27 +131,50 @@ export function useHouseCat(deps: {
 
   function pickNext(): string {
     refreshLevels();
+    const c = cat.value;
+    // 餓了、碗裡有貓糧：去吃
+    if (c && levels.value.food < KIBBLE_HUNGRY && store.home.value.stock.kibble > 0 && act.value !== "eat") return "eat";
     return pickCatAct({
       scene: deps.scene.value,
       current: act.value,
-      residentAsleep: deps.residentAsleep.value,
+      residentAsleep: deps.residentAsleep.value && !sick.value,
       residentHome: deps.residentHome.value,
       listless: listless.value,
+      personality: c?.personality,
     });
+  }
+
+  function dwell(key: string) {
+    return catDwellMs(key, Math.random, deps.calm.value);
   }
 
   function schedule(ms: number) {
     if (nextTimer) clearTimeout(nextTimer);
-    nextTimer = setTimeout(() => {
-      if (dead || !cat.value) return;
-      // 他在睡、牠已經在床上：繼續睡
-      if (deps.residentAsleep.value && act.value === "nap-bed" && !walking.value) {
-        schedule(catDwellMs(act.value, Math.random, deps.calm.value));
+    nextTimer = setTimeout(tick, ms);
+  }
+
+  /** 換一件事的時間到了 */
+  function tick() {
+    nextTimer = null;
+    const c = cat.value;
+    if (dead || !c || paused) return;
+    store.liveTick();
+    if (checkAway()) return;
+    // 該上廁所了：看得到牠就玩小遊戲，看不到就照訓練度自己決定
+    if (Date.now() >= c.toiletAt) {
+      if (deps.inView(me.room)) {
+        startUrge();
         return;
       }
-      void maybeGift();
-      goTo(pickNext());
-    }, ms);
+      afterToilet(store.toilet(c.id, false).result, false);
+    }
+    // 他在睡、牠已經在床上：繼續睡
+    if (deps.residentAsleep.value && act.value === "nap-bed" && !walking.value) {
+      schedule(dwell(act.value));
+      return;
+    }
+    void maybeGift();
+    goTo(pickNext());
   }
 
   /** 從現在的位置到這件事的路：在窗台上就先跳下來；要去窗台就走到下面再跳上去 */
@@ -159,10 +201,14 @@ export function useHouseCat(deps: {
     runLegs(routeTo(key), () => {
       walking.value = false;
       moveMs.value = 0;
+      // 吃飯：頭要朝著碗（碗在右邊），吃掉一份
+      if (key === "eat") {
+        facing.value = 1;
+        if (cat.value) store.eat(cat.value.id);
+        refreshLevels();
+      }
       onArrive?.();
-      // 吃飯：頭要朝著碗（碗在右邊）
-      if (key === "eat") facing.value = 1;
-      schedule(catDwellMs(key, Math.random, deps.calm.value));
+      schedule(dwell(key));
     });
   }
 
@@ -176,7 +222,7 @@ export function useHouseCat(deps: {
     const dx = stripX(leg) - stripX(me);
     const dist = Math.hypot(dx, leg.y - me.y);
     if (dist < 1) {
-      Object.assign(me, leg);
+      Object.assign(me, { room: leg.room, x: leg.x, y: leg.y });
       runLegs(rest, done);
       return;
     }
@@ -187,28 +233,149 @@ export function useHouseCat(deps: {
     legTimer = setTimeout(() => runLegs(rest, done), ms);
   }
 
+  // ===== 去醫院 =====
+
+  /** 在醫院：先不出現，回家的時間到了再開始。回傳 true = 在醫院 */
+  function checkAway(): boolean {
+    const c = cat.value;
+    const now = Date.now();
+    if (!c || c.vetUntil <= now) {
+      away.value = false;
+      return false;
+    }
+    clearTimers();
+    urge.value = picked.value = false;
+    away.value = true;
+    walking.value = false;
+    if (awayTimer) clearTimeout(awayTimer);
+    awayTimer = setTimeout(() => {
+      awayTimer = null;
+      away.value = false;
+      if (!paused && !dead) {
+        // 從大門回來
+        Object.assign(me, spotOf("sit-living"), { x: 112, y: 162 });
+        moveMs.value = 0;
+        deps.notify(`${cat.value?.name ?? "貓"}從醫院回來了`);
+        goTo(pickNext());
+      }
+    }, c.vetUntil - now);
+    return true;
+  }
+
+  watch(
+    () => cat.value?.vetUntil,
+    () => {
+      if (started && !paused) checkAway();
+    },
+  );
+
+  // ===== 想上廁所（小遊戲） =====
+
+  function startUrge() {
+    clearTimers();
+    playing.value = false;
+    act.value = URGE_ACT;
+    walking.value = false;
+    moveMs.value = 0;
+    urge.value = true;
+    picked.value = false;
+    urgeTimer = setTimeout(() => endUrge(), URGE_MS);
+  }
+
+  /** 沒趕上：照訓練度決定牠自己去貓砂盆還是上在地上 */
+  function endUrge() {
+    urgeTimer = null;
+    urge.value = picked.value = false;
+    const c = cat.value;
+    if (!c) return;
+    afterToilet(store.toilet(c.id, false).result, true);
+  }
+
+  /** 上完廁所：去貓砂盆的走過去，上在地上的說一聲 */
+  function afterToilet(result: "box" | "floor", visible: boolean) {
+    const name = cat.value?.name ?? "貓";
+    if (result === "floor") {
+      deps.notify(visible ? `${name}來不及，在地上上了……點一下清掉` : `${name}在地上上廁所了，點一下清掉`);
+      if (visible) schedule(dwell("sit-living"));
+      return;
+    }
+    if (visible) goTo(LITTER_ACT);
+  }
+
+  /** 點了牠：想上廁所時是「選這隻」，等你點貓砂盆；不是的話回傳 false（打開照顧牠的面板） */
+  function tap(): boolean {
+    if (!urge.value) return false;
+    picked.value = true;
+    if (urgeTimer) clearTimeout(urgeTimer);
+    urgeTimer = setTimeout(() => endUrge(), URGE_MS);
+    deps.notify(`點浴室的貓砂盆，帶${cat.value?.name ?? "牠"}過去`);
+    return true;
+  }
+
+  /** 點了貓砂盆：有選這隻就帶牠過去。回傳 true = 這隻接手了 */
+  function guideToBox(): boolean {
+    const c = cat.value;
+    if (!c || !urge.value || !picked.value) return false;
+    const problem = store.boxProblem(c.id);
+    if (problem) {
+      deps.notify(problem);
+      return true;
+    }
+    if (urgeTimer) clearTimeout(urgeTimer);
+    urgeTimer = null;
+    urge.value = picked.value = false;
+    goTo(LITTER_ACT, () => {
+      const r = store.toilet(c.id, true);
+      if (r.result !== "box") return;
+      showFx("heart");
+      deps.notify(`做得好！${c.name}在貓砂盆上了，訓練度 +${r.trained}${r.trained > 10 ? "（用了一條貓條當獎勵）" : ""}`);
+    });
+    return true;
+  }
+
+  /** 訓練：要牠現在上廁所（看得到牠才行） */
+  function trainNow(): string | null {
+    const c = cat.value;
+    if (!c || away.value) return null;
+    if (c.toiletAt - Date.now() > 2 * 3_600_000) {
+      const h = Math.max(1, Math.round((c.toiletAt - Date.now()) / 3_600_000));
+      return `${c.name}現在不想上廁所（大約 ${h} 小時後）`;
+    }
+    store.urgeNow(c.id);
+    if (!paused) startUrge();
+    return null;
+  }
+
+  // ===== 開始、暫停 =====
+
   /** 開始：直接出現在第一件事的位置 */
   function start() {
     if (!cat.value || dead) return;
     started = true;
     clearTimers();
-    const first = pickNext();
+    urge.value = picked.value = false;
+    refreshLevels();
+    if (checkAway()) return;
+    // 一打開就要吃的話，先在廚房坐著，下一次再走去碗那邊（才看得到牠走過去）
+    const picked0 = pickNext();
+    const first = picked0 === "eat" ? "sit-kitchen" : picked0;
     Object.assign(me, spotOf(first));
     moveMs.value = 0;
     act.value = first;
     walking.value = false;
-    if (!paused) schedule(catDwellMs(first, Math.random, deps.calm.value));
+    if (!paused) schedule(dwell(first));
   }
 
-  /** 畫面看不到了：停下來（走到一半就直接到） */
+  /** 畫面看不到了：停下來（走到一半就直接到；想上廁所的等到回來再說） */
   function pause() {
     if (paused) return;
     paused = true;
     clearTimers();
-    if (fxTimer) clearTimeout(fxTimer);
-    fxTimer = null;
+    for (const t of [fxTimer, awayTimer]) if (t) clearTimeout(t);
+    fxTimer = awayTimer = null;
     fx.value = null;
     playing.value = false;
+    urge.value = picked.value = false;
     if (walking.value) {
       Object.assign(me, spotOf(act.value));
       moveMs.value = 0;
@@ -221,8 +388,17 @@ export function useHouseCat(deps: {
     paused = false;
     if (!cat.value || !started) return;
     refreshLevels();
-    schedule(catDwellMs(act.value, Math.random, deps.calm.value));
+    if (checkAway()) return;
+    schedule(dwell(act.value));
   }
+
+  // 這一格換了一隻貓（剛領養）：重新開始
+  watch(catId, (id, prev) => {
+    if (id && id !== prev && !dead) {
+      start();
+      if (!prev) showFx("heart");
+    }
+  });
 
   function showFx(kind: CatFx) {
     fx.value = kind;
@@ -235,70 +411,34 @@ export function useHouseCat(deps: {
     }, FX_MS);
   }
 
-  function saveCat(next: CatState) {
-    cat.value = next;
-    saveHouseLifeState({ ...loadHouseLifeState(), cat: next });
-    refreshLevels();
-  }
-
-  /** 領養（第一隻免費） */
-  function adopt(name: string, color: CatColor) {
-    if (cat.value) return;
-    const next = adoptCat(name, color, Date.now());
-    saveCat(next);
-    deps.notify(`${next.name}來了！點牠可以照顧牠`);
-    start();
-    showFx("heart");
-  }
-
-  function rename(name: string) {
-    if (!cat.value) return;
-    const next = cleanCatName(name);
-    if (next) saveCat({ ...cat.value, name: next });
-  }
-
   /** 照顧牠。回傳 null 是做了；回傳字串是沒做的原因（顯示給使用者） */
-  async function care(kind: CatCare): Promise<string | null> {
+  function care(kind: CatCare): string | null {
     const c = cat.value;
     if (!c) return null;
+    const why = store.care(c.id, kind);
     refreshLevels();
-    if (kind === "feed") {
-      if (levels.value.food >= CAT_FEED_BELOW) return `${c.name}還很飽`;
-      const paid = await payCoins(CAT_FEED_COINS, `小屋：${c.name}的飼料`, "pixel-house:cat:feed");
-      if (!paid.ok) return paid.error === "insufficient_funds" ? `金幣不夠（飼料 ${CAT_FEED_COINS} 金幣）` : "付款失敗，再試一次";
-      saveCat(careCat(c, "feed", Date.now()));
-      // 走去碗那邊吃
-      if (!paused) goTo("eat");
-      return null;
-    }
-    if (kind === "wash") {
-      if (levels.value.clean >= CAT_WASH_BELOW) return `${c.name}還很乾淨`;
-      saveCat(careCat(c, "wash", Date.now()));
-      // 走去浴室，到了才冒泡泡
-      if (paused) showFx("bubble");
-      else goTo("sit-bath", () => showFx("bubble"));
-      return null;
-    }
-    saveCat(careCat(c, kind, Date.now()));
-    if (kind === "play") {
+    if (why) return why;
+    if (paused || away.value) return null;
+    if (kind === "wash") goTo("sit-bath", () => showFx("bubble"));
+    else if (kind === "can") goTo("eat", () => showFx("heart"));
+    else if (kind === "play") {
       playing.value = true;
       showFx("note");
     } else showFx("heart");
     return null;
   }
 
-  /** 心情好的時候偶爾叼金幣回來（一天最多兩次） */
+  /** 心情好的時候偶爾叼金幣或小擺件回來（家裡全部的貓加起來一天最多兩次） */
   async function maybeGift() {
     const c = cat.value;
     if (!c) return;
     const now = new Date();
     const state = rollDay(loadHouseLifeState(now), now);
-    const coins = rollCatGift(catLevels(c, now.getTime()), dailyLeft(state, "catGift", CAT_GIFT_DAILY_LIMIT));
+    const coins = rollCatGift(catLevels(c, now.getTime()), dailyLeft(state, "catGift", CAT_GIFT_DAILY_LIMIT), Math.random, c.affinity, !!c.sickSince);
     if (coins <= 0) return;
     const counted = countDaily(state, "catGift", CAT_GIFT_DAILY_LIMIT, now);
     if (!counted) return;
     saveHouseLifeState(counted);
-    // 有時候是商店沒賣的小擺件（拿過的不會再叼）
     const finds = deps.unownedFinds();
     const findId = pickCatFind(finds.map((f) => f.id));
     if (findId) {
@@ -312,7 +452,7 @@ export function useHouseCat(deps: {
 
   // 跟著他走：他每走一段（站的位置變了），牠就重新找路跟過去。不是一直算，是他動了才算一次
   watch(deps.residentKey, () => {
-    if (act.value !== CAT_FOLLOW || paused || dead || !started || !cat.value) return;
+    if (act.value !== CAT_FOLLOW || paused || dead || !started || !cat.value || away.value) return;
     if (legTimer) clearTimeout(legTimer);
     legTimer = null;
     walking.value = true;
@@ -320,35 +460,68 @@ export function useHouseCat(deps: {
       walking.value = false;
       moveMs.value = 0;
       // 第一次走到之前就被叫去改路：到了才開始算這件事做多久
-      if (!nextTimer) schedule(catDwellMs(CAT_FOLLOW, Math.random, deps.calm.value));
+      if (!nextTimer) schedule(dwell(CAT_FOLLOW));
     });
   });
 
   /** 現在用哪張圖 */
   function poseAt(frame: number): CatPose {
     if (walking.value) return frame % 2 ? "walk-b" : "walk-a";
-    if (playing.value) return "sit";
+    if (playing.value || urge.value) return "sit";
+    if (act.value === "eat") return "eat";
     if (listless.value) return "sleep";
-    if (act.value === CAT_RUB || act.value === CAT_FOLLOW) return "sit";
+    if (act.value === CAT_RUB || act.value === CAT_FOLLOW || act.value === LITTER_ACT) return "sit";
     return CAT_ACTS[act.value]?.pose ?? "sit";
   }
 
   const label = computed(() => {
     if (!cat.value) return "";
+    if (away.value) return "在醫院";
     if (walking.value) return "走來走去";
+    if (urge.value) return "想上廁所！";
+    if (act.value === "eat") return "吃飯";
+    if (act.value === LITTER_ACT) return "在貓砂盆上";
+    if (sick.value) return "生病了，趴著";
     if (listless.value) return "沒精神，趴著";
     if (act.value === CAT_RUB) return CAT_RUB_LABEL;
     if (act.value === CAT_FOLLOW) return CAT_FOLLOW_LABEL;
     return CAT_ACTS[act.value]?.label ?? "";
   });
 
-  const hop = computed(() => !walking.value && !listless.value && (playing.value || !!CAT_ACTS[act.value]?.hop));
+  const hop = computed(() => !walking.value && !listless.value && !urge.value && (playing.value || !!CAT_ACTS[act.value]?.hop));
 
   onUnmounted(() => {
     dead = true;
     clearTimers();
-    if (fxTimer) clearTimeout(fxTimer);
+    for (const t of [fxTimer, awayTimer]) if (t) clearTimeout(t);
   });
 
-  return { cat, me, act, walking, facing, moveMs, fx, fxKey, levels, listless, label, hop, poseAt, refreshLevels, start, pause, resume, adopt, rename, care };
+  return {
+    catId,
+    cat,
+    me,
+    act,
+    walking,
+    facing,
+    moveMs,
+    fx,
+    fxKey,
+    levels,
+    sick,
+    listless,
+    urge,
+    picked,
+    away,
+    label,
+    hop,
+    poseAt,
+    refreshLevels,
+    start,
+    pause,
+    resume,
+    care,
+    tap,
+    guideToBox,
+    trainNow,
+  };
 }

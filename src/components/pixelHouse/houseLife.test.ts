@@ -53,7 +53,7 @@ describe("小屋生活存檔", () => {
   });
 
   it("手機時間往回調：不換日、不能做", () => {
-    const s = { day: "2026-11-12", daily: { gift: 3 }, lastSeenAt: at(12, 20).getTime(), gifts: [] };
+    const s = mk({ day: "2026-11-12", daily: { gift: 3 }, lastSeenAt: at(12, 20).getTime() });
     expect(clockWentBack(s, at(11, 9))).toBe(true);
     expect(rollDay(s, at(11, 9))).toBe(s);
     expect(countDaily(s, "gift", 3, at(11, 9))).toBeNull();

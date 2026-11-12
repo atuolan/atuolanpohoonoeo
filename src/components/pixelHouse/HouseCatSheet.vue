@@ -1,124 +1,258 @@
 <script setup lang="ts">
 /**
- * 貓的面板：還沒養 → 領養（選花色、取名字）；養了 → 看三個數值，摸、逗、餵、洗、改名。
+ * 貓的面板，三種分頁：
+ * - 每隻貓一頁：數值、個性、摸、逗、罐頭、貓條、洗澡、訓練上廁所、健康檢查、看醫生、改名
+ * - 用品：貓糧、罐頭、貓條、貓砂、寵物保險（庫存還夠幾天）
+ * - 領養：選花色、取名字（第一隻免費，之後每隻 32,000）
  * 數值是打開面板、照顧完才重算的（不是每秒更新）。
  */
 import { computed, ref, watch } from "vue";
 import {
+  catLevels,
   CAT_ART,
   CAT_COLORS,
   CAT_COLOR_IDS,
-  CAT_FEED_COINS,
   CAT_NAME_MAX,
-  CAT_STAT_NAMES,
+  CAT_PERSONALITIES,
   type CatCare,
   type CatColor,
   type CatState,
-  type CatStatKey,
 } from "./houseCat";
 import { pixelSvg } from "./pixelArt";
+import {
+  adoptPrice,
+  CHECKUP_PRICE,
+  COVER_DAYS,
+  INSURANCE_PRICE,
+  MAX_CATS,
+  stockDays,
+  SUPPLIES,
+  SUPPLY_IDS,
+  vetCost,
+  type PetHome,
+  type SupplyId,
+} from "./petHome";
 
 const props = defineProps<{
   open: boolean;
-  cat: CatState | null;
-  levels: Record<CatStatKey, number>;
-  listless: boolean;
-  /** 照顧沒做成的原因（很飽、很乾淨、金幣不夠） */
+  home: PetHome;
+  /** 算數值用的時間（打開面板、照顧完時更新） */
+  now: number;
+  /** 打開時看哪一頁：貓的 id、"supplies"、"adopt"（沒給就看第一隻） */
+  focus: string | null;
+  /** 上一個動作沒做成的原因、或做完的話 */
   message: string;
+  busy: boolean;
 }>();
 const emit = defineEmits<{
-  (e: "close"): void;
-  (e: "adopt", name: string, color: CatColor): void;
-  (e: "care", kind: CatCare): void;
-  (e: "rename", name: string): void;
+  close: [];
+  adopt: [name: string, color: CatColor];
+  care: [id: string, kind: CatCare];
+  rename: [id: string, name: string];
+  buy: [id: SupplyId];
+  insurance: [];
+  checkup: [id: string];
+  vet: [id: string];
+  train: [id: string];
 }>();
 
+const tab = ref<string>("adopt");
 const color = ref<CatColor>("orange");
 const name = ref("");
 const renaming = ref(false);
+const newName = ref("");
 
 watch(
-  () => props.open,
-  (open) => {
+  () => [props.open, props.focus] as const,
+  ([open]) => {
     if (!open) return;
     renaming.value = false;
-    name.value = props.cat?.name ?? "";
+    name.value = "";
+    tab.value = props.focus ?? props.home.cats[0]?.id ?? "adopt";
+  },
+);
+// 領養完：跳到新來的那隻
+watch(
+  () => props.home.cats.length,
+  (n, prev) => {
+    if (props.open && n > prev) tab.value = props.home.cats[n - 1].id;
   },
 );
 
+const tabs = computed(() => [
+  ...props.home.cats.map((c) => ({ id: c.id, label: c.name, alert: !!c.sickSince })),
+  ...(props.home.cats.length ? [{ id: "supplies", label: "用品", alert: props.home.stock.kibble <= 0 || props.home.stock.litter <= 0 }] : []),
+  ...(props.home.cats.length < MAX_CATS ? [{ id: "adopt", label: props.home.cats.length ? "＋" : "領養", alert: false }] : []),
+]);
+
+const cat = computed<CatState | undefined>(() => props.home.cats.find((c) => c.id === tab.value));
+const levels = computed(() => (cat.value ? catLevels(cat.value, props.now) : { food: 0, clean: 0, mood: 0 }));
+const insured = computed(() => props.home.insuranceUntil > props.now);
+const atVet = computed(() => !!cat.value && cat.value.vetUntil > props.now);
+
+const portraits = computed(() =>
+  Object.fromEntries(props.home.cats.map((c) => [c.id, pixelSvg(CAT_ART[c.sickSince ? "sleep" : "sit"], CAT_COLORS[c.color].palette)])),
+);
 const previews = CAT_COLOR_IDS.map((id) => ({ id, name: CAT_COLORS[id].name, src: pixelSvg(CAT_ART.sit, CAT_COLORS[id].palette) }));
-const portrait = computed(() => (props.cat ? pixelSvg(CAT_ART[props.listless ? "sleep" : "sit"], CAT_COLORS[props.cat.color].palette) : ""));
-const stats = computed(() => (Object.keys(CAT_STAT_NAMES) as CatStatKey[]).map((k) => ({ key: k, name: CAT_STAT_NAMES[k], value: props.levels[k] })));
+const price = computed(() => adoptPrice(props.home.cats.length));
+
+const bars = computed(() => {
+  const c = cat.value;
+  if (!c) return [];
+  return [
+    { key: "food", name: "飽", value: levels.value.food },
+    { key: "clean", name: "乾淨", value: levels.value.clean },
+    { key: "mood", name: "心情", value: levels.value.mood },
+    { key: "affinity", name: "親密", value: Math.round(c.affinity) },
+    { key: "training", name: "上廁所", value: Math.round(c.training) },
+  ];
+});
+
+const days = (until: number) => Math.max(0, Math.ceil((until - props.now) / 86_400_000));
+
+/** 這隻現在的狀況（一句話） */
+const status = computed(() => {
+  const c = cat.value;
+  if (!c) return "";
+  if (atVet.value) return `在醫院，大約 ${Math.max(1, Math.ceil((c.vetUntil - props.now) / 60_000))} 分鐘後回家`;
+  if (c.sickSince) return `生病了。帶去看醫生要 ${vetCost(c, props.now, insured.value).toLocaleString()} 金幣${insured.value ? "（保險付了一半）" : ""}`;
+  if (levels.value.food < 20) return props.home.stock.kibble > 0 ? `${c.name}很餓，等一下會去吃` : `${c.name}很餓，貓糧吃完了`;
+  if (levels.value.clean < 20) return `${c.name}髒髒的，該洗澡了`;
+  if (levels.value.mood < 20) return `${c.name}心情不好，陪牠玩一下`;
+  return CAT_PERSONALITIES[c.personality].desc;
+});
+
+function stockNote(id: SupplyId): string {
+  const n = props.home.stock[id];
+  const s = SUPPLIES[id];
+  if (id === "kibble" || id === "litter") {
+    const d = stockDays(props.home, id);
+    return `還有 ${n} ${s.unit}${Number.isFinite(d) ? `，大約夠 ${d < 1 ? "不到 1" : Math.floor(d)} 天` : ""}`;
+  }
+  return `還有 ${n} ${s.unit}`;
+}
 
 function saveName() {
-  const next = name.value.trim();
-  if (next) emit("rename", next);
+  if (cat.value && newName.value.trim()) emit("rename", cat.value.id, newName.value.trim());
   renaming.value = false;
 }
 </script>
 
 <template>
   <div v-if="open" class="cs-wrap" @click.self="emit('close')">
-    <!-- 領養 -->
-    <section v-if="!cat" class="cs-card" role="dialog" aria-label="領養一隻貓">
-      <h2 class="cs-title">領養一隻貓</h2>
-      <p class="cs-note">第一隻免費。牠會在屋裡走來走去、找地方睡覺，偶爾去蹭人。</p>
-      <div class="cs-colors" role="radiogroup" aria-label="花色">
+    <section class="cs-card" role="dialog" aria-label="貓">
+      <div v-if="tabs.length > 1" class="cs-tabs" role="tablist">
         <button
-          v-for="p in previews"
-          :key="p.id"
-          class="cs-color"
-          :class="{ 'is-on': color === p.id }"
-          role="radio"
-          :aria-checked="color === p.id"
-          @click="color = p.id"
+          v-for="t in tabs"
+          :key="t.id"
+          class="cs-tab"
+          :class="{ 'is-on': tab === t.id }"
+          role="tab"
+          :aria-selected="tab === t.id"
+          @click="tab = t.id; renaming = false"
         >
-          <img :src="p.src" alt="" draggable="false" />
-          <span>{{ p.name }}</span>
+          {{ t.label }}<i v-if="t.alert" class="cs-dot" aria-label="要注意"></i>
         </button>
       </div>
-      <label class="cs-field">
-        <span>名字</span>
-        <input v-model="name" type="text" :maxlength="CAT_NAME_MAX" :placeholder="CAT_COLORS[color].name" />
-      </label>
-      <button class="cs-btn is-main" @click="emit('adopt', name, color)">帶牠回家</button>
-      <button class="cs-btn is-cancel" @click="emit('close')">再想想</button>
-    </section>
 
-    <!-- 照顧 -->
-    <section v-else class="cs-card" role="dialog" :aria-label="cat.name">
-      <div class="cs-head">
-        <img class="cs-portrait" :src="portrait" alt="" draggable="false" />
-        <div class="cs-name">
-          <template v-if="renaming">
-            <input v-model="name" type="text" :maxlength="CAT_NAME_MAX" aria-label="名字" @keyup.enter="saveName" />
-            <button class="cs-mini" @click="saveName">好</button>
-          </template>
-          <template v-else>
-            <strong>{{ cat.name }}</strong>
-            <button class="cs-mini" @click="renaming = true">改名</button>
-          </template>
+      <!-- 領養 -->
+      <template v-if="tab === 'adopt'">
+        <h2 class="cs-title">{{ home.cats.length ? "再養一隻" : "領養一隻貓" }}</h2>
+        <p class="cs-note">
+          {{ home.cats.length ? `每多一隻 ${price.toLocaleString()} 金幣，最多 ${MAX_CATS} 隻。貓越多，貓糧和貓砂用得越快。` : "第一隻免費。" }}
+          每隻個性不一樣，來的時候送一份新手包。
+        </p>
+        <div class="cs-colors" role="radiogroup" aria-label="花色">
+          <button
+            v-for="p in previews"
+            :key="p.id"
+            class="cs-color"
+            :class="{ 'is-on': color === p.id }"
+            role="radio"
+            :aria-checked="color === p.id"
+            @click="color = p.id"
+          >
+            <img :src="p.src" alt="" draggable="false" />
+            <span>{{ p.name }}</span>
+          </button>
         </div>
-      </div>
+        <label class="cs-field">
+          <span>名字</span>
+          <input v-model="name" type="text" :maxlength="CAT_NAME_MAX" :placeholder="CAT_COLORS[color].name" />
+        </label>
+        <p v-if="message" class="cs-msg" role="status">{{ message }}</p>
+        <button class="cs-btn is-main" :disabled="busy" @click="emit('adopt', name, color)">
+          帶牠回家<small v-if="price">{{ price.toLocaleString() }} 金幣</small>
+        </button>
+      </template>
 
-      <div v-for="s in stats" :key="s.key" class="cs-stat">
-        <span class="cs-stat-name">{{ s.name }}</span>
-        <div class="cs-bar" role="progressbar" :aria-label="s.name" :aria-valuenow="s.value" aria-valuemin="0" aria-valuemax="100">
-          <i :class="{ 'is-low': s.value < 20 }" :style="{ width: `${s.value}%` }"></i>
+      <!-- 用品 -->
+      <template v-else-if="tab === 'supplies'">
+        <h2 class="cs-title">用品</h2>
+        <p class="cs-note">貓糧和貓砂用完了，牠們會餓、會在地上上廁所。</p>
+        <ul class="cs-shop">
+          <li v-for="id in SUPPLY_IDS" :key="id" class="cs-shop-row">
+            <div class="cs-shop-info">
+              <strong>{{ SUPPLIES[id].name }}<small>（{{ SUPPLIES[id].pack }} {{ SUPPLIES[id].unit }}）</small></strong>
+              <span :class="{ 'is-low': id !== 'can' && id !== 'treat' && home.stock[id] <= 0 }">{{ stockNote(id) }}</span>
+            </div>
+            <button class="cs-buy" :disabled="busy" @click="emit('buy', id)">{{ SUPPLIES[id].price.toLocaleString() }}</button>
+          </li>
+          <li class="cs-shop-row">
+            <div class="cs-shop-info">
+              <strong>寵物保險<small>（{{ COVER_DAYS }} 天）</small></strong>
+              <span>{{ insured ? `有效，還有 ${days(home.insuranceUntil)} 天` : "看醫生打對折" }}</span>
+            </div>
+            <button class="cs-buy" :disabled="busy" @click="emit('insurance')">{{ INSURANCE_PRICE.toLocaleString() }}</button>
+          </li>
+        </ul>
+        <p v-if="message" class="cs-msg" role="status">{{ message }}</p>
+      </template>
+
+      <!-- 一隻貓 -->
+      <template v-else-if="cat">
+        <div class="cs-head">
+          <img class="cs-portrait" :src="portraits[cat.id]" alt="" draggable="false" />
+          <div class="cs-name">
+            <template v-if="renaming">
+              <input v-model="newName" type="text" :maxlength="CAT_NAME_MAX" aria-label="名字" @keyup.enter="saveName" />
+              <button class="cs-mini" @click="saveName">好</button>
+            </template>
+            <template v-else>
+              <strong>{{ cat.name }}</strong>
+              <span class="cs-chip">{{ CAT_PERSONALITIES[cat.personality].name }}</span>
+              <button class="cs-mini" @click="renaming = true; newName = cat.name">改名</button>
+            </template>
+          </div>
         </div>
-        <span class="cs-stat-num">{{ s.value }}</span>
-      </div>
 
-      <p class="cs-note" role="status">
-        {{ message || (listless ? `${cat.name}沒精神，餵牠、陪牠玩一下就好了。` : "也可以直接點廚房的碗餵牠、點浴缸幫牠洗澡。") }}
-      </p>
+        <div v-for="b in bars" :key="b.key" class="cs-stat">
+          <span class="cs-stat-name">{{ b.name }}</span>
+          <div class="cs-bar" role="progressbar" :aria-label="b.name" :aria-valuenow="b.value" aria-valuemin="0" aria-valuemax="100">
+            <i :class="{ 'is-low': b.value < 20 && b.key !== 'training' && b.key !== 'affinity', 'is-soft': b.key === 'training' || b.key === 'affinity' }" :style="{ width: `${b.value}%` }"></i>
+          </div>
+          <span class="cs-stat-num">{{ b.value }}</span>
+        </div>
 
-      <div class="cs-actions">
-        <button class="cs-btn" @click="emit('care', 'pet')">摸摸</button>
-        <button class="cs-btn" @click="emit('care', 'play')">逗牠玩</button>
-        <button class="cs-btn" @click="emit('care', 'feed')">餵飼料<small>{{ CAT_FEED_COINS }} 金幣</small></button>
-        <button class="cs-btn" @click="emit('care', 'wash')">洗澡</button>
-      </div>
+        <p class="cs-note" :class="{ 'is-alert': !!cat.sickSince }" role="status">{{ message || status }}</p>
+
+        <button v-if="cat.sickSince && !atVet" class="cs-btn is-main" :disabled="busy" @click="emit('vet', cat.id)">
+          帶去看醫生<small>{{ vetCost(cat, now, insured).toLocaleString() }} 金幣</small>
+        </button>
+
+        <div class="cs-actions">
+          <button class="cs-btn" :disabled="atVet" @click="emit('care', cat.id, 'pet')">摸摸</button>
+          <button class="cs-btn" :disabled="atVet" @click="emit('care', cat.id, 'play')">逗牠玩</button>
+          <button class="cs-btn" :disabled="atVet" @click="emit('care', cat.id, 'can')">罐頭<small>剩 {{ home.stock.can }}</small></button>
+          <button class="cs-btn" :disabled="atVet" @click="emit('care', cat.id, 'treat')">貓條<small>剩 {{ home.stock.treat }}</small></button>
+          <button class="cs-btn" :disabled="atVet" @click="emit('care', cat.id, 'wash')">洗澡</button>
+          <button class="cs-btn" :disabled="atVet" @click="emit('train', cat.id)">訓練上廁所</button>
+        </div>
+        <button class="cs-btn is-line" :disabled="busy || atVet" @click="emit('checkup', cat.id)">
+          健康檢查<small>{{ cat.checkupUntil > now ? `有效，還有 ${days(cat.checkupUntil)} 天．再做一次 ` : "做了之後比較不會生病．" }}{{ CHECKUP_PRICE.toLocaleString() }} 金幣</small>
+        </button>
+      </template>
+
       <button class="cs-btn is-cancel" @click="emit('close')">關閉</button>
     </section>
   </div>
@@ -174,7 +308,8 @@ function saveName() {
 }
 
 .cs-colors {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
   gap: 8px;
 }
 
@@ -275,7 +410,7 @@ function saveName() {
 }
 
 .cs-stat-name {
-  width: 36px;
+  width: 44px;
 }
 
 .cs-stat-num {
@@ -340,5 +475,146 @@ function saveName() {
 .cs-btn.is-cancel {
   background: transparent;
   color: rgba(59, 42, 38, 0.6);
+}
+
+.cs-tabs {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  margin: -4px -4px 2px;
+  padding: 2px 4px 4px;
+}
+
+.cs-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.cs-tab {
+  position: relative;
+  flex: none;
+  max-width: 7.5em;
+  height: 34px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 999px;
+  background: #f4ead8;
+  color: inherit;
+  font-family: inherit;
+  font-size: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.cs-tab.is-on {
+  background: #3b2a26;
+  color: #fffbf5;
+}
+
+.cs-dot {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #d9453a;
+}
+
+.cs-chip {
+  flex: none;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #e7f1df;
+  color: #4c6b3e;
+  font-size: 12px;
+}
+
+.cs-msg {
+  margin: 0;
+  font-size: 13px;
+  color: #b5452f;
+}
+
+.cs-note.is-alert {
+  color: #b5452f;
+}
+
+.cs-bar i.is-soft {
+  background: #e8b866;
+}
+
+.cs-btn.is-line {
+  background: transparent;
+  border: 1px solid rgba(59, 42, 38, 0.2);
+}
+
+.cs-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.cs-shop {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.cs-shop-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.cs-shop-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.cs-shop-info strong {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.cs-shop-info small {
+  font-weight: 400;
+  opacity: 0.65;
+}
+
+.cs-shop-info span {
+  color: rgba(59, 42, 38, 0.7);
+}
+
+.cs-shop-info span.is-low {
+  color: #b5452f;
+}
+
+.cs-buy {
+  flex: none;
+  min-width: 72px;
+  height: 40px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 12px;
+  background: #f6e2b5;
+  color: #3b2a26;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.cs-buy:disabled {
+  opacity: 0.45;
 }
 </style>
