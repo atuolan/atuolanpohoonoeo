@@ -204,10 +204,9 @@ async function composeAutoSleep(
   return ctx.canvas.toDataURL("image/png");
 }
 
-/** 閉眼：眼睛那一層的範圍裡，在最下面那一列畫一條線，顏色用眼睛裡最深的那個 */
+/** 閉眼：眼睛那一層最下面那一列，左右眼各畫一條短線，顏色用眼睛裡最深的那個 */
 function drawClosedEyes(target: Uint8ClampedArray, eyes: Uint8ClampedArray, w: number, h: number): void {
-  let minX = w;
-  let maxX = -1;
+  const cols = new Set<number>();
   let maxY = -1;
   let dark: [number, number, number] | null = null;
   let darkSum = Infinity;
@@ -215,8 +214,7 @@ function drawClosedEyes(target: Uint8ClampedArray, eyes: Uint8ClampedArray, w: n
     for (let x = 0; x < w; x++) {
       const i = (y * w + x) * 4;
       if (eyes[i + 3] === 0) continue;
-      minX = Math.min(minX, x);
-      maxX = Math.max(maxX, x);
+      cols.add(x);
       maxY = Math.max(maxY, y);
       const sum = eyes[i] + eyes[i + 1] + eyes[i + 2];
       if (sum < darkSum) {
@@ -225,8 +223,9 @@ function drawClosedEyes(target: Uint8ClampedArray, eyes: Uint8ClampedArray, w: n
       }
     }
   }
-  if (!dark || maxX < 0) return;
-  for (let x = minX; x <= maxX; x++) {
+  if (!dark || cols.size === 0) return;
+  // 只畫在原本有眼睛的那幾欄，兩眼中間留空（整條連起來會像戴眼罩）
+  for (const x of cols) {
     const i = (maxY * w + x) * 4;
     target[i] = dark[0];
     target[i + 1] = dark[1];
