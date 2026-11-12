@@ -5,6 +5,7 @@
  * 省電的做法：會隨時間變的東西都只存「上次的時間」，打開小屋時用「現在 − 上次」算一次，
  * 不用計時器一直算；App 關著的時候什麼都不跑。
  */
+import { parseCat, type CatState } from "./houseCat";
 import { DIRT_FIRST, DIRT_INTERVAL_MS, parseDeeds, parseDirt, parseMail, type DeedKind, type DirtMap, type MailState } from "./houseChores";
 import { parsePendingGifts, type PendingGift } from "./houseLines";
 
@@ -23,6 +24,8 @@ export interface HouseLifeState {
   dirtAt: number;
   /** 信箱每天一封信：上次哪天領的、連續幾天 */
   mail: MailState;
+  /** 養的貓（null = 還沒領養） */
+  cat: CatState | null;
   /** 他上次自己打掃完是什麼時候（毫秒；0 = 還沒掃過）：隔一段時間才會再掃 */
   choreAt: number;
   /** 在別的 App 做了什麼可以回小屋領獎勵：種類 → 哪一天做的 */
@@ -51,6 +54,7 @@ export function defaultHouseLifeState(now: Date = new Date()): HouseLifeState {
     dirtAt: now.getTime() - DIRT_FIRST * DIRT_INTERVAL_MS,
     mail: { last: "", streak: 0 },
     choreAt: 0,
+    cat: null,
     deeds: {},
     paidAway: "",
   };
@@ -75,6 +79,7 @@ export function parseHouseLifeState(raw: unknown, now: Date = new Date()): House
     dirt: parseDirt(r.dirt),
     dirtAt: typeof r.dirtAt === "number" && Number.isFinite(r.dirtAt) ? r.dirtAt : base.dirtAt,
     mail: parseMail(r.mail),
+    cat: parseCat(r.cat, now.getTime()),
     choreAt: typeof r.choreAt === "number" && Number.isFinite(r.choreAt) && r.choreAt > 0 ? r.choreAt : 0,
     deeds: parseDeeds(r.deeds),
     paidAway: typeof r.paidAway === "string" ? r.paidAway : "",

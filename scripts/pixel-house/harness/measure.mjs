@@ -2,7 +2,7 @@
  * 量小屋耗不耗電、卡不卡（開發用）。
  *
  *   npm run dev -- --port 5199          # 另一個終端機
- *   node scripts/pixel-house/harness/measure.mjs [網址] [每段幾秒]
+ *   node scripts/pixel-house/harness/measure.mjs [--cat]     # --cat：養一隻貓再量
  *
  * 用無頭瀏覽器開測試頁（不經過登入），CPU 放慢 4 倍模擬手機，量三段：
  *   放著不動（他站著）、他在走路、左右滑房間
@@ -14,8 +14,8 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 const { chromium } = require("playwright");
 
-const url = process.argv[2] || "http://localhost:5199/scripts/pixel-house/harness/index.html";
-const seconds = Number(process.argv[3] || 20);
+const url = process.env.HOUSE_URL || "http://localhost:5199/scripts/pixel-house/harness/index.html";
+const seconds = 20;
 
 const browser = await chromium.launch();
 // 固定在下午：他會到處走動（晚上都在睡覺，量不到走路）
@@ -46,9 +46,14 @@ await page.addInitScript(() => {
 await page.goto(url);
 await page.waitForTimeout(2500);
 await page.evaluate(
-  () =>
+  (withCat) =>
     new Promise((res) => {
       localStorage.setItem("pixel_house_state", JSON.stringify({ homeStyle: "pixel-house", guideSeen: true, residentCharId: "measure-1" }));
+      // --cat：養一隻貓再量（畫面上多一個會走的）
+      if (withCat) {
+        const stat = { v: 90, at: Date.now() };
+        localStorage.setItem("pixel_house_life", JSON.stringify({ cat: { name: "測試貓", color: "orange", food: stat, clean: stat, mood: stat } }));
+      } else localStorage.removeItem("pixel_house_life");
       const r = indexedDB.open("aguaphone-db");
       r.onsuccess = () => {
         const db = r.result;
@@ -58,6 +63,7 @@ await page.evaluate(
       };
       r.onerror = () => res(0);
     }),
+  process.argv.includes("--cat"),
 );
 const t0 = Date.now();
 await page.reload();

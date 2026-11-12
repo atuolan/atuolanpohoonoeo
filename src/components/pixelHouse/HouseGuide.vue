@@ -3,7 +3,7 @@
  * 小屋怎麼玩：第一次打開小屋時自動出現，之後從下面的「小屋 › 小屋怎麼玩」再看。
  * 每一條是一個常見的問題；有「試試看」的，按了直接帶去做那件事。
  */
-export type GuideAction = "show-spots" | "open-dial" | "find-resident" | "wardrobe" | "edit-layout" | "settings";
+export type GuideAction = "show-spots" | "open-dial" | "find-resident" | "wardrobe" | "cat" | "edit-layout" | "settings";
 
 defineProps<{
   open: boolean;
@@ -80,6 +80,12 @@ const GROUPS: { title: string; items: GuideItem[] }[] = [
       {
         q: "小屋裡怎麼賺金幣？",
         a: "房間放久了會髒（水槽的碗、地上的灰塵、衣服、水漬），點一下就清掉，有金幣；{p}大約每四小時也會自己掃一處，只是賺得比你點的少。客廳的信箱每天有一封信，點了收下，連續七天那封特別多。{p}煮完飯有時會在餐桌留一盤菜、在書桌留紙條，點了收下。{p}在聊天裡忙完回來、你今天完成番茄鐘或健身打卡，回到小屋也會有金幣。",
+      },
+      {
+        q: "可以養貓嗎？",
+        a: "可以。點客廳的大門 ›「領養一隻貓」，或右下角的小按鈕 ›「小屋 › 貓」，選花色、取名字，第一隻免費。牠會自己在屋裡走動、找地方睡覺、去蹭{p}，{p}睡覺時會跳上床一起睡。點牠可以摸摸、逗牠玩、餵飼料（要金幣）、洗澡。不照顧牠也不會跑掉，只是會沒精神、趴著不動，餵一次、陪牠玩一下就好了；心情好的時候偶爾會叼金幣回來。",
+        action: "cat",
+        actionLabel: "看看貓",
       },
       {
         q: "怎麼換髮型、換衣服？",

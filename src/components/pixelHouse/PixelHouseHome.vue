@@ -14,6 +14,9 @@ import { useHomeBadgesStore } from "@/stores/homeBadges";
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from "vue";
 import { GIFTS, GIFT_ART, type GiftKind } from "./houseLines";
 import { pixelSvg } from "./pixelArt";
+import HouseCatSheet from "./HouseCatSheet.vue";
+import { BOWL_ART, BOWL_PALETTE, BOWL_SPOT, CAT_ART, CAT_COLORS, CAT_H, CAT_W, type CatCare, type CatColor } from "./houseCat";
+import { useHouseCat } from "./useHouseCat";
 import { DIRT_ART, DIRT_BY_ID, choreAct, type DirtKind } from "./houseChores";
 import { useHouseChores } from "./useHouseChores";
 import { useHouseInteract } from "./useHouseInteract";
@@ -491,6 +494,73 @@ const dirtSpots = computed(() =>
 );
 const dirtImages = Object.fromEntries(Object.entries(DIRT_ART).map(([k, a]) => [k, pixelSvg(a.rows, a.palette)])) as Record<DirtKind, string>;
 
+// ===== 貓 =====
+const kitty = useHouseCat({
+  scene,
+  calm: computed(() => state.calm),
+  current: currentOf,
+  defaults: defaultsOf,
+  residentHome: computed(() => isHome.value),
+  residentAsleep: computed(() => isHome.value && lying.value),
+  residentSpot: () => ({ room: life.me.room, x: life.me.x, y: life.me.y }),
+  notify: play.showNotice,
+});
+/** 貓走路換腳（跟他共用同一個計時器，只在牠走路時加） */
+const catFrame = ref(0);
+const catSheetOpen = ref(false);
+const catMessage = ref("");
+
+const catImages = computed(() => {
+  const c = kitty.cat.value;
+  if (!c) return null;
+  const palette = CAT_COLORS[c.color].palette;
+  return Object.fromEntries(Object.entries(CAT_ART).map(([pose, rows]) => [pose, pixelSvg(rows, palette)])) as Record<keyof typeof CAT_ART, string>;
+});
+/** 現在是哪個姿勢。每個姿勢的圖都先放著、只顯示這一張：換姿勢時不用臨時解碼圖片（會卡一下） */
+const catPose = computed(() => kitty.poseAt(catFrame.value));
+const catOnScreen = computed(() => {
+  const x = u(stripX(kitty.me)) + stripOffset.value - scrollX.value;
+  return x > -40 && x < stageW.value + 40;
+});
+const catStyle = computed(() => ({
+  transform: `translate3d(${u(stripX(kitty.me))}px, ${u(kitty.me.y)}px, 0)`,
+  transition: `transform ${kitty.moveMs.value}ms linear`,
+  // 在他前面（比較靠近畫面）就蓋住他和家具；在他後面就被蓋住
+  zIndex: !isHome.value || kitty.me.y >= meDepth.value || kitty.me.room !== life.me.room ? 4 : 2,
+}));
+const catBox = computed(() => ({ width: `${u(CAT_W)}px`, height: `${u(CAT_H)}px`, left: `${-u(CAT_W / 2)}px`, top: `${-u(CAT_H)}px` }));
+
+/** 飼料碗：有養貓才放；牠在吃的時候裡面有飼料 */
+const bowlImages = { empty: pixelSvg(BOWL_ART.empty, BOWL_PALETTE), full: pixelSvg(BOWL_ART.full, BOWL_PALETTE) };
+const bowlStyle = computed(() => ({
+  left: `${u(stripX(BOWL_SPOT))}px`,
+  top: `${u(BOWL_SPOT.y)}px`,
+  width: `${u(BOWL_ART.empty[0].length)}px`,
+  height: `${u(BOWL_ART.empty.length)}px`,
+}));
+
+function openCatSheet() {
+  if (editMode.value) return;
+  catMessage.value = "";
+  kitty.refreshLevels();
+  catSheetOpen.value = true;
+}
+
+function adoptCat(name: string, color: CatColor) {
+  kitty.adopt(name, color);
+  catSheetOpen.value = false;
+  scrollToRoom(stripIndex(kitty.me.room));
+}
+
+async function careCat(kind: CatCare) {
+  catMessage.value = (await kitty.care(kind)) ?? "";
+  // 餵了牠會走去吃、洗澡和逗牠有動畫：收起面板讓使用者看得到
+  if (!catMessage.value && kind !== "pet") {
+    catSheetOpen.value = false;
+    scrollToRoom(stripIndex(kind === "feed" ? BOWL_SPOT.room : kitty.me.room));
+  }
+}
+
 function onMeTap() {
   if (editMode.value || !residentId.value) return;
   play.toggleMenu();
@@ -681,6 +751,13 @@ const showAll = ref(false);
 const flashKey = ref<string | null>(null);
 const choosing = ref<{ name: string; options: { app: string; label: string }[] } | null>(null);
 
+const ADOPT_OPTION = "__adopt-cat__";
+function pickOption(app: string) {
+  choosing.value = null;
+  if (app === ADOPT_OPTION) openCatSheet();
+  else emit("navigate", app);
+}
+
 function onItemClick(it: { room: RoomId; id: string; name: string; action?: FurnitureAction }) {
   if (editMode.value || !it.action) return;
   // 信箱裡有今天的信：這次點是收信，不打開訊息
@@ -690,7 +767,11 @@ function onItemClick(it: { room: RoomId; id: string; name: string; action?: Furn
   setTimeout(() => {
     flashKey.value = null;
     if (action.kind === "enter-bath") scrollToRoom(stripIndex("bath"));
-    else if (action.kind === "choose") choosing.value = { name: it.name, options: action.options };
+    else if (action.kind === "choose") {
+      // 還沒養貓：客廳大門多一個「領養一隻貓」
+      const adopt = it.room === "living" && it.id === "door" && !kitty.cat.value ? [{ app: ADOPT_OPTION, label: "領養一隻貓" }] : [];
+      choosing.value = { name: it.name, options: [...action.options, ...adopt] };
+    }
     else if (action.kind === "wardrobe") openWardrobe(action.slot as PartSlot);
     else emit("navigate", action.app);
   }, 160);
@@ -752,6 +833,7 @@ function tryGuide(action: GuideAction) {
     menuOpen.value = true;
   } else if (action === "find-resident") findResident();
   else if (action === "wardrobe") openWardrobe(null);
+  else if (action === "cat") openCatSheet();
   else if (action === "edit-layout") enterEdit();
   else if (action === "settings") emit("navigate", "settings");
 }
@@ -991,15 +1073,22 @@ let clockTimer: ReturnType<typeof setInterval> | null = null;
 
 /** 換腳的計時器：只在他走路時開著，站著不動時不空轉 */
 function syncFrameTimer() {
-  const want = timersOn && life.walking.value;
-  if (want && !frameTimer) frameTimer = setInterval(() => frame.value++, 110);
+  const want = timersOn && (life.walking.value || kitty.walking.value);
+  if (want && !frameTimer) {
+    frameTimer = setInterval(() => {
+      if (life.walking.value) frame.value++;
+      // 貓的腳步慢一半（每 220 毫秒換一格）
+      if (kitty.walking.value && ++catTick % 2 === 0) catFrame.value++;
+    }, 110);
+  }
   else if (!want && frameTimer) {
     clearInterval(frameTimer);
     frameTimer = null;
   }
 }
 let timersOn = false;
-watch(() => life.walking.value, syncFrameTimer);
+let catTick = 0;
+watch(() => life.walking.value || kitty.walking.value, syncFrameTimer);
 
 function startTimers() {
   stopTimers();
@@ -1021,6 +1110,7 @@ function stopTimers() {
 function onVisibilityChange() {
   if (document.hidden) {
     life.pause();
+    kitty.pause();
     play.reset();
     stopTimers();
     return;
@@ -1029,6 +1119,7 @@ function onVisibilityChange() {
   now.value = new Date();
   chores.open();
   startTimers();
+  kitty.resume();
   void refreshResident().then(() => life.resume());
 }
 let started = false;
@@ -1050,6 +1141,7 @@ onMounted(async () => {
   await ensureResident();
   await refreshResident();
   if (residentId.value && status.value !== "away" && status.value !== "date") life.start();
+  kitty.start();
   // 一打開從客廳開始（不跟著他跑；想看他點下面的提示）；從 App 回來接著看剛剛那間
   scrollToRoom(stripIndex(getLastHouseRoom() ?? HOME_ROOM), 0);
   // 第一次打開小屋：先看一次怎麼玩
@@ -1317,6 +1409,25 @@ function labelStyle(room: RoomId, it: RenderItem) {
         />
       </div>
 
+      <!-- 貓的飼料碗（有養貓才有） -->
+      <img v-if="kitty.cat.value" class="ph-bowl" :src="kitty.act.value === 'eat' ? bowlImages.full : bowlImages.empty" :style="bowlStyle" alt="" draggable="false" />
+
+      <!-- 貓：點了打開照顧牠的面板 -->
+      <div v-if="kitty.cat.value && loaded" class="ph-cat" :class="{ 'is-offscreen': !catOnScreen }" :style="catStyle">
+        <div class="ph-cat-sprite" :class="{ 'is-hop': kitty.hop.value }" :style="{ ...catBox, transform: kitty.facing.value < 0 ? 'scaleX(-1)' : undefined }">
+          <img v-for="(src, pose) in catImages" v-show="pose === catPose" :key="pose" :src="src" alt="" draggable="false" />
+        </div>
+        <button
+          class="ph-cat-hit"
+          :style="catBox"
+          :aria-label="`${kitty.cat.value.name}，${kitty.label.value}，點了照顧牠`"
+          @click.stop="openCatSheet"
+        ></button>
+        <div v-if="kitty.fx.value" :key="kitty.fxKey.value" class="ph-fx ph-cat-fx" :class="`is-${kitty.fx.value}`" :style="{ top: `${-u(CAT_H)}px` }" aria-hidden="true">
+          <span></span><span></span><span></span>
+        </div>
+      </div>
+
       <!-- 他留給你的東西：點了收下 -->
       <template v-if="!editMode">
         <button
@@ -1396,12 +1507,24 @@ function labelStyle(room: RoomId, it: RenderItem) {
       <div v-if="choosing" class="ph-choose-wrap" @click.self="choosing = null">
         <div class="ph-choose" role="dialog" :aria-label="choosing.name">
           <div class="ph-choose-title">{{ choosing.name }}</div>
-          <button v-for="o in choosing.options" :key="o.app" class="ph-choose-btn" @click="choosing = null; emit('navigate', o.app)">
+          <button v-for="o in choosing.options" :key="o.app" class="ph-choose-btn" @click="pickOption(o.app)">
             {{ o.label }}
           </button>
           <button class="ph-choose-btn is-cancel" @click="choosing = null">取消</button>
         </div>
       </div>
+
+      <HouseCatSheet
+        :open="catSheetOpen"
+        :cat="kitty.cat.value"
+        :levels="kitty.levels.value"
+        :listless="kitty.listless.value"
+        :message="catMessage"
+        @close="catSheetOpen = false"
+        @adopt="adoptCat"
+        @care="careCat"
+        @rename="kitty.rename"
+      />
 
       <HouseAppsSheet
         :open="sheetOpen"
@@ -1412,6 +1535,7 @@ function labelStyle(room: RoomId, it: RenderItem) {
         @edit-layout="enterEdit"
         @wardrobe="sheetOpen = false; openWardrobe(null)"
         @decor="sheetOpen = false; decorOpen = true"
+        @cat="sheetOpen = false; openCatSheet()"
         @global-theme="sheetOpen = false; emit('open-global-theme')"
         @back-to-canvas="backToCanvas"
         @guide="sheetOpen = false; guideOpen = true"
@@ -1661,6 +1785,71 @@ function labelStyle(room: RoomId, it: RenderItem) {
   width: 48px;
   height: 48px;
   transform: translate(-50%, -50%);
+}
+
+/* 貓 */
+.ph-cat {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  will-change: transform;
+}
+
+.ph-cat-sprite {
+  position: absolute;
+  pointer-events: none;
+}
+
+.ph-cat-sprite img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  image-rendering: crisp-edges;
+  image-rendering: pixelated;
+  -webkit-user-drag: none;
+}
+
+.ph-cat-sprite.is-hop {
+  animation: ph-cat-hop 520ms steps(2, jump-none) infinite;
+}
+
+.ph-cat-hit {
+  position: absolute;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+/* 貓很小：點得到的範圍放大到手指好按 */
+.ph-cat-hit::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 100%;
+  min-width: 48px;
+  height: 48px;
+  transform: translate(-50%, -50%);
+}
+
+.is-editing .ph-cat-hit {
+  pointer-events: none;
+}
+
+.ph-cat-fx.is-bubble span::before { content: "●"; color: #f2faff; text-shadow: 0 0 0 #4f8db8, 1px 1px 0 #4f8db8; }
+.ph-cat-fx.is-note span::before { content: "♪"; color: #fbf7ee; }
+
+.ph-bowl {
+  position: absolute;
+  image-rendering: crisp-edges;
+  image-rendering: pixelated;
+  pointer-events: none;
+  z-index: 2;
+  -webkit-user-drag: none;
 }
 
 /* 髒污：在家具上面、他的後面 */
@@ -2038,6 +2227,11 @@ function labelStyle(room: RoomId, it: RenderItem) {
   100% { opacity: 0; transform: translateY(-34px) scale(1); }
 }
 
+@keyframes ph-cat-hop {
+  0%, 100% { translate: 0 0; }
+  50% { translate: 0 -5px; }
+}
+
 @keyframes ph-bob {
   0%, 100% { transform: translateY(0); }
   50% { transform: translateY(-3px); }
@@ -2054,6 +2248,7 @@ function labelStyle(room: RoomId, it: RenderItem) {
 }
 
 /* 他不在畫面上（在別間）：跳、Z、蒸氣都先停，滑過去看到了再動 */
+.is-offscreen .ph-cat-sprite.is-hop,
 .is-offscreen.ph-gift,
 .is-offscreen.ph-steam i,
 .is-offscreen .ph-zs span,
@@ -2066,6 +2261,7 @@ function labelStyle(room: RoomId, it: RenderItem) {
   .ph-zs span,
   .ph-steam i,
   .ph-gift,
+  .ph-cat-sprite.is-hop,
   .ph-me-menu {
     animation: none;
   }
