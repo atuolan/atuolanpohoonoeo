@@ -3,7 +3,7 @@
  * 跟真實狀態連動：在睡就去床上睡、在忙就坐電腦前、出門或約會就不在家。
  */
 import { onUnmounted, reactive, ref, type Ref } from "vue";
-import { ACTS, ROOM_W, STRIP_ROOMS, WALK_SPEED, type RoomId, type Scene } from "./houseData";
+import { ACTS, ROOM_W, STRIP_ROOMS, WALK_SPEED, type ActDef, type RoomId, type Scene } from "./houseData";
 import { actSpot, dwellMs, pickAct, planRoute, type Leg, type ResidentStatus, type Spot } from "./houseLogic";
 
 type Pos = { x: number; y: number };
@@ -17,6 +17,10 @@ export interface ResidentDeps {
   current: (room: RoomId) => Record<string, Pos>;
   /** 房間 → 家具預設的位置 */
   defaults: (room: RoomId) => Record<string, Pos>;
+  /** ACTS 以外的動作（打掃某一處髒污）：站哪、什麼姿勢 */
+  extraAct?: (key: string) => ActDef | undefined;
+  /** 挑下一件事之前先問：要不要去做 ACTS 以外的事（回傳動作的 key；不做回傳 null） */
+  pickExtra?: (current: string, room: RoomId) => string | null;
 }
 
 /** 真實狀態要他做的事：睡覺去床上、忙碌坐電腦前 */
@@ -54,7 +58,9 @@ export function useHouseResident(deps: ResidentDeps) {
   }
 
   function spotOf(key: string): Spot {
-    const a = ACTS[key];
+    const a = ACTS[key] ?? deps.extraAct?.(key);
+    // 不認得的動作（那處髒污不見了）：留在原地
+    if (!a) return { ...me };
     return actSpot(a, deps.current(a.room), deps.defaults(a.room));
   }
 
@@ -68,7 +74,8 @@ export function useHouseResident(deps: ResidentDeps) {
         schedule(dwell(forced));
         return;
       }
-      goTo(forced ?? pickAct(deps.scene.value, act.value, me.room));
+      // 沒有被指定要做什麼的時候，可能先去做家事
+      goTo(forced ?? deps.pickExtra?.(act.value, me.room) ?? pickAct(deps.scene.value, act.value, me.room));
     }, ms);
   }
 

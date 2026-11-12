@@ -294,7 +294,9 @@ describe("家具的圖", () => {
     for (const d of defs) {
       expect(existsSync(`${decorDir}/${d.id}.png`), d.id).toBe(true);
       expect(ROOMS, d.id).toContain(d.room);
-      expect(d.price, d.id).toBeGreaterThan(0);
+      // 貓叼回來的不賣（0 元）；商店賣的都要有價錢
+      if (d.catOnly) expect(d.price, d.id).toBe(0);
+      else expect(d.price, d.id).toBeGreaterThan(0);
       expect(d.x >= 0 && d.y >= 0 && d.x + d.w <= 130 && d.y + d.h <= 282, d.id).toBe(true);
       const layout = JSON.parse(readFileSync(`${dir(d.room)}/layout.json`, "utf-8")) as { floor: { y: number }; items: { id: string }[] };
       expect(layout.items.map((i) => i.id), d.id).not.toContain(d.id);

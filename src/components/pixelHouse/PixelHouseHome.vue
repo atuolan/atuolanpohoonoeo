@@ -12,6 +12,14 @@ import { loadDateSession } from "@/services/dateOuting";
 import { useCharactersStore } from "@/stores";
 import { useHomeBadgesStore } from "@/stores/homeBadges";
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from "vue";
+import { GIFTS, GIFT_ART, type GiftKind } from "./houseLines";
+import { pixelSvg } from "./pixelArt";
+import HouseCatSheet from "./HouseCatSheet.vue";
+import { BOWL_ART, BOWL_PALETTE, BOWL_SPOT, CAT_ART, CAT_COLORS, CAT_H, CAT_W, type CatCare, type CatColor } from "./houseCat";
+import { useHouseCat } from "./useHouseCat";
+import { DIRT_ART, DIRT_BY_ID, choreAct, type DirtKind } from "./houseChores";
+import { useHouseChores } from "./useHouseChores";
+import { useHouseInteract } from "./useHouseInteract";
 import HouseAppsSheet from "./HouseAppsSheet.vue";
 import HouseDecorShop from "./HouseDecorShop.vue";
 import HouseDock from "./HouseDock.vue";
@@ -165,6 +173,15 @@ interface RenderItem extends LayoutItem {
   action?: FurnitureAction;
 }
 
+/** 有沒有養貓（貓在下面才建好；家具這邊要先知道，浴缸才能點） */
+const catAdopted = ref(false);
+/** 有養貓：點浴缸是幫牠洗澡（泡澡還沒開放） */
+const WASH_CAT = "__wash-cat__";
+function actionOf(room: RoomId, id: string): FurnitureAction | undefined {
+  if (room === "bath" && id === "bathtub" && catAdopted.value) return { kind: "app", app: WASH_CAT, to: "幫貓洗澡" };
+  return FURNITURE_ACTIONS[room][id];
+}
+
 function itemsOf(room: RoomId): RenderItem[] {
   const layout = layouts[room];
   if (!layout) return [];
@@ -179,7 +196,7 @@ function itemsOf(room: RoomId): RenderItem[] {
       py: cur[it.id].y,
       zone: it.wall ? ("wall" as ItemZone) : itemZone(room, it.id, it.y + it.h, ft),
       depth: 0,
-      action: FURNITURE_ACTIONS[room][it.id],
+      action: actionOf(room, it.id),
     }));
   const depths = itemDepths(
     room,
@@ -375,6 +392,9 @@ const life = useHouseResident({
   calm: computed(() => state.calm),
   current: currentOf,
   defaults: defaultsOf,
+  // 打掃：髒污那邊決定要不要去、去哪一處（chores 在下面才建好，所以包一層）
+  extraAct: choreAct,
+  pickExtra: (current, room) => chores?.pickExtra(current, room) ?? null,
 });
 
 async function ensureResident() {
@@ -413,6 +433,8 @@ async function refreshResident() {
     const chats = await loadChatsByCharacter(id, { isGroupChat: false });
     unread.value = chats.reduce((sum, c) => sum + Math.max(0, c.unreadCount || 0), 0);
     status.value = residentStatus(chat?.charAway, dateOngoing);
+    // 他在聊天裡忙完、暫離回來了：帶錢回來（每一趟只發一次）
+    void chores.settleWork(chat?.charAway);
   } catch (err) {
     console.warn("[PixelHouse] 讀角色狀態失敗", err);
   }
@@ -434,8 +456,179 @@ const frame = ref(0);
 let frameTimer: ReturnType<typeof setInterval> | null = null;
 
 const isHome = computed(() => !!residentId.value && life.home.value && loaded.value);
-const meAct = computed(() => ACTS[life.act.value]);
+const meAct = computed(() => ACTS[life.act.value] ?? choreAct(life.act.value));
 const lying = computed(() => !life.walking.value && life.act.value === "sleep");
+
+// ===== 跟他互動：點他冒出「聊天／摸頭」、摸頭、頭上冒話、他留東西 =====
+const play = useHouseInteract({
+  act: life.act,
+  walking: life.walking,
+  scene,
+  free: computed(() => isHome.value && status.value === "home"),
+  sleeping: lying,
+  pronoun,
+});
+
+// ===== 家事和每日收入：髒污、信箱每天一封信、他忙完帶錢回來 =====
+const chores = useHouseChores({
+  act: life.act,
+  walking: life.walking,
+  scene,
+  free: computed(() => isHome.value && status.value === "home"),
+  pronoun,
+  notify: play.showNotice,
+});
+
+/** 髒污畫在哪（水槽的碗、洗衣籃的衣服跟著家具走） */
+const dirtSpots = computed(() =>
+  Object.keys(chores.dirt.value).flatMap((id) => {
+    const def = DIRT_BY_ID[id];
+    if (!def || !layouts[def.room]) return [];
+    const art = DIRT_ART[def.kind];
+    const pos = followAnchor([def.x, def.y], def.anchor, currentOf(def.room), defaultsOf(def.room));
+    return [
+      {
+        id,
+        label: `${ROOM_NAMES[def.room]}有點髒，點了打掃`,
+        src: dirtImages[def.kind],
+        style: {
+          left: `${u(stripX({ room: def.room, x: pos.x }))}px`,
+          top: `${u(pos.y)}px`,
+          width: `${u(art.rows[0].length)}px`,
+          height: `${u(art.rows.length)}px`,
+        },
+      },
+    ];
+  }),
+);
+const dirtImages = Object.fromEntries(Object.entries(DIRT_ART).map(([k, a]) => [k, pixelSvg(a.rows, a.palette)])) as Record<DirtKind, string>;
+
+// ===== 貓 =====
+const kitty = useHouseCat({
+  scene,
+  calm: computed(() => state.calm),
+  current: currentOf,
+  defaults: defaultsOf,
+  residentHome: computed(() => isHome.value),
+  residentAsleep: computed(() => isHome.value && lying.value),
+  residentSpot: () => ({ room: life.me.room, x: life.me.x, y: life.me.y }),
+  residentKey: computed(() => `${life.me.room}:${life.me.x}:${life.me.y}`),
+  unownedFinds: () => decorDefs.value.filter((d) => d.catOnly && !(d.id in state.decor)).map((d) => ({ id: d.id, name: d.name })),
+  grantFind: (id) => {
+    state.decor = { ...state.decor, [id]: true };
+    persist();
+  },
+  notify: play.showNotice,
+});
+watch(() => !!kitty.cat.value, (v) => (catAdopted.value = v), { immediate: true });
+
+/** 點碗、點浴缸：直接照顧牠（不用打開面板）；沒做成的原因顯示在下面那一列 */
+async function careFromRoom(kind: CatCare) {
+  const why = await kitty.care(kind);
+  if (why) play.showNotice(why);
+}
+/** 貓走路換腳（跟他共用同一個計時器，只在牠走路時加） */
+const catFrame = ref(0);
+const catSheetOpen = ref(false);
+const catMessage = ref("");
+
+const catImages = computed(() => {
+  const c = kitty.cat.value;
+  if (!c) return null;
+  const palette = CAT_COLORS[c.color].palette;
+  return Object.fromEntries(Object.entries(CAT_ART).map(([pose, rows]) => [pose, pixelSvg(rows, palette)])) as Record<keyof typeof CAT_ART, string>;
+});
+/** 現在是哪個姿勢。每個姿勢的圖都先放著、只顯示這一張：換姿勢時不用臨時解碼圖片（會卡一下） */
+const catPose = computed(() => kitty.poseAt(catFrame.value));
+const catOnScreen = computed(() => {
+  const x = u(stripX(kitty.me)) + stripOffset.value - scrollX.value;
+  return x > -40 && x < stageW.value + 40;
+});
+const catStyle = computed(() => ({
+  transform: `translate3d(${u(stripX(kitty.me))}px, ${u(kitty.me.y)}px, 0)`,
+  transition: `transform ${kitty.moveMs.value}ms linear`,
+  // 在他前面（比較靠近畫面）就蓋住他和家具；在他後面就被蓋住
+  zIndex: !isHome.value || kitty.me.y >= meDepth.value || kitty.me.room !== life.me.room ? 4 : 2,
+}));
+const catBox = computed(() => ({ width: `${u(CAT_W)}px`, height: `${u(CAT_H)}px`, left: `${-u(CAT_W / 2)}px`, top: `${-u(CAT_H)}px` }));
+
+/** 飼料碗：有養貓才放；牠在吃的時候裡面有飼料 */
+const bowlImages = { empty: pixelSvg(BOWL_ART.empty, BOWL_PALETTE), full: pixelSvg(BOWL_ART.full, BOWL_PALETTE) };
+const bowlStyle = computed(() => ({
+  left: `${u(stripX(BOWL_SPOT))}px`,
+  top: `${u(BOWL_SPOT.y)}px`,
+  width: `${u(BOWL_ART.empty[0].length)}px`,
+  height: `${u(BOWL_ART.empty.length)}px`,
+}));
+
+function openCatSheet() {
+  if (editMode.value) return;
+  catMessage.value = "";
+  kitty.refreshLevels();
+  catSheetOpen.value = true;
+}
+
+function adoptCat(name: string, color: CatColor) {
+  kitty.adopt(name, color);
+  catSheetOpen.value = false;
+  scrollToRoom(stripIndex(kitty.me.room));
+}
+
+async function careCat(kind: CatCare) {
+  catMessage.value = (await kitty.care(kind)) ?? "";
+  // 餵了牠會走去吃、洗澡和逗牠有動畫：收起面板讓使用者看得到
+  if (!catMessage.value && kind !== "pet") {
+    catSheetOpen.value = false;
+    scrollToRoom(stripIndex(kind === "feed" ? BOWL_SPOT.room : kitty.me.room));
+  }
+}
+
+function onMeTap() {
+  if (editMode.value || !residentId.value) return;
+  play.toggleMenu();
+}
+
+/** 兩個按鈕的位置（相對他的腳）：他靠近畫面邊邊時往裡面挪，不會被切掉 */
+const menuLeft = computed(() => {
+  const base = lying.value && !sleepUpright.value ? -u(charUnits.value / 2) : 0;
+  const x = u(mePos.value.x) + stripOffset.value - scrollX.value + base;
+  const half = 74;
+  return base + Math.min(Math.max(x, half), Math.max(half, stageW.value - half)) - x;
+});
+
+function chatFromMenu() {
+  play.closeMenu();
+  openChat();
+}
+
+/** 他留的東西放在哪（跟著那件家具走）；那間房還沒讀好、家具不見了就不顯示 */
+const giftSpots = computed(() =>
+  play.gifts.value.flatMap((g) => {
+    const def = GIFTS[g.kind];
+    const anchor = roomItems.value[def.room]?.find((i) => i.id === def.anchor);
+    if (!anchor) return [];
+    const art = GIFT_ART[g.kind];
+    const left = u(stripX({ room: def.room, x: anchor.px + def.dx }));
+    const onScreen = left + stripOffset.value - scrollX.value;
+    return [
+      {
+        kind: g.kind,
+        label: g.kind === "note" ? `${pronoun.value}留了一張紙條，點了看` : `${pronoun.value}煮的${g.text}，點了收下`,
+        src: giftImages[g.kind],
+        // 不在畫面上的不動
+        offscreen: onScreen < -40 || onScreen > stageW.value + 40,
+        style: {
+          left: `${left}px`,
+          top: `${u(anchor.py + def.dy)}px`,
+          width: `${u(art.rows[0].length)}px`,
+          height: `${u(art.rows.length)}px`,
+        },
+      },
+    ];
+  }),
+);
+const giftImages = Object.fromEntries(Object.entries(GIFT_ART).map(([k, a]) => [k, pixelSvg(a.rows, a.palette)])) as Record<GiftKind, string>;
+
 
 const spriteSet = computed(() => `${currentBase.value}-${life.facing.value > 0 ? "right" : "left"}`);
 const spriteSrc = computed(() => {
@@ -454,7 +647,8 @@ const dollPoseKey = computed<string | null>(() => {
   if (!d) return null;
   if (autoSleep.value) return SLEEP_POSE;
   const dir = life.facing.value > 0 ? "right" : "left";
-  const want = life.walking.value ? [`walk-${dir}`, "walk", "front"] : [meAct.value?.pose ?? "front", "front"];
+  // 被摸頭時轉過來看你（正面）
+  const want = life.walking.value ? [`walk-${dir}`, "walk", "front"] : play.mood.value ? ["front"] : [meAct.value?.pose ?? "front", "front"];
   for (const k of want) if (d.poses[k]) return k;
   return Object.keys(d.poses)[0] ?? null;
 });
@@ -567,6 +761,8 @@ const steam = computed(() => {
 });
 
 const bubbleText = computed(() => {
+  if (play.menuOpen.value) return "";
+  if (play.say.value) return play.say.value;
   if (unread.value > 0) return `💬 ${unread.value > 99 ? "99+" : unread.value}`;
   if (life.walking.value) return "";
   return meAct.value?.label ?? "";
@@ -577,14 +773,33 @@ const showAll = ref(false);
 const flashKey = ref<string | null>(null);
 const choosing = ref<{ name: string; options: { app: string; label: string }[] } | null>(null);
 
+const ADOPT_OPTION = "__adopt-cat__";
+function pickOption(app: string) {
+  choosing.value = null;
+  if (app === ADOPT_OPTION) openCatSheet();
+  else emit("navigate", app);
+}
+
 function onItemClick(it: { room: RoomId; id: string; name: string; action?: FurnitureAction }) {
   if (editMode.value || !it.action) return;
+  // 信箱裡有今天的信：這次點是收信，不打開訊息
+  if (it.room === "living" && it.id === "mailbox" && chores.mailReady.value && chores.takeMail()) return;
   const action = it.action;
+  if (action.kind === "app" && action.app === WASH_CAT) {
+    flashKey.value = `${it.room}:${it.id}`;
+    setTimeout(() => (flashKey.value = null), 160);
+    void careFromRoom("wash");
+    return;
+  }
   flashKey.value = `${it.room}:${it.id}`;
   setTimeout(() => {
     flashKey.value = null;
     if (action.kind === "enter-bath") scrollToRoom(stripIndex("bath"));
-    else if (action.kind === "choose") choosing.value = { name: it.name, options: action.options };
+    else if (action.kind === "choose") {
+      // 還沒養貓：客廳大門多一個「領養一隻貓」
+      const adopt = it.room === "living" && it.id === "door" && !kitty.cat.value ? [{ app: ADOPT_OPTION, label: "領養一隻貓" }] : [];
+      choosing.value = { name: it.name, options: [...action.options, ...adopt] };
+    }
     else if (action.kind === "wardrobe") openWardrobe(action.slot as PartSlot);
     else emit("navigate", action.app);
   }, 160);
@@ -604,7 +819,7 @@ function openSheet(mode: "apps" | "house") {
 const homeBadges = useHomeBadgesStore();
 const badges = computed(() => homeBadges.badges);
 /** 有未讀訊息：客廳的信箱露出一封信 */
-const hasMail = computed(() => (badges.value.message ?? 0) > 0);
+const hasMail = computed(() => (badges.value.message ?? 0) > 0 || chores.mailReady.value);
 
 /** 下面那一排 App：展開或收成小按鈕，記住 */
 function toggleDock() {
@@ -646,6 +861,7 @@ function tryGuide(action: GuideAction) {
     menuOpen.value = true;
   } else if (action === "find-resident") findResident();
   else if (action === "wardrobe") openWardrobe(null);
+  else if (action === "cat") openCatSheet();
   else if (action === "edit-layout") enterEdit();
   else if (action === "settings") emit("navigate", "settings");
 }
@@ -708,6 +924,7 @@ const OVERLAY_SELECTOR = ".ph-sheet-wrap, .wd-wrap, .ds-wrap, .pw-root, .ph-dock
 
 function onPointerDown(e: PointerEvent) {
   if (ptr || (e.pointerType === "mouse" && e.button !== 0)) return;
+  if (!(e.target as HTMLElement | null)?.closest?.(".ph-me-hit, .ph-me-menu")) play.closeMenu();
   if ((e.target as HTMLElement | null)?.closest?.(OVERLAY_SELECTOR)) return;
   stopAnim();
   ptr = {
@@ -848,6 +1065,7 @@ const hint = computed(() => {
   if (editMode.value) return "拖動家具，好了按「完成」";
   if (menuOpen.value) return "選一個 App";
   if (showAll.value) return "虛線框都可以點";
+  if (play.notice.value) return play.notice.value;
   if (!isHome.value || meVisible.value) return meLine.value;
   return `${meLine.value}　去看看 ▸`;
 });
@@ -881,16 +1099,35 @@ function onNativeScroll(e: Event) {
 let statusTimer: ReturnType<typeof setInterval> | null = null;
 let clockTimer: ReturnType<typeof setInterval> | null = null;
 
+/** 換腳的計時器：只在他走路時開著，站著不動時不空轉 */
+function syncFrameTimer() {
+  const want = timersOn && (life.walking.value || kitty.walking.value);
+  if (want && !frameTimer) {
+    frameTimer = setInterval(() => {
+      if (life.walking.value) frame.value++;
+      // 貓的腳步慢一半（每 220 毫秒換一格）
+      if (kitty.walking.value && ++catTick % 2 === 0) catFrame.value++;
+    }, 110);
+  }
+  else if (!want && frameTimer) {
+    clearInterval(frameTimer);
+    frameTimer = null;
+  }
+}
+let timersOn = false;
+let catTick = 0;
+watch(() => life.walking.value || kitty.walking.value, syncFrameTimer);
+
 function startTimers() {
   stopTimers();
-  frameTimer = setInterval(() => {
-    if (life.walking.value) frame.value++;
-  }, 110);
+  timersOn = true;
+  syncFrameTimer();
   clockTimer = setInterval(() => (now.value = new Date()), 60_000);
   statusTimer = setInterval(() => void refreshResident(), 30_000);
 }
 
 function stopTimers() {
+  timersOn = false;
   if (frameTimer) clearInterval(frameTimer);
   if (statusTimer) clearInterval(statusTimer);
   if (clockTimer) clearInterval(clockTimer);
@@ -901,12 +1138,16 @@ function stopTimers() {
 function onVisibilityChange() {
   if (document.hidden) {
     life.pause();
+    kitty.pause();
+    play.reset();
     stopTimers();
     return;
   }
   if (!started) return;
   now.value = new Date();
+  chores.open();
   startTimers();
+  kitty.resume();
   void refreshResident().then(() => life.resume());
 }
 let started = false;
@@ -924,9 +1165,11 @@ onMounted(async () => {
   window.addEventListener(PIXEL_HOUSE_CHANGED_EVENT, onSettingsChanged);
 
   await loadAssets();
+  chores.open();
   await ensureResident();
   await refreshResident();
   if (residentId.value && status.value !== "away" && status.value !== "date") life.start();
+  kitty.start();
   // 一打開從客廳開始（不跟著他跑；想看他點下面的提示）；從 App 回來接著看剛剛那間
   scrollToRoom(stripIndex(getLastHouseRoom() ?? HOME_ROOM), 0);
   // 第一次打開小屋：先看一次怎麼玩
@@ -1086,13 +1329,20 @@ function labelStyle(room: RoomId, it: RenderItem) {
         </template>
       </template>
 
+      <!-- 髒污：點了打掃（靜態的圖，不動） -->
+      <template v-if="!editMode">
+        <button v-for="d in dirtSpots" :key="`dirt-${d.id}`" class="ph-dirt" :style="d.style" :aria-label="d.label" @click.stop="chores.clean(d.id, 'user')">
+          <img :src="d.src" alt="" draggable="false" />
+        </button>
+      </template>
+
       <!-- 他 -->
-      <div v-if="isHome" class="ph-me" :style="meStyle">
+      <div v-if="isHome" class="ph-me" :class="{ 'is-offscreen': !meVisible }" :style="meStyle">
         <div v-if="!lying" class="ph-me-shadow" :style="{ width: `${u(24)}px`, height: `${u(3.4)}px` }"></div>
         <div
           v-if="dollPose"
           class="ph-me-sprite ph-doll"
-          :class="{ 'is-hop': meAct?.hop && !life.walking.value }"
+          :class="{ 'is-hop': !life.walking.value && (meAct?.hop || play.mood.value === 'happy') }"
           :style="spriteStyle"
         >
           <img v-for="(src, n) in dollFrames" v-show="n === dollFrame" :key="n" :src="src" alt="" draggable="false" />
@@ -1100,7 +1350,7 @@ function labelStyle(room: RoomId, it: RenderItem) {
         <img
           v-else-if="dollChecked"
           class="ph-me-sprite"
-          :class="{ 'is-hop': meAct?.hop && !life.walking.value }"
+          :class="{ 'is-hop': !life.walking.value && (meAct?.hop || play.mood.value === 'happy') }"
           :src="spriteSrc"
           alt=""
           draggable="false"
@@ -1109,9 +1359,30 @@ function labelStyle(room: RoomId, it: RenderItem) {
         <button
           class="ph-me-hit"
           :style="{ width: `${spriteSize.w}px`, height: `${spriteSize.h}px`, left: `${-spriteSize.w / 2}px`, top: `${-spriteSize.h}px` }"
-          :aria-label="`${pronoun}，${meLine}，點了聊天`"
-          @click.stop="openChat"
+          :aria-label="`${pronoun}，${meLine}，點了可以聊天或摸頭`"
+          :aria-expanded="play.menuOpen.value"
+          @click.stop="onMeTap"
         ></button>
+        <!-- 點他：頭上冒出兩個小按鈕 -->
+        <div
+          v-if="play.menuOpen.value && !editMode"
+          class="ph-me-menu"
+          :style="{ top: `${-(lying && !sleepUpright ? u(30) : spriteSize.h) - 44}px`, left: `${menuLeft}px` }"
+        >
+          <button @click.stop="chatFromMenu">聊天</button>
+          <button @click.stop="play.pat()">摸頭</button>
+        </div>
+        <!-- 摸頭的反應：愛心（開心）、生氣（摸太多）、點點點（睡覺被吵） -->
+        <div
+          v-if="play.mood.value"
+          :key="play.fxKey.value"
+          class="ph-fx"
+          :class="`is-${play.mood.value}`"
+          :style="{ top: `${-(lying && !sleepUpright ? u(26) : spriteSize.h * 0.8)}px`, left: lying && !sleepUpright ? `${-u(charUnits / 2)}px` : undefined }"
+          aria-hidden="true"
+        >
+          <span></span><span></span><span></span>
+        </div>
         <div
           v-if="bubbleText && !editMode"
           class="ph-bubble"
@@ -1133,6 +1404,7 @@ function labelStyle(room: RoomId, it: RenderItem) {
       <div
         v-if="isHome && steam"
         class="ph-steam"
+        :class="{ 'is-offscreen': !meVisible }"
         :style="{ left: `${u(steam.x)}px`, top: `${u(steam.y)}px` }"
         aria-hidden="true"
       >
@@ -1164,6 +1436,48 @@ function labelStyle(room: RoomId, it: RenderItem) {
           @item-click="onItemClick"
         />
       </div>
+
+      <!-- 貓的飼料碗（有養貓才有） -->
+      <button
+        v-if="kitty.cat.value && !editMode"
+        class="ph-bowl"
+        :style="bowlStyle"
+        :aria-label="`${kitty.cat.value.name}的飼料碗，點了餵飼料`"
+        @click.stop="careFromRoom('feed')"
+      >
+        <img :src="kitty.act.value === 'eat' ? bowlImages.full : bowlImages.empty" alt="" draggable="false" />
+      </button>
+
+      <!-- 貓：點了打開照顧牠的面板 -->
+      <div v-if="kitty.cat.value && loaded" class="ph-cat" :class="{ 'is-offscreen': !catOnScreen }" :style="catStyle">
+        <div class="ph-cat-sprite" :class="{ 'is-hop': kitty.hop.value }" :style="{ ...catBox, transform: kitty.facing.value < 0 ? 'scaleX(-1)' : undefined }">
+          <img v-for="(src, pose) in catImages" v-show="pose === catPose" :key="pose" :src="src" alt="" draggable="false" />
+        </div>
+        <button
+          class="ph-cat-hit"
+          :style="catBox"
+          :aria-label="`${kitty.cat.value.name}，${kitty.label.value}，點了照顧牠`"
+          @click.stop="openCatSheet"
+        ></button>
+        <div v-if="kitty.fx.value" :key="kitty.fxKey.value" class="ph-fx ph-cat-fx" :class="`is-${kitty.fx.value}`" :style="{ top: `${-u(CAT_H)}px` }" aria-hidden="true">
+          <span></span><span></span><span></span>
+        </div>
+      </div>
+
+      <!-- 他留給你的東西：點了收下 -->
+      <template v-if="!editMode">
+        <button
+          v-for="g in giftSpots"
+          :key="`gift-${g.kind}`"
+          class="ph-gift"
+          :class="{ 'is-offscreen': g.offscreen }"
+          :style="g.style"
+          :aria-label="g.label"
+          @click.stop="play.collect(g.kind)"
+        >
+          <img :src="g.src" alt="" draggable="false" />
+        </button>
+      </template>
     </div>
 
     <!-- 時間的光線（multiply：白色＝不變） -->
@@ -1229,12 +1543,24 @@ function labelStyle(room: RoomId, it: RenderItem) {
       <div v-if="choosing" class="ph-choose-wrap" @click.self="choosing = null">
         <div class="ph-choose" role="dialog" :aria-label="choosing.name">
           <div class="ph-choose-title">{{ choosing.name }}</div>
-          <button v-for="o in choosing.options" :key="o.app" class="ph-choose-btn" @click="choosing = null; emit('navigate', o.app)">
+          <button v-for="o in choosing.options" :key="o.app" class="ph-choose-btn" @click="pickOption(o.app)">
             {{ o.label }}
           </button>
           <button class="ph-choose-btn is-cancel" @click="choosing = null">取消</button>
         </div>
       </div>
+
+      <HouseCatSheet
+        :open="catSheetOpen"
+        :cat="kitty.cat.value"
+        :levels="kitty.levels.value"
+        :listless="kitty.listless.value"
+        :message="catMessage"
+        @close="catSheetOpen = false"
+        @adopt="adoptCat"
+        @care="careCat"
+        @rename="kitty.rename"
+      />
 
       <HouseAppsSheet
         :open="sheetOpen"
@@ -1245,6 +1571,7 @@ function labelStyle(room: RoomId, it: RenderItem) {
         @edit-layout="enterEdit"
         @wardrobe="sheetOpen = false; openWardrobe(null)"
         @decor="sheetOpen = false; decorOpen = true"
+        @cat="sheetOpen = false; openCatSheet()"
         @global-theme="sheetOpen = false; emit('open-global-theme')"
         @back-to-canvas="backToCanvas"
         @guide="sheetOpen = false; guideOpen = true"
@@ -1412,6 +1739,204 @@ function labelStyle(room: RoomId, it: RenderItem) {
 
 .is-editing .ph-me-hit {
   pointer-events: none;
+}
+
+/* 點他冒出來的兩個小按鈕 */
+.ph-me-menu {
+  position: absolute;
+  left: 0;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 6px;
+  white-space: nowrap;
+  animation: ph-pop 140ms ease-out;
+}
+
+.ph-me-menu button {
+  min-width: 56px;
+  min-height: 36px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(255, 251, 245, 0.97);
+  color: var(--ui-ink);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 36px;
+  box-shadow: var(--ui-shadow);
+  cursor: pointer;
+}
+
+.ph-me-menu button:active {
+  background: #fff1c9;
+}
+
+/* 摸頭的反應 */
+.ph-fx {
+  position: absolute;
+  left: 0;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+.ph-fx span {
+  position: absolute;
+  font-size: 18px;
+  line-height: 1;
+  opacity: 0;
+  animation: ph-float 900ms ease-out forwards;
+}
+
+.ph-fx span::before { content: "♥"; color: #e8627a; text-shadow: 1px 1px 0 #3b2a26; }
+.ph-fx.is-annoyed span::before { content: "💢"; text-shadow: none; }
+.ph-fx.is-sleepy span::before { content: "…"; color: #fbf7ee; }
+.ph-fx span:nth-child(1) { left: -22px; top: 0; }
+.ph-fx span:nth-child(2) { left: -4px; top: -14px; animation-delay: 120ms; }
+.ph-fx span:nth-child(3) { left: 14px; top: 2px; animation-delay: 240ms; }
+/* 生氣、被吵醒只冒一個 */
+.ph-fx.is-annoyed span:nth-child(n + 2),
+.ph-fx.is-sleepy span:nth-child(n + 2) { display: none; }
+.ph-fx.is-annoyed span:nth-child(1),
+.ph-fx.is-sleepy span:nth-child(1) { left: 6px; }
+
+/* 他留的東西 */
+.ph-gift {
+  position: absolute;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  z-index: 3;
+  animation: ph-bob 1.2s steps(2, jump-none) infinite;
+}
+
+/* 東西很小：點得到的範圍放大到手指好按 */
+.ph-gift::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 48px;
+  height: 48px;
+  transform: translate(-50%, -50%);
+}
+
+/* 貓 */
+.ph-cat {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  will-change: transform;
+}
+
+.ph-cat-sprite {
+  position: absolute;
+  pointer-events: none;
+}
+
+.ph-cat-sprite img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  image-rendering: crisp-edges;
+  image-rendering: pixelated;
+  -webkit-user-drag: none;
+}
+
+.ph-cat-sprite.is-hop {
+  animation: ph-cat-hop 520ms steps(2, jump-none) infinite;
+}
+
+.ph-cat-hit {
+  position: absolute;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+/* 貓很小：點得到的範圍放大到手指好按 */
+.ph-cat-hit::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 100%;
+  min-width: 48px;
+  height: 48px;
+  transform: translate(-50%, -50%);
+}
+
+.is-editing .ph-cat-hit {
+  pointer-events: none;
+}
+
+.ph-cat-fx.is-bubble span::before { content: "●"; color: #f2faff; text-shadow: 0 0 0 #4f8db8, 1px 1px 0 #4f8db8; }
+.ph-cat-fx.is-note span::before { content: "♪"; color: #fbf7ee; }
+
+.ph-bowl {
+  position: absolute;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  z-index: 2;
+}
+
+.ph-bowl::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 44px;
+  height: 44px;
+  transform: translate(-50%, -50%);
+}
+
+.ph-bowl img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  image-rendering: crisp-edges;
+  image-rendering: pixelated;
+  pointer-events: none;
+  -webkit-user-drag: none;
+}
+
+/* 髒污：在家具上面、他的後面 */
+.ph-dirt {
+  position: absolute;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  z-index: 2;
+}
+
+.ph-dirt::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 44px;
+  height: 44px;
+  transform: translate(-50%, -50%);
+}
+
+.ph-dirt img,
+.ph-gift img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  image-rendering: crisp-edges;
+  image-rendering: pixelated;
+  pointer-events: none;
+  -webkit-user-drag: none;
 }
 
 .ph-bubble {
@@ -1747,6 +2272,27 @@ function labelStyle(room: RoomId, it: RenderItem) {
   100% { transform: translateY(-6px); }
 }
 
+@keyframes ph-pop {
+  from { opacity: 0; transform: translateX(-50%) scale(0.8); }
+  to { opacity: 1; transform: translateX(-50%) scale(1); }
+}
+
+@keyframes ph-float {
+  0% { opacity: 0; transform: translateY(6px) scale(0.6); }
+  25% { opacity: 1; transform: translateY(0) scale(1); }
+  100% { opacity: 0; transform: translateY(-34px) scale(1); }
+}
+
+@keyframes ph-cat-hop {
+  0%, 100% { translate: 0 0; }
+  50% { translate: 0 -5px; }
+}
+
+@keyframes ph-bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
+}
+
 @keyframes ph-z {
   0%, 66% { opacity: 1; }
   67%, 100% { opacity: 0.3; }
@@ -1757,11 +2303,29 @@ function labelStyle(room: RoomId, it: RenderItem) {
   100% { transform: translateY(-54px) scale(0.5); opacity: 0; }
 }
 
+/* 他不在畫面上（在別間）：跳、Z、蒸氣都先停，滑過去看到了再動 */
+.is-offscreen .ph-cat-sprite.is-hop,
+.is-offscreen.ph-gift,
+.is-offscreen.ph-steam i,
+.is-offscreen .ph-zs span,
+.is-offscreen .ph-me-sprite.is-hop {
+  animation-play-state: paused;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .ph-me-sprite.is-hop,
   .ph-zs span,
-  .ph-steam i {
+  .ph-steam i,
+  .ph-gift,
+  .ph-cat-sprite.is-hop,
+  .ph-me-menu {
     animation: none;
+  }
+
+  /* 愛心不飄，直接顯示 */
+  .ph-fx span {
+    animation: none;
+    opacity: 1;
   }
 }
 </style>

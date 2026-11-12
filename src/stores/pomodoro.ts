@@ -22,6 +22,8 @@ import { createPomodoroTask } from '@/types/pomodoro'
 import { defineStore } from 'pinia'
 import { computed, ref, shallowRef } from 'vue'
 
+import { markHouseDeed } from '@/components/pixelHouse/houseLife'
+
 export const usePomodoroStore = defineStore('pomodoro', () => {
   // ===== 任務列表（持久化到 localStorage） =====
   const tasks = ref<PomodoroTask[]>([])
@@ -167,6 +169,8 @@ export const usePomodoroStore = defineStore('pomodoro', () => {
       // 倒計時結束
       if (activeTask.value.mode === 'countdown' && remainingSeconds.value <= 0) {
         stopTimer()
+        // 像素小屋：今天完成過番茄鐘，回小屋可以領獎勵
+        markHouseDeed('pomodoro')
       }
     }, 1000)
   }
