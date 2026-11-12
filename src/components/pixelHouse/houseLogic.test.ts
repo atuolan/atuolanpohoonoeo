@@ -17,6 +17,7 @@ import {
   planRoute,
   residentStatus,
   sceneAt,
+  snapRoomIndex,
 } from "./houseLogic";
 import { parsePixelHouseState } from "./houseState";
 import type { CharAway } from "@/types/chat";
@@ -342,5 +343,26 @@ describe("家具的圖", () => {
     expect(itemZone("living", "mailbox", 107, 158)).toBe("wall");
     expect(FURNITURE_ACTIONS.living.mailbox).toEqual({ kind: "app", app: "message", to: "訊息" });
     expect(roomDepths("living").mailbox).toBe(-1);
+  });
+});
+
+describe("snapRoomIndex：放開後停在哪一間", () => {
+  const W = 390;
+  it("慢慢拖不到一半就放開：回原本那間", () => {
+    expect(snapRoomIndex(W / 2 + 150, 0, 0, W)).toBe(0);
+  });
+  it("慢慢拖過一半：換到隔壁", () => {
+    expect(snapRoomIndex(W / 2 + 220, 0, 0, W)).toBe(1);
+  });
+  it("輕輕一撥就換間", () => {
+    expect(snapRoomIndex(W / 2 + 40, -0.5, 0, W)).toBe(1);
+    expect(snapRoomIndex(W * 1.5 - 40, 0.5, 1, W)).toBe(0);
+  });
+  it("撥再大力也只換一間", () => {
+    expect(snapRoomIndex(W / 2 + 100, -5, 0, W)).toBe(1);
+  });
+  it("第一間往右撥、最後一間往左撥：留在原地", () => {
+    expect(snapRoomIndex(W / 2, 2, 0, W)).toBe(0);
+    expect(snapRoomIndex(W * 2.5, -2, 2, W)).toBe(2);
   });
 });

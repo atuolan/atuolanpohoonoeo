@@ -153,3 +153,15 @@ export function saveCustomParts(parts: CustomPart[]): boolean {
   if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent(PIXEL_HOUSE_CHANGED_EVENT));
   return true;
 }
+
+/**
+ * 離開主頁時看的是哪一間（只記在記憶體）：從 App 回來接著看同一間；
+ * 重新打開 App 還是從客廳開始。
+ */
+let lastView: { idx: number; bath: boolean } = { idx: 0, bath: false };
+export function getLastHouseView(): { idx: number; bath: boolean } {
+  return lastView;
+}
+export function setLastHouseView(view: { idx: number; bath: boolean }) {
+  lastView = view;
+}

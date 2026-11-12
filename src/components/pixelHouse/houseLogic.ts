@@ -257,6 +257,24 @@ export function stripIndex(room: RoomId): number {
   return STRIP_ROOMS.indexOf(room === "bath" ? "bedroom" : room);
 }
 
+/**
+ * 手指放開後停在哪一間：照放開時的速度往前估一點，停在最靠近的那間，最多比開始滑的那間多一間。
+ * 一間房大約就是一個畫面，不對齊的話會停在兩間中間、兩間都只看到一半。
+ *
+ * @param center 畫面中間在橫條上的位置（px）
+ * @param vel 放開時手指的速度（px/ms，往右是正的）
+ */
+export function snapRoomIndex(center: number, vel: number, startIdx: number, roomPx: number, count: number = STRIP_ROOMS.length): number {
+  if (roomPx <= 0) return startIdx;
+  const clampIdx = (i: number) => Math.min(Math.max(i, 0), count - 1);
+  // 照滑動慢下來的方式估會滑多遠（每 16ms 剩 0.94）
+  const projected = center - vel * (16 / (1 - 0.94));
+  let idx = clampIdx(Math.floor(projected / roomPx));
+  // 輕輕一撥就要換間，不用拖過半個畫面
+  if (idx === startIdx && Math.abs(vel) > 0.3) idx = startIdx - Math.sign(vel);
+  return clampIdx(Math.min(Math.max(idx, startIdx - 1), startIdx + 1));
+}
+
 // ===== 住的是誰 =====
 
 interface ChatLike {

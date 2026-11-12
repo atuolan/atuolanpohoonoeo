@@ -2,7 +2,7 @@
 /**
  * 像素小屋主頁（設計稿「三房：客廳｜臥室｜廚房＋浴室」）
  *
- * - 客廳、臥室、廚房排成一條，左右自由滑，停在哪就是哪；浴室從臥室的門進去，蓋在上面
+ * - 客廳、臥室、廚房排成一條左右滑，放開會停在最近的那一間；浴室從臥室的門進去，蓋在上面
  * - 家具就是 App：點了打開；長按房間進入編輯，可以拖動家具（牆上的在牆上、地上的在地上）
  * - 他自己在屋裡走來走去，跟聊天裡的真實狀態連動（睡覺、忙碌、出門、約會）
  */
@@ -35,8 +35,8 @@ import {
   type ItemZone,
   type RoomId,
 } from "./houseData";
-import { clampGroupMove, clampPlacement, followAnchor, itemDepths, itemsInFront, pickDefaultResident, residentStatus, sceneAt, stripIndex, type ResidentStatus } from "./houseLogic";
-import { loadCustomParts, loadPixelHouseState, PIXEL_HOUSE_CHANGED_EVENT, savePixelHouseState, type PixelHouseState } from "./houseState";
+import { clampGroupMove, clampPlacement, followAnchor, itemDepths, itemsInFront, pickDefaultResident, residentStatus, sceneAt, snapRoomIndex, stripIndex, type ResidentStatus } from "./houseLogic";
+import { getLastHouseView, loadCustomParts, loadPixelHouseState, setLastHouseView, PIXEL_HOUSE_CHANGED_EVENT, savePixelHouseState, type PixelHouseState } from "./houseState";
 import { autoSleepSource, composeLook, SLEEP_POSE, loadDollManifest, loadWardrobeCatalog, type ComposedLook } from "./dollCompose";
 import { defaultOutfit, type CustomPart, type DollManifest, type DollPose, type Outfit, type WardrobeCatalog } from "./wardrobeLogic";
 import { stripX, useHouseResident } from "./useHouseResident";
@@ -242,22 +242,6 @@ function animateTo(target: number, ms = 420) {
     const e = 1 - Math.pow(1 - k, 3);
     scrollX.value = from + (to - from) * e;
     anim = k < 1 ? requestAnimationFrame(step) : 0;
-  };
-  anim = requestAnimationFrame(step);
-}
-
-function fling(v: number) {
-  stopAnim();
-  let vel = v;
-  let last: number | null = null;
-  const step = (t: number) => {
-    const dt = last === null ? 16 : Math.max(0, t - last);
-    last = t;
-    const next = clampScroll(scrollX.value - vel * dt);
-    const hitEdge = next === 0 || next === maxScroll.value;
-    scrollX.value = next;
-    vel *= Math.pow(0.94, dt / 16);
-    anim = Math.abs(vel) > 0.02 && !hitEdge ? requestAnimationFrame(step) : 0;
   };
   anim = requestAnimationFrame(step);
 }
@@ -710,6 +694,8 @@ interface PointerState {
   startX: number;
   startY: number;
   startScroll: number;
+  /** 開始滑的時候在哪一間 */
+  startIdx: number;
   lastX: number;
   lastT: number;
   vel: number;
@@ -732,6 +718,7 @@ function onPointerDown(e: PointerEvent) {
     startX: e.clientX,
     startY: e.clientY,
     startScroll: scrollX.value,
+    startIdx: viewIdx.value,
     lastX: e.clientX,
     lastT: performance.now(),
     vel: 0,
@@ -812,8 +799,11 @@ function onPointerUp(e: PointerEvent) {
   if (p.item) {
     dragging.value = null;
     if (p.moved) persist();
-  } else if (p.moved && !bathOpen.value && performance.now() - p.lastT < 80) {
-    fling(p.vel);
+  } else if (p.moved && !bathOpen.value && maxScroll.value > 2) {
+    // 停在最近的那一間（放開前手指停住了就不算速度）
+    const vel = performance.now() - p.lastT < 80 ? p.vel : 0;
+    const center = scrollX.value + stageW.value / 2 - stripOffset.value;
+    scrollToRoom(snapRoomIndex(center, vel, p.startIdx, roomPx.value), 300);
   }
   if (p.moved) suppressClick = true;
   if (suppressClick) setTimeout(() => (suppressClick = false), 0);
@@ -947,8 +937,10 @@ onMounted(async () => {
   await ensureResident();
   await refreshResident();
   if (residentId.value && status.value !== "away" && status.value !== "date") life.start();
-  // 一打開都從客廳開始（不跟著他跑；想看他點下面的提示）
-  scrollToRoom(0, 0);
+  // 一打開從客廳開始（不跟著他跑；想看他點下面的提示）；從 App 回來接著看剛剛那間
+  const last = getLastHouseView();
+  scrollToRoom(last.idx, 0);
+  if (last.bath) bathOpen.value = true;
   // 第一次打開小屋：先看一次怎麼玩
   if (!state.guideSeen) guideOpen.value = true;
   started = true;
@@ -957,6 +949,7 @@ onMounted(async () => {
 });
 
 onUnmounted(() => {
+  if (started) setLastHouseView({ idx: bathOpen.value ? stripIndex("bedroom") : viewIdx.value, bath: bathOpen.value });
   stopAnim();
   resizeObs?.disconnect();
   stopTimers();

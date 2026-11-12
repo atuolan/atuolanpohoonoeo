@@ -75,6 +75,35 @@ function itemSrc(it: RoomItem): string {
   return `${props.asset}${props.room}/items/${id}${night ? "-night" : ""}.png`;
 }
 
+/** 手指好點的最小範圍（畫面上的 px） */
+const MIN_TAP = 44;
+
+/**
+ * 可以點的小家具（手機、小箱子、啞鈴…）：圖不變，點得到的範圍往外加到 44px。
+ * 用 padding 加大、負的 margin 拉回來，圖還是在原本的位置。
+ */
+function itemStyle(it: RoomItem) {
+  const style: Record<string, string | undefined> = {
+    left: `${it.px}px`,
+    top: `${it.py}px`,
+    width: `${it.w}px`,
+    height: `${it.h}px`,
+    visibility: hidden(it.id) ? "hidden" : undefined,
+  };
+  if (it.action && !props.editMode && props.scale > 0) {
+    const min = MIN_TAP / props.scale;
+    const padX = Math.max(0, (min - it.w) / 2);
+    const padY = Math.max(0, (min - it.h) / 2);
+    if (padX || padY) {
+      // 全站的 box-sizing 是 border-box，這裡要往外加
+      style.boxSizing = "content-box";
+      style.padding = `${padY}px ${padX}px`;
+      style.margin = `${-padY}px ${-padX}px`;
+    }
+  }
+  return style;
+}
+
 const emit = defineEmits<{ (e: "item-click", it: RoomItem): void }>();
 </script>
 
@@ -105,7 +134,7 @@ const emit = defineEmits<{ (e: "item-click", it: RoomItem): void }>();
       :alt="it.action && !editMode ? `${it.name}，${it.action.to}` : ''"
       :role="it.action && !editMode ? 'button' : undefined"
       draggable="false"
-      :style="{ left: `${it.px}px`, top: `${it.py}px`, width: `${it.w}px`, height: `${it.h}px`, visibility: hidden(it.id) ? 'hidden' : undefined }"
+      :style="itemStyle(it)"
       @click="emit('item-click', it)"
     />
   </div>
