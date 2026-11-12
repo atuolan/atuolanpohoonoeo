@@ -6,6 +6,8 @@
 import { createPinia } from "pinia";
 import { createApp, h } from "vue";
 import PixelHouseHome from "@/components/pixelHouse/PixelHouseHome.vue";
+// 跟 App 一樣載入全域樣式（按鈕的 max-width 之類），不然測試頁跟真的 App 長得不一樣
+import "@/styles/global.scss";
 
 const navigations: unknown[][] = [];
 (window as unknown as { __navigations: unknown[][] }).__navigations = navigations;

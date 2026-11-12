@@ -1898,6 +1898,8 @@ function labelStyle(room: RoomId, it: RenderItem) {
 
 .ph-me-hit {
   position: absolute;
+  /* 全域樣式給按鈕 max-width: 100%，外層 .ph-me 寬度是 0，不取消會被壓成 0 寬、點不到 */
+  max-width: none;
   padding: 0;
   border: 0;
   background: transparent;
@@ -2021,6 +2023,8 @@ function labelStyle(room: RoomId, it: RenderItem) {
 
 .ph-cat-hit {
   position: absolute;
+  /* 同 .ph-me-hit：外層寬度是 0，不取消 max-width 會被壓扁 */
+  max-width: none;
   padding: 0;
   border: 0;
   background: transparent;
