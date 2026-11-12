@@ -670,6 +670,8 @@ function customFilename(c: CustomPart): string {
 
 .wd-poses button,
 .wd-tabs button {
+  /* 照字撐開：全站的按鈕是 min-width: 0，不加這行會被擠成一樣寬，字跑出去 */
+  flex: none;
   min-height: 32px;
   padding: 0 14px;
   border: 0;
@@ -712,6 +714,13 @@ function customFilename(c: CustomPart): string {
   margin-left: -19px;
   border-radius: 999px;
   background: rgba(59, 42, 38, 0.18);
+}
+
+/* 捲到最右邊時右邊也留空（iOS 捲動的 flex 不算右邊的 padding） */
+.wd-tabs::after {
+  content: "";
+  flex: none;
+  width: 10px;
 }
 
 .wd-tabs::-webkit-scrollbar {
