@@ -53,6 +53,9 @@ import {
 import { CodeProtection } from "./utils/codeProtection";
 import { autoFixStickerUrls } from "./utils/fixStickerUrls";
 import { initStorageProtection } from "./utils/storagePersistence";
+import { installDebugLogCapture } from "./utils/debugLog";
+import { restoreDebugOverlayIfEnabled } from "./utils/debugOverlay";
+import { registerDefaultDebugReportSections } from "./utils/debugReportSections";
 
 // ===== 視口高度修正（iOS / Android / 瀏覽器通用）=====
 // 問題：不同裝置的 screen.height、innerHeight、visualViewport.height 關係不一致
@@ -328,6 +331,10 @@ beginRuntimeSession("main.ts bootstrap", {
   userAgent: navigator.userAgent,
   href: window.location.href,
 });
+// Debug 紀錄：正式版一開始就記，玩家出問題之後才打開 debug 視窗也看得到先前的紀錄。
+// 開發時不接（接了之後主控台每行的來源都會變成 debugLog.ts），打開 debug 視窗才接。
+if (import.meta.env.PROD) installDebugLogCapture();
+registerDefaultDebugReportSections();
 installGlobalRuntimeDiagnostics();
 logPendingRuntimeDiagnostics();
 
@@ -367,6 +374,8 @@ app.use(pinia);
 updateRuntimeSessionStage("pinia configured");
 app.mount("#app");
 updateRuntimeSessionStage("app mounted");
+// 上次開著 debug 視窗的話，重新整理後接著開
+restoreDebugOverlayIfEnabled();
 
 // Discord OAuth2 回傳參數處理（使用者從 Discord 授權頁面 redirect 回來時）
 (async () => {

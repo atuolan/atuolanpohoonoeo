@@ -14,6 +14,7 @@ import type {
 import type { APISettings } from "@/types/settings";
 import { aiProxyHost } from "@/native/platform";
 import { buildNetworkDiagnosis, isNetworkErrorMessage } from "./networkErrorDiagnosis";
+import { beginDebugRequest, type DebugRequestTracker } from "@/utils/debugLog";
 import { postProcessPrompt, type PromptPostProcessingType } from "@/utils/promptPostProcessor";
 import { applyTextToolProtocol } from "@/services/toolCalling/textToolPrompt";
 import {
@@ -1416,10 +1417,44 @@ export class OpenAICompatibleClient {
     };
   }
 
+  /** Debug 紀錄用：這次請求送去哪、用什麼模型（紀錄壞了不能影響生成） */
+  private trackRequest(params: GenerationParams, stream: boolean): DebugRequestTracker | null {
+    try {
+      return beginDebugRequest({
+        endpoint: this.shouldUseAnthropicNative() ? this.getAnthropicEndpoint() : this.getEndpoint(),
+        model: this.apiSettings.model,
+        stream,
+        messageCount: params.messages.length,
+      });
+    } catch {
+      return null;
+    }
+  }
+
   /**
    * 非流式生成
    */
   async generate(params: GenerationParams): Promise<GenerationResult> {
+    const track = this.trackRequest(params, false);
+    try {
+      const result = await this.generateOnce(params);
+      track?.finish({
+        content: result.content,
+        finishReason: result.finishReason ?? result.stopReason,
+        rawFinishReason: result.rawFinishReason,
+        usage: { prompt_tokens: result.tokenCount?.prompt, completion_tokens: result.tokenCount?.completion },
+        diagnostics: result.diagnostics,
+        toolCallCount: result.toolCalls?.length,
+      });
+      return result;
+    } catch (e) {
+      if ((e as Error)?.name === "AbortError" || params.signal?.aborted) track?.abort();
+      else track?.fail(e);
+      throw e;
+    }
+  }
+
+  private async generateOnce(params: GenerationParams): Promise<GenerationResult> {
     // Claude 緩存模式：走 Anthropic 原生路徑
     if (this.shouldUseAnthropicNative()) {
       return this.generateAnthropic(params);
@@ -2385,6 +2420,35 @@ export class OpenAICompatibleClient {
    * 流式生成（帶 NetworkError 自動重試）
    */
   async *generateStream(
+    params: GenerationParams,
+  ): AsyncGenerator<StreamingEvent> {
+    const track = this.trackRequest(params, true);
+    try {
+      for await (const event of this.generateStreamWithRetry(params)) {
+        if (event.type === "done") {
+          if (params.signal?.aborted) track?.abort();
+          else {
+            track?.finish({
+              content: event.content,
+              finishReason: event.finishReason,
+              rawFinishReason: event.rawFinishReason,
+              usage: event.usage,
+              diagnostics: event.diagnostics,
+              toolCallCount: event.toolCalls?.length,
+            });
+          }
+        } else if (event.type === "error") {
+          track?.fail(event.error);
+        }
+        yield event;
+      }
+    } finally {
+      // 呼叫端提早停止讀取（中止生成）時走到這裡；已經有結果的話這行不會改到
+      track?.abort();
+    }
+  }
+
+  private async *generateStreamWithRetry(
     params: GenerationParams,
   ): AsyncGenerator<StreamingEvent> {
     let hasYieldedTokens = false;

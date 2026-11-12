@@ -1,9 +1,15 @@
 <script setup lang="ts">
-/** 開發者選項：Debug Overlay、目前網頁版本、App 熱更新狀態 */
+/** 開發者選項：Debug Overlay、診斷報告、目前網頁版本、App 熱更新狀態 */
 import type { LiveUpdateStatus } from "@/native/liveUpdate";
 import { isNativeApp } from "@/native/platform";
 import { readWebVersion } from "@/native/webVersion";
-import { destroyDebugOverlay, initDebugOverlay, isDebugOverlayActive } from "@/utils/debugOverlay";
+import {
+  copyDebugReport,
+  destroyDebugOverlay,
+  initDebugOverlay,
+  isDebugOverlayActive,
+  saveDebugReport,
+} from "@/utils/debugOverlay";
 import { showFloatingToast } from "@/utils/floatingToast";
 import { computed, onActivated, ref, shallowRef } from "vue";
 import SettingsGroup from "../ui/SettingsGroup.vue";
@@ -111,9 +117,16 @@ onActivated(() => {
       <SettingsSwitchRow
         :model-value="active"
         label="Debug Overlay"
-        description="顯示浮動除錯視窗，看 console 輸出和視口數據"
+        description="顯示浮動除錯視窗：日誌、警告錯誤、每次 AI 請求的結果"
         @update:model-value="toggle"
       />
+    </SettingsGroup>
+    <SettingsGroup
+      title="診斷報告"
+      footer="遇到問題（空回覆、發不出去、錯誤訊息）時，先重現一次，再把報告傳給開發者。裡面有版本、API 主機和模型、最近的 AI 請求結果、警告和錯誤；不含 API 金鑰。日誌裡可能帶到一點聊天內容。"
+    >
+      <SettingsRow label="複製診斷報告" clickable tone="accent" @click="copyDebugReport" />
+      <SettingsRow label="存成檔案" clickable tone="accent" @click="saveDebugReport" />
     </SettingsGroup>
     <SettingsGroup footer="App 熱更新換上新版後，這個編號會跟著變。">
       <SettingsRow label="網頁版本" :value="webVersion" />
