@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { clockWentBack, dailyLeft, dayKey, defaultHouseLifeState, parseHouseLifeState, rollDay, countDaily } from "./houseLife";
+import { clockWentBack, countDaily, dailyLeft, dayKey, defaultHouseLifeState, parseHouseLifeState, payCapped, rollDay, type HouseLifeState } from "./houseLife";
 
 const at = (d: number, h = 12, min = 0) => new Date(2026, 10, d, h, min, 0);
+const mk = (patch: Partial<HouseLifeState>): HouseLifeState => ({ ...defaultHouseLifeState(at(12)), ...patch });
 
 describe("小屋生活存檔", () => {
   it("日期用當地時間", () => {
@@ -20,13 +21,13 @@ describe("小屋生活存檔", () => {
   });
 
   it("換日清掉每日次數，同一天不動", () => {
-    const s = { day: "2026-11-12", daily: { pat: 5 }, lastSeenAt: at(12).getTime(), gifts: [] };
+    const s = mk({ day: "2026-11-12", daily: { pat: 5 }, lastSeenAt: at(12).getTime() });
     expect(rollDay(s, at(12, 23, 59))).toBe(s);
-    expect(rollDay(s, at(13, 0, 1))).toEqual({ day: "2026-11-13", daily: {}, lastSeenAt: s.lastSeenAt, gifts: [] });
+    expect(rollDay(s, at(13, 0, 1))).toEqual({ ...s, day: "2026-11-13", daily: {} });
   });
 
   it("很久沒開：直接跳到今天", () => {
-    const s = { day: "2026-11-01", daily: { pat: 5 }, lastSeenAt: at(1).getTime(), gifts: [] };
+    const s = mk({ day: "2026-11-01", daily: { pat: 5 }, lastSeenAt: at(1).getTime() });
     expect(rollDay(s, at(20)).day).toBe("2026-11-20");
   });
 
@@ -46,7 +47,7 @@ describe("小屋生活存檔", () => {
   });
 
   it("一次做好幾次：剩的不夠就整個不算", () => {
-    const s = { day: "2026-11-12", daily: { clean: 380 }, lastSeenAt: at(12).getTime(), gifts: [] };
+    const s = mk({ day: "2026-11-12", daily: { clean: 380 }, lastSeenAt: at(12).getTime() });
     expect(countDaily(s, "clean", 400, at(12, 13), 30)).toBeNull();
     expect(countDaily(s, "clean", 400, at(12, 13), 20)?.daily.clean).toBe(400);
   });
@@ -58,5 +59,23 @@ describe("小屋生活存檔", () => {
     expect(countDaily(s, "gift", 3, at(11, 9))).toBeNull();
     // 差不到一分鐘不算往回調
     expect(clockWentBack(s, new Date(at(12, 20).getTime() - 30_000))).toBe(false);
+  });
+
+  it("有上限的錢：剩多少發多少，領完是 0", () => {
+    const s = mk({ day: "2026-11-12", daily: { cleanCoins: 390 }, lastSeenAt: at(12).getTime() });
+    const a = payCapped(s, "cleanCoins", 400, 25, at(12, 13));
+    expect(a.paid).toBe(10);
+    expect(a.state.daily.cleanCoins).toBe(400);
+    expect(payCapped(a.state, "cleanCoins", 400, 25, at(12, 14)).paid).toBe(0);
+    // 隔天重新算
+    expect(payCapped(a.state, "cleanCoins", 400, 25, at(13, 9)).paid).toBe(25);
+    // 時間往回調不發
+    expect(payCapped(a.state, "cleanCoins", 400, 25, at(11, 9)).paid).toBe(0);
+  });
+
+  it("第一次打開：髒污從幾個小時前算起（一打開就有得掃）", () => {
+    const s = defaultHouseLifeState(at(12));
+    expect(s.dirt).toEqual({});
+    expect(s.dirtAt).toBeLessThan(at(12).getTime());
   });
 });

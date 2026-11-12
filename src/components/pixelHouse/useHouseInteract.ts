@@ -26,6 +26,8 @@ import { earnCoins } from "./wardrobeShop";
 /** 點他之後，兩個按鈕過多久自己收起來 */
 const MENU_MS = 3000;
 const NOTICE_MS = 4500;
+/** 後面還有別的提示在排隊時，每一句顯示短一點 */
+const NOTICE_SHORT_MS = 2600;
 
 export function useHouseInteract(deps: {
   act: Ref<string>;
@@ -77,13 +79,19 @@ export function useHouseInteract(deps: {
     }, ms);
   }
 
+  /** 還沒輪到的提示（一次來好幾個時排隊，一個一個顯示） */
+  let waiting: string[] = [];
+
+  function nextNotice() {
+    noticeTimer = null;
+    notice.value = waiting.shift() ?? "";
+    if (notice.value) noticeTimer = setTimeout(nextNotice, waiting.length ? NOTICE_SHORT_MS : NOTICE_MS);
+  }
+
+  /** 下面提示列顯示一句話；前一句還在就排在後面 */
   function showNotice(text: string) {
-    if (noticeTimer) clearTimeout(noticeTimer);
-    notice.value = text;
-    noticeTimer = setTimeout(() => {
-      noticeTimer = null;
-      notice.value = "";
-    }, NOTICE_MS);
+    waiting.push(text);
+    if (!noticeTimer) nextNotice();
   }
 
   function pat() {
@@ -154,6 +162,7 @@ export function useHouseInteract(deps: {
     closeMenu();
     for (const t of [sayTimer, moodTimer, noticeTimer]) if (t) clearTimeout(t);
     sayTimer = moodTimer = noticeTimer = null;
+    waiting = [];
     say.value = "";
     mood.value = null;
     notice.value = "";
@@ -161,5 +170,5 @@ export function useHouseInteract(deps: {
 
   onUnmounted(reset);
 
-  return { menuOpen, say, mood, fxKey, notice, gifts, toggleMenu, closeMenu, pat, collect, reset };
+  return { menuOpen, say, mood, fxKey, notice, gifts, toggleMenu, closeMenu, pat, collect, showNotice, reset };
 }

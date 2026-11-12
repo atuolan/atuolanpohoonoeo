@@ -14,6 +14,8 @@ import { useHomeBadgesStore } from "@/stores/homeBadges";
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from "vue";
 import { GIFTS, GIFT_ART, type GiftKind } from "./houseLines";
 import { pixelSvg } from "./pixelArt";
+import { DIRT_ART, DIRT_BY_ID, choreAct, type DirtKind } from "./houseChores";
+import { useHouseChores } from "./useHouseChores";
 import { useHouseInteract } from "./useHouseInteract";
 import HouseAppsSheet from "./HouseAppsSheet.vue";
 import HouseDecorShop from "./HouseDecorShop.vue";
@@ -378,6 +380,9 @@ const life = useHouseResident({
   calm: computed(() => state.calm),
   current: currentOf,
   defaults: defaultsOf,
+  // 打掃：髒污那邊決定要不要去、去哪一處（chores 在下面才建好，所以包一層）
+  extraAct: choreAct,
+  pickExtra: (current, room) => chores?.pickExtra(current, room) ?? null,
 });
 
 async function ensureResident() {
@@ -416,6 +421,8 @@ async function refreshResident() {
     const chats = await loadChatsByCharacter(id, { isGroupChat: false });
     unread.value = chats.reduce((sum, c) => sum + Math.max(0, c.unreadCount || 0), 0);
     status.value = residentStatus(chat?.charAway, dateOngoing);
+    // 他在聊天裡忙完、暫離回來了：帶錢回來（每一趟只發一次）
+    void chores.settleWork(chat?.charAway);
   } catch (err) {
     console.warn("[PixelHouse] 讀角色狀態失敗", err);
   }
@@ -437,7 +444,7 @@ const frame = ref(0);
 let frameTimer: ReturnType<typeof setInterval> | null = null;
 
 const isHome = computed(() => !!residentId.value && life.home.value && loaded.value);
-const meAct = computed(() => ACTS[life.act.value]);
+const meAct = computed(() => ACTS[life.act.value] ?? choreAct(life.act.value));
 const lying = computed(() => !life.walking.value && life.act.value === "sleep");
 
 // ===== 跟他互動：點他冒出「聊天／摸頭」、摸頭、頭上冒話、他留東西 =====
@@ -449,6 +456,40 @@ const play = useHouseInteract({
   sleeping: lying,
   pronoun,
 });
+
+// ===== 家事和每日收入：髒污、信箱每天一封信、他忙完帶錢回來 =====
+const chores = useHouseChores({
+  act: life.act,
+  walking: life.walking,
+  scene,
+  free: computed(() => isHome.value && status.value === "home"),
+  pronoun,
+  notify: play.showNotice,
+});
+
+/** 髒污畫在哪（水槽的碗、洗衣籃的衣服跟著家具走） */
+const dirtSpots = computed(() =>
+  Object.keys(chores.dirt.value).flatMap((id) => {
+    const def = DIRT_BY_ID[id];
+    if (!def || !layouts[def.room]) return [];
+    const art = DIRT_ART[def.kind];
+    const pos = followAnchor([def.x, def.y], def.anchor, currentOf(def.room), defaultsOf(def.room));
+    return [
+      {
+        id,
+        label: `${ROOM_NAMES[def.room]}有點髒，點了打掃`,
+        src: dirtImages[def.kind],
+        style: {
+          left: `${u(stripX({ room: def.room, x: pos.x }))}px`,
+          top: `${u(pos.y)}px`,
+          width: `${u(art.rows[0].length)}px`,
+          height: `${u(art.rows.length)}px`,
+        },
+      },
+    ];
+  }),
+);
+const dirtImages = Object.fromEntries(Object.entries(DIRT_ART).map(([k, a]) => [k, pixelSvg(a.rows, a.palette)])) as Record<DirtKind, string>;
 
 function onMeTap() {
   if (editMode.value || !residentId.value) return;
@@ -642,6 +683,8 @@ const choosing = ref<{ name: string; options: { app: string; label: string }[] }
 
 function onItemClick(it: { room: RoomId; id: string; name: string; action?: FurnitureAction }) {
   if (editMode.value || !it.action) return;
+  // 信箱裡有今天的信：這次點是收信，不打開訊息
+  if (it.room === "living" && it.id === "mailbox" && chores.mailReady.value && chores.takeMail()) return;
   const action = it.action;
   flashKey.value = `${it.room}:${it.id}`;
   setTimeout(() => {
@@ -667,7 +710,7 @@ function openSheet(mode: "apps" | "house") {
 const homeBadges = useHomeBadgesStore();
 const badges = computed(() => homeBadges.badges);
 /** 有未讀訊息：客廳的信箱露出一封信 */
-const hasMail = computed(() => (badges.value.message ?? 0) > 0);
+const hasMail = computed(() => (badges.value.message ?? 0) > 0 || chores.mailReady.value);
 
 /** 下面那一排 App：展開或收成小按鈕，記住 */
 function toggleDock() {
@@ -984,6 +1027,7 @@ function onVisibilityChange() {
   }
   if (!started) return;
   now.value = new Date();
+  chores.open();
   startTimers();
   void refreshResident().then(() => life.resume());
 }
@@ -1002,6 +1046,7 @@ onMounted(async () => {
   window.addEventListener(PIXEL_HOUSE_CHANGED_EVENT, onSettingsChanged);
 
   await loadAssets();
+  chores.open();
   await ensureResident();
   await refreshResident();
   if (residentId.value && status.value !== "away" && status.value !== "date") life.start();
@@ -1162,6 +1207,13 @@ function labelStyle(room: RoomId, it: RenderItem) {
             {{ it.name }} → {{ it.action?.to }}
           </div>
         </template>
+      </template>
+
+      <!-- 髒污：點了打掃（靜態的圖，不動） -->
+      <template v-if="!editMode">
+        <button v-for="d in dirtSpots" :key="`dirt-${d.id}`" class="ph-dirt" :style="d.style" :aria-label="d.label" @click.stop="chores.clean(d.id, 'user')">
+          <img :src="d.src" alt="" draggable="false" />
+        </button>
       </template>
 
       <!-- 他 -->
@@ -1611,6 +1663,27 @@ function labelStyle(room: RoomId, it: RenderItem) {
   transform: translate(-50%, -50%);
 }
 
+/* 髒污：在家具上面、他的後面 */
+.ph-dirt {
+  position: absolute;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  z-index: 2;
+}
+
+.ph-dirt::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 44px;
+  height: 44px;
+  transform: translate(-50%, -50%);
+}
+
+.ph-dirt img,
 .ph-gift img {
   display: block;
   width: 100%;
