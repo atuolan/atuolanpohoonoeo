@@ -2,7 +2,7 @@
 /**
  * 下面那一排打開的面板，兩種：
  * - apps：「全部 App」——所有 App、還沒開放的家具功能
- * - house：「小屋」——換外觀、擺件商店、貓、移動家具、怎麼玩、全局美化、切回畫布，小屋自己的功能都在這一個地方
+ * - house：「小屋」——換外觀、擺件商店、寵物、移動家具、怎麼玩、全局美化、切回畫布，小屋自己的功能都在這一個地方
  */
 import { DOCK_APP_CATALOG } from "@/components/dock/dockApps";
 import { COMING_SOON } from "./houseData";
@@ -63,7 +63,7 @@ function badgeText(n: number): string {
               <span>擺件商店</span><span class="ph-row-note">買新的擺件、幫家具換款式</span>
             </button>
             <button class="ph-row" @click="emit('cat')">
-              <span>貓</span><span class="ph-row-note">領養一隻貓；養了之後也可以直接點牠</span>
+              <span>寵物</span><span class="ph-row-note">領養貓、狗、倉鼠；養了之後也可以直接點牠</span>
             </button>
             <button class="ph-row" @click="emit('edit-layout')">
               <span>移動家具</span><span class="ph-row-note">也可以長按房間</span>

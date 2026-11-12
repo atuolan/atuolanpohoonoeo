@@ -3,6 +3,7 @@
  * 花錢（換外觀、擺件）記一筆商店支出；賺錢（家事、他留的東西…）記一筆工作收入。
  */
 import { useGameEconomyStore } from "@/stores/gameEconomy";
+import { todayLedger, type Ledger } from "./houseTodo";
 import { WARDROBE_WALLET_ID } from "./wardrobeData";
 
 export async function loadWardrobeBalance(): Promise<number> {
@@ -33,4 +34,15 @@ export async function earnCoins(amount: number, description: string, sourceId: s
   if (!r.success) return null;
   await store.saveState(WARDROBE_WALLET_ID);
   return store.getBalance(WARDROBE_WALLET_ID);
+}
+
+/** 今天在小屋賺了多少、花了多少（從錢包紀錄算）。讀不到回傳 null */
+export async function loadTodayLedger(now: Date = new Date()): Promise<Ledger | null> {
+  try {
+    const store = useGameEconomyStore();
+    await store.loadState(WARDROBE_WALLET_ID);
+    return todayLedger(store.getTransactions(WARDROBE_WALLET_ID), now);
+  } catch {
+    return null;
+  }
 }

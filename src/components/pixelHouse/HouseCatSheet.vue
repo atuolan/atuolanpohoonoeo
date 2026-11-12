@@ -1,30 +1,38 @@
 <script setup lang="ts">
 /**
- * 貓的面板，三種分頁：
- * - 每隻貓一頁：數值、個性、摸、逗、罐頭、貓條、洗澡、訓練上廁所、健康檢查、看醫生、改名
- * - 用品：貓糧、罐頭、貓條、貓砂、寵物保險（庫存還夠幾天）
- * - 領養：選花色、取名字（第一隻免費，之後每隻 32,000）
+ * 寵物的面板，三種分頁：
+ * - 每隻一頁：數值、個性、照顧（貓：摸、逗、罐頭、貓條、洗澡、訓練；狗：摸、丟球、潔牙骨、洗澡、散步、訓練；
+ *   倉鼠：摸、葵花子、換木屑）、健康檢查、看醫生、改名
+ * - 用品：家裡有養的種類用得到的東西、寵物保險（會自己用掉的顯示還夠幾天）
+ * - 領養：選種類、花色、取名字（第一隻免費；貓狗每隻 32,000、倉鼠 1,500）
  * 數值是打開面板、照顧完才重算的（不是每秒更新）。
  */
 import { computed, ref, watch } from "vue";
 import {
   catLevels,
-  CAT_ART,
-  CAT_COLORS,
-  CAT_COLOR_IDS,
   CAT_NAME_MAX,
   CAT_PERSONALITIES,
+  personalityDesc,
+  PET_SPECIES_IDS,
+  SPECIES_COLORS,
+  SPECIES_NAMES,
+  walkOverdue,
   type CatCare,
-  type CatColor,
   type CatState,
+  type PetColor,
+  type PetSpecies,
 } from "./houseCat";
+import { HAMSTER_ART, walkerArt } from "./petArt";
 import { pixelSvg } from "./pixelArt";
 import {
   adoptPrice,
-  CHECKUP_PRICE,
+  checkupPrice,
   COVER_DAYS,
   INSURANCE_PRICE,
-  MAX_CATS,
+  isDaily,
+  roomFor,
+  SPECIES_INFO,
+  speciesOwned,
   stockDays,
   SUPPLIES,
   SUPPLY_IDS,
@@ -38,7 +46,7 @@ const props = defineProps<{
   home: PetHome;
   /** 算數值用的時間（打開面板、照顧完時更新） */
   now: number;
-  /** 打開時看哪一頁：貓的 id、"supplies"、"adopt"（沒給就看第一隻） */
+  /** 打開時看哪一頁：寵物的 id、"supplies"、"adopt"（沒給就看第一隻） */
   focus: string | null;
   /** 上一個動作沒做成的原因、或做完的話 */
   message: string;
@@ -46,7 +54,7 @@ const props = defineProps<{
 }>();
 const emit = defineEmits<{
   close: [];
-  adopt: [name: string, color: CatColor];
+  adopt: [name: string, color: PetColor, species: PetSpecies];
   care: [id: string, kind: CatCare];
   rename: [id: string, name: string];
   buy: [id: SupplyId];
@@ -54,13 +62,32 @@ const emit = defineEmits<{
   checkup: [id: string];
   vet: [id: string];
   train: [id: string];
+  walk: [id: string];
 }>();
 
 const tab = ref<string>("adopt");
-const color = ref<CatColor>("orange");
+/** 提示是在哪一頁發生的：換到別頁就不顯示（不然摸倉鼠的話會跑到領養那頁） */
+const msgTab = ref<string>("");
+watch(
+  () => props.message,
+  () => (msgTab.value = tab.value),
+  { flush: "sync" },
+);
+const msg = computed(() => (msgTab.value === tab.value ? props.message : ""));
+const species = ref<PetSpecies>("cat");
+const color = ref<PetColor>("orange");
 const name = ref("");
 const renaming = ref(false);
 const newName = ref("");
+
+/** 還能養的種類（貓狗加起來三隻、倉鼠另外三隻） */
+const canAdopt = (sp: PetSpecies) => roomFor(props.home, sp);
+const anyRoom = computed(() => PET_SPECIES_IDS.some(canAdopt));
+
+function pickSpecies(sp: PetSpecies) {
+  species.value = sp;
+  color.value = Object.keys(SPECIES_COLORS[sp])[0] as PetColor;
+}
 
 watch(
   () => [props.open, props.focus] as const,
@@ -69,6 +96,7 @@ watch(
     renaming.value = false;
     name.value = "";
     tab.value = props.focus ?? props.home.cats[0]?.id ?? "adopt";
+    if (!canAdopt(species.value)) pickSpecies(PET_SPECIES_IDS.find(canAdopt) ?? "cat");
   },
 );
 // 領養完：跳到新來的那隻
@@ -79,32 +107,43 @@ watch(
   },
 );
 
+const owned = computed(() => speciesOwned(props.home));
 const tabs = computed(() => [
   ...props.home.cats.map((c) => ({ id: c.id, label: c.name, alert: !!c.sickSince })),
-  ...(props.home.cats.length ? [{ id: "supplies", label: "用品", alert: props.home.stock.kibble <= 0 || props.home.stock.litter <= 0 }] : []),
-  ...(props.home.cats.length < MAX_CATS ? [{ id: "adopt", label: props.home.cats.length ? "＋" : "領養", alert: false }] : []),
+  ...(props.home.cats.length
+    ? [{ id: "supplies", label: "用品", alert: SUPPLY_IDS.some((id) => isDaily(id) && Number.isFinite(stockDays(props.home, id)) && props.home.stock[id] <= 0) }]
+    : []),
+  ...(anyRoom.value ? [{ id: "adopt", label: props.home.cats.length ? "＋" : "領養", alert: false }] : []),
 ]);
 
 const cat = computed<CatState | undefined>(() => props.home.cats.find((c) => c.id === tab.value));
 const levels = computed(() => (cat.value ? catLevels(cat.value, props.now) : { food: 0, clean: 0, mood: 0 }));
 const insured = computed(() => props.home.insuranceUntil > props.now);
+const away = computed(() => !!cat.value && Math.max(cat.value.vetUntil, cat.value.outUntil) > props.now);
 const atVet = computed(() => !!cat.value && cat.value.vetUntil > props.now);
+const info = computed(() => SPECIES_INFO[cat.value?.species ?? "cat"]);
 
-const portraits = computed(() =>
-  Object.fromEntries(props.home.cats.map((c) => [c.id, pixelSvg(CAT_ART[c.sickSince ? "sleep" : "sit"], CAT_COLORS[c.color].palette)])),
+function portraitOf(sp: PetSpecies, c: PetColor, sick = false): string {
+  const palette = SPECIES_COLORS[sp][c]?.palette ?? {};
+  if (sp === "hamster") return pixelSvg(HAMSTER_ART[sick ? "sleep" : "sit"], palette);
+  // 狗坐著是側面，看不太出來：站著的比較好認
+  return pixelSvg(walkerArt(sp).art[sick ? "sleep" : sp === "dog" ? "walk-a" : "sit"], palette);
+}
+const portraits = computed(() => Object.fromEntries(props.home.cats.map((c) => [c.id, portraitOf(c.species, c.color, !!c.sickSince)])));
+const previews = computed(() =>
+  Object.entries(SPECIES_COLORS[species.value]).map(([id, def]) => ({ id: id as PetColor, name: def.name, src: portraitOf(species.value, id as PetColor) })),
 );
-const previews = CAT_COLOR_IDS.map((id) => ({ id, name: CAT_COLORS[id].name, src: pixelSvg(CAT_ART.sit, CAT_COLORS[id].palette) }));
-const price = computed(() => adoptPrice(props.home.cats.length));
+const price = computed(() => adoptPrice(props.home.cats.length, species.value));
 
 const bars = computed(() => {
   const c = cat.value;
   if (!c) return [];
   return [
     { key: "food", name: "飽", value: levels.value.food },
-    { key: "clean", name: "乾淨", value: levels.value.clean },
+    { key: "clean", name: c.species === "hamster" ? "籠子" : "乾淨", value: levels.value.clean },
     { key: "mood", name: "心情", value: levels.value.mood },
     { key: "affinity", name: "親密", value: Math.round(c.affinity) },
-    { key: "training", name: "上廁所", value: Math.round(c.training) },
+    ...(info.value.toilet ? [{ key: "training", name: "上廁所", value: Math.round(c.training) }] : []),
   ];
 });
 
@@ -114,21 +153,55 @@ const days = (until: number) => Math.max(0, Math.ceil((until - props.now) / 86_4
 const status = computed(() => {
   const c = cat.value;
   if (!c) return "";
-  if (atVet.value) return `在醫院，大約 ${Math.max(1, Math.ceil((c.vetUntil - props.now) / 60_000))} 分鐘後回家`;
+  const mins = (until: number) => Math.max(1, Math.ceil((until - props.now) / 60_000));
+  if (atVet.value) return `在醫院，大約 ${mins(c.vetUntil)} 分鐘後回家`;
+  if (away.value) return `出門散步了，大約 ${mins(c.outUntil)} 分鐘後回來`;
   if (c.sickSince) return `生病了。帶去看醫生要 ${vetCost(c, props.now, insured.value).toLocaleString()} 金幣${insured.value ? "（保險付了一半）" : ""}`;
-  if (levels.value.food < 20) return props.home.stock.kibble > 0 ? `${c.name}很餓，等一下會去吃` : `${c.name}很餓，貓糧吃完了`;
-  if (levels.value.clean < 20) return `${c.name}髒髒的，該洗澡了`;
+  const food = SUPPLIES[info.value.food].name;
+  if (levels.value.food < 20) return props.home.stock[info.value.food] > 0 ? `${c.name}很餓，等一下會去吃` : `${c.name}很餓，${food}吃完了`;
+  if (levels.value.clean < 20) return c.species === "hamster" ? "籠子髒了，該換木屑了" : `${c.name}髒髒的，該洗澡了`;
+  if (walkOverdue(c, props.now)) return `${c.name}很久沒出門了，帶牠去散步吧`;
   if (levels.value.mood < 20) return `${c.name}心情不好，陪牠玩一下`;
-  return CAT_PERSONALITIES[c.personality].desc;
+  return personalityDesc(c.species, c.personality);
 });
+
+/** 照顧的按鈕：照種類不同 */
+const careButtons = computed(() => {
+  const c = cat.value;
+  if (!c) return [];
+  const stock = (id: SupplyId) => `剩 ${props.home.stock[id]}`;
+  if (c.species === "hamster")
+    return [
+      { kind: "pet" as CatCare, label: "摸摸" },
+      { kind: "treat" as CatCare, label: "葵花子", note: stock("seeds") },
+      { kind: "wash" as CatCare, label: "換木屑", note: stock("bedding") },
+    ];
+  if (c.species === "dog")
+    return [
+      { kind: "pet" as CatCare, label: "摸摸" },
+      { kind: "play" as CatCare, label: "丟球" },
+      { kind: "treat" as CatCare, label: "潔牙骨", note: stock("chew") },
+      { kind: "wash" as CatCare, label: "洗澡" },
+    ];
+  return [
+    { kind: "pet" as CatCare, label: "摸摸" },
+    { kind: "play" as CatCare, label: "逗牠玩" },
+    { kind: "can" as CatCare, label: "罐頭", note: stock("can") },
+    { kind: "treat" as CatCare, label: "貓條", note: stock("treat") },
+    { kind: "wash" as CatCare, label: "洗澡" },
+  ];
+});
+
+/** 用品：照種類分組，只列家裡有養的 */
+const shopGroups = computed(() =>
+  owned.value.map((sp) => ({ species: sp, name: SPECIES_NAMES[sp], ids: SUPPLY_IDS.filter((id) => SUPPLIES[id].species === sp) })),
+);
 
 function stockNote(id: SupplyId): string {
   const n = props.home.stock[id];
   const s = SUPPLIES[id];
-  if (id === "kibble" || id === "litter") {
-    const d = stockDays(props.home, id);
-    return `還有 ${n} ${s.unit}${Number.isFinite(d) ? `，大約夠 ${d < 1 ? "不到 1" : Math.floor(d)} 天` : ""}`;
-  }
+  const d = stockDays(props.home, id);
+  if (isDaily(id) && Number.isFinite(d)) return `還有 ${n} ${s.unit}，大約夠 ${d < 1 ? "不到 1" : Math.floor(d)} 天`;
   return `還有 ${n} ${s.unit}`;
 }
 
@@ -140,7 +213,7 @@ function saveName() {
 
 <template>
   <div v-if="open" class="cs-wrap" @click.self="emit('close')">
-    <section class="cs-card" role="dialog" aria-label="貓">
+    <section class="cs-card" role="dialog" aria-label="寵物">
       <div v-if="tabs.length > 1" class="cs-tabs" role="tablist">
         <button
           v-for="t in tabs"
@@ -157,10 +230,26 @@ function saveName() {
 
       <!-- 領養 -->
       <template v-if="tab === 'adopt'">
-        <h2 class="cs-title">{{ home.cats.length ? "再養一隻" : "領養一隻貓" }}</h2>
+        <h2 class="cs-title">{{ home.cats.length ? "再養一隻" : "領養寵物" }}</h2>
+        <div class="cs-kinds" role="radiogroup" aria-label="種類">
+          <button
+            v-for="sp in PET_SPECIES_IDS"
+            :key="sp"
+            class="cs-kind"
+            :class="{ 'is-on': species === sp }"
+            role="radio"
+            :aria-checked="species === sp"
+            :disabled="!canAdopt(sp)"
+            @click="pickSpecies(sp)"
+          >
+            {{ SPECIES_NAMES[sp] }}<small>{{ canAdopt(sp) ? (home.cats.length ? `${SPECIES_INFO[sp].price.toLocaleString()}` : "免費") : "滿了" }}</small>
+          </button>
+        </div>
         <p class="cs-note">
-          {{ home.cats.length ? `每多一隻 ${price.toLocaleString()} 金幣，最多 ${MAX_CATS} 隻。貓越多，貓糧和貓砂用得越快。` : "第一隻免費。" }}
-          每隻個性不一樣，來的時候送一份新手包。
+          <template v-if="species === 'dog'">一天要散步兩次，吃狗糧、用尿布墊上廁所。</template>
+          <template v-else-if="species === 'hamster'">住在客廳角落的籠子裡，白天睡覺、晚上跑滾輪。吃鼠糧，大約一週換一次木屑。</template>
+          <template v-else>會跳上窗台、跟著走。吃貓糧、用貓砂盆。</template>
+          {{ home.cats.length ? "" : "第一隻免費。" }}每隻個性不一樣，來的時候送一份新手包。
         </p>
         <div class="cs-colors" role="radiogroup" aria-label="花色">
           <button
@@ -178,10 +267,10 @@ function saveName() {
         </div>
         <label class="cs-field">
           <span>名字</span>
-          <input v-model="name" type="text" :maxlength="CAT_NAME_MAX" :placeholder="CAT_COLORS[color].name" />
+          <input v-model="name" type="text" :maxlength="CAT_NAME_MAX" :placeholder="SPECIES_COLORS[species][color]?.name ?? SPECIES_NAMES[species]" />
         </label>
-        <p v-if="message" class="cs-msg" role="status">{{ message }}</p>
-        <button class="cs-btn is-main" :disabled="busy" @click="emit('adopt', name, color)">
+        <p v-if="msg" class="cs-msg" role="status">{{ msg }}</p>
+        <button class="cs-btn is-main" :disabled="busy || !canAdopt(species)" @click="emit('adopt', name, color, species)">
           帶牠回家<small v-if="price">{{ price.toLocaleString() }} 金幣</small>
         </button>
       </template>
@@ -189,27 +278,30 @@ function saveName() {
       <!-- 用品 -->
       <template v-else-if="tab === 'supplies'">
         <h2 class="cs-title">用品</h2>
-        <p class="cs-note">貓糧和貓砂用完了，牠們會餓、會在地上上廁所。</p>
+        <p class="cs-note">吃的和上廁所用的用完了，牠們會餓、會在地上上廁所。</p>
         <ul class="cs-shop">
-          <li v-for="id in SUPPLY_IDS" :key="id" class="cs-shop-row">
-            <div class="cs-shop-info">
-              <strong>{{ SUPPLIES[id].name }}<small>（{{ SUPPLIES[id].pack }} {{ SUPPLIES[id].unit }}）</small></strong>
-              <span :class="{ 'is-low': id !== 'can' && id !== 'treat' && home.stock[id] <= 0 }">{{ stockNote(id) }}</span>
-            </div>
-            <button class="cs-buy" :disabled="busy" @click="emit('buy', id)">{{ SUPPLIES[id].price.toLocaleString() }}</button>
-          </li>
+          <template v-for="g in shopGroups" :key="g.species">
+            <li v-if="shopGroups.length > 1" class="cs-shop-group">{{ g.name }}</li>
+            <li v-for="id in g.ids" :key="id" class="cs-shop-row">
+              <div class="cs-shop-info">
+                <strong>{{ SUPPLIES[id].name }}<small>（{{ SUPPLIES[id].pack }} {{ SUPPLIES[id].unit }}）</small></strong>
+                <span :class="{ 'is-low': isDaily(id) && home.stock[id] <= 0 }">{{ stockNote(id) }}</span>
+              </div>
+              <button class="cs-buy" :disabled="busy" @click="emit('buy', id)">{{ SUPPLIES[id].price.toLocaleString() }}</button>
+            </li>
+          </template>
           <li class="cs-shop-row">
             <div class="cs-shop-info">
               <strong>寵物保險<small>（{{ COVER_DAYS }} 天）</small></strong>
-              <span>{{ insured ? `有效，還有 ${days(home.insuranceUntil)} 天` : "看醫生打對折" }}</span>
+              <span>{{ insured ? `有效，還有 ${days(home.insuranceUntil)} 天` : "看醫生打對折，全部寵物都有" }}</span>
             </div>
             <button class="cs-buy" :disabled="busy" @click="emit('insurance')">{{ INSURANCE_PRICE.toLocaleString() }}</button>
           </li>
         </ul>
-        <p v-if="message" class="cs-msg" role="status">{{ message }}</p>
+        <p v-if="msg" class="cs-msg" role="status">{{ msg }}</p>
       </template>
 
-      <!-- 一隻貓 -->
+      <!-- 一隻 -->
       <template v-else-if="cat">
         <div class="cs-head">
           <img class="cs-portrait" :src="portraits[cat.id]" alt="" draggable="false" />
@@ -220,7 +312,7 @@ function saveName() {
             </template>
             <template v-else>
               <strong>{{ cat.name }}</strong>
-              <span class="cs-chip">{{ CAT_PERSONALITIES[cat.personality].name }}</span>
+              <span class="cs-chip">{{ SPECIES_NAMES[cat.species] }}．{{ CAT_PERSONALITIES[cat.personality].name }}</span>
               <button class="cs-mini" @click="renaming = true; newName = cat.name">改名</button>
             </template>
           </div>
@@ -234,22 +326,25 @@ function saveName() {
           <span class="cs-stat-num">{{ b.value }}</span>
         </div>
 
-        <p class="cs-note" :class="{ 'is-alert': !!cat.sickSince }" role="status">{{ message || status }}</p>
+        <p class="cs-note" :class="{ 'is-alert': !!cat.sickSince }" role="status">{{ msg || status }}</p>
 
         <button v-if="cat.sickSince && !atVet" class="cs-btn is-main" :disabled="busy" @click="emit('vet', cat.id)">
           帶去看醫生<small>{{ vetCost(cat, now, insured).toLocaleString() }} 金幣</small>
         </button>
+        <button v-else-if="cat.species === 'dog'" class="cs-btn is-main" :disabled="busy || away" @click="emit('walk', cat.id)">
+          去散步<small>{{ away ? "在外面" : "陪牠出門半小時" }}</small>
+        </button>
 
         <div class="cs-actions">
-          <button class="cs-btn" :disabled="atVet" @click="emit('care', cat.id, 'pet')">摸摸</button>
-          <button class="cs-btn" :disabled="atVet" @click="emit('care', cat.id, 'play')">逗牠玩</button>
-          <button class="cs-btn" :disabled="atVet" @click="emit('care', cat.id, 'can')">罐頭<small>剩 {{ home.stock.can }}</small></button>
-          <button class="cs-btn" :disabled="atVet" @click="emit('care', cat.id, 'treat')">貓條<small>剩 {{ home.stock.treat }}</small></button>
-          <button class="cs-btn" :disabled="atVet" @click="emit('care', cat.id, 'wash')">洗澡</button>
-          <button class="cs-btn" :disabled="atVet" @click="emit('train', cat.id)">訓練上廁所</button>
+          <button v-for="b in careButtons" :key="b.kind" class="cs-btn" :disabled="away" @click="emit('care', cat.id, b.kind)">
+            {{ b.label }}<small v-if="b.note">{{ b.note }}</small>
+          </button>
+          <button v-if="info.toilet" class="cs-btn" :disabled="away" @click="emit('train', cat.id)">
+            訓練上廁所
+          </button>
         </div>
-        <button class="cs-btn is-line" :disabled="busy || atVet" @click="emit('checkup', cat.id)">
-          健康檢查<small>{{ cat.checkupUntil > now ? `有效，還有 ${days(cat.checkupUntil)} 天．再做一次 ` : "做了之後比較不會生病．" }}{{ CHECKUP_PRICE.toLocaleString() }} 金幣</small>
+        <button class="cs-btn is-line" :disabled="busy || away" @click="emit('checkup', cat.id)">
+          健康檢查<small>{{ cat.checkupUntil > now ? `有效，還有 ${days(cat.checkupUntil)} 天．再做一次 ` : "做了之後比較不會生病．" }}{{ checkupPrice(cat.species).toLocaleString() }} 金幣</small>
         </button>
       </template>
 
@@ -330,6 +425,49 @@ function saveName() {
   cursor: pointer;
 }
 
+.cs-kinds {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+
+.cs-kind {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: 6px 4px;
+  border: 2px solid transparent;
+  border-radius: 12px;
+  background: #f4ead8;
+  color: inherit;
+  font-family: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.cs-kind small {
+  font-size: 11px;
+  opacity: 0.7;
+}
+
+.cs-kind.is-on {
+  border-color: #e8a33d;
+  background: #fff1c9;
+}
+
+.cs-kind:disabled {
+  opacity: 0.45;
+}
+
+.cs-shop-group {
+  margin: 4px 0 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(59, 42, 38, 0.6);
+}
+
 .cs-color.is-on {
   border-color: #e8a33d;
   background: #fff1c9;
@@ -339,6 +477,7 @@ function saveName() {
 .cs-portrait {
   width: 72px;
   height: 48px;
+  object-fit: contain;
   image-rendering: crisp-edges;
   image-rendering: pixelated;
   -webkit-user-drag: none;

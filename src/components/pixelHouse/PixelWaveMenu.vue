@@ -1,32 +1,47 @@
 <script setup lang="ts">
 /**
- * 右上的像素轉盤按鈕 → 從右邊滑出來的選單，左邊是一道波浪。
- * - 打開時波浪像果凍一樣晃幾下再停成小小的弧，App 一列一列跟著滑進來
+ * 右上的像素轉盤按鈕 → 從右邊滑出來的「小屋待辦」，左邊是一道波浪。
+ * - 上面：他現在在做什麼、今天在小屋賺了多少花了多少
+ * - 中間：現在有什麼要處理（點了跳過去）；沒事就寫「都處理好了」
+ * - 下面：擺件商店、換外觀、移動家具
+ * - 打開時波浪像果凍一樣晃幾下再停成小小的弧，一列一列跟著滑進來
  * - 往右滑、點暗處、按 Esc 收起來
+ * App 都在下面那一排（和「全部 App」），這裡不重複放。
  */
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { DIAL_APPS, INK } from "./houseData";
-import { dialSvg, glyphSvg } from "./pixelArt";
+import type { Ledger } from "./houseTodo";
+import { dialSvg } from "./pixelArt";
+
+export interface MenuTodo {
+  key: string;
+  text: string;
+  note: string;
+  tone: "alert" | "care" | "coin";
+  /** 小圖（已經畫好的 SVG 網址） */
+  icon: string;
+}
 
 const props = defineProps<{
   open: boolean;
-  badges: Record<string, number>;
+  todos: MenuTodo[];
+  /** 今天的收支；還在讀或讀不到是 null */
+  ledger: Ledger | null;
+  /** 他現在在做什麼（一句話） */
+  status: string;
 }>();
 const emit = defineEmits<{
-  (e: "toggle"): void;
-  (e: "close"): void;
-  (e: "pick", app: string): void;
-  (e: "decor"): void;
-  (e: "wardrobe"): void;
-  (e: "edit-layout"): void;
+  toggle: [];
+  close: [];
+  todo: [key: string];
+  decor: [];
+  wardrobe: [];
+  "edit-layout": [];
 }>();
 
 const dialImg = dialSvg();
-const icons = DIAL_APPS.map((a) => glyphSvg(a.glyph, INK));
-const apps = computed(() =>
-  DIAL_APPS.map((a, i) => ({ ...a, icon: icons[i], badge: props.badges[a.app] || 0 })),
-);
-const total = computed(() => DIAL_APPS.reduce((s, a) => s + (props.badges[a.app] || 0), 0));
+/** 轉盤上的紅點：要趕快處理的和照顧的（有金幣的不算，不然一直有紅點） */
+const total = computed(() => props.todos.filter((t) => t.tone !== "coin").length);
+const fmt = (n: number) => n.toLocaleString();
 
 function badgeText(n: number): string {
   return n > 99 ? "99+" : String(n);
@@ -178,7 +193,7 @@ function rowStyle(i: number) {
       class="pw-panel"
       :class="{ 'is-open': open }"
       :style="panelStyle"
-      aria-label="App 選單"
+      aria-label="小屋待辦"
       :aria-hidden="open ? undefined : 'true'"
       @pointerdown="onDown"
       @pointermove="onMove"
@@ -190,29 +205,42 @@ function rowStyle(i: number) {
       </svg>
 
       <header class="pw-head">
-        <h2>選單</h2>
+        <h2>小屋</h2>
         <button class="pw-close" :tabindex="open ? 0 : -1" aria-label="收起選單" @click="emit('close')">×</button>
       </header>
 
       <div class="pw-body">
+        <p class="pw-status" :style="rowStyle(0)">{{ status }}</p>
+        <div class="pw-ledger" :style="rowStyle(1)" aria-label="今天在小屋的收支">
+          <span>今天</span>
+          <template v-if="ledger">
+            <span class="pw-earn">賺 {{ fmt(ledger.earn) }}</span>
+            <span class="pw-spend">花 {{ fmt(ledger.spend) }}<small v-if="ledger.pets">（寵物 {{ fmt(ledger.pets) }}）</small></span>
+          </template>
+          <span v-else class="pw-muted">…</span>
+        </div>
+        <h3 class="pw-sub" :style="rowStyle(2)">要處理的事</h3>
         <button
-          v-for="(it, i) in apps"
+          v-for="(it, i) in todos"
           :key="it.key"
           class="pw-row"
-          :style="rowStyle(i)"
+          :class="`is-${it.tone}`"
+          :style="rowStyle(i + 3)"
           :tabindex="open ? 0 : -1"
-          :aria-label="it.name + (it.badge ? `，${it.badge} 則未讀` : '')"
-          @click="emit('pick', it.app)"
+          @click="emit('todo', it.key)"
         >
-          <span class="pw-icon" :style="{ background: it.bg }">
-            <img :src="it.icon" alt="" width="28" height="28" />
+          <span class="pw-icon">
+            <img :src="it.icon" alt="" />
           </span>
-          <span class="pw-name">{{ it.name }}</span>
-          <span v-if="it.badge" class="pw-badge" aria-hidden="true">{{ badgeText(it.badge) }}</span>
+          <span class="pw-text">
+            <span class="pw-name">{{ it.text }}</span>
+            <span class="pw-note">{{ it.note }}</span>
+          </span>
+          <span class="pw-go" aria-hidden="true">›</span>
         </button>
-
-        <h3 class="pw-sub" :style="rowStyle(apps.length)">小屋</h3>
-        <div class="pw-chips" :style="rowStyle(apps.length + 1)">
+        <p v-if="!todos.length" class="pw-empty" :style="rowStyle(3)">都處理好了</p>
+        <h3 class="pw-sub" :style="rowStyle(todos.length + 4)">小屋</h3>
+        <div class="pw-chips" :style="rowStyle(todos.length + 5)">
           <button class="pw-chip" :tabindex="open ? 0 : -1" @click="emit('decor')">擺件商店</button>
           <button class="pw-chip" :tabindex="open ? 0 : -1" @click="emit('wardrobe')">換外觀</button>
           <button class="pw-chip" :tabindex="open ? 0 : -1" @click="emit('edit-layout')">移動家具</button>
@@ -222,7 +250,7 @@ function rowStyle(i: number) {
 
     <button
       class="pw-btn"
-      :aria-label="open ? '收起 App 選單' : '打開 App 選單' + (total ? `，${total} 則未讀` : '')"
+      :aria-label="open ? '收起小屋待辦' : '打開小屋待辦' + (total ? `，${total} 件要處理` : '')"
       :aria-expanded="open ? 'true' : 'false'"
       @click="emit('toggle')"
     >
@@ -346,6 +374,18 @@ function rowStyle(i: number) {
   cursor: pointer;
 }
 
+.pw-row.is-alert .pw-icon {
+  background: #fbd9d2;
+}
+
+.pw-row.is-care .pw-icon {
+  background: #f7e8cf;
+}
+
+.pw-row.is-coin .pw-icon {
+  background: #fff1b8;
+}
+
 .pw-row:active,
 .pw-row:focus-visible {
   background: rgba(59, 42, 38, 0.07);
@@ -355,7 +395,10 @@ function rowStyle(i: number) {
 /* 一列一列滑進來（收起時一起退出去） */
 .pw-row,
 .pw-sub,
-.pw-chips {
+.pw-chips,
+.pw-status,
+.pw-ledger,
+.pw-empty {
   opacity: 0;
   transform: translateX(46px);
   transition:
@@ -366,7 +409,10 @@ function rowStyle(i: number) {
 
 .pw-panel.is-open .pw-row,
 .pw-panel.is-open .pw-sub,
-.pw-panel.is-open .pw-chips {
+.pw-panel.is-open .pw-chips,
+.pw-panel.is-open .pw-status,
+.pw-panel.is-open .pw-ledger,
+.pw-panel.is-open .pw-empty {
   opacity: 1;
   transform: none;
 }
@@ -386,15 +432,83 @@ function rowStyle(i: number) {
 
 .pw-icon img {
   display: block;
-  width: 28px;
-  height: 28px;
+  max-width: 28px;
+  max-height: 28px;
   image-rendering: pixelated;
 }
 
-.pw-name {
+.pw-text {
   flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.pw-name {
   font-size: 15px;
   font-weight: 600;
+}
+
+.pw-note {
+  font-size: 12px;
+  color: rgba(59, 42, 38, 0.6);
+}
+
+.pw-go {
+  flex: none;
+  font-size: 20px;
+  color: rgba(59, 42, 38, 0.35);
+}
+
+.pw-status {
+  margin: 2px 8px 6px;
+  font-size: 14px;
+  line-height: 20px;
+  color: rgba(59, 42, 38, 0.8);
+}
+
+.pw-ledger {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  margin: 0 8px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: #f7efe2;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+.pw-ledger > span:first-child,
+.pw-muted {
+  color: rgba(59, 42, 38, 0.6);
+}
+
+.pw-earn {
+  font-weight: 700;
+  color: #4f8a3a;
+}
+
+.pw-spend {
+  font-weight: 700;
+  color: #b8573f;
+}
+
+.pw-spend small {
+  font-weight: 500;
+  font-size: 12px;
+}
+
+.pw-empty {
+  margin: 4px 8px;
+  padding: 14px 12px;
+  border-radius: 14px;
+  background: #eef5e6;
+  color: #4f6b3f;
+  font-size: 14px;
+  text-align: center;
 }
 
 .pw-sub {
