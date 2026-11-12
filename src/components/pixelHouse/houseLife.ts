@@ -5,6 +5,7 @@
  * 省電的做法：會隨時間變的東西都只存「上次的時間」，打開小屋時用「現在 − 上次」算一次，
  * 不用計時器一直算；App 關著的時候什麼都不跑。
  */
+import { parsePendingGifts, type PendingGift } from "./houseLines";
 
 export interface HouseLifeState {
   /** 每日次數算的是哪一天（當地日期 YYYY-MM-DD） */
@@ -13,6 +14,8 @@ export interface HouseLifeState {
   daily: Record<string, number>;
   /** 上次存檔的時間（毫秒）：用來發現手機時間被往回調 */
   lastSeenAt: number;
+  /** 他留下、還沒收的東西（每種最多一個） */
+  gifts: PendingGift[];
 }
 
 const STORAGE_KEY = "pixel_house_life";
@@ -25,7 +28,7 @@ export function dayKey(date: Date): string {
 }
 
 export function defaultHouseLifeState(now: Date = new Date()): HouseLifeState {
-  return { day: dayKey(now), daily: {}, lastSeenAt: now.getTime() };
+  return { day: dayKey(now), daily: {}, lastSeenAt: now.getTime(), gifts: [] };
 }
 
 /** 讀不到或格式不對的欄位用預設值 */
@@ -43,6 +46,7 @@ export function parseHouseLifeState(raw: unknown, now: Date = new Date()): House
     day: typeof r.day === "string" && /^\d{4}-\d{2}-\d{2}$/.test(r.day) ? r.day : base.day,
     daily,
     lastSeenAt: typeof r.lastSeenAt === "number" && Number.isFinite(r.lastSeenAt) ? r.lastSeenAt : base.lastSeenAt,
+    gifts: parsePendingGifts(r.gifts),
   };
 }
 

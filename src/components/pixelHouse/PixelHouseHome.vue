@@ -12,6 +12,9 @@ import { loadDateSession } from "@/services/dateOuting";
 import { useCharactersStore } from "@/stores";
 import { useHomeBadgesStore } from "@/stores/homeBadges";
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from "vue";
+import { GIFTS, GIFT_ART, type GiftKind } from "./houseLines";
+import { pixelSvg } from "./pixelArt";
+import { useHouseInteract } from "./useHouseInteract";
 import HouseAppsSheet from "./HouseAppsSheet.vue";
 import HouseDecorShop from "./HouseDecorShop.vue";
 import HouseDock from "./HouseDock.vue";
@@ -437,6 +440,63 @@ const isHome = computed(() => !!residentId.value && life.home.value && loaded.va
 const meAct = computed(() => ACTS[life.act.value]);
 const lying = computed(() => !life.walking.value && life.act.value === "sleep");
 
+// ===== 跟他互動：點他冒出「聊天／摸頭」、摸頭、頭上冒話、他留東西 =====
+const play = useHouseInteract({
+  act: life.act,
+  walking: life.walking,
+  scene,
+  free: computed(() => isHome.value && status.value === "home"),
+  sleeping: lying,
+  pronoun,
+});
+
+function onMeTap() {
+  if (editMode.value || !residentId.value) return;
+  play.toggleMenu();
+}
+
+/** 兩個按鈕的位置（相對他的腳）：他靠近畫面邊邊時往裡面挪，不會被切掉 */
+const menuLeft = computed(() => {
+  const base = lying.value && !sleepUpright.value ? -u(charUnits.value / 2) : 0;
+  const x = u(mePos.value.x) + stripOffset.value - scrollX.value + base;
+  const half = 74;
+  return base + Math.min(Math.max(x, half), Math.max(half, stageW.value - half)) - x;
+});
+
+function chatFromMenu() {
+  play.closeMenu();
+  openChat();
+}
+
+/** 他留的東西放在哪（跟著那件家具走）；那間房還沒讀好、家具不見了就不顯示 */
+const giftSpots = computed(() =>
+  play.gifts.value.flatMap((g) => {
+    const def = GIFTS[g.kind];
+    const anchor = roomItems.value[def.room]?.find((i) => i.id === def.anchor);
+    if (!anchor) return [];
+    const art = GIFT_ART[g.kind];
+    const left = u(stripX({ room: def.room, x: anchor.px + def.dx }));
+    const onScreen = left + stripOffset.value - scrollX.value;
+    return [
+      {
+        kind: g.kind,
+        label: g.kind === "note" ? `${pronoun.value}留了一張紙條，點了看` : `${pronoun.value}煮的${g.text}，點了收下`,
+        src: giftImages[g.kind],
+        // 不在畫面上的不動
+        offscreen: onScreen < -40 || onScreen > stageW.value + 40,
+        style: {
+          left: `${left}px`,
+          top: `${u(anchor.py + def.dy)}px`,
+          width: `${u(art.rows[0].length)}px`,
+          height: `${u(art.rows.length)}px`,
+        },
+      },
+    ];
+  }),
+);
+const giftImages = Object.fromEntries(Object.entries(GIFT_ART).map(([k, a]) => [k, pixelSvg(a.rows, a.palette)])) as Record<GiftKind, string>;
+
+
 const spriteSet = computed(() => `${currentBase.value}-${life.facing.value > 0 ? "right" : "left"}`);
 const spriteSrc = computed(() => {
   const dir = life.facing.value > 0 ? "right" : "left";
@@ -454,7 +514,8 @@ const dollPoseKey = computed<string | null>(() => {
   if (!d) return null;
   if (autoSleep.value) return SLEEP_POSE;
   const dir = life.facing.value > 0 ? "right" : "left";
-  const want = life.walking.value ? [`walk-${dir}`, "walk", "front"] : [meAct.value?.pose ?? "front", "front"];
+  // 被摸頭時轉過來看你（正面）
+  const want = life.walking.value ? [`walk-${dir}`, "walk", "front"] : play.mood.value ? ["front"] : [meAct.value?.pose ?? "front", "front"];
   for (const k of want) if (d.poses[k]) return k;
   return Object.keys(d.poses)[0] ?? null;
 });
@@ -567,6 +628,8 @@ const steam = computed(() => {
 });
 
 const bubbleText = computed(() => {
+  if (play.menuOpen.value) return "";
+  if (play.say.value) return play.say.value;
   if (unread.value > 0) return `💬 ${unread.value > 99 ? "99+" : unread.value}`;
   if (life.walking.value) return "";
   return meAct.value?.label ?? "";
@@ -708,6 +771,7 @@ const OVERLAY_SELECTOR = ".ph-sheet-wrap, .wd-wrap, .ds-wrap, .pw-root, .ph-dock
 
 function onPointerDown(e: PointerEvent) {
   if (ptr || (e.pointerType === "mouse" && e.button !== 0)) return;
+  if (!(e.target as HTMLElement | null)?.closest?.(".ph-me-hit, .ph-me-menu")) play.closeMenu();
   if ((e.target as HTMLElement | null)?.closest?.(OVERLAY_SELECTOR)) return;
   stopAnim();
   ptr = {
@@ -848,6 +912,7 @@ const hint = computed(() => {
   if (editMode.value) return "拖動家具，好了按「完成」";
   if (menuOpen.value) return "選一個 App";
   if (showAll.value) return "虛線框都可以點";
+  if (play.notice.value) return play.notice.value;
   if (!isHome.value || meVisible.value) return meLine.value;
   return `${meLine.value}　去看看 ▸`;
 });
@@ -913,6 +978,7 @@ function stopTimers() {
 function onVisibilityChange() {
   if (document.hidden) {
     life.pause();
+    play.reset();
     stopTimers();
     return;
   }
@@ -1104,7 +1170,7 @@ function labelStyle(room: RoomId, it: RenderItem) {
         <div
           v-if="dollPose"
           class="ph-me-sprite ph-doll"
-          :class="{ 'is-hop': meAct?.hop && !life.walking.value }"
+          :class="{ 'is-hop': !life.walking.value && (meAct?.hop || play.mood.value === 'happy') }"
           :style="spriteStyle"
         >
           <img v-for="(src, n) in dollFrames" v-show="n === dollFrame" :key="n" :src="src" alt="" draggable="false" />
@@ -1112,7 +1178,7 @@ function labelStyle(room: RoomId, it: RenderItem) {
         <img
           v-else-if="dollChecked"
           class="ph-me-sprite"
-          :class="{ 'is-hop': meAct?.hop && !life.walking.value }"
+          :class="{ 'is-hop': !life.walking.value && (meAct?.hop || play.mood.value === 'happy') }"
           :src="spriteSrc"
           alt=""
           draggable="false"
@@ -1121,9 +1187,30 @@ function labelStyle(room: RoomId, it: RenderItem) {
         <button
           class="ph-me-hit"
           :style="{ width: `${spriteSize.w}px`, height: `${spriteSize.h}px`, left: `${-spriteSize.w / 2}px`, top: `${-spriteSize.h}px` }"
-          :aria-label="`${pronoun}，${meLine}，點了聊天`"
-          @click.stop="openChat"
+          :aria-label="`${pronoun}，${meLine}，點了可以聊天或摸頭`"
+          :aria-expanded="play.menuOpen.value"
+          @click.stop="onMeTap"
         ></button>
+        <!-- 點他：頭上冒出兩個小按鈕 -->
+        <div
+          v-if="play.menuOpen.value && !editMode"
+          class="ph-me-menu"
+          :style="{ top: `${-(lying && !sleepUpright ? u(30) : spriteSize.h) - 44}px`, left: `${menuLeft}px` }"
+        >
+          <button @click.stop="chatFromMenu">聊天</button>
+          <button @click.stop="play.pat()">摸頭</button>
+        </div>
+        <!-- 摸頭的反應：愛心（開心）、生氣（摸太多）、點點點（睡覺被吵） -->
+        <div
+          v-if="play.mood.value"
+          :key="play.fxKey.value"
+          class="ph-fx"
+          :class="`is-${play.mood.value}`"
+          :style="{ top: `${-(lying && !sleepUpright ? u(26) : spriteSize.h * 0.8)}px`, left: lying && !sleepUpright ? `${-u(charUnits / 2)}px` : undefined }"
+          aria-hidden="true"
+        >
+          <span></span><span></span><span></span>
+        </div>
         <div
           v-if="bubbleText && !editMode"
           class="ph-bubble"
@@ -1177,6 +1264,21 @@ function labelStyle(room: RoomId, it: RenderItem) {
           @item-click="onItemClick"
         />
       </div>
+
+      <!-- 他留給你的東西：點了收下 -->
+      <template v-if="!editMode">
+        <button
+          v-for="g in giftSpots"
+          :key="`gift-${g.kind}`"
+          class="ph-gift"
+          :class="{ 'is-offscreen': g.offscreen }"
+          :style="g.style"
+          :aria-label="g.label"
+          @click.stop="play.collect(g.kind)"
+        >
+          <img :src="g.src" alt="" draggable="false" />
+        </button>
+      </template>
     </div>
 
     <!-- 時間的光線（multiply：白色＝不變） -->
@@ -1425,6 +1527,98 @@ function labelStyle(room: RoomId, it: RenderItem) {
 
 .is-editing .ph-me-hit {
   pointer-events: none;
+}
+
+/* 點他冒出來的兩個小按鈕 */
+.ph-me-menu {
+  position: absolute;
+  left: 0;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 6px;
+  white-space: nowrap;
+  animation: ph-pop 140ms ease-out;
+}
+
+.ph-me-menu button {
+  min-width: 56px;
+  min-height: 36px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(255, 251, 245, 0.97);
+  color: var(--ui-ink);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 36px;
+  box-shadow: var(--ui-shadow);
+  cursor: pointer;
+}
+
+.ph-me-menu button:active {
+  background: #fff1c9;
+}
+
+/* 摸頭的反應 */
+.ph-fx {
+  position: absolute;
+  left: 0;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+.ph-fx span {
+  position: absolute;
+  font-size: 18px;
+  line-height: 1;
+  opacity: 0;
+  animation: ph-float 900ms ease-out forwards;
+}
+
+.ph-fx span::before { content: "♥"; color: #e8627a; text-shadow: 1px 1px 0 #3b2a26; }
+.ph-fx.is-annoyed span::before { content: "💢"; text-shadow: none; }
+.ph-fx.is-sleepy span::before { content: "…"; color: #fbf7ee; }
+.ph-fx span:nth-child(1) { left: -22px; top: 0; }
+.ph-fx span:nth-child(2) { left: -4px; top: -14px; animation-delay: 120ms; }
+.ph-fx span:nth-child(3) { left: 14px; top: 2px; animation-delay: 240ms; }
+/* 生氣、被吵醒只冒一個 */
+.ph-fx.is-annoyed span:nth-child(n + 2),
+.ph-fx.is-sleepy span:nth-child(n + 2) { display: none; }
+.ph-fx.is-annoyed span:nth-child(1),
+.ph-fx.is-sleepy span:nth-child(1) { left: 6px; }
+
+/* 他留的東西 */
+.ph-gift {
+  position: absolute;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  z-index: 3;
+  animation: ph-bob 1.2s steps(2, jump-none) infinite;
+}
+
+/* 東西很小：點得到的範圍放大到手指好按 */
+.ph-gift::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 48px;
+  height: 48px;
+  transform: translate(-50%, -50%);
+}
+
+.ph-gift img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  image-rendering: crisp-edges;
+  image-rendering: pixelated;
+  pointer-events: none;
+  -webkit-user-drag: none;
 }
 
 .ph-bubble {
@@ -1760,6 +1954,22 @@ function labelStyle(room: RoomId, it: RenderItem) {
   100% { transform: translateY(-6px); }
 }
 
+@keyframes ph-pop {
+  from { opacity: 0; transform: translateX(-50%) scale(0.8); }
+  to { opacity: 1; transform: translateX(-50%) scale(1); }
+}
+
+@keyframes ph-float {
+  0% { opacity: 0; transform: translateY(6px) scale(0.6); }
+  25% { opacity: 1; transform: translateY(0) scale(1); }
+  100% { opacity: 0; transform: translateY(-34px) scale(1); }
+}
+
+@keyframes ph-bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
+}
+
 @keyframes ph-z {
   0%, 66% { opacity: 1; }
   67%, 100% { opacity: 0.3; }
@@ -1771,6 +1981,7 @@ function labelStyle(room: RoomId, it: RenderItem) {
 }
 
 /* 他不在畫面上（在別間）：跳、Z、蒸氣都先停，滑過去看到了再動 */
+.is-offscreen.ph-gift,
 .is-offscreen.ph-steam i,
 .is-offscreen .ph-zs span,
 .is-offscreen .ph-me-sprite.is-hop {
@@ -1780,8 +1991,16 @@ function labelStyle(room: RoomId, it: RenderItem) {
 @media (prefers-reduced-motion: reduce) {
   .ph-me-sprite.is-hop,
   .ph-zs span,
-  .ph-steam i {
+  .ph-steam i,
+  .ph-gift,
+  .ph-me-menu {
     animation: none;
+  }
+
+  /* 愛心不飄，直接顯示 */
+  .ph-fx span {
+    animation: none;
+    opacity: 1;
   }
 }
 </style>

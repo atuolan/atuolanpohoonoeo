@@ -20,13 +20,13 @@ describe("小屋生活存檔", () => {
   });
 
   it("換日清掉每日次數，同一天不動", () => {
-    const s = { day: "2026-11-12", daily: { pat: 5 }, lastSeenAt: at(12).getTime() };
+    const s = { day: "2026-11-12", daily: { pat: 5 }, lastSeenAt: at(12).getTime(), gifts: [] };
     expect(rollDay(s, at(12, 23, 59))).toBe(s);
-    expect(rollDay(s, at(13, 0, 1))).toEqual({ day: "2026-11-13", daily: {}, lastSeenAt: s.lastSeenAt });
+    expect(rollDay(s, at(13, 0, 1))).toEqual({ day: "2026-11-13", daily: {}, lastSeenAt: s.lastSeenAt, gifts: [] });
   });
 
   it("很久沒開：直接跳到今天", () => {
-    const s = { day: "2026-11-01", daily: { pat: 5 }, lastSeenAt: at(1).getTime() };
+    const s = { day: "2026-11-01", daily: { pat: 5 }, lastSeenAt: at(1).getTime(), gifts: [] };
     expect(rollDay(s, at(20)).day).toBe("2026-11-20");
   });
 
@@ -46,13 +46,13 @@ describe("小屋生活存檔", () => {
   });
 
   it("一次做好幾次：剩的不夠就整個不算", () => {
-    const s = { day: "2026-11-12", daily: { clean: 380 }, lastSeenAt: at(12).getTime() };
+    const s = { day: "2026-11-12", daily: { clean: 380 }, lastSeenAt: at(12).getTime(), gifts: [] };
     expect(countDaily(s, "clean", 400, at(12, 13), 30)).toBeNull();
     expect(countDaily(s, "clean", 400, at(12, 13), 20)?.daily.clean).toBe(400);
   });
 
   it("手機時間往回調：不換日、不能做", () => {
-    const s = { day: "2026-11-12", daily: { gift: 3 }, lastSeenAt: at(12, 20).getTime() };
+    const s = { day: "2026-11-12", daily: { gift: 3 }, lastSeenAt: at(12, 20).getTime(), gifts: [] };
     expect(clockWentBack(s, at(11, 9))).toBe(true);
     expect(rollDay(s, at(11, 9))).toBe(s);
     expect(countDaily(s, "gift", 3, at(11, 9))).toBeNull();
