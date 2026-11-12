@@ -138,8 +138,8 @@ function portraitOf(sp: PetSpecies, c: PetColor, sick = false): string {
     const [awake, asleep] = CAGED_PORTRAIT[sp as CagedSpecies];
     return pixelSvg(cagedArt(sp as CagedSpecies)[sick ? asleep : awake], palette);
   }
-  // 狗、雪貂坐著是側面，看不太出來：站著的比較好認
-  return pixelSvg(walkerArt(sp).art[sick ? "sleep" : sp === "cat" ? "sit" : "walk-a"], palette);
+  // 狗坐著是側面，看不太出來：站著的比較好認（雪貂的 sit 就是站著）
+  return pixelSvg(walkerArt(sp).art[sick ? "sleep" : sp === "dog" ? "walk-a" : "sit"], palette);
 }
 const portraits = computed(() => Object.fromEntries(props.home.cats.map((c) => [c.id, portraitOf(c.species, c.color, !!c.sickSince)])));
 const previews = computed(() =>

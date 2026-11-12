@@ -499,8 +499,6 @@ export function useHouseCat(
   /** 現在用哪張圖 */
   function poseAt(frame: number): CatPose {
     if (walking.value) return frame % 2 ? "walk-b" : "walk-a";
-    // 雪貂開心的時候跳「雪貂舞」：拱著背左右蹦
-    if (cat.value?.species === "ferret" && hop.value) return "walk-b";
     if (playing.value || urge.value) return "sit";
     if (act.value === "eat") return "eat";
     if (listless.value) return "sleep";

@@ -41,6 +41,7 @@ import {
   cageSprite,
   cageTopRow,
   DOG_BOWL_PALETTE,
+  FERRET_DANCE,
   PAD_ART,
   STASH_ART,
   walkerArt,
@@ -664,6 +665,20 @@ function catStyle(k: HouseCat) {
     zIndex: !isHome.value || k.me.y >= meDepth.value || k.me.room !== life.me.room ? 4 : 2,
   };
 }
+/** 雪貂舞的兩張圖（跳起來、翻肚打滾），照花色畫 */
+const ferretDanceCache = new Map<string, Record<keyof typeof FERRET_DANCE, string>>();
+function ferretDanceImages(color: PetColor) {
+  let imgs = ferretDanceCache.get(color);
+  if (!imgs) {
+    const palette = SPECIES_COLORS.ferret[color]?.palette ?? {};
+    imgs = { "dance-a": pixelSvg(FERRET_DANCE["dance-a"], palette), "dance-b": pixelSvg(FERRET_DANCE["dance-b"], palette) };
+    ferretDanceCache.set(color, imgs);
+  }
+  return imgs;
+}
+/** 雪貂正在跳舞（開心、被逗的時候） */
+const ferretDancing = (k: HouseCat) => k.cat.value?.species === "ferret" && k.hop.value;
+
 /** 圖的大小（狗比貓大一點）：腳底在 (0, 0) */
 function catBox(species: PetSpecies) {
   const { w, h } = walkerArt(species);
@@ -2012,12 +2027,17 @@ function labelStyle(room: RoomId, it: RenderItem) {
             >
               <img
                 v-for="(src, pose) in catImages(k.cat.value.species, k.cat.value.color)"
-                v-show="pose === k.poseAt(k.cat.value.species === 'ferret' ? fastFrame : catFrame)"
+                v-show="!ferretDancing(k) && pose === k.poseAt(k.cat.value.species === 'ferret' ? fastFrame : catFrame)"
                 :key="pose"
                 :src="src"
                 alt=""
                 draggable="false"
               />
+              <!-- 雪貂舞的兩張先放著（不顯示），開始跳的時候不用臨時解碼 -->
+              <template v-if="k.cat.value.species === 'ferret'">
+                <img v-show="ferretDancing(k)" :src="ferretDanceImages(k.cat.value.color)['dance-a']" class="ph-flip-a" alt="" draggable="false" />
+                <img v-show="ferretDancing(k)" :src="ferretDanceImages(k.cat.value.color)['dance-b']" class="ph-flip-b" alt="" draggable="false" />
+              </template>
             </div>
             <button
               class="ph-cat-hit"
@@ -2441,9 +2461,21 @@ function labelStyle(room: RoomId, it: RenderItem) {
   animation: ph-cat-hop 520ms steps(2, jump-none) infinite;
 }
 
-/* 雪貂舞：拱著背往旁邊蹦、跳回來（只動 translate，不影響左右翻） */
+/* 雪貂舞：跳起來、翻肚打滾兩張輪流，整隻往旁邊蹦、跳回來（只動 translate 和 opacity，不影響左右翻） */
 .ph-cat-sprite.is-dance {
   animation: ph-ferret-dance 900ms steps(6, jump-none) infinite;
+}
+
+.ph-cat-sprite.is-dance .ph-flip-b {
+  opacity: 0;
+}
+
+.ph-cat-sprite.is-dance .ph-flip-a {
+  animation: ph-flip-a 600ms steps(1, end) infinite;
+}
+
+.ph-cat-sprite.is-dance .ph-flip-b {
+  animation: ph-flip-b 600ms steps(1, end) infinite;
 }
 
 @keyframes ph-ferret-dance {
@@ -3022,6 +3054,7 @@ function labelStyle(room: RoomId, it: RenderItem) {
 /* 他不在畫面上（在別間）：跳、Z、蒸氣都先停，滑過去看到了再動 */
 .is-offscreen .ph-cat-sprite.is-hop,
 .is-offscreen .ph-cat-sprite.is-dance,
+.is-offscreen .ph-cat-sprite.is-dance img,
 .ph-cage.is-offscreen .ph-flip-a,
 .ph-cage.is-offscreen.is-hop .ph-cage-ham,
 .ph-cage.is-offscreen .ph-flip-b,
@@ -3039,6 +3072,7 @@ function labelStyle(room: RoomId, it: RenderItem) {
   .ph-gift,
   .ph-cat-sprite.is-hop,
   .ph-cat-sprite.is-dance,
+  .ph-cat-sprite.is-dance img,
   .ph-cage .ph-flip-a,
   .ph-cage.is-hop .ph-cage-ham,
   .ph-cage .ph-flip-b,

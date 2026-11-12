@@ -54,9 +54,18 @@ export type PetColor = CatColor | DogColor | HamsterColor | FerretColor | Guinea
 type ColorTable<K extends string> = Record<K, { name: string; palette: Record<string, string> }>;
 
 export const FERRET_COLORS: ColorTable<FerretColor> = {
-  sable: { name: "貂色", palette: { o: "#3B2A26", b: "#E6CFA6", h: "#C9AE82", d: "#6E4B36", m: "#5A3A2A", w: "#FBF7EE", e: "#1F1D24", n: "#E8A0A8", c: "#1F1D24" } },
-  albino: { name: "白化", palette: { o: "#6B5A52", b: "#FBF4E4", h: "#F0E4CC", d: "#E6D6B8", m: "#F3E8D2", w: "#FFFFFF", e: "#C2405A", n: "#F29CA3", c: "#6B5A52" } },
-  silver: { name: "銀灰", palette: { o: "#3F3A40", b: "#D9D9DE", h: "#A9A9B3", d: "#4A4954", m: "#3F3A40", w: "#FBF7EE", e: "#1F1D24", n: "#E8A0A8", c: "#1F1D24" } },
+  sable: {
+    name: "貂色",
+    palette: { o: "#261B21", d: "#3F2F34", s: "#604B4D", b: "#826966", h: "#9C817C", l: "#BEA29A", v: "#D7BEB4", w: "#F0DED4", p: "#E2929E", x: "#FFFFFF" },
+  },
+  albino: {
+    name: "白化",
+    palette: { o: "#6B5A52", d: "#CDBBA2", s: "#DCCDB6", b: "#E8DCC8", h: "#EFE5D4", l: "#F5EDE1", v: "#F9F4EC", w: "#FFFFFF", p: "#F2A0AC", x: "#FFFFFF" },
+  },
+  silver: {
+    name: "銀灰",
+    palette: { o: "#2B2830", d: "#4F4C57", s: "#73707C", b: "#97949E", h: "#AFADB6", l: "#C8C6CD", v: "#DCDADF", w: "#F4F2F2", p: "#E8A0AC", x: "#FFFFFF" },
+  },
 };
 
 export const GUINEA_COLORS: ColorTable<GuineaColor> = {
