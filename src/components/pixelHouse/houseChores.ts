@@ -58,11 +58,11 @@ export const DIRT_USER_DONE: Record<DirtKind, string> = {
 };
 
 /** 多久多一處髒污 */
-export const DIRT_INTERVAL_MS = 2 * 60 * 60 * 1000;
+export const DIRT_INTERVAL_MS = 4 * 60 * 60 * 1000;
 /** 第一次打開小屋時先有幾處（有事可做） */
 export const DIRT_FIRST = 3;
 /** 打掃的錢：你點的、他掃的 [最少, 最多] */
-export const CLEAN_COINS = { user: [15, 30], resident: [10, 15] } as const;
+export const CLEAN_COINS = { user: [30, 50], resident: [20, 30] } as const;
 /** 打掃一天最多賺多少（你點的和他掃的合起來算） */
 export const CLEAN_DAILY_CAP = 400;
 
@@ -85,7 +85,7 @@ export function accrueDirt(dirt: DirtMap, dirtAt: number, now: number, rand: () 
     const i = Math.min(absent.length - 1, Math.floor(rand() * absent.length));
     const [id] = absent.splice(i, 1);
     added++;
-    // 出現的時間照順序排（第幾個兩小時）
+    // 出現的時間照順序排（第幾輪）
     next[id] = dirtAt + added * DIRT_INTERVAL_MS;
   }
   // 全部都髒了：不把多的時間存起來（清掉一處後要再等一輪才會再髒）
