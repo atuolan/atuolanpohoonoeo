@@ -1,17 +1,19 @@
 <script setup lang="ts">
 /**
  * 下面那一排：固定的常用 App、「小屋」、「全部 App」。
+ * 平常收成右下角一顆小按鈕（不擋房間），點了才展開；展開後最右邊的箭頭收回去。開著還是收著會記住。
  * 不用記哪件家具是哪個 App；小屋的功能（換外觀、擺件商店、移動家具、怎麼玩）都從「小屋」進去。
  */
 import { computed } from "vue";
 import { DIAL_APPS, DOCK_APP_KEYS, HOUSE_GLYPH, INK } from "./houseData";
 import { glyphSvg } from "./pixelArt";
 
-const props = defineProps<{ badges: Record<string, number> }>();
+const props = defineProps<{ open: boolean; badges: Record<string, number> }>();
 const emit = defineEmits<{
   (e: "pick", app: string): void;
   (e: "house"): void;
   (e: "all"): void;
+  (e: "toggle"): void;
 }>();
 
 const ALL = DIAL_APPS.find((a) => a.app === "__all__");
@@ -22,13 +24,20 @@ const allIcon = ALL ? glyphSvg(ALL.glyph, INK) : "";
 
 const apps = computed(() => appDefs.map((a, i) => ({ ...a, icon: appIcons[i], badge: props.badges[a.app] || 0 })));
 
+/** 收起來時小按鈕上的未讀數：那一排 App 的加起來 */
+const total = computed(() => apps.value.reduce((n, a) => n + a.badge, 0));
+
 function badgeText(n: number): string {
   return n > 99 ? "99+" : String(n);
 }
 </script>
 
 <template>
-  <nav class="ph-dock" aria-label="常用 App">
+  <button v-if="!open" class="ph-dock-fab" :aria-label="'打開常用 App' + (total ? `，${total} 則未讀` : '')" aria-expanded="false" @click="emit('toggle')">
+    <img :src="allIcon" alt="" />
+    <span v-if="total" class="ph-dock-badge" aria-hidden="true">{{ badgeText(total) }}</span>
+  </button>
+  <nav v-else class="ph-dock" aria-label="常用 App">
     <button
       v-for="a in apps"
       :key="a.key"
@@ -51,6 +60,9 @@ function badgeText(n: number): string {
       <span class="ph-dock-icon" style="background: #d8cfc0"><img :src="allIcon" alt="" /></span>
       <span class="ph-dock-name">全部</span>
     </button>
+    <button class="ph-dock-hide" aria-label="收起常用 App" aria-expanded="true" @click="emit('toggle')">
+      <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M3 5l4 4 4-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></svg>
+    </button>
   </nav>
 </template>
 
@@ -65,12 +77,60 @@ function badgeText(n: number): string {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 8px 6px;
+  padding: 8px 4px 6px 8px;
   border-radius: 24px;
   background: var(--ui-glass);
   -webkit-backdrop-filter: blur(12px);
   backdrop-filter: blur(12px);
   box-shadow: var(--ui-shadow);
+}
+
+/* 收起來：右下角一顆小按鈕 */
+.ph-dock-fab {
+  position: absolute;
+  right: 12px;
+  bottom: var(--ph-bottom);
+  width: 46px;
+  height: 46px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--ui-glass);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  box-shadow: var(--ui-shadow);
+  cursor: pointer;
+}
+
+.ph-dock-fab img {
+  display: block;
+  width: 24px;
+  height: 24px;
+  image-rendering: pixelated;
+}
+
+.ph-dock-fab .ph-dock-badge {
+  right: -3px;
+  top: -3px;
+}
+
+.ph-dock-hide {
+  flex: none;
+  align-self: stretch;
+  width: 30px;
+  margin-left: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-left: 1px solid rgba(59, 42, 38, 0.16);
+  background: transparent;
+  color: rgba(59, 42, 38, 0.6);
+  cursor: pointer;
 }
 
 .ph-dock-btn {

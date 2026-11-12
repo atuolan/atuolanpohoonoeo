@@ -30,6 +30,8 @@ export interface PixelHouseState {
   calm: boolean;
   /** 看過「小屋怎麼玩」了（第一次打開小屋時自動出現一次） */
   guideSeen: boolean;
+  /** 下面那一排 App 展開著（預設收成右下角一顆小按鈕，不擋房間） */
+  dockOpen: boolean;
   /** 房間 → 家具 id → [x, y]（房間格子） */
   placements: Partial<Record<RoomId, Record<string, [number, number]>>>;
   /** 買過的擺件 id → 有沒有擺出來（false = 收起來） */
@@ -44,7 +46,7 @@ const STORAGE_KEY = "pixel_house_state";
 export const PIXEL_HOUSE_CHANGED_EVENT = "aguaphone:pixel-house-changed";
 
 export function defaultPixelHouseState(): PixelHouseState {
-  return { homeStyle: "canvas", residentCharId: null, look: "boy", looks: {}, timeLight: true, calm: false, guideSeen: false, placements: {}, decor: {}, ownedSkins: [], skins: {} };
+  return { homeStyle: "canvas", residentCharId: null, look: "boy", looks: {}, timeLight: true, calm: false, guideSeen: false, dockOpen: false, placements: {}, decor: {}, ownedSkins: [], skins: {} };
 }
 
 /** 讀不到或格式不對的欄位用預設值 */
@@ -96,6 +98,7 @@ export function parsePixelHouseState(raw: unknown): PixelHouseState {
     timeLight: r.timeLight !== false,
     calm: r.calm === true,
     guideSeen: r.guideSeen === true,
+    dockOpen: r.dockOpen === true,
     placements,
     decor,
     ownedSkins,

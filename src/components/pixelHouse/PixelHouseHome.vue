@@ -606,6 +606,12 @@ const badges = computed(() => homeBadges.badges);
 /** 有未讀訊息：客廳的信箱露出一封信 */
 const hasMail = computed(() => (badges.value.message ?? 0) > 0);
 
+/** 下面那一排 App：展開或收成小按鈕，記住 */
+function toggleDock() {
+  state.dockOpen = !state.dockOpen;
+  persist();
+}
+
 function pickDialApp(app: string) {
   menuOpen.value = false;
   if (app === "__all__") {
@@ -698,7 +704,7 @@ let longPressTimer: ReturnType<typeof setTimeout> | null = null;
 let suppressClick = false;
 
 /** 蓋在房間上的面板（全部 App、衣櫃、擺件商店、側邊選單）：在上面滑不要帶動房間 */
-const OVERLAY_SELECTOR = ".ph-sheet-wrap, .wd-wrap, .ds-wrap, .pw-root, .ph-dock, .ph-tabs";
+const OVERLAY_SELECTOR = ".ph-sheet-wrap, .wd-wrap, .ds-wrap, .pw-root, .ph-dock, .ph-dock-fab, .ph-tabs";
 
 function onPointerDown(e: PointerEvent) {
   if (ptr || (e.pointerType === "mouse" && e.button !== 0)) return;
@@ -1216,7 +1222,7 @@ function labelStyle(room: RoomId, it: RenderItem) {
       <template v-else>
         <!-- 他在哪、在做什麼：在房間列下面；他不在畫面上時點了滑過去 -->
         <button class="ph-hint" aria-live="polite" @click="hintTap">{{ hint }}</button>
-        <HouseDock :badges="badges" @pick="emit('navigate', $event)" @house="openSheet('house')" @all="openSheet('apps')" />
+        <HouseDock :open="state.dockOpen" :badges="badges" @toggle="toggleDock" @pick="emit('navigate', $event)" @house="openSheet('house')" @all="openSheet('apps')" />
       </template>
 
       <!-- 大門：商店還是外送 -->
