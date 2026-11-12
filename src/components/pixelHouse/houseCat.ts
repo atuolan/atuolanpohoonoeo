@@ -1,5 +1,6 @@
 /**
- * 小屋的貓：圖、三個數值（飽、乾淨、心情）、牠會做的事。
+ * 小屋的貓：圖、花色、個性、數值（飽、乾淨、心情、親密、訓練）、牠會做的事。
+ * 家裡的東西（貓糧、貓砂、生病、看醫生）在 petHome.ts。
  * 這裡只有算的部分（不碰畫面、不碰存檔），好測。
  *
  * 省電：
@@ -11,12 +12,14 @@ import type { RoomId, Scene } from "./houseData";
 
 // ===== 花色 =====
 
-export type CatColor = "orange" | "tuxedo" | "gray";
+export type CatColor = "orange" | "tuxedo" | "gray" | "white" | "siamese";
 
 export const CAT_COLORS: Record<CatColor, { name: string; palette: Record<string, string> }> = {
   orange: { name: "橘貓", palette: { o: "#3B2A26", b: "#F0A552", s: "#CC7A2B", w: "#FBF7EE", e: "#3B2A26", n: "#F29CA3", c: "#3B2A26" } },
   tuxedo: { name: "賓士貓", palette: { o: "#1F1D24", b: "#4A4954", s: "#4A4954", w: "#FBF7EE", e: "#F3D98B", n: "#F29CA3", c: "#1F1D24" } },
   gray: { name: "灰貓", palette: { o: "#3B2A26", b: "#B4B8C2", s: "#8D929E", w: "#FBF7EE", e: "#3B2A26", n: "#F29CA3", c: "#3B2A26" } },
+  white: { name: "白貓", palette: { o: "#5B4A44", b: "#F6F2EA", s: "#E2DBCF", w: "#FFFFFF", e: "#5A8FD8", n: "#F29CA3", c: "#5B4A44" } },
+  siamese: { name: "暹羅貓", palette: { o: "#3B2A26", b: "#EEDFC4", s: "#7A5A45", w: "#F8F0E0", e: "#5A8FD8", n: "#7A5A45", c: "#3B2A26" } },
 };
 
 export const CAT_COLOR_IDS = Object.keys(CAT_COLORS) as CatColor[];
@@ -132,31 +135,107 @@ export const CAT_DECAY_MS: Record<CatStatKey, number> = {
   mood: 24 * 3_600_000,
 };
 
-/** 這個數值現在是多少。時間被往回調就當作沒變 */
-export function statNow(stat: CatStat, key: CatStatKey, now: number): number {
+/** 這個數值現在是多少。mult：掉得多快（個性、生病）。時間被往回調就當作沒變 */
+export function statNow(stat: CatStat, key: CatStatKey, now: number, mult = 1): number {
   const elapsed = Math.max(0, now - stat.at);
-  return Math.max(0, Math.min(100, stat.v - (elapsed / CAT_DECAY_MS[key]) * 100));
+  return Math.max(0, Math.min(100, stat.v - ((elapsed * mult) / CAT_DECAY_MS[key]) * 100));
 }
 
 /** 加一些（或減一些），記下現在的時間 */
-export function statAdd(stat: CatStat, key: CatStatKey, delta: number, now: number): CatStat {
-  return { v: Math.max(0, Math.min(100, statNow(stat, key, now) + delta)), at: now };
+export function statAdd(stat: CatStat, key: CatStatKey, delta: number, now: number, mult = 1): CatStat {
+  return { v: Math.max(0, Math.min(100, statNow(stat, key, now, mult) + delta)), at: now };
 }
 
+// ===== 個性 =====
+
+export type CatPersonality = "glutton" | "neat" | "clingy" | "lazy" | "playful";
+
+export const CAT_PERSONALITIES: Record<CatPersonality, { name: string; desc: string }> = {
+  glutton: { name: "貪吃", desc: "餓得比較快，貓糧用得比較兇" },
+  neat: { name: "愛乾淨", desc: "貓砂盆有點髒就不想用，要常鏟" },
+  clingy: { name: "黏人", desc: "很常去蹭人、跟著走；沒人理心情掉得快" },
+  lazy: { name: "懶洋洋", desc: "大部分時間都在睡" },
+  playful: { name: "好動", desc: "很愛玩、常跳上窗台" },
+};
+export const CAT_PERSONALITY_IDS = Object.keys(CAT_PERSONALITIES) as CatPersonality[];
+
 export interface CatState {
+  /** 每隻貓自己的 id（存檔、畫面用）；上線後不要改 */
+  id: string;
   name: string;
   color: CatColor;
+  personality: CatPersonality;
   food: CatStat;
   clean: CatStat;
   mood: CatStat;
+  /** 親密度 0～100：摸、玩、餵零食會加，越高越常叼東西回來 */
+  affinity: number;
+  /** 上廁所的訓練度 0～100：越高越會自己去貓砂盆 */
+  training: number;
+  /** 什麼時候開始生病的（0 = 沒生病） */
+  sickSince: number;
+  /** 在醫院到什麼時候（這段時間不在家） */
+  vetUntil: number;
+  /** 健康檢查有效到什麼時候（有效時比較不會生病） */
+  checkupUntil: number;
+  /** 下次要上廁所的時間 */
+  toiletAt: number;
+}
+
+/** 數值掉得多快：個性和生病會改 */
+export function decayMult(cat: Pick<CatState, "personality" | "sickSince">, key: CatStatKey): number {
+  let m = 1;
+  if (key === "food" && cat.personality === "glutton") m *= 1.3;
+  if (key === "clean" && cat.personality === "neat") m *= 0.8;
+  if (key === "mood" && cat.personality === "clingy") m *= 1.2;
+  if (key === "mood" && cat.personality === "playful") m *= 1.1;
+  if (cat.sickSince && key !== "clean") m *= 1.5;
+  return m;
+}
+
+/** 某個數值現在是多少（照這隻貓的個性、有沒有生病） */
+export function catStat(cat: CatState, key: CatStatKey, now: number): number {
+  return statNow(cat[key], key, now, decayMult(cat, key));
+}
+
+/** 把三個數值都記成「現在」的值：之後個性或生病改了，從這裡開始用新的速度算 */
+export function reanchorCat(cat: CatState, now: number): CatState {
+  const at = (key: CatStatKey): CatStat => ({ v: catStat(cat, key, now), at: now });
+  return { ...cat, food: at("food"), clean: at("clean"), mood: at("mood") };
+}
+
+/** 改一個數值（加減），照這隻貓的速度算 */
+export function catStatAdd(cat: CatState, key: CatStatKey, delta: number, now: number): CatState {
+  return { ...cat, [key]: statAdd(cat[key], key, delta, now, decayMult(cat, key)) };
 }
 
 export const CAT_NAME_MAX = 8;
 
-/** 剛領養：都是八成 */
-export function adoptCat(name: string, color: CatColor, now: number): CatState {
+/** 上廁所的間隔：大約 6 小時（前後差 1 小時） */
+export const TOILET_EVERY_MS = 6 * 3_600_000;
+export function nextToiletAt(now: number, rand: () => number = Math.random): number {
+  return now + TOILET_EVERY_MS + (rand() * 2 - 1) * 3_600_000;
+}
+
+/** 剛領養：數值都是八成、個性隨機、還沒訓練 */
+export function adoptCat(name: string, color: CatColor, now: number, rand: () => number = Math.random, id?: string): CatState {
   const stat = { v: 80, at: now };
-  return { name: cleanCatName(name) || CAT_COLORS[color].name, color, food: { ...stat }, clean: { ...stat }, mood: { ...stat } };
+  const personality = CAT_PERSONALITY_IDS[Math.min(CAT_PERSONALITY_IDS.length - 1, Math.floor(rand() * CAT_PERSONALITY_IDS.length))];
+  return {
+    id: id ?? `cat-${now.toString(36)}-${Math.floor(rand() * 1e6).toString(36)}`,
+    name: cleanCatName(name) || CAT_COLORS[color].name,
+    color,
+    personality,
+    food: { ...stat },
+    clean: { ...stat },
+    mood: { ...stat },
+    affinity: 10,
+    training: 0,
+    sickSince: 0,
+    vetUntil: 0,
+    checkupUntil: 0,
+    toiletAt: nextToiletAt(now, rand),
+  };
 }
 
 export function cleanCatName(name: string): string {
@@ -170,50 +249,88 @@ function parseStat(raw: unknown, now: number): CatStat {
   return { v, at };
 }
 
-/** 讀存檔：沒有貓、格式不對回傳 null */
-export function parseCat(raw: unknown, now: number): CatState | null {
+const num = (v: unknown, fallback: number, lo = -Infinity, hi = Infinity) =>
+  typeof v === "number" && Number.isFinite(v) ? Math.max(lo, Math.min(hi, v)) : fallback;
+
+/**
+ * 讀存檔：沒有貓、格式不對回傳 null。
+ * 舊版（只有一隻、沒有 id、個性、訓練度）的欄位補上預設值；個性照名字固定挑一個，每次讀都一樣。
+ */
+export function parseCat(raw: unknown, now: number, fallbackId = "cat-1"): CatState | null {
   if (!raw || typeof raw !== "object") return null;
   const r = raw as Record<string, unknown>;
   if (typeof r.color !== "string" || !(r.color in CAT_COLORS)) return null;
   const color = r.color as CatColor;
-  const name = typeof r.name === "string" ? cleanCatName(r.name) : "";
-  return { name: name || CAT_COLORS[color].name, color, food: parseStat(r.food, now), clean: parseStat(r.clean, now), mood: parseStat(r.mood, now) };
+  const name = (typeof r.name === "string" ? cleanCatName(r.name) : "") || CAT_COLORS[color].name;
+  const personality =
+    typeof r.personality === "string" && r.personality in CAT_PERSONALITIES
+      ? (r.personality as CatPersonality)
+      : CAT_PERSONALITY_IDS[[...name].reduce((h, ch) => h + ch.codePointAt(0)!, 0) % CAT_PERSONALITY_IDS.length];
+  return {
+    id: typeof r.id === "string" && r.id ? r.id.slice(0, 40) : fallbackId,
+    name,
+    color,
+    personality,
+    food: parseStat(r.food, now),
+    clean: parseStat(r.clean, now),
+    mood: parseStat(r.mood, now),
+    affinity: num(r.affinity, 10, 0, 100),
+    training: num(r.training, 0, 0, 100),
+    sickSince: num(r.sickSince, 0, 0),
+    vetUntil: num(r.vetUntil, 0, 0),
+    checkupUntil: num(r.checkupUntil, 0, 0),
+    toiletAt: num(r.toiletAt, now + TOILET_EVERY_MS),
+  };
 }
 
 /** 現在的三個數值（四捨五入） */
 export function catLevels(cat: CatState, now: number): Record<CatStatKey, number> {
   return {
-    food: Math.round(statNow(cat.food, "food", now)),
-    clean: Math.round(statNow(cat.clean, "clean", now)),
-    mood: Math.round(statNow(cat.mood, "mood", now)),
+    food: Math.round(catStat(cat, "food", now)),
+    clean: Math.round(catStat(cat, "clean", now)),
+    mood: Math.round(catStat(cat, "mood", now)),
   };
 }
 
-/** 沒精神：太餓或心情太差。只會趴著，不玩、不蹭人、不叼東西。餵一次、摸一摸就好 */
-export function catListless(levels: Record<CatStatKey, number>): boolean {
-  return levels.food < 20 || levels.mood < 20;
+/** 沒精神：太餓、心情太差、生病。只會趴著，不玩、不蹭人、不叼東西 */
+export function catListless(levels: Record<CatStatKey, number>, sick = false): boolean {
+  return sick || levels.food < 20 || levels.mood < 20;
 }
 
 // ===== 照顧 =====
 
-export const CAT_FEED_COINS = 30;
-export const CAT_FEED_GAIN = 60;
-export const CAT_PET_GAIN = 6;
-export const CAT_PLAY_GAIN = 18;
-/** 洗完很乾淨，但牠不太高興 */
+/** 吃一份貓糧加多少飽；飽低於這個才會去吃 */
+export const KIBBLE_GAIN = 50;
+export const KIBBLE_HUNGRY = 50;
+/** 洗完很乾淨，但牠不太高興；很乾淨就不用洗 */
 export const CAT_WASH_MOOD = -8;
-/** 很乾淨就不用洗、很飽就不用餵 */
 export const CAT_WASH_BELOW = 80;
-export const CAT_FEED_BELOW = 90;
 
-export type CatCare = "feed" | "wash" | "pet" | "play";
+/**
+ * 照顧：摸、玩、洗澡、餵罐頭、餵貓條。數字是 [飽, 心情, 親密]。
+ * 貓糧不在這裡：牠們餓了自己去碗那邊吃。
+ */
+export const CAT_CARE_EFFECT = {
+  pet: [0, 6, 2],
+  play: [0, 18, 3],
+  can: [40, 15, 3],
+  treat: [5, 10, 6],
+} as const;
 
-/** 照顧一下之後的貓（不檢查錢；錢在外面扣） */
+export type CatCare = "pet" | "play" | "wash" | "can" | "treat";
+
+/** 照顧一下之後的貓（不檢查庫存和錢；在外面扣） */
 export function careCat(cat: CatState, care: CatCare, now: number): CatState {
-  if (care === "feed") return { ...cat, food: statAdd(cat.food, "food", CAT_FEED_GAIN, now) };
-  if (care === "wash") return { ...cat, clean: { v: 100, at: now }, mood: statAdd(cat.mood, "mood", CAT_WASH_MOOD, now) };
-  if (care === "pet") return { ...cat, mood: statAdd(cat.mood, "mood", CAT_PET_GAIN, now) };
-  return { ...cat, mood: statAdd(cat.mood, "mood", CAT_PLAY_GAIN, now) };
+  if (care === "wash") return catStatAdd({ ...cat, clean: { v: 100, at: now } }, "mood", CAT_WASH_MOOD, now);
+  const [food, mood, aff] = CAT_CARE_EFFECT[care];
+  let next = catStatAdd(cat, "mood", mood, now);
+  if (food) next = catStatAdd(next, "food", food, now);
+  return { ...next, affinity: Math.min(100, next.affinity + aff) };
+}
+
+/** 吃一份貓糧 */
+export function eatKibble(cat: CatState, now: number): CatState {
+  return catStatAdd(cat, "food", KIBBLE_GAIN, now);
 }
 
 // ===== 牠叼東西回來 =====
@@ -222,10 +339,10 @@ export const CAT_GIFT_DAILY_LIMIT = 2;
 export const CAT_GIFT_CHANCE = 0.08;
 export const CAT_GIFT_COINS: [number, number] = [10, 25];
 
-/** 心情好、沒餓著的時候，換一件事時有小機會叼金幣回來。回傳金幣數，沒有回傳 0 */
-export function rollCatGift(levels: Record<CatStatKey, number>, left: number, rand: () => number = Math.random): number {
-  if (left <= 0 || levels.mood < 70 || levels.food < 40) return 0;
-  if (rand() >= CAT_GIFT_CHANCE) return 0;
+/** 心情好、沒餓著、沒生病的時候，換一件事時有小機會叼金幣回來；越親越常。回傳金幣數，沒有回傳 0 */
+export function rollCatGift(levels: Record<CatStatKey, number>, left: number, rand: () => number = Math.random, affinity = 50, sick = false): number {
+  if (sick || left <= 0 || levels.mood < 70 || levels.food < 40) return 0;
+  if (rand() >= CAT_GIFT_CHANCE * (0.5 + affinity / 100)) return 0;
   const [lo, hi] = CAT_GIFT_COINS;
   return Math.min(hi, lo + Math.floor(rand() * (hi - lo + 1)));
 }
@@ -301,12 +418,22 @@ const LISTLESS_ACTS = ["nap-sofa", "nap-rug", "nap-bedroom-rug"];
  * - 沒精神：只找地方趴著
  * - 他不在家：不蹭他
  */
+/** 個性：哪些事比較常做（乘幾倍） */
+const PERSONALITY_BIAS: Record<CatPersonality, (key: string) => number> = {
+  glutton: (k) => (k === "sit-kitchen" ? 3 : 1),
+  neat: () => 1,
+  clingy: (k) => (k === CAT_RUB || k === CAT_FOLLOW ? 2.5 : 1),
+  lazy: (k) => (k.startsWith("nap-") ? 2.5 : k === "play-living" || k.startsWith("sill-") ? 0.4 : 1),
+  playful: (k) => (k === "play-living" ? 3 : k.startsWith("sill-") ? 1.8 : k.startsWith("nap-") ? 0.6 : 1),
+};
+
 export function pickCatAct(
-  opts: { scene: Scene; current: string | null; residentAsleep: boolean; residentHome: boolean; listless: boolean },
+  opts: { scene: Scene; current: string | null; residentAsleep: boolean; residentHome: boolean; listless: boolean; personality?: CatPersonality },
   rand: () => number = Math.random,
 ): string {
   if (opts.residentAsleep) return "nap-bed";
-  const weights = CAT_WEIGHTS[opts.scene];
+  const bias = opts.personality ? PERSONALITY_BIAS[opts.personality] : () => 1;
+  const weights = Object.fromEntries(Object.entries(CAT_WEIGHTS[opts.scene]).map(([k, w]) => [k, w * bias(k)]));
   let keys = Object.keys(weights).filter((k) => k !== opts.current);
   if (!opts.residentHome) keys = keys.filter((k) => k !== CAT_RUB && k !== CAT_FOLLOW);
   if (opts.listless) keys = keys.filter((k) => LISTLESS_ACTS.includes(k));

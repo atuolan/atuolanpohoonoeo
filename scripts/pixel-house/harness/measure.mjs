@@ -2,7 +2,7 @@
  * 量小屋耗不耗電、卡不卡（開發用）。
  *
  *   npm run dev -- --port 5199          # 另一個終端機
- *   node scripts/pixel-house/harness/measure.mjs [--cat]     # --cat：養一隻貓再量
+ *   node scripts/pixel-house/harness/measure.mjs [--cats=3]     # 養幾隻貓再量（--cat 等於 --cats=1）
  *
  * 用無頭瀏覽器開測試頁（不經過登入），CPU 放慢 4 倍模擬手機，量三段：
  *   放著不動（他站著）、他在走路、左右滑房間
@@ -46,13 +46,18 @@ await page.addInitScript(() => {
 await page.goto(url);
 await page.waitForTimeout(2500);
 await page.evaluate(
-  (withCat) =>
+  (cats) =>
     new Promise((res) => {
       localStorage.setItem("pixel_house_state", JSON.stringify({ homeStyle: "pixel-house", guideSeen: true, residentCharId: "measure-1" }));
       // --cat：養一隻貓再量（畫面上多一個會走的）
-      if (withCat) {
+      if (cats > 0) {
         const stat = { v: 90, at: Date.now() };
-        localStorage.setItem("pixel_house_life", JSON.stringify({ cat: { name: "測試貓", color: "orange", food: stat, clean: stat, mood: stat } }));
+        const colors = ["orange", "tuxedo", "siamese"];
+        const list = colors.slice(0, cats).map((color, i) => ({
+          id: `m${i}`, name: `測試貓${i}`, color, personality: "playful",
+          food: stat, clean: stat, mood: stat, toiletAt: Date.now() + 864e5,
+        }));
+        localStorage.setItem("pixel_house_life", JSON.stringify({ pets: { cats: list, stock: { kibble: 100, can: 0, treat: 0, litter: 100 }, simAt: Date.now() } }));
       } else localStorage.removeItem("pixel_house_life");
       const r = indexedDB.open("aguaphone-db");
       r.onsuccess = () => {
@@ -63,7 +68,7 @@ await page.evaluate(
       };
       r.onerror = () => res(0);
     }),
-  process.argv.includes("--cat"),
+  Number((process.argv.find((a) => a.startsWith("--cats=")) ?? "--cats=0").slice(7)) || (process.argv.includes("--cat") ? 1 : 0),
 );
 const t0 = Date.now();
 await page.reload();
