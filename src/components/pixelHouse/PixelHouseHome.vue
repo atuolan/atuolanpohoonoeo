@@ -881,16 +881,28 @@ function onNativeScroll(e: Event) {
 let statusTimer: ReturnType<typeof setInterval> | null = null;
 let clockTimer: ReturnType<typeof setInterval> | null = null;
 
+/** 換腳的計時器：只在他走路時開著，站著不動時不空轉 */
+function syncFrameTimer() {
+  const want = timersOn && life.walking.value;
+  if (want && !frameTimer) frameTimer = setInterval(() => frame.value++, 110);
+  else if (!want && frameTimer) {
+    clearInterval(frameTimer);
+    frameTimer = null;
+  }
+}
+let timersOn = false;
+watch(() => life.walking.value, syncFrameTimer);
+
 function startTimers() {
   stopTimers();
-  frameTimer = setInterval(() => {
-    if (life.walking.value) frame.value++;
-  }, 110);
+  timersOn = true;
+  syncFrameTimer();
   clockTimer = setInterval(() => (now.value = new Date()), 60_000);
   statusTimer = setInterval(() => void refreshResident(), 30_000);
 }
 
 function stopTimers() {
+  timersOn = false;
   if (frameTimer) clearInterval(frameTimer);
   if (statusTimer) clearInterval(statusTimer);
   if (clockTimer) clearInterval(clockTimer);
@@ -1087,7 +1099,7 @@ function labelStyle(room: RoomId, it: RenderItem) {
       </template>
 
       <!-- 他 -->
-      <div v-if="isHome" class="ph-me" :style="meStyle">
+      <div v-if="isHome" class="ph-me" :class="{ 'is-offscreen': !meVisible }" :style="meStyle">
         <div v-if="!lying" class="ph-me-shadow" :style="{ width: `${u(24)}px`, height: `${u(3.4)}px` }"></div>
         <div
           v-if="dollPose"
@@ -1133,6 +1145,7 @@ function labelStyle(room: RoomId, it: RenderItem) {
       <div
         v-if="isHome && steam"
         class="ph-steam"
+        :class="{ 'is-offscreen': !meVisible }"
         :style="{ left: `${u(steam.x)}px`, top: `${u(steam.y)}px` }"
         aria-hidden="true"
       >
@@ -1755,6 +1768,13 @@ function labelStyle(room: RoomId, it: RenderItem) {
 @keyframes ph-steam {
   0% { transform: translateY(0) scale(1); opacity: 0.85; }
   100% { transform: translateY(-54px) scale(0.5); opacity: 0; }
+}
+
+/* 他不在畫面上（在別間）：跳、Z、蒸氣都先停，滑過去看到了再動 */
+.is-offscreen.ph-steam i,
+.is-offscreen .ph-zs span,
+.is-offscreen .ph-me-sprite.is-hop {
+  animation-play-state: paused;
 }
 
 @media (prefers-reduced-motion: reduce) {
