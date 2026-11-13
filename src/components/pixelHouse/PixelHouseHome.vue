@@ -20,9 +20,10 @@ import {
   BOWL_ART,
   BOWL_PALETTE,
   BOWL_SPOT,
+  cagedPose,
   catLevels,
   catListless,
-  hamsterPose,
+  gliderOut,
   SPECIES_COLORS,
   type CatCare,
   type CatPose,
@@ -31,24 +32,27 @@ import {
 } from "./houseCat";
 import {
   CAGE_ART,
+  CAGE_DEFS,
   CAGE_H,
   CAGE_PALETTE,
-  CAGE_RUNNER,
-  CAGE_SITTER,
   CAGE_W,
   CAGE_WHEEL,
+  cagedArt,
+  cageSprite,
+  cageTopRow,
   DOG_BOWL_PALETTE,
-  HAMSTER_ART,
-  HAMSTER_H,
-  HAMSTER_W,
-  hamsterFrames,
+  FERRET_DANCE,
+  FERRET_RUN,
   PAD_ART,
+  STASH_ART,
   walkerArt,
+  type CagedSpecies,
 } from "./petArt";
 import {
   BOX_FULL_NEAT,
   CAGE_SPOTS,
   DOG_BOWL_SPOT,
+  FERRET_BOWL_SPOT,
   ICON_ART,
   LITTER_ART,
   LITTER_SPOT,
@@ -57,6 +61,7 @@ import {
   MESS_BY_ID,
   PAD_SPOT,
   roams,
+  STASH_BY_ID,
   type MessKind,
 } from "./petHome";
 import { useHouseCat, type HouseCat } from "./useHouseCat";
@@ -574,18 +579,22 @@ const catDeps = {
 const walkerIds = computed(() => pets.home.value.cats.filter(roams).map((c) => c.id));
 /** 三格，每格一隻貓或狗（還沒養的格子什麼都不做） */
 const kitties: HouseCat[] = Array.from({ length: MAX_WALKERS }, (_, i) =>
-  useHouseCat(computed(() => walkerIds.value[i] ?? null), pets, catDeps),
+  useHouseCat(computed(() => walkerIds.value[i] ?? null), pets, catDeps, i),
 );
 watch(() => walkerIds.value.length > 0, (v) => (catAdopted.value = v), { immediate: true });
 const kittyOf = (id: string) => kitties.find((k) => k.catId.value === id);
 const hasSpecies = (sp: PetSpecies) => pets.home.value.cats.some((c) => c.species === sp);
 const hasCat = computed(() => hasSpecies("cat"));
 const hasDog = computed(() => hasSpecies("dog"));
+const hasFerret = computed(() => hasSpecies("ferret"));
+/** 貓砂盆：貓和雪貂共用 */
+const hasLitterUser = computed(() => hasCat.value || hasFerret.value);
 
 /** 點碗、點浴缸：沒做成的原因顯示在下面那一列 */
-function onBowlTap(dog = false) {
-  const n = dog ? pets.home.value.stock.dogFood : pets.home.value.stock.kibble;
-  const food = dog ? "狗糧" : "貓糧";
+function onBowlTap(kind: "cat" | "dog" | "ferret" = "cat") {
+  const id = kind === "dog" ? "dogFood" : kind === "ferret" ? "ferretFood" : "kibble";
+  const n = pets.home.value.stock[id];
+  const food = kind === "dog" ? "狗糧" : kind === "ferret" ? "雪貂糧" : "貓糧";
   if (n <= 0) {
     play.showNotice(`${food}吃完了，買一點吧`);
     openCatSheet("supplies");
@@ -623,6 +632,8 @@ function onCatTap(k: HouseCat) {
 
 /** 貓走路換腳（跟他共用同一個計時器，只在有誰在走路時跑） */
 const catFrame = ref(0);
+/** 雪貂彈著跑：換腳快一倍（同一個計時器，每一格都換） */
+const fastFrame = ref(0);
 const catSheetOpen = ref(false);
 const catSheetFocus = ref<string | null>(null);
 const catMessage = ref("");
@@ -655,6 +666,31 @@ function catStyle(k: HouseCat) {
     zIndex: !isHome.value || k.me.y >= meDepth.value || k.me.room !== life.me.room ? 4 : 2,
   };
 }
+/** 雪貂舞的兩張圖（跳起來、翻肚打滾），照花色畫 */
+const ferretDanceCache = new Map<string, Record<keyof typeof FERRET_DANCE, string>>();
+function ferretDanceImages(color: PetColor) {
+  let imgs = ferretDanceCache.get(color);
+  if (!imgs) {
+    const palette = SPECIES_COLORS.ferret[color]?.palette ?? {};
+    imgs = { "dance-a": pixelSvg(FERRET_DANCE["dance-a"], palette), "dance-b": pixelSvg(FERRET_DANCE["dance-b"], palette) };
+    ferretDanceCache.set(color, imgs);
+  }
+  return imgs;
+}
+/** 雪貂跑步 8 張，照花色畫（先全部放著、只顯示一張） */
+const ferretRunCache = new Map<string, string[]>();
+function ferretRunImages(color: PetColor): string[] {
+  let imgs = ferretRunCache.get(color);
+  if (!imgs) {
+    const palette = SPECIES_COLORS.ferret[color]?.palette ?? {};
+    imgs = FERRET_RUN.map((rows) => pixelSvg(rows, palette));
+    ferretRunCache.set(color, imgs);
+  }
+  return imgs;
+}
+/** 雪貂正在跳舞（開心、被逗的時候） */
+const ferretDancing = (k: HouseCat) => k.cat.value?.species === "ferret" && k.hop.value;
+
 /** 圖的大小（狗比貓大一點）：腳底在 (0, 0) */
 function catBox(species: PetSpecies) {
   const { w, h } = walkerArt(species);
@@ -690,40 +726,97 @@ const padStyle = computed(() => ({
 }));
 const padWanted = computed(() => kitties.some((k) => k.isDog.value && k.picked.value));
 
-/** 倉鼠籠（客廳角落，疊起來）：籠子的圖只畫一次，倉鼠照花色畫 */
+/** 籠子（客廳角落，疊起來）：籠子的圖只畫一次，裡面的動物照花色畫 */
 const cageImages = Object.fromEntries(Object.entries(CAGE_ART).map(([k, rows]) => [k, pixelSvg(rows, CAGE_PALETTE)])) as Record<keyof typeof CAGE_ART, string>;
-const hamsterImageCache = new Map<string, Record<keyof typeof HAMSTER_ART, string>>();
-function hamsterImages(color: PetColor) {
-  let imgs = hamsterImageCache.get(color);
+const cageBacks = Object.fromEntries(
+  (Object.keys(CAGE_DEFS) as CagedSpecies[]).map((sp) => {
+    const d = CAGE_DEFS[sp];
+    if (sp === "hamster") return [sp, { back: cageImages.back, backOff: cageImages.back, front: cageImages.front }];
+    return [sp, { back: pixelSvg(d.back, d.palette), backOff: pixelSvg(d.backOff ?? d.back, d.palette), front: pixelSvg(d.front, d.palette) }];
+  }),
+) as Record<CagedSpecies, { back: string; backOff: string; front: string }>;
+const cagedImageCache = new Map<string, Record<string, string>>();
+function cagedImages(species: CagedSpecies, color: PetColor) {
+  const key = `${species}:${color}`;
+  let imgs = cagedImageCache.get(key);
   if (!imgs) {
-    const palette = SPECIES_COLORS.hamster[color]?.palette ?? {};
-    imgs = Object.fromEntries(Object.entries(HAMSTER_ART).map(([k, rows]) => [k, pixelSvg(rows, palette)])) as Record<keyof typeof HAMSTER_ART, string>;
-    hamsterImageCache.set(color, imgs);
+    const palette = SPECIES_COLORS[species][color]?.palette ?? {};
+    imgs = Object.fromEntries(Object.entries(cagedArt(species)).map(([k, rows]) => [k, pixelSvg(rows, palette)]));
+    cagedImageCache.set(key, imgs);
   }
   return imgs;
 }
+
+/** 蜜袋鼯在他身上的位置：肩上（面向的那一側後面一點）、口袋（腰的高度，只露出上半身） */
+const gliderStyle = computed(() => {
+  const w = spriteSize.value.w;
+  const h = spriteSize.value.h;
+  const side = life.facing.value > 0 ? -1 : 1;
+  if (gliderOnHim.value?.where === "pocket") {
+    return { left: `${side * w * 0.12 - u(4.5)}px`, top: `${-h * 0.36}px`, width: `${u(9)}px`, height: `${u(4)}px` };
+  }
+  return { left: `${side * w * 0.36 - u(4.5)}px`, top: `${-h * 0.57}px`, width: `${u(9)}px`, height: `${u(8)}px` };
+});
+/** 他現在有空讓蜜袋鼯爬上來：在家、醒著、沒在陪狗散步 */
+const residentFree = computed(() => isHome.value && !lying.value && !walkUntil.value);
+/** 跑到他身上的蜜袋鼯（一次一隻）：晚上在肩上、白天在口袋裡 */
+const gliderOnHim = computed(() => {
+  const t = now.value.getTime();
+  for (const c of pets.home.value.cats) {
+    if (c.species !== "glider" || awayUntil(c) > t) continue;
+    const where = gliderOut(c, scene.value, catListless(catLevels(c, t), !!c.sickSince), t, residentFree.value);
+    if (where) return { cat: c, where, src: cagedImages("glider", c.color)[where === "pocket" ? "sit" : "glide"] };
+  }
+  return null;
+});
+
 /**
- * 每個籠子現在的樣子。倉鼠不走路、沒有自己的計時器：跟著時鐘（一分鐘一次）重算姿勢；
- * 跑滾輪是 CSS 輪流換兩張圖，籠子在畫面外就停。
+ * 每個籠子現在的樣子。住籠子的不走路、沒有自己的計時器：跟著時鐘（一分鐘一次）重算姿勢；
+ * 倉鼠跑滾輪是 CSS 輪流換兩張圖、天竺鼠開心時原地跳，籠子在畫面外就停。
  */
 const cages = computed(() => {
   const t = now.value.getTime();
+  const fridge = isHome.value && life.act.value === "fridge" && !life.walking.value;
+  // 從最下面那個往上疊：每個貼著下面那個的頂（矮的圍欄上面不會空一截）
+  let bottom = CAGE_SPOTS[0].y + CAGE_H;
   return pets.home.value.cats
-    .filter((c) => c.species === "hamster")
+    .filter((c) => !roams(c))
     .slice(0, CAGE_SPOTS.length)
-    .map((c, i) => {
-      const spot = CAGE_SPOTS[i];
+    .map((c) => {
+      const species = c.species as CagedSpecies;
+      const spot = { ...CAGE_SPOTS[0], y: bottom - CAGE_H };
+      const topRow = cageTopRow(species);
+      bottom -= CAGE_H - topRow;
       const away = awayUntil(c) > t;
-      const listless = catListless(catLevels(c, t), !!c.sickSince);
-      const pose = hamsterPose(c, scene.value, listless, t);
-      const run = pose === "run";
-      const pos = run ? CAGE_RUNNER : CAGE_SITTER;
+      const levels = catLevels(c, t);
+      const listless = catListless(levels, !!c.sickSince);
+      const onHim = gliderOnHim.value?.cat.id === c.id;
+      const pose = cagedPose(c, scene.value, listless, t, levels.mood);
+      const sprite = away || onHim ? null : cageSprite(species, pose);
+      const imgs = cagedImages(species, c.color);
+      const run = species === "hamster" && pose === "run";
+      const backs = cageBacks[species];
+      const label = away
+        ? "在醫院"
+        : onHim
+          ? `跑到${pronoun.value}身上了`
+          : c.sickSince
+            ? "生病了"
+            : ({ run: "在跑滾輪", sleep: "在睡覺", eat: "在吃東西", popcorn: "開心地跳起來", pouch: "窩在睡袋裡", climb: "在籠子裡爬", coil: "盤著", stretch: "伸長身子" } as Record<string, string>)[pose] ?? "醒著";
       return {
         cat: c,
         away,
-        run,
-        frames: hamsterFrames(pose).map((f) => hamsterImages(c.color)[f]),
+        run: run && !away,
+        hop: !!sprite?.hop,
+        wheel: species === "hamster",
+        back: species === "snake" && c.lampUntil <= t ? backs.backOff : backs.back,
+        front: backs.front,
+        frames: sprite ? sprite.frames.map((f) => imgs[f]) : [],
+        // 天竺鼠：他開冰箱時嗶嗶叫討菜
+        beep: species === "guineaPig" && fridge && !away && !c.sickSince,
         sick: !!c.sickSince,
+        /** 籠子看得到的頂端（頭上的圖示、嗶嗶叫的泡泡放這裡） */
+        topStyle: { top: `${u(topRow) - 14}px` },
         x: stripX(spot),
         style: {
           left: `${u(stripX(spot))}px`,
@@ -731,11 +824,51 @@ const cages = computed(() => {
           width: `${u(CAGE_W)}px`,
           height: `${u(CAGE_H)}px`,
         },
-        hamStyle: { left: `${u(pos.x)}px`, top: `${u(pos.y)}px`, width: `${u(HAMSTER_W)}px`, height: `${u(HAMSTER_H)}px` },
-        label: away ? "在醫院" : c.sickSince ? "生病了" : run ? "在跑滾輪" : pose === "sleep" ? "在睡覺" : pose === "eat" ? "在吃東西" : "醒著",
+        spriteStyle: sprite ? { left: `${u(sprite.x)}px`, top: `${u(sprite.y)}px`, width: `${u(sprite.w)}px`, height: `${u(sprite.h)}px` } : {},
+        label,
       };
     });
 });
+
+/** 點籠子：天竺鼠在討菜就直接餵一份蔬菜；不然打開照顧牠的面板 */
+function onCageTap(c: (typeof cages.value)[number]) {
+  if (editMode.value) return;
+  if (c.beep) {
+    const why = pets.care(c.cat.id, "treat");
+    play.showNotice(why ?? `${c.cat.name}吃到蔬菜了，開心地跳起來`);
+    return;
+  }
+  openCatSheet(c.cat.id);
+}
+
+/** 雪貂藏起來的東西：露出一角，點了找到 */
+const stashImage = pixelSvg(STASH_ART.rows, STASH_ART.palette);
+const stashSpot = computed(() => {
+  const st = pets.home.value.stash;
+  const spot = st ? STASH_BY_ID[st.spot] : null;
+  if (!st || !spot) return null;
+  return {
+    label: `${spot.where}好像藏了什麼，點了找出來`,
+    style: {
+      left: `${u(stripX(spot))}px`,
+      top: `${u(spot.y)}px`,
+      width: `${u(STASH_ART.rows[0].length)}px`,
+      height: `${u(STASH_ART.rows.length)}px`,
+    },
+  };
+});
+
+/** 雪貂的碗：在貓碗左邊，綠色 */
+const ferretBowlImages = {
+  empty: pixelSvg(BOWL_ART.empty, { ...BOWL_PALETTE, r: "#7FB04A" }),
+  full: pixelSvg(BOWL_ART.full, { ...BOWL_PALETTE, r: "#7FB04A" }),
+};
+const ferretBowlStyle = computed(() => ({
+  left: `${u(stripX(FERRET_BOWL_SPOT))}px`,
+  top: `${u(FERRET_BOWL_SPOT.y)}px`,
+  width: `${u(BOWL_ART.empty[0].length)}px`,
+  height: `${u(BOWL_ART.empty.length)}px`,
+}));
 const cageWheelStyle = computed(() => ({ left: `${u(CAGE_WHEEL.x)}px`, top: `${u(CAGE_WHEEL.y)}px`, width: `${u(11)}px`, height: `${u(11)}px` }));
 function cageOnScreen(x: number): boolean {
   const left = u(x) + stripOffset.value - scrollX.value;
@@ -815,7 +948,11 @@ function careCat(id: string, kind: CatCare) {
       const why = pets.care(id, kind);
       if (why === "bite") return "被咬了一口！牠還跟你不太熟，多餵幾次葵花子";
       if (why) return why;
-      return kind === "wash" ? "換好木屑了，籠子乾乾淨淨" : kind === "treat" ? "牠抱著葵花子啃得好開心" : "牠瞇起眼睛，好像很舒服";
+      const sp = pets.catById(id)?.species;
+      if (kind === "wash") return sp === "snake" ? "噴好水了，飼養箱濕濕的" : sp === "glider" ? "籠子清乾淨了" : "換好木屑了，籠子乾乾淨淨";
+      if (kind === "treat")
+        return sp === "guineaPig" ? "牠吃到蔬菜，開心地跳起來" : sp === "glider" ? "牠抱著麵包蟲吃得好開心" : "牠抱著葵花子啃得好開心";
+      return sp === "snake" ? "牠慢慢纏在你手上，涼涼的" : "牠瞇起眼睛，好像很舒服";
     });
     return;
   }
@@ -1153,6 +1290,7 @@ const todoIcons = computed<Record<TodoIcon, string>>(() => ({
   dirt: dirtImages.dust,
   letter: giftImages.note,
   dish: giftImages.dish,
+  stash: stashImage,
 }));
 
 /** 跟著時鐘（一分鐘一次）和小屋的狀態重算；沒打開也要算，轉盤上的紅點要用 */
@@ -1459,7 +1597,10 @@ function syncFrameTimer() {
     frameTimer = setInterval(() => {
       if (life.walking.value) frame.value++;
       // 貓的腳步慢一半（每 220 毫秒換一格）
-      if (kitties.some((k) => k.walking.value) && ++catTick % 2 === 0) catFrame.value++;
+      if (kitties.some((k) => k.walking.value)) {
+        fastFrame.value++;
+        if (++catTick % 2 === 0) catFrame.value++;
+      }
     }, 110);
   }
   else if (!want && frameTimer) {
@@ -1724,6 +1865,16 @@ function labelStyle(room: RoomId, it: RenderItem) {
           draggable="false"
           :style="spriteStyle"
         />
+        <!-- 蜜袋鼯跑到他身上：晚上在肩上、白天從口袋探出頭 -->
+        <span
+          v-if="gliderOnHim && !editMode"
+          class="ph-me-pet"
+          :class="`is-${gliderOnHim.where}`"
+          :style="gliderStyle"
+          aria-hidden="true"
+        >
+          <img :src="gliderOnHim.src" alt="" draggable="false" :style="{ width: `${u(9)}px`, height: `${u(8)}px` }" />
+        </span>
         <button
           class="ph-me-hit"
           :style="{ width: `${spriteSize.w}px`, height: `${spriteSize.h}px`, left: `${-spriteSize.w / 2}px`, top: `${-spriteSize.h}px` }"
@@ -1807,11 +1958,19 @@ function labelStyle(room: RoomId, it: RenderItem) {
 
       <template v-if="pets.home.value.cats.length && !editMode">
         <!-- 貓的飼料碗：有貓糧時是滿的 -->
-        <button v-if="hasCat" class="ph-bowl" :style="bowlStyle" :aria-label="`貓的飼料碗，貓糧還有 ${pets.home.value.stock.kibble} 份`" @click.stop="onBowlTap(false)">
+        <button v-if="hasCat" class="ph-bowl" :style="bowlStyle" :aria-label="`貓的飼料碗，貓糧還有 ${pets.home.value.stock.kibble} 份`" @click.stop="onBowlTap('cat')">
           <img :src="pets.home.value.stock.kibble > 0 ? bowlImages.full : bowlImages.empty" alt="" draggable="false" />
         </button>
+        <!-- 雪貂的碗（綠色，在貓碗左邊） -->
+        <button v-if="hasFerret" class="ph-bowl" :style="ferretBowlStyle" :aria-label="`雪貂的碗，雪貂糧還有 ${pets.home.value.stock.ferretFood} 份`" @click.stop="onBowlTap('ferret')">
+          <img :src="pets.home.value.stock.ferretFood > 0 ? ferretBowlImages.full : ferretBowlImages.empty" alt="" draggable="false" />
+        </button>
+        <!-- 雪貂藏起來的東西 -->
+        <button v-if="stashSpot" class="ph-bowl ph-stash" :style="stashSpot.style" :aria-label="stashSpot.label" @click.stop="pets.findStash()">
+          <img :src="stashImage" alt="" draggable="false" />
+        </button>
         <!-- 狗碗（藍色，在貓碗右邊） -->
-        <button v-if="hasDog" class="ph-bowl" :style="dogBowlStyle" :aria-label="`狗碗，狗糧還有 ${pets.home.value.stock.dogFood} 份`" @click.stop="onBowlTap(true)">
+        <button v-if="hasDog" class="ph-bowl" :style="dogBowlStyle" :aria-label="`狗碗，狗糧還有 ${pets.home.value.stock.dogFood} 份`" @click.stop="onBowlTap('dog')">
           <img :src="pets.home.value.stock.dogFood > 0 ? dogBowlImages.full : dogBowlImages.empty" alt="" draggable="false" />
         </button>
         <!-- 狗的尿布墊：有狗在等著上廁所時是帶牠過去 -->
@@ -1825,30 +1984,31 @@ function labelStyle(room: RoomId, it: RenderItem) {
         >
           <img :src="pets.home.value.stock.pad > 0 ? padImages.ready : padImages.empty" alt="" draggable="false" />
         </button>
-        <!-- 倉鼠籠：疊在客廳角落，最下面那個最後畫（蓋住上面那個的底）。點了打開照顧牠的面板 -->
+        <!-- 籠子（倉鼠、天竺鼠、蜜袋鼯、蛇）：疊在客廳角落，最下面那個最後畫（蓋住上面那個的底）。點了打開照顧牠的面板 -->
         <button
           v-for="c in [...cages].reverse()"
           :key="c.cat.id"
           class="ph-cage"
-          :class="{ 'is-run': c.run && !c.away, 'is-offscreen': !cageOnScreen(c.x) }"
+          :class="{ 'is-run': c.run, 'is-hop': c.hop, 'is-offscreen': !cageOnScreen(c.x) }"
           :style="c.style"
-          :aria-label="`${c.cat.name}的籠子，${c.label}，點了照顧牠`"
-          @click.stop="openCatSheet(c.cat.id)"
+          :aria-label="`${c.cat.name}的籠子，${c.label}，${c.beep ? '在討菜，點了餵一份蔬菜' : '點了照顧牠'}`"
+          @click.stop="onCageTap(c)"
         >
-          <img :src="cageImages.back" class="ph-cage-layer" alt="" draggable="false" />
-          <span class="ph-cage-wheel" :style="cageWheelStyle">
+          <img :src="c.back" class="ph-cage-layer" alt="" draggable="false" />
+          <span v-if="c.wheel" class="ph-cage-wheel" :style="cageWheelStyle">
             <img :src="cageImages['wheel-a']" class="ph-flip-a" alt="" draggable="false" />
             <img :src="cageImages['wheel-b']" class="ph-flip-b" alt="" draggable="false" />
           </span>
-          <span v-if="!c.away" class="ph-cage-ham" :style="c.hamStyle">
+          <span v-if="c.frames.length" class="ph-cage-ham" :style="c.spriteStyle">
             <img v-for="(src, i) in c.frames" :key="i" :src="src" :class="c.frames.length > 1 ? (i ? 'ph-flip-b' : 'ph-flip-a') : ''" alt="" draggable="false" />
           </span>
-          <img :src="cageImages.front" class="ph-cage-layer" alt="" draggable="false" />
-          <img v-if="c.sick && !c.away" class="ph-cage-icon" :src="iconImages.sick" :style="{ width: `${u(5)}px`, height: `${u(8)}px` }" alt="" draggable="false" />
+          <img :src="c.front" class="ph-cage-layer" alt="" draggable="false" />
+          <img v-if="c.sick && !c.away" class="ph-cage-icon" :src="iconImages.sick" :style="{ ...c.topStyle, width: `${u(5)}px`, height: `${u(8)}px` }" alt="" draggable="false" />
+          <span v-if="c.beep" class="ph-cage-beep" :style="c.topStyle" aria-hidden="true">嗶嗶！</span>
         </button>
         <!-- 貓砂盆：點了鏟一鏟；有貓在等著上廁所時是帶牠過去 -->
         <button
-          v-if="hasCat"
+          v-if="hasLitterUser"
           class="ph-bowl ph-litter"
           :class="{ 'is-wanted': litterWanted }"
           :style="litterStyle"
@@ -1872,15 +2032,32 @@ function labelStyle(room: RoomId, it: RenderItem) {
             :class="{ 'is-offscreen': !catOnScreen(k) }"
             :style="catStyle(k)"
           >
-            <div class="ph-cat-sprite" :class="{ 'is-hop': k.hop.value }" :style="{ ...catBox(k.cat.value.species), transform: k.facing.value < 0 ? 'scaleX(-1)' : undefined }">
+            <div
+              class="ph-cat-sprite"
+              :class="k.hop.value ? (k.cat.value.species === 'ferret' ? 'is-dance' : 'is-hop') : ''"
+              :style="{ ...catBox(k.cat.value.species), transform: k.facing.value < 0 ? 'scaleX(-1)' : undefined }"
+            >
               <img
                 v-for="(src, pose) in catImages(k.cat.value.species, k.cat.value.color)"
-                v-show="pose === k.poseAt(catFrame)"
+                v-show="!ferretDancing(k) && pose === k.poseAt(k.cat.value.species === 'ferret' ? fastFrame : catFrame)"
                 :key="pose"
                 :src="src"
                 alt=""
                 draggable="false"
               />
+              <!-- 雪貂跑步 8 張、雪貂舞 2 張都先放著（不顯示），換的時候不用臨時解碼 -->
+              <template v-if="k.cat.value.species === 'ferret'">
+                <img
+                  v-for="(src, n) in ferretRunImages(k.cat.value.color)"
+                  v-show="k.poseAt(fastFrame) === 'run' && n === fastFrame % 8"
+                  :key="`run-${n}`"
+                  :src="src"
+                  alt=""
+                  draggable="false"
+                />
+                <img v-show="ferretDancing(k)" :src="ferretDanceImages(k.cat.value.color)['dance-a']" class="ph-flip-a" alt="" draggable="false" />
+                <img v-show="ferretDancing(k)" :src="ferretDanceImages(k.cat.value.color)['dance-b']" class="ph-flip-b" alt="" draggable="false" />
+              </template>
             </div>
             <button
               class="ph-cat-hit"
@@ -2304,6 +2481,32 @@ function labelStyle(room: RoomId, it: RenderItem) {
   animation: ph-cat-hop 520ms steps(2, jump-none) infinite;
 }
 
+/* 雪貂舞：跳起來、翻肚打滾兩張輪流，整隻往旁邊蹦、跳回來（只動 translate 和 opacity，不影響左右翻） */
+.ph-cat-sprite.is-dance {
+  animation: ph-ferret-dance 900ms steps(6, jump-none) infinite;
+}
+
+.ph-cat-sprite.is-dance .ph-flip-b {
+  opacity: 0;
+}
+
+.ph-cat-sprite.is-dance .ph-flip-a {
+  animation: ph-flip-a 600ms steps(1, end) infinite;
+}
+
+.ph-cat-sprite.is-dance .ph-flip-b {
+  animation: ph-flip-b 600ms steps(1, end) infinite;
+}
+
+@keyframes ph-ferret-dance {
+  0%, 100% { translate: 0 0; }
+  20% { translate: -4px -6px; }
+  40% { translate: -8px 0; }
+  60% { translate: -4px -5px; }
+  80% { translate: 0 0; }
+  90% { translate: 2px -3px; }
+}
+
 .ph-cat-hit {
   position: absolute;
   /* 同 .ph-me-hit：外層寬度是 0，不取消 max-width 會被壓扁 */
@@ -2384,6 +2587,39 @@ function labelStyle(room: RoomId, it: RenderItem) {
   inset: 0;
   width: 100%;
   height: 100%;
+}
+
+.ph-cage.is-hop .ph-cage-ham {
+  animation: ph-cat-hop 520ms steps(2, jump-none) infinite;
+}
+
+.ph-cage-beep {
+  position: absolute;
+  left: 2px;
+  top: -14px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: #fffbf5;
+  color: #3b2a26;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+  box-shadow: 0 2px 6px rgba(30, 20, 18, 0.2);
+  pointer-events: none;
+}
+
+/* 蜜袋鼯在他身上：口袋那個只露出上半身 */
+.ph-me-pet {
+  position: absolute;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.ph-me-pet img {
+  display: block;
+  image-rendering: crisp-edges;
+  image-rendering: pixelated;
 }
 
 .ph-cage-icon {
@@ -2837,7 +3073,10 @@ function labelStyle(room: RoomId, it: RenderItem) {
 
 /* 他不在畫面上（在別間）：跳、Z、蒸氣都先停，滑過去看到了再動 */
 .is-offscreen .ph-cat-sprite.is-hop,
+.is-offscreen .ph-cat-sprite.is-dance,
+.is-offscreen .ph-cat-sprite.is-dance img,
 .ph-cage.is-offscreen .ph-flip-a,
+.ph-cage.is-offscreen.is-hop .ph-cage-ham,
 .ph-cage.is-offscreen .ph-flip-b,
 .is-offscreen.ph-gift,
 .is-offscreen.ph-steam i,
@@ -2852,7 +3091,10 @@ function labelStyle(room: RoomId, it: RenderItem) {
   .ph-steam i,
   .ph-gift,
   .ph-cat-sprite.is-hop,
+  .ph-cat-sprite.is-dance,
+  .ph-cat-sprite.is-dance img,
   .ph-cage .ph-flip-a,
+  .ph-cage.is-hop .ph-cage-ham,
   .ph-cage .ph-flip-b,
   .ph-me-menu {
     animation: none;

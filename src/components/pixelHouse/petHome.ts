@@ -12,7 +12,9 @@ import {
   catStatAdd,
   eatKibble,
   KIBBLE_HUNGRY,
+  nextShedAt,
   nextToiletAt,
+  SPECIES_DECAY,
   parseCat,
   reanchorCat,
   walkOverdue,
@@ -25,19 +27,46 @@ import type { RoomId } from "./houseData";
 
 // ===== 用品（庫存） =====
 
-export type SupplyId = "kibble" | "can" | "treat" | "litter" | "dogFood" | "chew" | "pad" | "pellet" | "seeds" | "bedding";
+export type SupplyId =
+  | "kibble"
+  | "can"
+  | "treat"
+  | "litter"
+  | "dogFood"
+  | "chew"
+  | "pad"
+  | "ferretFood"
+  | "paste"
+  | "pellet"
+  | "seeds"
+  | "bedding"
+  | "hay"
+  | "veg"
+  | "fruit"
+  | "mealworm"
+  | "mouse"
+  | "bulb";
 
-export const SUPPLIES: Record<SupplyId, { name: string; unit: string; pack: number; price: number; desc: string; species: PetSpecies }> = {
-  kibble: { name: "貓糧", unit: "份", pack: 20, price: 600, desc: "倒在碗裡，牠們餓了自己去吃。一隻一天大約吃 2 份", species: "cat" },
-  can: { name: "罐頭", unit: "個", pack: 1, price: 150, desc: "加菜：很飽，心情也變好", species: "cat" },
-  treat: { name: "貓條", unit: "條", pack: 5, price: 400, desc: "零食，親密度加比較多；訓練上廁所時當獎勵", species: "cat" },
-  litter: { name: "貓砂", unit: "次", pack: 30, price: 300, desc: "倒在貓砂盆裡。一隻一天大約用 4 次", species: "cat" },
-  dogFood: { name: "狗糧", unit: "份", pack: 20, price: 800, desc: "倒在狗碗裡，餓了自己去吃。一隻一天大約吃 2 份", species: "dog" },
-  chew: { name: "潔牙骨", unit: "根", pack: 5, price: 400, desc: "零食，親密度加比較多；訓練上尿布墊時當獎勵", species: "dog" },
-  pad: { name: "尿布墊", unit: "片", pack: 30, price: 300, desc: "狗在家上廁所用。有散步的話一隻一天大約用 2 片", species: "dog" },
-  pellet: { name: "鼠糧", unit: "份", pack: 30, price: 200, desc: "放在籠子裡，餓了自己吃。一隻一天大約吃 2 份", species: "hamster" },
-  seeds: { name: "葵花子", unit: "顆", pack: 10, price: 100, desc: "零食，親密度加比較多；餵熟了比較不會咬人", species: "hamster" },
-  bedding: { name: "木屑", unit: "包", pack: 2, price: 200, desc: "換一次籠子用一包，大約一週換一次", species: "hamster" },
+/** users：哪幾種會用到（第一個是主要的；面板的用品照這個分組） */
+export const SUPPLIES: Record<SupplyId, { name: string; unit: string; pack: number; price: number; desc: string; users: PetSpecies[] }> = {
+  kibble: { name: "貓糧", unit: "份", pack: 20, price: 600, desc: "倒在碗裡，牠們餓了自己去吃。一隻一天大約吃 2 份", users: ["cat"] },
+  can: { name: "罐頭", unit: "個", pack: 1, price: 150, desc: "加菜：很飽，心情也變好", users: ["cat"] },
+  treat: { name: "貓條", unit: "條", pack: 5, price: 400, desc: "零食，親密度加比較多；訓練上廁所時當獎勵", users: ["cat"] },
+  litter: { name: "貓砂", unit: "次", pack: 30, price: 300, desc: "倒在貓砂盆裡。貓一天大約用 4 次、雪貂 3 次", users: ["cat", "ferret"] },
+  dogFood: { name: "狗糧", unit: "份", pack: 20, price: 800, desc: "倒在狗碗裡，餓了自己去吃。一隻一天大約吃 2 份", users: ["dog"] },
+  chew: { name: "潔牙骨", unit: "根", pack: 5, price: 400, desc: "零食，親密度加比較多；訓練上尿布墊時當獎勵", users: ["dog"] },
+  pad: { name: "尿布墊", unit: "片", pack: 30, price: 300, desc: "狗在家上廁所用。有散步的話一隻一天大約用 2 片", users: ["dog"] },
+  ferretFood: { name: "雪貂糧", unit: "份", pack: 20, price: 700, desc: "倒在雪貂的碗裡，餓了自己去吃。一隻一天大約吃 2 份", users: ["ferret"] },
+  paste: { name: "營養膏", unit: "條", pack: 5, price: 300, desc: "零食，親密度加比較多；訓練上廁所時當獎勵", users: ["ferret"] },
+  pellet: { name: "鼠糧", unit: "份", pack: 30, price: 200, desc: "放在籠子裡，餓了自己吃。一隻一天大約吃 2 份", users: ["hamster"] },
+  seeds: { name: "葵花子", unit: "顆", pack: 10, price: 100, desc: "零食，親密度加比較多；餵熟了比較不會咬人", users: ["hamster"] },
+  bedding: { name: "木屑", unit: "包", pack: 2, price: 200, desc: "換一次籠子用一包，大約一週換一次", users: ["hamster", "guineaPig"] },
+  hay: { name: "牧草", unit: "份", pack: 40, price: 300, desc: "天竺鼠的主食，吃很多：一隻一天大約 4 份", users: ["guineaPig"] },
+  veg: { name: "蔬菜", unit: "份", pack: 7, price: 150, desc: "一天一份補維他命 C，太久沒吃容易生病；也可以當零食", users: ["guineaPig"] },
+  fruit: { name: "水果", unit: "份", pack: 14, price: 300, desc: "蜜袋鼯的主食。一隻一天大約吃 2 份", users: ["glider"] },
+  mealworm: { name: "麵包蟲", unit: "隻", pack: 20, price: 200, desc: "零食，親密度加比較多", users: ["glider"] },
+  mouse: { name: "冷凍鼠", unit: "隻", pack: 4, price: 400, desc: "蛇大約一週吃一隻", users: ["snake"] },
+  bulb: { name: "保溫燈泡", unit: "顆", pack: 1, price: 300, desc: "飼養箱的保溫燈，一顆用 30 天；沒有燈泡蛇會冷、容易生病", users: ["snake"] },
 };
 export const SUPPLY_IDS = Object.keys(SUPPLIES) as SupplyId[];
 
@@ -52,11 +81,13 @@ export function emptyStock(): PetStock {
 export interface SpeciesInfo {
   /** 第一隻免費（不管哪種），之後照這個價錢 */
   price: number;
-  /** 會在家裡走（貓、狗）；不會的住籠子（倉鼠） */
+  /** 會在家裡走（貓、狗、雪貂）；不會的住籠子（倉鼠、天竺鼠、蜜袋鼯、蛇） */
   roams: boolean;
   food: SupplyId;
-  /** 零食（照顧的「零食」、訓練的獎勵） */
-  snack: SupplyId;
+  /** 零食（照顧的「零食」、訓練的獎勵）；蛇沒有 */
+  snack: SupplyId | null;
+  /** 清理用什麼（換木屑）；null = 不用買東西（洗澡、清籠子、噴水） */
+  cleanSupply: SupplyId | null;
   /** 上廁所用什麼（倉鼠在籠子裡，不用管） */
   toilet: "litter" | "pad" | null;
   /** 看醫生、健康檢查的價錢乘幾倍（小動物便宜） */
@@ -65,10 +96,17 @@ export interface SpeciesInfo {
   starter: Partial<PetStock>;
 }
 
+const walker = { roams: true, cleanSupply: null } as const;
+const caged = { roams: false, toilet: null } as const;
+
 export const SPECIES_INFO: Record<PetSpecies, SpeciesInfo> = {
-  cat: { price: 32_000, roams: true, food: "kibble", snack: "treat", toilet: "litter", vetScale: 1, starter: { kibble: 10, can: 1, treat: 3, litter: 15 } },
-  dog: { price: 32_000, roams: true, food: "dogFood", snack: "chew", toilet: "pad", vetScale: 1.2, starter: { dogFood: 10, chew: 2, pad: 15 } },
-  hamster: { price: 1_500, roams: false, food: "pellet", snack: "seeds", toilet: null, vetScale: 0.4, starter: { pellet: 15, seeds: 5, bedding: 2 } },
+  cat: { ...walker, price: 32_000, food: "kibble", snack: "treat", toilet: "litter", vetScale: 1, starter: { kibble: 10, can: 1, treat: 3, litter: 15 } },
+  dog: { ...walker, price: 32_000, food: "dogFood", snack: "chew", toilet: "pad", vetScale: 1.2, starter: { dogFood: 10, chew: 2, pad: 15 } },
+  ferret: { ...walker, price: 20_000, food: "ferretFood", snack: "paste", toilet: "litter", vetScale: 1, starter: { ferretFood: 10, paste: 2, litter: 15 } },
+  hamster: { ...caged, price: 1_500, food: "pellet", snack: "seeds", cleanSupply: "bedding", vetScale: 0.4, starter: { pellet: 15, seeds: 5, bedding: 2 } },
+  guineaPig: { ...caged, price: 3_000, food: "hay", snack: "veg", cleanSupply: "bedding", vetScale: 0.5, starter: { hay: 20, veg: 3, bedding: 2 } },
+  glider: { ...caged, price: 12_000, food: "fruit", snack: "mealworm", cleanSupply: null, vetScale: 0.6, starter: { fruit: 7, mealworm: 5 } },
+  snake: { ...caged, price: 8_000, food: "mouse", snack: null, cleanSupply: null, vetScale: 0.8, starter: { mouse: 2, bulb: 1 } },
 };
 
 /** 舊名字：貓的新手包 */
@@ -76,9 +114,9 @@ export const STARTER_STOCK: PetStock = { ...emptyStock(), ...SPECIES_INFO.cat.st
 
 // ===== 幾隻、多少錢 =====
 
-/** 在家裡走的（貓＋狗）最多幾隻：畫面上會動的東西不要太多 */
+/** 在家裡走的（貓＋狗＋雪貂）最多幾隻：畫面上會動的東西不要太多 */
 export const MAX_WALKERS = 3;
-/** 住籠子的（倉鼠）最多幾隻：籠子疊在客廳角落 */
+/** 住籠子的（倉鼠、天竺鼠、蜜袋鼯、蛇）最多幾隻：籠子疊在客廳角落 */
 export const MAX_CAGED = 3;
 /** 舊名字 */
 export const MAX_CATS = MAX_WALKERS;
@@ -142,8 +180,10 @@ export function sickRiskPerHour(
   levels: { food: number; clean: number },
   home: { messes: number; boxFull: boolean },
   checkup: boolean,
+  /** 種類自己的風險（天竺鼠沒吃蔬菜、蛇沒有保溫燈） */
+  extra = 0,
 ): number {
-  let risk = 0.0014;
+  let risk = 0.0014 + extra;
   if (levels.food < 20) risk += 0.006;
   if (levels.clean < 20) risk += 0.004;
   risk += home.messes * 0.001;
@@ -202,6 +242,22 @@ export const LITTER_SPOT = { room: "bath" as RoomId, x: 76, y: 254 };
 export const PAD_SPOT = { room: "bath" as RoomId, x: 32, y: 258 };
 /** 狗碗：廚房，貓碗右邊 */
 export const DOG_BOWL_SPOT = { room: "kitchen" as RoomId, x: 106, y: 189 };
+/** 雪貂的碗：廚房，貓碗左邊 */
+export const FERRET_BOWL_SPOT = { room: "kitchen" as RoomId, x: 82, y: 189 };
+/** 雪貂藏東西的地方：沙發底下、床底下、洗衣籃後面（左上角，房間格子） */
+export const STASH_SPOTS: { id: string; room: RoomId; x: number; y: number; where: string }[] = [
+  { id: "stash-sofa", room: "living", x: 66, y: 242, where: "沙發底下" },
+  { id: "stash-bed", room: "bedroom", x: 52, y: 235, where: "床底下" },
+  { id: "stash-basket", room: "bath", x: 88, y: 242, where: "洗衣籃後面" },
+];
+export const STASH_BY_ID: Record<string, (typeof STASH_SPOTS)[number]> = Object.fromEntries(STASH_SPOTS.map((s) => [s.id, s]));
+
+/** 雪貂藏東西（不檢查每日次數；在外面算）。已經藏了一處就不再藏 */
+export function hideStash(home: PetHome, by: string, coins: number, rand: () => number = Math.random): PetHome {
+  if (home.stash || coins <= 0) return home;
+  const spot = STASH_SPOTS[Math.min(STASH_SPOTS.length - 1, Math.floor(rand() * STASH_SPOTS.length))];
+  return { ...home, stash: { spot: spot.id, coins, by } };
+}
 /** 倉鼠籠：客廳左邊兩盆植物中間，第二個、第三個疊在上面（左上角） */
 export const CAGE_SPOTS: { room: RoomId; x: number; y: number }[] = [
   { room: "living", x: 18, y: 156 },
@@ -221,12 +277,20 @@ export interface PetHome {
   insuranceUntil: number;
   /** 地上的便便：id → 種類 */
   messes: Record<string, MessKind>;
+  /** 雪貂藏起來的東西（一次最多一處）：藏在哪、裡面有多少金幣、誰藏的 */
+  stash: Stash | null;
   /** 算到什麼時候 */
   simAt: number;
 }
 
+export interface Stash {
+  spot: string;
+  coins: number;
+  by: string;
+}
+
 export function emptyPetHome(now: number): PetHome {
-  return { cats: [], stock: emptyStock(), box: 0, insuranceUntil: 0, messes: {}, simAt: now };
+  return { cats: [], stock: emptyStock(), box: 0, insuranceUntil: 0, messes: {}, stash: null, simAt: now };
 }
 
 /** 讀存檔。舊版只有一隻 `cat`：搬進 cats，送一份新手包（舊版沒有庫存，不送會一打開就沒東西吃） */
@@ -254,6 +318,10 @@ export function parsePetHome(raw: unknown, legacyCat: unknown, now: number): Pet
       for (const [id, kind] of Object.entries(r.messes as Record<string, unknown>)) {
         if (MESS_BY_ID[id] && (kind === "pee" || kind === "poop")) home.messes[id] = kind;
       }
+    }
+    const st2 = r.stash as Record<string, unknown> | null | undefined;
+    if (st2 && typeof st2 === "object" && typeof st2.spot === "string" && STASH_BY_ID[st2.spot] && typeof st2.coins === "number" && st2.coins > 0) {
+      home.stash = { spot: st2.spot, coins: Math.min(500, Math.floor(st2.coins)), by: typeof st2.by === "string" ? st2.by.slice(0, 20) : "" };
     }
     home.simAt = typeof r.simAt === "number" && Number.isFinite(r.simAt) ? r.simAt : now;
     return home;
@@ -296,18 +364,35 @@ export function catsHome(home: PetHome, now: number): CatState[] {
 /** 一隻一天大約用掉多少（零食、罐頭不算：要你餵才會用） */
 function usePerDay(cat: CatState, id: SupplyId): number {
   const info = SPECIES_INFO[cat.species];
-  if (info.food === id) return cat.personality === "glutton" ? 2.6 : 2;
-  if (id === "litter" && info.toilet === "litter") return 4;
+  if (info.food === id) return 2 * SPECIES_DECAY[cat.species].food * (cat.personality === "glutton" ? 1.3 : 1);
+  if (id === "litter" && info.toilet === "litter") return cat.species === "ferret" ? 3 : 4;
   if (id === "pad" && info.toilet === "pad") return 2;
-  if (id === "bedding" && cat.species === "hamster") return 1 / 7;
+  if (id === "bedding" && info.cleanSupply === "bedding") return 1 / 7;
+  if (id === "veg" && cat.species === "guineaPig") return 1;
+  if (id === "bulb" && cat.species === "snake") return 1 / LAMP_DAYS;
   return 0;
 }
 
-/** 會自己用掉的用品（照顧的時候才用的零食、罐頭不算） */
-export const isDaily = (id: SupplyId) => SPECIES_INFO[SUPPLIES[id].species].food === id || id === "litter" || id === "pad" || id === "bedding";
+/** 會自己用掉的用品（照顧的時候才用的零食、罐頭不算；蔬菜天竺鼠每天自己吃一份，算） */
+export const isDaily = (id: SupplyId) =>
+  Object.values(SPECIES_INFO).some((info) => info.food === id) || ["litter", "pad", "bedding", "veg", "bulb"].includes(id);
+
+/** 蛇的保溫燈泡一顆用幾天 */
+export const LAMP_DAYS = 30;
+/** 天竺鼠多久沒吃到蔬菜開始容易生病 */
+export const VEG_SICK_AFTER = 2 * DAY;
+/** 蛇蛻皮時飼養箱的濕度（「乾淨」）低於這個會蛻不乾淨、生病 */
+export const SHED_DRY_BELOW = 40;
 
 /** 庫存大約還夠幾天（沒有會用到的回傳 Infinity） */
 export function stockDays(home: PetHome, id: SupplyId): number {
+  // 保溫燈泡：裝著的那顆還能用多久，加上庫存
+  if (id === "bulb") {
+    const snakes = home.cats.filter((c) => c.species === "snake");
+    if (!snakes.length) return Infinity;
+    const left = Math.min(...snakes.map((c) => Math.max(0, c.lampUntil - home.simAt))) / DAY;
+    return left + (home.stock.bulb * LAMP_DAYS) / snakes.length;
+  }
   const perDay = home.cats.reduce((sum, c) => sum + usePerDay(c, id), 0);
   return perDay > 0 ? home.stock[id] / perDay : Infinity;
 }
@@ -340,10 +425,11 @@ export function doToilet(
   let next = updateCat(home, catId, (c) => ({ ...c, toiletAt: nextToiletAt(now, rand) }));
   if (toBox) {
     const snack = info.snack;
-    const treat = !!opts.guided && !!opts.useTreat && next.stock[snack] > 0;
+    const treat = !!opts.guided && !!opts.useTreat && !!snack && next.stock[snack] > 0;
     const trained = opts.guided ? TRAIN_GAIN + (treat ? TRAIN_TREAT_BONUS : 0) : TRAIN_HABIT;
     const dog = info.toilet === "pad";
-    const stock = { ...next.stock, [snack]: next.stock[snack] - (treat ? 1 : 0) };
+    const stock = { ...next.stock };
+    if (treat && snack) stock[snack] -= 1;
     // 貓：用掉一次貓砂、貓砂盆髒一點；狗：用掉一片尿布墊（換新的，不用鏟）
     if (dog) stock.pad -= 1;
     else stock.litter -= 1;
@@ -365,7 +451,9 @@ export type PetEvent =
   | { kind: "sick"; catId: string }
   | { kind: "floor"; catId: string }
   /** 會自己用掉的用品用完了 */
-  | { kind: "out"; supply: SupplyId };
+  | { kind: "out"; supply: SupplyId }
+  /** 蛇蛻皮了（ok = false：飼養箱太乾，蛻不乾淨生病了） */
+  | { kind: "shed"; catId: string; ok: boolean };
 
 /** 最多補算多久（很久沒開，只算最後這段） */
 export const SIM_MAX_MS = 60 * DAY;
@@ -375,6 +463,8 @@ export const SIM_MAX_MS = 60 * DAY;
  * - live = false（小屋關著的那段時間）：牠們自己吃飯、自己上廁所、可能生病
  * - live = true（小屋開著）：判斷生病；貓狗吃飯、上廁所由畫面上的牠自己走去做（才看得到），倉鼠在籠子裡照樣自己吃
  * - 狗太久沒散步：心情多掉一些
+ * - 天竺鼠一天自己吃一份蔬菜（太久沒吃容易生病）
+ * - 蛇：保溫燈泡用完自己換一顆（沒有燈泡會冷，心情掉、容易生病）；大約三週蛻一次皮，飼養箱太乾會蛻不乾淨、生病
  * 時間被往回調：什麼都不算，只把「算到什麼時候」改成現在。
  */
 export function simulatePets(home: PetHome, to: number, opts: { live: boolean }, rand: () => number = Math.random): { home: PetHome; events: PetEvent[] } {
@@ -383,7 +473,7 @@ export function simulatePets(home: PetHome, to: number, opts: { live: boolean },
   let h: PetHome = { ...home };
   let t = Math.max(home.simAt, to - SIM_MAX_MS);
   // 會自己用掉的用品：本來有、算一算用完了 → 說一聲
-  const watched = SUPPLY_IDS.filter((id) => h.cats.some((c) => usePerDay(c, id) > 0) && id !== "bedding");
+  const watched = SUPPLY_IDS.filter((id) => h.cats.some((c) => usePerDay(c, id) > 0) && id !== "bedding" && id !== "bulb");
   const had = new Set(watched.filter((id) => h.stock[id] > 0));
   while (t < to) {
     const step = Math.min(HOUR, to - t);
@@ -403,6 +493,35 @@ export function simulatePets(home: PetHome, to: number, opts: { live: boolean },
         h = updateCat(h, id, (c) => catStatAdd(c, "mood", (-WALK_OVERDUE_MOOD_PER_HOUR * step) / HOUR, t));
         cat = h.cats.find((c) => c.id === id)!;
       }
+      let extra = 0;
+      if (cat.species === "guineaPig") {
+        if (t - cat.vegAt >= DAY && h.stock.veg > 0) {
+          h = { ...updateCat(h, id, (c) => ({ ...c, vegAt: t })), stock: { ...h.stock, veg: h.stock.veg - 1 } };
+          cat = h.cats.find((c) => c.id === id)!;
+        }
+        if (t - cat.vegAt > VEG_SICK_AFTER) extra += 0.004;
+      }
+      if (cat.species === "snake") {
+        if (t >= cat.lampUntil && h.stock.bulb > 0) {
+          h = { ...updateCat(h, id, (c) => ({ ...c, lampUntil: t + LAMP_DAYS * DAY })), stock: { ...h.stock, bulb: h.stock.bulb - 1 } };
+          cat = h.cats.find((c) => c.id === id)!;
+        }
+        // 燈泡剛好在這一小時燒完、又沒有新的：說一聲
+        if (t >= cat.lampUntil && cat.lampUntil > t - step) events.push({ kind: "out", supply: "bulb" });
+        if (t >= cat.lampUntil) {
+          // 沒有燈泡：冷
+          extra += 0.004;
+          h = updateCat(h, id, (c) => catStatAdd(c, "mood", (-2 * step) / HOUR, t));
+          cat = h.cats.find((c) => c.id === id)!;
+        }
+        if (t >= cat.shedAt) {
+          const ok = !!cat.sickSince || catStat(cat, "clean", t) >= SHED_DRY_BELOW;
+          h = updateCat(h, id, (c) => ({ ...c, shedAt: nextShedAt(t, rand) }));
+          if (!ok) h = updateCat(h, id, (c) => ({ ...reanchorCat(c, t), sickSince: t }));
+          events.push({ kind: "shed", catId: id, ok });
+          cat = h.cats.find((c) => c.id === id)!;
+        }
+      }
       if (!opts.live && info.toilet) {
         if (t >= cat.toiletAt) {
           const r = doToilet(h, id, t, rand);
@@ -420,6 +539,7 @@ export function simulatePets(home: PetHome, to: number, opts: { live: boolean },
             boxFull: info.toilet === "litter" && h.box >= boxLimit(cat),
           },
           cat.checkupUntil > t,
+          extra,
         );
         if (rand() < risk * (step / HOUR)) {
           // 生病之後數值掉得比較快：先記下現在的值，從這裡開始用新的速度

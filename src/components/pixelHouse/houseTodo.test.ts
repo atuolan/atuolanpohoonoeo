@@ -86,6 +86,20 @@ describe("小屋待辦", () => {
   });
 });
 
+describe("小屋待辦：第二批寵物", () => {
+  it("雪貂藏的東西、蛇的飼養箱太乾、天竺鼠沒吃蔬菜、保溫燈快沒了", () => {
+    const snake = { ...adoptCat("s", "corn", T0, () => 0.5, "s", "snake"), personality: "lazy" as const, clean: { v: 10, at: T0 }, lampUntil: T0 + 2 * 86_400_000 };
+    const gp = { ...adoptCat("g", "ginger", T0, () => 0.5, "g", "guineaPig"), personality: "lazy" as const, vegAt: T0 - 3 * 86_400_000 };
+    const pets = home([snake, gp], { stash: { spot: "stash-bed", coins: 20, by: "小貂" }, stock: { ...emptyStock(), hay: 50, veg: 5, bedding: 2, mouse: 3 } });
+    const by = Object.fromEntries(houseTodos(input({ pets })).map((t) => [t.key, t]));
+    expect(by.stash.go).toEqual({ kind: "room", room: "bedroom" });
+    expect(by.stash.text).toBe("小貂藏了東西");
+    expect(by["cage:s"].text).toBe("s的飼養箱太乾了");
+    expect(by["veg:g"]).toBeTruthy();
+    expect(by.supply.text).toBe("保溫燈泡快用完了");
+  });
+});
+
 describe("今天的收支", () => {
   const now = new Date(2026, 10, 12, 21, 0);
   const at = (h: number, day = 12) => new Date(2026, 10, day, h).getTime();

@@ -5,17 +5,17 @@
  *
  * 這裡只有算的部分（不碰畫面），好測。省電：只在打開選單、或時鐘每分鐘走一格時算一次。
  */
-import { awayUntil, catStat, walkOverdue, WALK_DUE_MS } from "./houseCat";
+import { awayUntil, catStat, isCaged, walkOverdue, WALK_DUE_MS } from "./houseCat";
 import { DIRT_BY_ID } from "./houseChores";
 import { ROOM_NAMES, STRIP_ROOMS, type RoomId } from "./houseData";
 import { GIFTS, type GiftKind } from "./houseLines";
-import { BOX_FULL_NEAT, isDaily, MESS_BY_ID, stockDays, SUPPLIES, SUPPLY_IDS, type PetHome } from "./petHome";
+import { BOX_FULL_NEAT, isDaily, MESS_BY_ID, STASH_BY_ID, stockDays, SUPPLIES, SUPPLY_IDS, VEG_SICK_AFTER, type PetHome } from "./petHome";
 
 /** 點了去哪：滑到那一間、打開那隻寵物的面板、打開用品 */
 export type TodoGo = { kind: "room"; room: RoomId } | { kind: "pet"; id: string } | { kind: "supplies" };
 
 /** 圖示（畫面那邊對應到小圖） */
-export type TodoIcon = "sick" | "urge" | "poop" | "litter" | "walk" | "cage" | "supply" | "dirt" | "letter" | "dish";
+export type TodoIcon = "sick" | "urge" | "poop" | "litter" | "walk" | "cage" | "supply" | "dirt" | "letter" | "dish" | "stash";
 
 export interface TodoItem {
   key: string;
@@ -72,10 +72,12 @@ export function houseTodos(input: TodoInput): TodoItem[] {
   const low: string[] = [];
   for (const id of SUPPLY_IDS) {
     if (!isDaily(id)) continue;
-    const days = stockDays(pets, id);
+    const days = stockDays({ ...pets, simAt: now }, id);
     if (!Number.isFinite(days)) continue;
-    if (pets.stock[id] <= 0) out.push(SUPPLIES[id].name);
-    else if (days < SUPPLY_LOW_DAYS) low.push(SUPPLIES[id].name);
+    // 保溫燈泡：裝著的那顆用完才算用完；三天前就提醒
+    const empty = id === "bulb" ? days <= 0 : pets.stock[id] <= 0;
+    if (empty) out.push(SUPPLIES[id].name);
+    else if (days < (id === "bulb" ? 3 : SUPPLY_LOW_DAYS)) low.push(SUPPLIES[id].name);
   }
   if (out.length || low.length) {
     const text = [out.length ? `${out.join("、")}用完了` : "", low.length ? `${low.join("、")}快用完了` : ""].filter(Boolean).join("，");
@@ -95,7 +97,7 @@ export function houseTodos(input: TodoInput): TodoItem[] {
       go: { kind: "room", room: rooms[0] },
     });
   }
-  if (pets.cats.some((c) => c.species === "cat") && pets.box >= BOX_FULL_NEAT) {
+  if (pets.cats.some((c) => c.species === "cat" || c.species === "ferret") && pets.box >= BOX_FULL_NEAT) {
     care.push({ key: "litter", text: "貓砂盆該鏟了", note: "在浴室", icon: "litter", tone: "care", go: { kind: "room", room: "bath" } });
   }
   for (const c of pets.cats) {
@@ -111,12 +113,34 @@ export function houseTodos(input: TodoInput): TodoItem[] {
         go: { kind: "pet", id: c.id },
       });
     }
-    if (c.species === "hamster" && catStat(c, "clean", now) < CAGE_DIRTY_BELOW) {
-      care.push({ key: `cage:${c.id}`, text: `${c.name}的籠子髒了`, note: "換木屑", icon: "cage", tone: "care", go: { kind: "pet", id: c.id } });
+    if (isCaged(c.species) && catStat(c, "clean", now) < CAGE_DIRTY_BELOW) {
+      const snake = c.species === "snake";
+      care.push({
+        key: `cage:${c.id}`,
+        text: snake ? `${c.name}的飼養箱太乾了` : `${c.name}的籠子髒了`,
+        note: snake ? "噴點水（太乾會蛻皮蛻不乾淨）" : c.species === "glider" ? "清籠子" : "換木屑",
+        icon: "cage",
+        tone: "care",
+        go: { kind: "pet", id: c.id },
+      });
+    }
+    if (c.species === "guineaPig" && now - c.vegAt > VEG_SICK_AFTER) {
+      care.push({ key: `veg:${c.id}`, text: `${c.name}好幾天沒吃到蔬菜了`, note: "餵一份蔬菜（不吃容易生病）", icon: "supply", tone: "care", go: { kind: "pet", id: c.id } });
     }
   }
 
-  // 有金幣的：髒污、信、他留的東西
+  // 有金幣的：雪貂藏的東西、髒污、信、他留的東西
+  const stash = pets.stash ? STASH_BY_ID[pets.stash.spot] : null;
+  if (pets.stash && stash) {
+    coin.push({
+      key: "stash",
+      text: `${pets.stash.by || "雪貂"}藏了東西`,
+      note: `在${ROOM_NAMES[stash.room]}的${stash.where}，找到有金幣`,
+      icon: "stash",
+      tone: "coin",
+      go: { kind: "room", room: stash.room },
+    });
+  }
   const dirtIds = input.dirt.filter((id) => DIRT_BY_ID[id]);
   if (dirtIds.length) {
     const rooms = roomsOf(dirtIds.map((id) => DIRT_BY_ID[id].room));

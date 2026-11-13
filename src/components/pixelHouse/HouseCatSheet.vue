@@ -10,6 +10,7 @@
 import { computed, ref, watch } from "vue";
 import {
   catLevels,
+  isCaged,
   CAT_NAME_MAX,
   CAT_PERSONALITIES,
   personalityDesc,
@@ -22,7 +23,7 @@ import {
   type PetColor,
   type PetSpecies,
 } from "./houseCat";
-import { HAMSTER_ART, walkerArt } from "./petArt";
+import { cagedArt, walkerArt, type CagedSpecies } from "./petArt";
 import { pixelSvg } from "./pixelArt";
 import {
   adoptPrice,
@@ -111,7 +112,7 @@ const owned = computed(() => speciesOwned(props.home));
 const tabs = computed(() => [
   ...props.home.cats.map((c) => ({ id: c.id, label: c.name, alert: !!c.sickSince })),
   ...(props.home.cats.length
-    ? [{ id: "supplies", label: "用品", alert: SUPPLY_IDS.some((id) => isDaily(id) && Number.isFinite(stockDays(props.home, id)) && props.home.stock[id] <= 0) }]
+    ? [{ id: "supplies", label: "用品", alert: SUPPLY_IDS.some((id) => isDaily(id) && stockDays(props.home, id) <= 0) }]
     : []),
   ...(anyRoom.value ? [{ id: "adopt", label: props.home.cats.length ? "＋" : "領養", alert: false }] : []),
 ]);
@@ -123,10 +124,21 @@ const away = computed(() => !!cat.value && Math.max(cat.value.vetUntil, cat.valu
 const atVet = computed(() => !!cat.value && cat.value.vetUntil > props.now);
 const info = computed(() => SPECIES_INFO[cat.value?.species ?? "cat"]);
 
+/** 大頭照：住籠子的用牠自己的圖（蛇盤著、蜜袋鼯坐著），生病時睡著 */
+const CAGED_PORTRAIT: Record<CagedSpecies, [string, string]> = {
+  hamster: ["sit", "sleep"],
+  guineaPig: ["sit", "sleep"],
+  glider: ["sit", "sleep"],
+  snake: ["coil", "coil"],
+};
+
 function portraitOf(sp: PetSpecies, c: PetColor, sick = false): string {
   const palette = SPECIES_COLORS[sp][c]?.palette ?? {};
-  if (sp === "hamster") return pixelSvg(HAMSTER_ART[sick ? "sleep" : "sit"], palette);
-  // 狗坐著是側面，看不太出來：站著的比較好認
+  if (isCaged(sp)) {
+    const [awake, asleep] = CAGED_PORTRAIT[sp as CagedSpecies];
+    return pixelSvg(cagedArt(sp as CagedSpecies)[sick ? asleep : awake], palette);
+  }
+  // 狗坐著是側面，看不太出來：站著的比較好認（雪貂的 sit 就是站著）
   return pixelSvg(walkerArt(sp).art[sick ? "sleep" : sp === "dog" ? "walk-a" : "sit"], palette);
 }
 const portraits = computed(() => Object.fromEntries(props.home.cats.map((c) => [c.id, portraitOf(c.species, c.color, !!c.sickSince)])));
@@ -140,7 +152,7 @@ const bars = computed(() => {
   if (!c) return [];
   return [
     { key: "food", name: "飽", value: levels.value.food },
-    { key: "clean", name: c.species === "hamster" ? "籠子" : "乾淨", value: levels.value.clean },
+    { key: "clean", name: c.species === "snake" ? "濕度" : isCaged(c.species) ? "籠子" : "乾淨", value: levels.value.clean },
     { key: "mood", name: "心情", value: levels.value.mood },
     { key: "affinity", name: "親密", value: Math.round(c.affinity) },
     ...(info.value.toilet ? [{ key: "training", name: "上廁所", value: Math.round(c.training) }] : []),
@@ -159,7 +171,10 @@ const status = computed(() => {
   if (c.sickSince) return `生病了。帶去看醫生要 ${vetCost(c, props.now, insured.value).toLocaleString()} 金幣${insured.value ? "（保險付了一半）" : ""}`;
   const food = SUPPLIES[info.value.food].name;
   if (levels.value.food < 20) return props.home.stock[info.value.food] > 0 ? `${c.name}很餓，等一下會去吃` : `${c.name}很餓，${food}吃完了`;
-  if (levels.value.clean < 20) return c.species === "hamster" ? "籠子髒了，該換木屑了" : `${c.name}髒髒的，該洗澡了`;
+  if (c.species === "snake" && c.lampUntil <= props.now) return "保溫燈沒有燈泡，牠很冷。到「用品」買燈泡";
+  if (c.species === "guineaPig" && props.now - c.vegAt > 2 * 86_400_000) return `${c.name}好幾天沒吃到蔬菜了，容易生病`;
+  if (levels.value.clean < 20)
+    return c.species === "snake" ? "飼養箱太乾了，噴點水（太乾會蛻皮蛻不乾淨）" : isCaged(c.species) ? "籠子髒了，該清一清了" : `${c.name}髒髒的，該洗澡了`;
   if (walkOverdue(c, props.now)) return `${c.name}很久沒出門了，帶牠去散步吧`;
   if (levels.value.mood < 20) return `${c.name}心情不好，陪牠玩一下`;
   return personalityDesc(c.species, c.personality);
@@ -175,6 +190,30 @@ const careButtons = computed(() => {
       { kind: "pet" as CatCare, label: "摸摸" },
       { kind: "treat" as CatCare, label: "葵花子", note: stock("seeds") },
       { kind: "wash" as CatCare, label: "換木屑", note: stock("bedding") },
+    ];
+  if (c.species === "guineaPig")
+    return [
+      { kind: "pet" as CatCare, label: "摸摸" },
+      { kind: "treat" as CatCare, label: "蔬菜", note: stock("veg") },
+      { kind: "wash" as CatCare, label: "換木屑", note: stock("bedding") },
+    ];
+  if (c.species === "glider")
+    return [
+      { kind: "pet" as CatCare, label: "摸摸" },
+      { kind: "treat" as CatCare, label: "麵包蟲", note: stock("mealworm") },
+      { kind: "wash" as CatCare, label: "清籠子" },
+    ];
+  if (c.species === "snake")
+    return [
+      { kind: "pet" as CatCare, label: "拿出來摸摸" },
+      { kind: "wash" as CatCare, label: "噴水" },
+    ];
+  if (c.species === "ferret")
+    return [
+      { kind: "pet" as CatCare, label: "摸摸" },
+      { kind: "play" as CatCare, label: "逗牠玩" },
+      { kind: "treat" as CatCare, label: "營養膏", note: stock("paste") },
+      { kind: "wash" as CatCare, label: "洗澡" },
     ];
   if (c.species === "dog")
     return [
@@ -194,13 +233,21 @@ const careButtons = computed(() => {
 
 /** 用品：照種類分組，只列家裡有養的 */
 const shopGroups = computed(() =>
-  owned.value.map((sp) => ({ species: sp, name: SPECIES_NAMES[sp], ids: SUPPLY_IDS.filter((id) => SUPPLIES[id].species === sp) })),
+  owned.value
+    .map((sp) => ({
+      species: sp,
+      name: SPECIES_NAMES[sp],
+      // 共用的（貓砂、木屑）放在第一個有養的種類那組
+      ids: SUPPLY_IDS.filter((id) => SUPPLIES[id].users.find((u) => owned.value.includes(u)) === sp),
+    }))
+    .filter((g) => g.ids.length),
 );
 
 function stockNote(id: SupplyId): string {
   const n = props.home.stock[id];
   const s = SUPPLIES[id];
   const d = stockDays(props.home, id);
+  if (id === "bulb" && Number.isFinite(d)) return d <= 0 ? "燈泡燒完了，保溫燈沒開" : `還有 ${n} ${s.unit}，加上裝著的大約夠 ${Math.floor(d)} 天`;
   if (isDaily(id) && Number.isFinite(d)) return `還有 ${n} ${s.unit}，大約夠 ${d < 1 ? "不到 1" : Math.floor(d)} 天`;
   return `還有 ${n} ${s.unit}`;
 }
@@ -248,6 +295,10 @@ function saveName() {
         <p class="cs-note">
           <template v-if="species === 'dog'">一天要散步兩次，吃狗糧、用尿布墊上廁所。</template>
           <template v-else-if="species === 'hamster'">住在客廳角落的籠子裡，白天睡覺、晚上跑滾輪。吃鼠糧，大約一週換一次木屑。</template>
+          <template v-else-if="species === 'ferret'">在家裡走，一天睡大半天；醒著會偷東西藏起來，要你去找。吃雪貂糧、用貓砂盆。</template>
+          <template v-else-if="species === 'guineaPig'">住在客廳角落的圍欄裡。吃很多牧草，每天要一份蔬菜；開冰箱時會嗶嗶叫。</template>
+          <template v-else-if="species === 'glider'">住在客廳角落的高籠子。白天窩在睡袋，晚上醒來會跑到身上；很黏人。吃水果。</template>
+          <template v-else-if="species === 'snake'">住在客廳角落的飼養箱，最好照顧：一週吃一隻冷凍鼠，要保溫燈，記得噴水。</template>
           <template v-else>會跳上窗台、跟著走。吃貓糧、用貓砂盆。</template>
           {{ home.cats.length ? "" : "第一隻免費。" }}每隻個性不一樣，來的時候送一份新手包。
         </p>
@@ -285,7 +336,7 @@ function saveName() {
             <li v-for="id in g.ids" :key="id" class="cs-shop-row">
               <div class="cs-shop-info">
                 <strong>{{ SUPPLIES[id].name }}<small>（{{ SUPPLIES[id].pack }} {{ SUPPLIES[id].unit }}）</small></strong>
-                <span :class="{ 'is-low': isDaily(id) && home.stock[id] <= 0 }">{{ stockNote(id) }}</span>
+                <span :class="{ 'is-low': isDaily(id) && stockDays(home, id) <= 0 }">{{ stockNote(id) }}</span>
               </div>
               <button class="cs-buy" :disabled="busy" @click="emit('buy', id)">{{ SUPPLIES[id].price.toLocaleString() }}</button>
             </li>
@@ -427,7 +478,7 @@ function saveName() {
 
 .cs-kinds {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 6px;
 }
 
