@@ -7,6 +7,7 @@
 import { onUnmounted, ref, watch, type Ref } from "vue";
 import type { Scene } from "./houseData";
 import { countDaily, dailyLeft, loadHouseLifeState, rollDay, saveHouseLifeState } from "./houseLife";
+import { logHouseNews } from "./houseNews";
 import {
   GIFT_DAILY_LIMIT,
   PAT_MS,
@@ -37,6 +38,8 @@ export function useHouseInteract(deps: {
   free: Ref<boolean>;
   sleeping: Ref<boolean>;
   pronoun: Ref<string>;
+  /** 住在小屋的他（記事記「他做的事」用） */
+  charId?: Ref<string | null>;
 }) {
   const menuOpen = ref(false);
   /** 他頭上現在的一句話（空字串 = 沒有） */
@@ -133,6 +136,7 @@ export function useHouseInteract(deps: {
     const next = { ...counted, gifts: [...counted.gifts, gift] };
     saveHouseLifeState(next);
     gifts.value = next.gifts;
+    logHouseNews(gift.kind === "note" ? `{char}在書桌留了一張紙條：「${gift.text}」` : `{char}煮了${gift.text}，放在餐桌上`, "char", deps.charId?.value ?? undefined);
   });
 
   /** 收下他留的東西 */
@@ -149,6 +153,7 @@ export function useHouseInteract(deps: {
     saveHouseLifeState(next);
     gifts.value = next.gifts;
     const p = deps.pronoun.value;
+    logHouseNews(kind === "note" ? "{user}看了{char}留的紙條" : `{user}吃了{char}煮的${gift.text}`, "user");
     if (kind === "note") {
       showNotice(`${p}留的紙條：「${gift.text}」`);
       return;

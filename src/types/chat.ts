@@ -8,6 +8,7 @@ import type { ChatSkinOverrides } from "@/utils/chatSkinResolve";
 import type { AuthorsNoteMetadata } from "./prompt";
 import type { PromptRoleType } from "./promptManager";
 import type { LiuyaoShareSnapshot } from "./liuyao";
+import type { HouseNewsShare } from "./houseNews";
 import type { ToolActivityRecord } from "./toolActivity";
 import type {
   WaimaiDestinationSnapshot,
@@ -591,6 +592,8 @@ export interface ChatMessage {
   plurkShare?: PlurkShareSnapshot;
   /** 六爻卦象卡片 */
   liuyaoShare?: LiuyaoShareSnapshot;
+  /** 「小屋的事」卡片 */
+  houseNews?: HouseNewsShare;
   /** 這輪回覆裡角色去噗浪留言了 */
   plurkActivity?: PlurkActivity;
   /** 群聊記錄數據 */

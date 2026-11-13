@@ -39,6 +39,10 @@ import ChatScreenHeader from "@/components/screens/ChatScreenHeader.vue";
 import ChatDetailsScreen from "@/components/screens/ChatDetailsScreen.vue";
 import ChatPresetPanel from "@/components/modals/chat-preset/ChatPresetPanel.vue";
 import ChatScreenInputArea from "@/components/screens/ChatScreenInputArea.vue";
+import HouseNewsSheet from "@/components/pixelHouse/HouseNewsSheet.vue";
+import { loadPixelHouseState } from "@/components/pixelHouse/houseState";
+import type { HouseNewsShare } from "@/types/houseNews";
+import { houseNewsSummary } from "@/utils/houseNewsShare";
 import ChatGameModals from "@/components/screens/ChatGameModals.vue";
 import GiftDrawer from "@/components/common/GiftDrawer.vue";
 import GiftMemoryCard from "@/components/gift/GiftMemoryCard.vue";
@@ -1304,6 +1308,7 @@ const {
   waimaiProgressNow,
   isMessageDisplayable,
   markInitialChatLoadDone,
+  injectPendingMessage,
 } = useChatSideEffects({
   messages,
   pendingMessage: () => props.pendingMessage,
@@ -1969,6 +1974,19 @@ const selectedMessageIds = ref<string[]>([]);
 
 // ===== 加號選單功能 =====
 const showMoreFeatures = ref(false);
+
+// 小屋記事：他住在小屋時，＋選單多一個「小屋記事」，勾幾件家裡的事放進聊天（不叫他馬上回）
+const houseNewsOpen = ref(false);
+const isHouseResident = ref(false);
+function refreshHouseResident() {
+  isHouseResident.value = !isGroupChat.value && !!props.characterId && loadPixelHouseState().residentCharId === props.characterId;
+}
+watch(showMoreFeatures, (open) => {
+  if (open) refreshHouseResident();
+});
+function sendHouseNews(share: HouseNewsShare) {
+  injectPendingMessage({ content: houseNewsSummary(share), houseNews: share });
+}
 const showImageSearchPanel = ref(false);
 
 // ===== 聊天檔案管理 composable =====
@@ -3714,6 +3732,9 @@ const {
   onShareMusic: handleShareMusicToChat,
   openDatePicker: () => dateCtl.openPicker(),
   sendProactiveNow: () => void handleSendProactiveNow(),
+  openHouseNews: () => {
+    houseNewsOpen.value = true;
+  },
   emit: emit as (e: string, ...args: any[]) => void,
 });
 
@@ -6339,6 +6360,7 @@ async function runAIResponseOnce(
       locationContent: m.locationContent,
       plurkShare: m.plurkShare,
       liuyaoShare: m.liuyaoShare,
+      houseNews: m.houseNews,
       isGift: m.isGift,
       giftName: m.giftName,
       giftCard: m.giftCard,
@@ -11775,6 +11797,7 @@ function toStoredRemoteMessage(message: Message, fallbackName: string): ChatMess
     locationContent: message.locationContent,
     plurkShare: message.plurkShare,
     liuyaoShare: message.liuyaoShare,
+    houseNews: message.houseNews,
     plurkActivity: message.plurkActivity,
     replyToContent: message.replyToContent,
     replyTo: message.replyTo,
@@ -12857,6 +12880,7 @@ useChatCleanup({
             :music-share-data="message.musicShareData"
             :plurk-share="message.plurkShare"
             :liuyao-share="message.liuyaoShare"
+            :house-news="message.houseNews"
             :plurk-activity="message.plurkActivity"
             @open-plurk="(...args: any[]) => emit('openPlurkThread', args[0])"
             @open-liuyao="(...args: any[]) => emit('openLiuyaoReading', args[0])"
@@ -13156,8 +13180,16 @@ useChatCleanup({
       @pick="(pick) => dateCtl.inviteFromUser(pick)"
     />
 
+    <HouseNewsSheet
+      v-if="houseNewsOpen && props.characterId"
+      :character-id="props.characterId"
+      :name="props.characterName || '他'"
+      @close="houseNewsOpen = false"
+      @send="sendHouseNews"
+    />
     <ChatScreenInputArea
       ref="inputAreaRef"
+      :house-news="isHouseResident"
       :hidden="isSelectingMessages"
       :docked="inputBarStyle.docked"
       :is-blocked-by-char="isBlockedByChar"

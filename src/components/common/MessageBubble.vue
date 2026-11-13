@@ -77,6 +77,7 @@ import type {
   WaimaiOrderSnapshot,
 } from "@/types/chat";
 import type { LiuyaoShareSnapshot } from "@/types/liuyao";
+import type { HouseNewsShare } from "@/types/houseNews";
 import { stripPromptStatusNotes } from "@/utils/promptMessageContent";
 import { cleanTTSTags } from "@/utils/ttsTagCleaner";
 import { injectTTSInlineButtons } from "@/utils/ttsInlineButtons";
@@ -92,6 +93,7 @@ import PhoneCallHistoryCard from "./PhoneCallHistoryCard.vue";
 import GroupChatHistoryCard from "./GroupChatHistoryCard.vue";
 import MusicShareCard from "./MusicShareCard.vue";
 import LiuyaoShareCard from "./LiuyaoShareCard.vue";
+import HouseNewsCard from "./HouseNewsCard.vue";
 import PlurkShareCard from "./PlurkShareCard.vue";
 import PixelGiftChest from "./PixelGiftChest.vue";
 import PixelTransferCard from "./PixelTransferCard.vue";
@@ -440,6 +442,8 @@ interface MessageBubbleProps {
   plurkShare?: PlurkShareSnapshot;
   // 六爻卦象卡片
   liuyaoShare?: LiuyaoShareSnapshot;
+  // 小屋的事卡片
+  houseNews?: HouseNewsShare;
   plurkActivity?: PlurkActivity;
   // 換頭像相關
   isAvatarChange?: boolean;
@@ -629,6 +633,7 @@ const props = withDefaults(defineProps<MessageBubbleProps>(), {
   musicShareData: undefined,
   plurkShare: undefined,
   liuyaoShare: undefined,
+  houseNews: undefined,
   plurkActivity: undefined,
   isAvatarChange: false,
   avatarChangeAction: undefined,
@@ -1955,6 +1960,7 @@ const hasSpecialBubbleBody = computed(() => {
     props.isMusicShare ||
     !!props.plurkShare ||
     !!props.liuyaoShare ||
+    !!props.houseNews ||
     props.isHtmlBlock ||
     props.isPrivateMessage ||
     props.messageType === "image" ||
@@ -4565,6 +4571,11 @@ const showTextVoiceTranscript = ref(true);
           <!-- 六爻卦象卡片 -->
           <div v-else-if="liuyaoShare" class="plurk-share-wrapper">
             <LiuyaoShareCard :share="liuyaoShare" @open="emit('openLiuyao', liuyaoShare.readingId)" />
+          </div>
+
+          <!-- 小屋的事卡片 -->
+          <div v-else-if="houseNews" class="plurk-share-wrapper">
+            <HouseNewsCard :share="houseNews" />
           </div>
 
           <!-- 音樂分享卡片 -->

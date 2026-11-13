@@ -79,6 +79,10 @@ import type { PartSlot } from "./wardrobeData";
 import PixelWaveMenu, { type MenuTodo } from "./PixelWaveMenu.vue";
 import { houseTodos, type Ledger, type TodoIcon } from "./houseTodo";
 import { loadTodayLedger } from "./wardrobeShop";
+import type { PickerNews } from "./HouseNewsPicker.vue";
+import { buildNewsShare, HOUSE_NEWS_EVENT, loadNews, markTold, newsFor, newsHouseText, saveNews, type HouseNews } from "./houseNews";
+import { houseNewsTime } from "@/utils/houseNewsShare";
+import { sendHouseNewsToChat } from "@/services/houseNewsChat";
 import {
   ACTS,
   CHAR_HEIGHT,
@@ -520,6 +524,7 @@ const play = useHouseInteract({
   free: computed(() => isHome.value && status.value === "home"),
   sleeping: lying,
   pronoun,
+  charId: residentId,
 });
 
 // ===== 家事和每日收入：髒污、信箱每天一封信、他忙完帶錢回來 =====
@@ -530,6 +535,7 @@ const chores = useHouseChores({
   free: computed(() => isHome.value && status.value === "home"),
   pronoun,
   notify: play.showNotice,
+  charId: residentId,
 });
 
 /** 髒污畫在哪（水槽的碗、洗衣籃的衣服跟著家具走） */
@@ -1013,7 +1019,7 @@ function walkDog(id: string) {
       if (!isHome.value) return `${pronoun.value}不在家，等${pronoun.value}回來再去散步`;
       if (lying.value || status.value === "sleep") return `${pronoun.value}在睡覺`;
       if (status.value === "busy") return `${pronoun.value}在忙，等一下再去`;
-      return pets.walk(id);
+      return pets.walk(id, residentId.value ?? undefined);
     },
     () => {
       catSheetOpen.value = false;
@@ -1312,10 +1318,53 @@ const menuTodos = computed<MenuTodo[]>(() => todoList.value.map((t) => ({ key: t
 /** 今天在小屋的收支：打開待辦時讀一次 */
 const ledger = ref<Ledger | null>(null);
 watch(menuOpen, (open) => {
-  if (!open) return;
+  if (!open) {
+    newsNote.value = "";
+    return;
+  }
   now.value = new Date();
   void loadTodayLedger().then((l) => (ledger.value = l));
+  refreshNews();
 });
+
+// ===== 小屋記事：勾幾件告訴他（送進聊天，不叫他馬上回） =====
+const newsList = ref<HouseNews[]>([]);
+const newsBusy = ref(false);
+const newsNote = ref("");
+/** 讀記事（打開選單、選單開著時記了新的一件） */
+function refreshNews() {
+  newsList.value = newsFor(loadNews(), residentId.value);
+}
+function onNewsLogged() {
+  if (menuOpen.value) refreshNews();
+}
+const menuNews = computed<PickerNews[]>(() => {
+  const t = now.value.getTime();
+  return newsList.value.map((n) => ({ id: n.id, time: houseNewsTime(n.at, t), text: newsHouseText(n.text, pronoun.value), who: n.who, told: !!n.told }));
+});
+const newsBlocked = computed(() => {
+  if (!residentId.value) return "還沒有人住在小屋";
+  if (!residentChatId.value) return `還沒跟${pronoun.value}聊過天`;
+  return "";
+});
+async function tellNews(ids: string[]) {
+  const chatId = residentChatId.value;
+  if (!chatId || newsBusy.value) return;
+  const at = Date.now();
+  const share = buildNewsShare(loadNews(at), ids, at);
+  if (!share) return;
+  newsBusy.value = true;
+  try {
+    await sendHouseNewsToChat(chatId, share);
+    saveNews(markTold(loadNews(at), ids, at));
+    refreshNews();
+    newsNote.value = `已經告訴${pronoun.value}了，${pronoun.value}下次回話時會看到`;
+  } catch {
+    newsNote.value = "沒送出去，再試一次";
+  } finally {
+    newsBusy.value = false;
+  }
+}
 
 function onTodo(key: string) {
   const item = todoList.value.find((t) => t.key === key);
@@ -1668,6 +1717,7 @@ onMounted(async () => {
   window.addEventListener(CHAT_UNREAD_CHANGED_EVENT, onChatEvent);
   window.addEventListener("aguaphone:chat-messages-appended", onChatEvent);
   window.addEventListener(PIXEL_HOUSE_CHANGED_EVENT, onSettingsChanged);
+  window.addEventListener(HOUSE_NEWS_EVENT, onNewsLogged);
 
   await loadAssets();
   chores.open();
@@ -1698,6 +1748,7 @@ onUnmounted(() => {
   window.removeEventListener(CHAT_UNREAD_CHANGED_EVENT, onChatEvent);
   window.removeEventListener("aguaphone:chat-messages-appended", onChatEvent);
   window.removeEventListener(PIXEL_HOUSE_CHANGED_EVENT, onSettingsChanged);
+  window.removeEventListener(HOUSE_NEWS_EVENT, onNewsLogged);
   window.removeEventListener("pointermove", onPointerMove);
   window.removeEventListener("pointerup", onPointerUp);
   window.removeEventListener("pointercancel", onPointerUp);
@@ -2139,6 +2190,13 @@ function labelStyle(room: RoomId, it: RenderItem) {
         :todos="menuTodos"
         :ledger="ledger"
         :status="meLine"
+        :news="menuNews"
+        :pronoun="pronoun"
+        :news-busy="newsBusy"
+        :news-blocked="newsBlocked"
+        :news-note="newsNote"
+        @tell="tellNews"
+        @open-chat="menuOpen = false; openChat()"
         @toggle="menuOpen = !menuOpen; showAll = false"
         @close="menuOpen = false"
         @todo="onTodo"
@@ -2156,7 +2214,8 @@ function labelStyle(room: RoomId, it: RenderItem) {
       <template v-else>
         <!-- 他在哪、在做什麼：在房間列下面；他不在畫面上時點了滑過去。待辦打開時藏起來（會蓋到面板，待辦裡也有寫） -->
         <button v-show="!menuOpen" class="ph-hint" aria-live="polite" @click="hintTap">{{ hint }}</button>
-        <HouseDock :open="state.dockOpen" :badges="badges" @toggle="toggleDock" @pick="emit('navigate', $event)" @house="openSheet('house')" @all="openSheet('apps')" />
+        <!-- 選單打開時藏起來（右下的圓按鈕會蓋到面板） -->
+        <HouseDock v-show="!menuOpen" :open="state.dockOpen" :badges="badges" @toggle="toggleDock" @pick="emit('navigate', $event)" @house="openSheet('house')" @all="openSheet('apps')" />
       </template>
 
       <!-- 大門：商店還是外送 -->

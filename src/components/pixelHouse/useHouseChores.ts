@@ -24,7 +24,8 @@ import {
   type AwayLike,
   type DirtMap,
 } from "./houseChores";
-import type { RoomId, Scene } from "./houseData";
+import { ROOM_NAMES, type RoomId, type Scene } from "./houseData";
+import { logHouseNews } from "./houseNews";
 import { clockWentBack, countDaily, loadHouseLifeState, payCapped, rollDay, saveHouseLifeState } from "./houseLife";
 import { earnCoins } from "./wardrobeShop";
 
@@ -36,6 +37,8 @@ export function useHouseChores(deps: {
   free: Ref<boolean>;
   pronoun: Ref<string>;
   notify: (text: string) => void;
+  /** 住在小屋的他（記事記「他做的事」用） */
+  charId?: Ref<string | null>;
 }) {
   const dirt = ref<DirtMap>({});
   /** 今天的信還沒領 */
@@ -82,6 +85,7 @@ export function useHouseChores(deps: {
     dirt.value = rest;
     const p = deps.pronoun.value;
     const what = by === "user" ? DIRT_USER_DONE[def.kind] : `${p}把${def.done}`;
+    logHouseNews(`${by === "user" ? "{user}" : "{char}"}打掃了${ROOM_NAMES[def.room]}（${def.done}）`, by === "user" ? "user" : "char", deps.charId?.value ?? undefined);
     if (paid > 0) {
       await earnCoins(paid, `小屋：打掃（${def.done}）`, `pixel-house:clean:${id}`);
       deps.notify(`${what}　＋${paid} 金幣`);
