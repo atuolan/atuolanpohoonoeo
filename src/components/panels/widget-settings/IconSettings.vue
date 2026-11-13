@@ -14,10 +14,16 @@ const emit = defineEmits<{
   "center-icon-offset": [];
 }>();
 
-// 舊資料的「偷窺TA」就是現在的「頭盔TA」
+// 舊資料的「偷窺TA」就是現在的「頭盔TA」；「購物」「外賣」都併進「商店」了
+const LEGACY_APP_LABELS: Record<string, string> = {
+  偷窺TA: "頭盔TA",
+  購物: "商店",
+  外賣: "商店",
+};
+
 function isCurrentApp(target: string) {
-  const label = appLabel.value === "偷窺TA" ? "頭盔TA" : appLabel.value;
-  return label === target;
+  const label = appLabel.value ?? "";
+  return (LEGACY_APP_LABELS[label] ?? label) === target;
 }
 </script>
 

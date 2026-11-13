@@ -656,6 +656,7 @@ const scrapbookPack: ThemePack = {
         書架: "#D9D4EA",
         閱讀: "#F2E1AE",
         購物: "#F2CFC6",
+        商店: "#F2CFC6",
         外賣: "#EADFCC",
         錢包: "#D7E1C8",
         頭盔TA: "#D9D4EA",

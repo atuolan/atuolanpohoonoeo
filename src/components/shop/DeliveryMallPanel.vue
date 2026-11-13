@@ -1,6 +1,10 @@
 <script setup lang="ts">
+/**
+ * 商店裡「美食廣場、良心商店、邪氣商店」這幾頁：商品、詳情、下單、代付、分享到聊天
+ *
+ * 分頁、返回在 StoreScreen；這裡只顯示 section 那一區的商品
+ */
 import {
-    WAIMAI_SECTION_META,
     getWaimaiCatalogBySection,
     type WaimaiCatalogItem,
     type WaimaiMallSection,
@@ -28,10 +32,8 @@ import { useWeatherStore } from "@/stores/weather";
 import type { WaimaiOrderSnapshot } from "@/types/chat";
 import type { WaimaiDestinationSnapshot } from "@/types/waimaiDelivery";
 import {
-    ArrowLeft,
     MessageCircleMore,
     Send,
-    ShoppingBag,
     Store,
 } from "lucide-vue-next";
 import { computed, onMounted, ref } from "vue";
@@ -51,14 +53,14 @@ interface DeliveryMallInjectedMessage {
   }>;
 }
 
-interface DeliveryMallSendToChatPayload {
+export interface DeliveryMallSendToChatPayload {
   characterId: string;
   message: DeliveryMallInjectedMessage;
 }
 
 type PendingFlow = "share" | "order_self_pay" | "order_request_pay";
 
-// 跟 ShopScreen 一樣使用全域錢包
+// 跟商店其他頁一樣使用全域錢包
 const WALLET_ID = "global";
 
 const SECTION_EMOJI: Record<WaimaiMallSection, string> = {
@@ -67,8 +69,11 @@ const SECTION_EMOJI: Record<WaimaiMallSection, string> = {
   food: "🍱",
 };
 
+const props = defineProps<{
+  section: WaimaiMallSection;
+}>();
+
 const emit = defineEmits<{
-  back: [];
   sendToChat: [payload: DeliveryMallSendToChatPayload];
 }>();
 
@@ -76,7 +81,6 @@ const charactersStore = useCharactersStore();
 const gameEconomyStore = useGameEconomyStore();
 const weatherStore = useWeatherStore();
 
-const activeSection = ref<WaimaiMallSection>("kind");
 const selectedItem = ref<WaimaiCatalogItem | null>(null);
 const showCharacterPicker = ref(false);
 const showPayMethodPicker = ref(false);
@@ -120,7 +124,7 @@ const userCountryCode = computed(
 );
 
 const currentItems = computed(() =>
-  getWaimaiCatalogBySection(activeSection.value),
+  getWaimaiCatalogBySection(props.section),
 );
 
 const selectableCharacters = computed(() =>
@@ -479,31 +483,7 @@ async function confirmOrder() {
 </script>
 
 <template>
-  <div class="delivery-mall-screen">
-    <header class="screen-header">
-      <button class="back-btn" @click="emit('back')">
-        <ArrowLeft :size="20" />
-      </button>
-      <h1>
-        <ShoppingBag :size="20" />
-        外賣商城
-      </h1>
-      <div class="balance-chip">🪙 {{ formatCoin(balance) }}</div>
-    </header>
-
-    <div class="section-tabs">
-      <button
-        v-for="section in WAIMAI_SECTION_META"
-        :key="section.id"
-        class="section-tab"
-        :class="{ active: activeSection === section.id }"
-        @click="activeSection = section.id"
-      >
-        <span class="tab-label">{{ section.label }}</span>
-        <span class="tab-subtitle">{{ section.subtitle }}</span>
-      </button>
-    </div>
-
+  <div class="delivery-mall-panel">
     <div class="content-area">
       <div class="item-grid">
         <button
@@ -546,6 +526,7 @@ async function confirmOrder() {
           </div>
         </button>
       </div>
+      <slot />
     </div>
 
     <teleport to="body">
@@ -824,103 +805,11 @@ async function confirmOrder() {
 </template>
 
 <style scoped lang="scss">
-.delivery-mall-screen {
-  height: 100%;
+.delivery-mall-panel {
+  flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  background: var(--color-background, #f8f9fa);
-}
-
-.screen-header {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 16px;
-  padding-top: max(16px, var(--safe-top, 0px));
-  background: var(--color-surface, #fff);
-  border-bottom: 1px solid var(--color-border, #e8e8e8);
-
-  .back-btn {
-    border: none;
-    background: transparent;
-    border-radius: 8px;
-    padding: 8px;
-    cursor: pointer;
-    color: var(--color-text, #222);
-
-    &:active {
-      background: rgba(0, 0, 0, 0.06);
-    }
-  }
-
-  h1 {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin: 0;
-    font-size: 18px;
-    color: var(--color-text, #222);
-  }
-
-  .balance-chip {
-    margin-left: auto;
-    padding: 4px 10px;
-    border-radius: 999px;
-    background: #fef3c7;
-    color: #92400e;
-    font-size: 13px;
-    font-weight: 700;
-    white-space: nowrap;
-  }
-}
-
-.section-tabs {
-  display: flex;
-  gap: 8px;
-  padding: 12px 16px;
-  overflow-x: auto;
-  background: var(--color-surface, #fff);
-  border-bottom: 1px solid var(--color-border, #e8e8e8);
-
-  &::-webkit-scrollbar {
-    display: none;
-  }
-
-  .section-tab {
-    flex: 1 1 0;
-    min-width: 0;
-    border: 1px solid #d9d9d9;
-    background: #fff;
-    border-radius: 12px;
-    padding: 10px 8px;
-    text-align: left;
-    cursor: pointer;
-
-    .tab-label {
-      display: block;
-      font-weight: 700;
-      font-size: 14px;
-      color: #222;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    .tab-subtitle {
-      display: block;
-      margin-top: 4px;
-      font-size: 12px;
-      color: #666;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    &.active {
-      border-color: #6366f1;
-      background: #eef2ff;
-    }
-  }
 }
 
 .content-area {
@@ -1488,38 +1377,11 @@ async function confirmOrder() {
 }
 
 // ===== 夜晚模式覆蓋 =====
-// 頂欄與頁面底色跟著主題變數變深，但分頁、商品卡與底部彈窗寫死淺色；
+// 頁面底色跟著主題變數變深，但商品卡與底部彈窗寫死淺色；
 // body.is-night-mode 由 theme store 同步切換，保持巢狀讓 scoped 附在內層元素上。
 body.is-night-mode {
-  .screen-header .back-btn:active {
-    background: rgba(255, 255, 255, 0.08);
-  }
-
-  .screen-header .balance-chip {
-    background: rgba(251, 191, 36, 0.15);
-    color: #fcd34d;
-  }
-
   .image-placeholder {
     background: rgba(129, 140, 248, 0.15);
-  }
-
-  .section-tabs .section-tab {
-    border-color: var(--color-border);
-    background: var(--color-surface-hover);
-
-    .tab-label {
-      color: var(--color-text);
-    }
-
-    .tab-subtitle {
-      color: var(--color-text-secondary);
-    }
-
-    &.active {
-      border-color: #818cf8;
-      background: rgba(129, 140, 248, 0.15);
-    }
   }
 
   .item-card {

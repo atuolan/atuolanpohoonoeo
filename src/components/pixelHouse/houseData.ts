@@ -176,14 +176,7 @@ export const FURNITURE_ACTIONS: Record<RoomId, Record<string, FurnitureAction>> 
   living: {
     tv: { kind: "app", app: "game", to: "遊戲中心" },
     mailbox: { kind: "app", app: "message", to: "訊息" },
-    door: {
-      kind: "choose",
-      to: "商店．外送",
-      options: [
-        { app: "shop", label: "商店" },
-        { app: "delivery", label: "外送" },
-      ],
-    },
+    door: { kind: "app", app: "shop", to: "商店" },
     window: { kind: "app", app: "weather", to: "天氣" },
     lamp: { kind: "app", app: "pomodoro", to: "番茄鐘" },
     dumbbell: { kind: "app", app: "fitness", to: "健身" },
@@ -205,7 +198,7 @@ export const FURNITURE_ACTIONS: Record<RoomId, Record<string, FurnitureAction>> 
     window: { kind: "app", app: "weather", to: "天氣" },
   },
   bath: {
-    "skincare-shelf": { kind: "app", app: "shop", to: "購物" },
+    "skincare-shelf": { kind: "app", app: "shop", to: "商店" },
     mirror: { kind: "wardrobe", to: "換外觀", slot: "hair" },
     "laundry-basket": { kind: "wardrobe", to: "換衣服", slot: "shirt" },
     window: { kind: "app", app: "weather", to: "天氣" },
@@ -316,8 +309,7 @@ export const HOUSE_APPS: HouseApp[] = [
   { app: "music", name: "音樂", color: "#F2ABA6" },
   { app: "game", name: "遊戲", color: "#A4D2E6" },
   { app: "fitness", name: "健身", color: "#F2BC90" },
-  { app: "shop", name: "購物", color: "#EBCB9A" },
-  { app: "delivery", name: "外賣", color: "#E3C0A2" },
+  { app: "shop", name: "商店", color: "#EBCB9A" },
   { app: "calendar", name: "日曆", color: "#EFA9A2" },
   { app: "weather", name: "天氣", color: "#B4CFEE" },
   { app: "pomodoro", name: "番茄鐘", color: "#EDA59C" },
@@ -336,7 +328,9 @@ export const HOUSE_DOCK_MAX = 4;
 export function parseHouseDock(raw: unknown): string[] {
   if (!Array.isArray(raw)) return [...DEFAULT_HOUSE_DOCK];
   const known = new Set(HOUSE_APPS.map((a) => a.app));
-  const apps = [...new Set(raw.filter((id): id is string => typeof id === "string" && known.has(id)))].slice(0, HOUSE_DOCK_MAX);
+  // 「外賣」併進「商店」了，舊的存檔換成商店
+  const ids = raw.filter((id): id is string => typeof id === "string").map((id) => (id === "delivery" ? "shop" : id));
+  const apps = [...new Set(ids.filter((id) => known.has(id)))].slice(0, HOUSE_DOCK_MAX);
   return apps.length ? apps : [...DEFAULT_HOUSE_DOCK];
 }
 

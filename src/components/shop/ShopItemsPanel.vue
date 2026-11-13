@@ -1,13 +1,12 @@
 <script setup lang="ts">
 /**
- * 商城介面
+ * 商店裡「禮物、照顧他、聊天裝扮、頭像框、魚竿、道具」這幾頁的商品和購買
  *
- * 顯示所有可購買商品，支援分類瀏覽和購買功能
+ * 分頁、餘額、返回在 StoreScreen；這裡只顯示 category 那一頁的商品
  *
  * @requirements 5.1, 5.2, 10.3
  */
 import PixelRod from "@/components/common/PixelRod.vue";
-import GiftCabinet from "@/components/gift/GiftCabinet.vue";
 import {
     getAvatarFrameLayers,
     getAvatarFrameSvg,
@@ -27,15 +26,8 @@ import {
 } from "@/data/shopItems";
 import { useGameEconomyStore } from "@/stores/gameEconomy";
 import {
-    ArrowLeft,
     Check,
     Coins,
-    Fish,
-    Frame,
-    Gift,
-    HeartHandshake,
-    Package,
-    Palette,
     ShoppingBag,
     Sparkles,
     X,
@@ -45,8 +37,13 @@ import { getGiftIcon } from "@/utils/giftIcon";
 import { getCareIcon } from "@/utils/careIcon";
 import ChatSkinShopPanel from "@/components/shop/ChatSkinShopPanel.vue";
 
+export type ShopPanelCategory = ShopCategory | "chatskin";
+
+const props = defineProps<{
+  category: ShopPanelCategory;
+}>();
+
 const emit = defineEmits<{
-  back: [];
   tryOnChatSkin: [pieceId: string];
 }>();
 
@@ -56,25 +53,13 @@ const gameEconomyStore = useGameEconomyStore();
 // 使用全局 ID 作為錢包標識
 const GLOBAL_WALLET_ID = "global";
 
-// 分類定義
-interface CategoryTab {
-  id: ShopCategory | "chatskin";
-  label: string;
-  icon: typeof Frame;
-  items: ShopItem[];
-}
-
-const categories: CategoryTab[] = [
-  { id: "chatskin", label: "聊天裝扮", icon: Palette, items: [] },
-  { id: "frame", label: "頭像框", icon: Frame, items: FRAME_ITEMS },
-  { id: "rod", label: "魚竿", icon: Fish, items: ROD_ITEMS },
-  { id: "gift", label: "禮物", icon: Gift, items: GIFT_ITEMS },
-  { id: "consumable", label: "道具", icon: Package, items: CONSUMABLE_ITEMS },
-  { id: "care", label: "照顧他", icon: HeartHandshake, items: CARE_ITEMS },
-];
-
-// 商城／禮物櫃
-const view = ref<"shop" | "cabinet">("shop");
+const ITEMS_BY_CATEGORY: Record<ShopCategory, ShopItem[]> = {
+  frame: FRAME_ITEMS,
+  rod: ROD_ITEMS,
+  gift: GIFT_ITEMS,
+  consumable: CONSUMABLE_ITEMS,
+  care: CARE_ITEMS,
+};
 
 /** 背包裡還剩多少（次數制幾次、時間制幾小時幾分） */
 function consumableLeftText(item: ShopItem): string {
@@ -88,15 +73,10 @@ function consumableLeftText(item: ShopItem): string {
   return `背包剩 ${left} 次`;
 }
 
-// 當前選擇的分類
-const activeCategory = ref<ShopCategory | "chatskin">("chatskin");
-
 // 當前分類的商品
-const currentItems = computed(() => {
-  if (activeCategory.value === "chatskin") return [];
-  const category = categories.find((c) => c.id === activeCategory.value);
-  return category?.items || [];
-});
+const currentItems = computed(() =>
+  props.category === "chatskin" ? [] : ITEMS_BY_CATEGORY[props.category],
+);
 
 // 錢包餘額
 const balance = computed(() => {
@@ -358,52 +338,11 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="shop-screen">
-    <!-- 頂部導航 -->
-    <header class="screen-header">
-      <button class="back-btn" @click="emit('back')">
-        <ArrowLeft :size="20" />
-      </button>
-      <div class="view-switch">
-        <button
-          class="view-switch-btn"
-          :class="{ active: view === 'shop' }"
-          @click="view = 'shop'"
-        >
-          商城
-        </button>
-        <button
-          class="view-switch-btn"
-          :class="{ active: view === 'cabinet' }"
-          @click="view = 'cabinet'"
-        >
-          禮物櫃
-        </button>
-      </div>
-      <div class="balance-display">
-        <Coins :size="16" />
-        <span>{{ balance.toLocaleString() }}</span>
-      </div>
-    </header>
-
-    <!-- 分類標籤 -->
-    <div v-if="view === 'shop'" class="category-tabs">
-      <button
-        v-for="category in categories"
-        :key="category.id"
-        class="category-tab"
-        :class="{ active: activeCategory === category.id }"
-        @click="activeCategory = category.id"
-      >
-        <component :is="category.icon" :size="18" />
-        <span>{{ category.label }}</span>
-      </button>
-    </div>
-
+  <div class="shop-items-panel">
     <!-- 商品列表 -->
-    <div v-if="view === 'shop'" class="shop-content">
+    <div class="shop-content">
       <ChatSkinShopPanel
-        v-if="activeCategory === 'chatskin'"
+        v-if="category === 'chatskin'"
         @try-on="(id) => emit('tryOnChatSkin', id)"
       />
       <template v-else>
@@ -559,10 +498,8 @@ onMounted(async () => {
           <span>此分類暫無商品</span>
         </div>
       </template>
+      <slot />
     </div>
-
-    <!-- 禮物櫃 -->
-    <GiftCabinet v-if="view === 'cabinet'" />
 
     <!-- 購買確認彈窗 -->
     <teleport to="body">
@@ -846,126 +783,11 @@ onMounted(async () => {
 </template>
 
 <style lang="scss" scoped>
-.shop-screen {
-  height: 100%;
+.shop-items-panel {
+  flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  background: var(--color-background, #f8f9fa);
-}
-
-.screen-header {
-  display: flex;
-  align-items: center;
-  padding: 16px;
-  padding-top: max(16px, var(--safe-top, 0px));
-  background: var(--color-surface, #fff);
-  border-bottom: 1px solid var(--color-border, #eee);
-  gap: 12px;
-
-  .back-btn {
-    background: none;
-    border: none;
-    padding: 8px;
-    cursor: pointer;
-    color: var(--color-text, #333);
-    border-radius: 8px;
-
-    &:active {
-      background: var(--color-surface-hover, #f0f0f0);
-    }
-  }
-
-  h1 {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 18px;
-    font-weight: 600;
-    margin: 0;
-    color: var(--color-text, #333);
-  }
-
-  .balance-display {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 8px 12px;
-    background: #fef3c7;
-    border-radius: 20px;
-    font-size: 14px;
-    font-weight: 600;
-    color: #92400e;
-  }
-}
-
-.view-switch {
-  flex: 1;
-  display: flex;
-  padding: 3px;
-  border-radius: 20px;
-  background: var(--color-surface-hover, #f0f0f0);
-}
-
-.view-switch-btn {
-  flex: 1;
-  padding: 7px 14px;
-  border: none;
-  border-radius: 17px;
-  background: transparent;
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--color-text-secondary, #666);
-  cursor: pointer;
-  transition: all 0.2s;
-
-  &.active {
-    background: var(--color-primary, #7dd3a8);
-    color: var(--color-on-primary-contrast, #fff);
-  }
-
-  &:active {
-    transform: scale(0.98);
-  }
-}
-
-.category-tabs {
-  display: flex;
-  padding: 12px 16px;
-  gap: 8px;
-  background: var(--color-surface, #fff);
-  border-bottom: 1px solid var(--color-border, #eee);
-  overflow-x: auto;
-
-  &::-webkit-scrollbar {
-    display: none;
-  }
-}
-
-.category-tab {
-  display: flex;
-  flex-shrink: 0;
-  align-items: center;
-  gap: 6px;
-  padding: 10px 16px;
-  background: #f5f5f5;
-  border: none;
-  border-radius: 20px;
-  font-size: 14px;
-  font-weight: 500;
-  color: #6b7280;
-  cursor: pointer;
-  white-space: nowrap;
-  transition: all 0.2s;
-
-  &.active {
-    background: #7dd3a8;
-    color: white;
-  }
-
-  &:active {
-    transform: scale(0.98);
-  }
 }
 
 .shop-content {
@@ -1722,20 +1544,6 @@ onMounted(async () => {
 // 頁面本體跟著主題變數變深，但分類標籤、價格、購買彈窗寫死淺色；
 // body.is-night-mode 由 theme store 同步切換，保持巢狀讓 scoped 附在內層元素上。
 body.is-night-mode {
-  .view-switch {
-    background: var(--color-surface-hover);
-  }
-
-  .view-switch-btn {
-    color: var(--color-text-secondary);
-
-    &.active {
-      background: var(--color-primary, #7dd3a8);
-      color: var(--color-on-primary-contrast, #fff);
-    }
-  }
-
-  .screen-header .balance-display,
   .item-price {
     background: rgba(255, 183, 77, 0.15);
     color: #ffb74d;
@@ -1746,15 +1554,6 @@ body.is-night-mode {
     color: #ff7b7b;
   }
 
-  .category-tab {
-    background: var(--color-surface-hover);
-    color: var(--color-text-secondary);
-
-    &.active {
-      background: #7dd3a8;
-      color: #1a1a2e;
-    }
-  }
 
   .rarity-badge,
   .modal-rarity {

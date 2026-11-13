@@ -83,7 +83,6 @@ import CharacterEditScreen from "@/components/screens/CharacterEditScreen.vue";
 import CharacterListScreen from "@/components/screens/CharacterListScreen.vue";
 import ChatListScreen from "@/components/screens/ChatListScreen.vue";
 import ChatScreen from "@/components/screens/ChatScreen.vue";
-import DeliveryMallScreen from "@/components/screens/DeliveryMallScreen.vue";
 import FateScreen from "@/components/screens/FateScreen.vue";
 import NoteBoardScreen from "@/components/screens/NoteBoardScreen.vue";
 import FitnessScreen from "@/components/screens/FitnessScreen.vue";
@@ -99,7 +98,7 @@ import PromptManagerScreen from "@/components/screens/PromptManagerScreen.vue";
 import QZoneScreen from "@/components/screens/QZoneScreen.vue";
 import RegexScriptsScreen from "@/components/screens/RegexScriptsScreen.vue";
 import SettingsScreen from "@/components/screens/SettingsScreen.vue";
-import ShopScreen from "@/components/screens/ShopScreen.vue";
+import StoreScreen from "@/components/screens/StoreScreen.vue";
 import TheaterScreen from "@/components/screens/TheaterScreen.vue";
 import UserProfileScreen from "@/components/screens/UserProfileScreen.vue";
 import WeatherScreen from "@/components/screens/WeatherScreen.vue";
@@ -1942,8 +1941,8 @@ function handleNavigate(page: string) {
     // 天氣設定
     navigationHistory.value.push(currentPage.value);
     navigateToPage("weather");
-  } else if (page === "shop" || page === "購物" || page === "商城") {
-    // 商城
+  } else if (page === "shop" || page === "購物" || page === "商城" || page === "商店") {
+    // 商店（購物和外賣合成一個）
     navigationHistory.value.push(currentPage.value);
     navigateToPage("shop");
   } else if (page === "game-center" || page === "遊戲" || page === "game") {
@@ -1951,7 +1950,7 @@ function handleNavigate(page: string) {
     navigationHistory.value.push(currentPage.value);
     navigateToPage("game-center");
   } else if (page === "delivery" || page === "外賣" || page === "外送") {
-    // 外賣商城
+    // 商店，直接停在美食廣場
     navigationHistory.value.push(currentPage.value);
     navigateToPage("delivery-mall");
   } else if (page === "theater" || page === "小劇場") {
@@ -2629,7 +2628,7 @@ function handleLiuyaoShareToChat(payload: {
   navigateToPage("chat");
 }
 
-// 外賣商城分享/下單注入聊天
+// 商店外送頁的分享／下單注入聊天
 async function handleDeliveryMallSendToChat(payload: {
   characterId: string;
   message: PendingInjectedMessage;
@@ -3365,11 +3364,13 @@ useSwipeBack(handleGlobalSwipeBack, swipeBackEnabled);
     <!-- 天氣設定 -->
     <WeatherScreen v-else-if="currentPage === 'weather'" @back="goHome" />
 
-    <!-- 商城 -->
-    <ShopScreen
-      v-else-if="currentPage === 'shop'"
-      @back="goBackFromQuickNav"
+    <!-- 商店（購物和外賣合成一個；從外賣進來先停在美食廣場） -->
+    <StoreScreen
+      v-else-if="currentPage === 'shop' || currentPage === 'delivery-mall'"
+      :entry-tab="currentPage === 'delivery-mall' ? 'food' : null"
+      @back="currentPage === 'delivery-mall' ? goHome() : goBackFromQuickNav()"
       @try-on-chat-skin="handleChatSkinTryOn"
+      @send-to-chat="handleDeliveryMallSendToChat"
     />
 
     <!-- 遊戲中心 -->
@@ -3377,13 +3378,6 @@ useSwipeBack(handleGlobalSwipeBack, swipeBackEnabled);
       v-else-if="currentPage === 'game-center'"
       @back="goHome"
       @share-to-chat="handleGameShareToChat"
-    />
-
-    <!-- 外賣商城 -->
-    <DeliveryMallScreen
-      v-else-if="currentPage === 'delivery-mall'"
-      @back="goHome"
-      @send-to-chat="handleDeliveryMallSendToChat"
     />
 
     <!-- 行事曆 -->
