@@ -73,9 +73,11 @@ function consumableLeftText(item: ShopItem): string {
   return `背包剩 ${left} 次`;
 }
 
-// 當前分類的商品
+// 當前分類的商品（不再上架的不列出來）
 const currentItems = computed(() =>
-  props.category === "chatskin" ? [] : ITEMS_BY_CATEGORY[props.category],
+  props.category === "chatskin"
+    ? []
+    : ITEMS_BY_CATEGORY[props.category].filter((item) => !item.retired),
 );
 
 // 錢包餘額

@@ -426,7 +426,7 @@ const monoPack: ThemePack = {
       { type: "calendar", x: 57, y: 2, width: 14, height: 16 },
       { type: "weather", x: 57, y: 19, width: 10, height: 10 },
       { type: "char-journal", x: 57, y: 32, width: 21, height: 8 },
-      { ...monoIndex("購物", "09", 71, 2), width: 7 },
+      { ...monoIndex("商店", "09", 71, 2), width: 7 },
       { ...monoIndex("外賣", "10", 71, 5), width: 7 },
       { ...monoIndex("錢包", "11", 71, 8), width: 7 },
       monoIndex("頭盔TA", "12", 68, 19),

@@ -23,6 +23,8 @@ export function getGiftIcon(itemId?: string) {
     gift_cola: Coffee,
     gift_mug_simple: Coffee,
     gift_plush_bear: Heart,
+    gift_plush_cat: Heart,
+    gift_blind_box: Gift,
     // Uncommon
     gift_lotion: Sparkles,
     gift_toner: Sparkles,

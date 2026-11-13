@@ -66,3 +66,36 @@ describe("外賣併進商店：舊的常用 App 存檔", () => {
     expect(parseHouseDock(["shop", "delivery", "music"])).toEqual(["shop", "music"]);
   });
 });
+
+describe("重複的商品只留一邊", () => {
+  it("玩偶只在禮物賣，外送沒有玩偶", async () => {
+    const { WAIMAI_CATALOG } = await import("@/data/waimaiCatalog");
+    expect(WAIMAI_CATALOG.filter((i) => i.tags.includes("玩偶"))).toEqual([]);
+    const { GIFT_ITEMS } = await import("@/data/shopItems");
+    const names = GIFT_ITEMS.filter((i) => !i.retired).map((i) => i.name);
+    expect(names).toEqual(expect.arrayContaining(["小熊娃娃", "兔子娃娃", "灰貓抱枕", "萌系盲盒"]));
+  });
+
+  it("禮物的乳液、化妝水不賣了，但已經買的還查得到", async () => {
+    const { GIFT_ITEMS, getShopItemById } = await import("@/data/shopItems");
+    const onSale = GIFT_ITEMS.filter((i) => !i.retired).map((i) => i.id);
+    expect(onSale).not.toContain("gift_lotion");
+    expect(onSale).not.toContain("gift_toner");
+    expect(getShopItemById("gift_lotion")?.name).toBe("保濕乳液");
+    expect(getShopItemById("gift_toner")?.name).toBe("化妝水");
+  });
+
+  it("禮物名字不重複（聊天裡靠名字找禮物）", async () => {
+    const { GIFT_ITEMS } = await import("@/data/shopItems");
+    const names = GIFT_ITEMS.map((i) => i.name);
+    expect(new Set(names).size).toBe(names.length);
+  });
+});
+
+describe("首頁圖示改名", () => {
+  it("舊的「購物」跟新的「商店」當成同一顆", async () => {
+    const { appLabelKey } = await import("@/stores/canvas");
+    expect(appLabelKey("購物")).toBe(appLabelKey("商店"));
+    expect(appLabelKey("外賣")).toBe("外賣");
+  });
+});

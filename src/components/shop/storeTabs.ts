@@ -38,7 +38,7 @@ export const STORE_GROUPS: { id: StoreGroupId; label: string }[] = [
 
 export const STORE_TABS: StoreTab[] = [
   { id: "food", group: "goods", label: "美食廣場", caption: "主食、飲料、甜點，就近外送" },
-  { id: "kind", group: "goods", label: "良心商店", caption: "日用品、保養品、玩偶，寄到你或他的所在地" },
+  { id: "kind", group: "goods", label: "良心商店", caption: "日用品、保養品，寄到你或他的所在地" },
   { id: "spicy", group: "goods", label: "邪氣商店", caption: "成人用品，寄到你或他的所在地" },
   { id: "gift", group: "goods", label: "禮物", caption: "買了放進背包，在聊天裡打開禮物送他" },
   { id: "care", group: "goods", label: "照顧他", caption: "他在忙、在睡的時候用，在聊天裡打開禮物送過去" },

@@ -29,7 +29,7 @@ const SINGLE_SCREEN_WIDTH = SINGLE_SCREEN_GRIDS * BASE_GRID_SIZE; // 352px
 const DEFAULT_SIDE_APP_POSITIONS: Record<string, { x: number; y: number }> = {
   書架: { x: 24, y: 15 },
   閱讀: { x: 29, y: 15 },
-  購物: { x: 73, y: 2 },
+  商店: { x: 73, y: 2 },
   外賣: { x: 73, y: 7 },
   錢包: { x: 73, y: 12 },
   頭盔TA: { x: 68, y: 19 },
@@ -37,6 +37,14 @@ const DEFAULT_SIDE_APP_POSITIONS: Record<string, { x: number; y: number }> = {
   世界書: { x: 68, y: 24 },
   小劇場: { x: 73, y: 24 },
 };
+
+// 改過名字的 App：舊的圖示標籤跟新的當成同一個（以前預設叫「購物」，現在叫「商店」），
+// 主題包的擺法、搬回預設位置才找得到舊畫布上的那顆
+const RENAMED_APP_LABELS: Record<string, string> = { 購物: "商店" };
+
+export function appLabelKey(label: unknown): unknown {
+  return typeof label === "string" ? (RENAMED_APP_LABELS[label] ?? label) : label;
+}
 
 const MIN_SCALE = 0.5; // 最小縮放比例
 // 最大縮放比例：大螢幕（2K / 4K）也要能放大到填滿高度；
@@ -668,7 +676,7 @@ export const useCanvasStore = defineStore("canvas", () => {
         (w) =>
           !used.has(w.id) &&
           w.type === item.type &&
-          (item.label === undefined || w.data?.label === item.label) &&
+          (item.label === undefined || appLabelKey(w.data?.label) === appLabelKey(item.label)) &&
           screenOf(w.x) === screen,
       );
       if (!target) continue;
@@ -690,7 +698,7 @@ export const useCanvasStore = defineStore("canvas", () => {
     // 只動帶有目錄編號的 App，使用者自己排過的兩側不受影響
     for (const w of widgets.value) {
       if (used.has(w.id) || w.type !== "fluid-button" || !w.data?.indexNo) continue;
-      const home = DEFAULT_SIDE_APP_POSITIONS[w.data.label as string];
+      const home = DEFAULT_SIDE_APP_POSITIONS[appLabelKey(w.data.label) as string];
       if (!home) continue;
       w.x = home.x;
       w.y = home.y;
