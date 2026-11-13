@@ -5,16 +5,14 @@
  */
 import { ChevronDown, ChevronUp, Minus } from "lucide-vue-next";
 import { computed } from "vue";
-import { DEFAULT_HOUSE_DOCK, HOUSE_DOCK_APPS, HOUSE_DOCK_MAX, INK } from "./houseData";
-import { glyphSvg } from "./pixelArt";
+import { HOUSE_APP_ICONS, houseAppIcons } from "./houseApps";
+import { DEFAULT_HOUSE_DOCK, HOUSE_DOCK_MAX } from "./houseData";
 
 const props = defineProps<{ open: boolean; apps: string[] }>();
 const emit = defineEmits<{ close: []; change: [apps: string[]] }>();
 
-const defs = new Map(HOUSE_DOCK_APPS.map((a) => [a.app, { ...a, icon: glyphSvg(a.glyph, INK) }]));
-
-const picked = computed(() => props.apps.flatMap((id) => defs.get(id) ?? []));
-const others = computed(() => HOUSE_DOCK_APPS.filter((a) => !props.apps.includes(a.app)).map((a) => defs.get(a.app)!));
+const picked = computed(() => houseAppIcons(props.apps));
+const others = computed(() => HOUSE_APP_ICONS.filter((a) => !props.apps.includes(a.app)));
 const full = computed(() => props.apps.length >= HOUSE_DOCK_MAX);
 const isDefault = computed(() => props.apps.join() === DEFAULT_HOUSE_DOCK.join());
 
@@ -253,34 +251,36 @@ function add(app: string) {
 .ph-icon {
   position: relative;
   flex: none;
-  width: 50px;
-  height: 50px;
+  width: 54px;
+  height: 54px;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 15px;
+  border-radius: 16px;
+  transition: transform 120ms ease;
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.55),
     0 3px 8px rgba(30, 20, 18, 0.14);
 }
 
+/* 9 格放大成整數倍（×4、×3），每一格才一樣大 */
 .ph-icon img {
   display: block;
-  width: 32px;
-  height: 32px;
+  width: 36px;
+  height: 36px;
   image-rendering: pixelated;
 }
 
 .ph-icon.is-small {
-  width: 36px;
-  height: 36px;
-  border-radius: 11px;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55);
 }
 
 .ph-icon.is-small img {
-  width: 23px;
-  height: 23px;
+  width: 27px;
+  height: 27px;
 }
 
 .ph-app-grid {
@@ -315,6 +315,7 @@ function add(app: string) {
 .ph-app-name {
   max-width: 100%;
   font-size: 12px;
+  font-weight: 600;
   line-height: 16px;
   white-space: nowrap;
   overflow: hidden;

@@ -5,7 +5,8 @@
  * 不用記哪件家具是哪個 App；小屋的功能（換外觀、擺件商店、移動家具、怎麼玩）都從「小屋」進去。
  */
 import { computed } from "vue";
-import { ALL_APPS_GLYPH, HOUSE_DOCK_APPS, HOUSE_GLYPH, INK } from "./houseData";
+import { houseAppIcons } from "./houseApps";
+import { ALL_APPS_GLYPH, HOUSE_GLYPH, INK } from "./houseData";
 import { glyphSvg } from "./pixelArt";
 
 /** apps：放哪幾個常用 App（App.vue handleNavigate 的 id），照順序 */
@@ -17,16 +18,10 @@ const emit = defineEmits<{
   (e: "toggle"): void;
 }>();
 
-const defs = new Map(HOUSE_DOCK_APPS.map((a) => [a.app, { ...a, icon: glyphSvg(a.glyph, INK) }]));
 const houseIcon = glyphSvg(HOUSE_GLYPH, INK);
 const allIcon = glyphSvg(ALL_APPS_GLYPH, INK);
 
-const apps = computed(() =>
-  props.apps.flatMap((id) => {
-    const a = defs.get(id);
-    return a ? [{ ...a, badge: props.badges[a.app] || 0 }] : [];
-  }),
-);
+const apps = computed(() => houseAppIcons(props.apps).map((a) => ({ ...a, badge: props.badges[a.app] || 0 })));
 
 /** 收起來時小按鈕上的未讀數：那一排 App 的加起來 */
 const total = computed(() => apps.value.reduce((n, a) => n + a.badge, 0));

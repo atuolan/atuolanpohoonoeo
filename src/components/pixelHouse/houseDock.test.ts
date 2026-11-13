@@ -1,18 +1,18 @@
 import { describe, expect, it } from "vitest";
 import { DOCK_APP_CATALOG } from "@/components/dock/dockApps";
-import { DEFAULT_HOUSE_DOCK, HOUSE_DOCK_APPS, HOUSE_DOCK_MAX, parseHouseDock } from "./houseData";
+import { DEFAULT_HOUSE_DOCK, HOUSE_APPS, HOUSE_DOCK_MAX, parseHouseDock } from "./houseData";
 import { parsePixelHouseState } from "./houseState";
 
-describe("常用 App 可以挑的清單", () => {
+describe("小屋裡的 App 清單", () => {
   it("每個圖示都是 9×9，只有 . 和 #", () => {
-    for (const a of HOUSE_DOCK_APPS) {
+    for (const a of HOUSE_APPS) {
       expect(a.glyph, a.app).toHaveLength(9);
       for (const row of a.glyph) expect(row, a.app).toMatch(/^[.#]{9}$/);
     }
   });
 
   it("沒有重複，而且都是點得開的頁面", () => {
-    const ids = HOUSE_DOCK_APPS.map((a) => a.app);
+    const ids = HOUSE_APPS.map((a) => a.app);
     expect(new Set(ids).size).toBe(ids.length);
     // 「全部 App」裡的每一個，加上提示詞
     const navigable = new Set([...DOCK_APP_CATALOG.map((a) => a.id), "prompt-manager"]);

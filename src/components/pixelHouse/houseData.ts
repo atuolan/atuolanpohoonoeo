@@ -289,9 +289,9 @@ export const WALK_SPEED = 30;
 /** 小人顯示的高度（房間格子） */
 export const CHAR_HEIGHT = 46;
 
-// ===== 下面那一排的常用 App =====
+// ===== 小屋裡的 App（「全部 App」、下面那一排的常用 App） =====
 
-export interface HouseDockApp {
+export interface HouseApp {
   /** 送給 App.vue handleNavigate 的 id，也是存起來的值 */
   app: string;
   name: string;
@@ -300,8 +300,8 @@ export interface HouseDockApp {
   glyph: string[];
 }
 
-/** 常用 App 可以挑的全部（「小屋 › 常用 App」裡的順序） */
-export const HOUSE_DOCK_APPS: HouseDockApp[] = [
+/** 小屋裡開得到的每一個 App：「全部 App」照這個順序列，常用 App 也從這裡挑。圖示和顏色到哪裡都一樣 */
+export const HOUSE_APPS: HouseApp[] = [
   { app: "message", name: "訊息", bg: "#9ED3A5", glyph: [".........", ".#######.", "#########", "##.#.#.##", "#########", ".#######.", "..##.....", "..#......", "........."] },
   { app: "character", name: "角色", bg: "#F2B8A0", glyph: ["...###...", "..#####..", "..#####..", "..#####..", "...###...", ".........", ".#######.", "#########", "#########"] },
   { app: "user", name: "使用者", bg: "#F4A9B8", glyph: [".........", ".##...##.", "####.####", "#########", "#########", ".#######.", "..#####..", "...###...", "....#...."] },
@@ -310,7 +310,7 @@ export const HOUSE_DOCK_APPS: HouseDockApp[] = [
   { app: "settings", name: "設置", bg: "#CFC7BA", glyph: ["....#....", ".#.###.#.", "..#####..", ".##...##.", "###...###", ".##...##.", "..#####..", ".#.###.#.", "....#...."] },
   { app: "phone", name: "電話", bg: "#9FD8CB", glyph: [".##......", "###......", "###......", "##.......", "##.......", ".##...##.", "..##.####", "...######", "....####."] },
   { app: "space", name: "空間", bg: "#EDB9DE", glyph: ["...#.....", "...#.....", "..###....", "#######..", "..###....", "...#...#.", "...#..###", ".......#.", "........."] },
-  { app: "theater", name: "劇場", bg: "#C9A7E0", glyph: [".#######.", "#########", "##.###.##", "#########", "#.#####.#", "##.....##", ".##...##.", "..#####..", "........."] },
+  { app: "theater", name: "小劇場", bg: "#C9A7E0", glyph: [".#######.", "#########", "##.###.##", "#########", "#.#####.#", "##.....##", ".##...##.", "..#####..", "........."] },
   { app: "fate", name: "占卜", bg: "#B7B4EE", glyph: ["..#####..", ".#.....#.", "#..#....#", "#.......#", "#.......#", ".#.....#.", "..#####..", ".#######.", "#########"] },
   { app: "reading", name: "閱讀", bg: "#E8C79A", glyph: [".........", ".##...##.", "#..#.#..#", "#..#.#..#", "#..#.#..#", "#..#.#..#", "####.####", "...###...", "........."] },
   { app: "bookshelf", name: "書架", bg: "#D8B898", glyph: [".........", "##.......", "##.##....", "##.##.##.", "##.##.##.", "##.##.##.", "##.##.##.", "#########", "#.......#"] },
@@ -336,7 +336,7 @@ export const HOUSE_DOCK_MAX = 4;
 /** 存起來的常用 App 整理一下：只留認得的、不重複、最多 HOUSE_DOCK_MAX 個；一個都沒有就用預設 */
 export function parseHouseDock(raw: unknown): string[] {
   if (!Array.isArray(raw)) return [...DEFAULT_HOUSE_DOCK];
-  const known = new Set(HOUSE_DOCK_APPS.map((a) => a.app));
+  const known = new Set(HOUSE_APPS.map((a) => a.app));
   const apps = [...new Set(raw.filter((id): id is string => typeof id === "string" && known.has(id)))].slice(0, HOUSE_DOCK_MAX);
   return apps.length ? apps : [...DEFAULT_HOUSE_DOCK];
 }
