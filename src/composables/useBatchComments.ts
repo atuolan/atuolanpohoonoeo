@@ -149,6 +149,7 @@ export function useBatchComments() {
         moderation,
         verdictFor:
           options?.judgeCommentId && moderation ? { commentId: options.judgeCommentId, strictness } : undefined,
+        blockedNames: qzoneStore.settings.blockedPasserby,
       });
 
       if (!result.success) {
@@ -280,6 +281,7 @@ export function useBatchComments() {
     }
 
     const times = slow ? spreadReplyTimes(comments.length, Date.now()) : [];
+    const blocked = new Set((qzoneStore.settings.blockedPasserby ?? []).map((n) => n.trim()));
     let removals = 0;
     // 角色回使用者的噗時，一半機會順便按讚（每人一次）
     const likers = new Set<string>();
@@ -294,6 +296,8 @@ export function useBatchComments() {
 
       // 如果不是路人且找不到角色，跳過
       if (!isPasserby && !character) continue;
+      // 被使用者檢舉封鎖的路人：AI 還是寫了就丟掉
+      if (isPasserby && blocked.has(genComment.characterName.trim())) continue;
 
       // 解析 replyTo
       let replyToId: string | undefined;

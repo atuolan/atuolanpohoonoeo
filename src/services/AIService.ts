@@ -51,6 +51,7 @@ export interface BatchCommentsParams {
   replyContext?: string; // 單則重生：原本那則在回覆誰、回覆什麼
   moderation?: { strictness: DirectorStrictness }; // 廣場噗：版主可能刪留言
   verdictFor?: { commentId: string; strictness: DirectorStrictness }; // 版主判定使用者剛留的言
+  blockedNames?: string[]; // 使用者檢舉封鎖的路人暱稱
 }
 
 /**
@@ -87,6 +88,7 @@ export async function generateBatchComments(
     replyContext,
     moderation,
     verdictFor,
+    blockedNames,
   } = params;
 
   let streamingWindow: ReturnType<typeof useStreamingWindow> | null = null;
@@ -138,6 +140,7 @@ export async function generateBatchComments(
       replyContext,
       moderation,
       verdictFor,
+      blockedNames,
     });
 
     console.log("📤 批量評論 - 系統提示詞:");
@@ -330,6 +333,7 @@ export function buildBatchCommentsPrompt(params: {
   replyContext?: string;
   moderation?: { strictness: DirectorStrictness };
   verdictFor?: { commentId: string; strictness: DirectorStrictness };
+  blockedNames?: string[];
 }): string {
   const {
     characters,
@@ -347,15 +351,37 @@ export function buildBatchCommentsPrompt(params: {
   const strictness = params.moderation?.strictness;
   const removedRule =
     strictness === "hard"
-      ? "吵架、引戰、人身攻擊、洗版的留言"
+      ? "吵架、引戰、洗版的留言"
       : strictness === "mid"
-        ? "最多 1 則明顯人身攻擊或引戰的留言（大部分都不要加）"
+        ? "最多 1 則明顯引戰或洗版的留言（大部分都不要加）"
         : "";
   const qualifierFormatLine =
     `- qualifier: 噗浪發語詞，可省略（省略就是不加）；只能用：${qualifierList}` +
     (removedRule
-      ? `\n- removed: 這是公開廣場，版主「${MODERATOR_NAME}」會刪掉${removedRule}。被刪的那則照樣寫出內容，另外加上 removed（原因 2–4 字，例如「人身攻擊」）；角色的留言不要被刪。`
+      ? `\n- removed: 這是公開廣場，版主「${MODERATOR_NAME}」會刪掉${removedRule}。被刪的那則照樣寫出內容，另外加上 removed（原因 2–4 字，例如「引戰」）；角色的留言不要被刪。`
       : "");
+
+  // 路人底線：玩家發難過的事被路人辱罵、詛咒過，這段比評論風格優先
+  const blockedNames = (params.blockedNames ?? []).filter(Boolean);
+  const passerbyConduct = `
+# 路人底線（最高優先，比評論風格更優先）
+- 吐槽、玩梗只能針對事情本身，不能衝著發文人；禁止辱罵、人身攻擊、嘲諷、詛咒，禁止叫人或對方家人去死、罵人神經病這類話。
+- 發文人在講難過的事（寵物或親友過世、生病、失戀、失業、被欺負……）時，路人只能安慰、說自己也經歷過、分享經驗；禁止說「有必要嗎」「再買一個就好」「討拍」這種貶低對方感受的話。
+- 不同意可以好好說，像真實網友那樣保有基本禮貌。
+- 暱稱每次都自己想新的，上面的暱稱只是示範風格，不要照抄。${
+    blockedNames.length > 0
+      ? `
+- 這些暱稱的路人已被發文人封鎖，不准再出現：${blockedNames.map((n) => `「${n}」`).join("、")}`
+      : ""
+  }
+`;
+  const defendUserSection =
+    post.authorType === "user"
+      ? `
+# 有人對發文人說難聽話時
+如果已有評論裡有人辱罵、嘲笑或詛咒發文人，角色要照自己的個性站在發文人這邊：回嗆、反駁、叫對方閉嘴、說要檢舉都可以，不要只安慰發文人卻當作沒看到那個人。
+`
+      : "";
 
   // 使用者在提示詞管理「噗浪評論」設定的評論風格
   const styleSection = buildCommentStyleSection(promptManagerStore);
@@ -420,12 +446,12 @@ ${styleSection}
 # 路人評論者規則
 - characterId 使用 "passerby-1", "passerby-2", "passerby-3" 等格式
 - characterName 使用真實、多樣化的網路暱稱，例如：
-  - "毛毛沒吃早餐"、"憑甚麼要做報告"、"從前像我一樣"
+  - "毛毛沒吃早餐"、"明天再說吧"、"從前像我一樣"
   - "我餓了"、"阿瓜雲上下左右"、"以前沒那麼像你"
   - "冰糖葫蘆"、"薄荷可可"、"在你眼中我是誰"
   - "今天也要早睡"、"不想上班的魚"、"咖啡續命中"
 - 路人評論風格多樣：可以是粉絲、路人、吐槽、玩梗、共鳴、好奇等
-
+${passerbyConduct}
 # 原始貼文
 
 作者：${post.username || "匿名"}（${post.authorType === "user" ? "真實用戶" : "AI 角色/路人"}）
@@ -499,11 +525,12 @@ ${qualifierFormatLine}
 除了上述角色外，你還可以創造 1-3 個隨機路人來評論。路人的規則：
 - characterId 使用 "passerby-1", "passerby-2", "passerby-3" 等格式
 - characterName 使用真實、多樣化的網路暱稱，例如：
-  - "毛毛沒吃早餐"、"憑甚麼要做報告"、"從前像我一樣"
+  - "毛毛沒吃早餐"、"明天再說吧"、"從前像我一樣"
   - "我餓了"、"阿瓜雲上下左右"、"以前沒那麼像你"
   - "冰糖葫蘆"、"薄荷可可"、"在你眼中我是誰"
 - 路人評論風格多樣：可以是粉絲、路人、吐槽、玩梗等
-- 路人可以和角色互動，也可以被角色回覆`
+- 路人可以和角色互動，也可以被角色回覆
+${passerbyConduct}`
     : "# 路人\n這則噗只有好友看得到，不要加入路人，只讓上面列出的角色回應。";
   const onlyChar = params.onlyCharacterId
     ? characters.find((c) => c.id === params.onlyCharacterId)
@@ -565,7 +592,7 @@ ${replyPrioritySection}${styleSection}${singleSection}
 ${charactersPrompt}
 ${chatContextSection}
 ${passerbySection}
-
+${defendUserSection}
 # 原始貼文
 
 作者：${post.username || "匿名"}（${post.authorType === "user" ? "真實用戶" : postAuthorIsCharacter ? "AI 角色" : "路人"}）

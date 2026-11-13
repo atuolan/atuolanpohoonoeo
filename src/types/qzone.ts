@@ -174,6 +174,7 @@ export interface QZoneSettings {
   unreadSince?: number; // 比這個時間舊的回應一律當已讀
   director?: PlurkDirectorConfig; // AI 導演設定
   npcFriends?: PlurkNpc[]; // 加了好友的路人（他們的噗會進河道）
+  blockedPasserby?: string[]; // 檢舉封鎖的留言路人暱稱（之後不再出現）
   anonQuota?: { day: string; count: number }; // 今天發了幾則偷偷說
   systemNotices?: PlurkSystemNotice[]; // 系統通知（新的在前）
   ban?: PlurkBan; // 廣場禁言

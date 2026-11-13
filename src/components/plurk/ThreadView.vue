@@ -7,6 +7,7 @@ import {
   ArrowUp,
   Ban,
   Bell,
+  Flag,
   BellOff,
   ChevronLeft,
   EyeOff,
@@ -77,6 +78,7 @@ const emit = defineEmits<{
   regenerate: [id: string, tone: "again" | "cold" | "warm"];
   reply: [id: string];
   remove: [id: string];
+  report: [id: string];
   share: [];
   shareComment: [commentId: string];
   cancelReply: [];
@@ -427,6 +429,17 @@ defineExpose({ insertText, scrollToResponse, focusInput });
             >
               <MessageSquare :size="13" aria-hidden="true" />
               回覆
+            </button>
+            <button
+              v-if="row.canReport"
+              type="button"
+              class="mini-btn mini-btn--danger"
+              :aria-label="`檢舉並封鎖 ${row.authorName}`"
+              :disabled="row.regenerating"
+              @click="emit('report', row.id)"
+            >
+              <Flag :size="13" aria-hidden="true" />
+              檢舉封鎖
             </button>
             <button
               type="button"
