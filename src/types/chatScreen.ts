@@ -121,6 +121,8 @@ export interface ChatScreenMessage {
   isWaimaiProgress?: boolean;
   isWaimaiDelivery?: boolean;
   waimaiOrder?: WaimaiOrderSnapshot;
+  /** 角色剛代付成功、還沒排物流進度（不存檔，只在本次生成結束後用來補進度訊息） */
+  waimaiNeedsProgress?: boolean;
   isMusicShare?: boolean;
   musicShareData?: {
     name: string;
