@@ -4573,8 +4573,8 @@ const showTextVoiceTranscript = ref(true);
             <LiuyaoShareCard :share="liuyaoShare" @open="emit('openLiuyao', liuyaoShare.readingId)" />
           </div>
 
-          <!-- 小屋的事卡片 -->
-          <div v-else-if="houseNews" class="plurk-share-wrapper">
+          <!-- 小屋的事卡片（自帶外觀，後面不墊氣泡底色） -->
+          <div v-else-if="houseNews" class="house-news-wrapper">
             <HouseNewsCard :share="houseNews" />
           </div>
 
@@ -6053,6 +6053,14 @@ const showTextVoiceTranscript = ref(true);
     border-radius: 0;
   }
 
+  // 小屋的事卡片自帶外觀，移除氣泡背景
+  &:has(> .house-news-wrapper) {
+    background: transparent !important;
+    padding: 0;
+    box-shadow: none;
+    border-radius: 0;
+  }
+
   // 聊天記錄卡片自帶外觀，移除氣泡背景
   &:has(> .group-chat-history-wrapper) {
     background: transparent !important;
@@ -6201,6 +6209,7 @@ const showTextVoiceTranscript = ref(true);
   &:has(> .pixel-transfer-wrapper),
   &:has(> .redpacket-wrapper),
   &:has(> .group-chat-history-wrapper),
+  &:has(> .house-news-wrapper),
   &:has(.transfer-message-wrapper):not(:has(.transfer-message-wrapper .bubble-text)):not(
       :has(.transfer-message-wrapper .message-mixed)
     ) {
