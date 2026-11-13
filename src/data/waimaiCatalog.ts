@@ -254,7 +254,7 @@ const RAW_WAIMAI_CATALOG: Omit<WaimaiCatalogItem, "logisticsMeta">[] = [
     storeName: "夜魅實驗室",
     name: "靜音跳蛋",
     price: 980,
-    imageUrl: "https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=400&h=400&fit=crop",
+    imageUrl: "",
     tags: ["成人", "情趣", "電動"],
     isAvailable: true,
     description: "多段震動模式，噪音控制良好。",

@@ -6,9 +6,20 @@ import {
     type WaimaiCatalogItem,
     type WaimaiMallSection,
 } from "@/data/waimaiCatalog";
-import { computeWaimaiEta, formatEtaRangeText } from "@/services/waimaiEta";
+import {
+    computeWaimaiEta,
+    formatEtaRangeText,
+    pickWaimaiWeather,
+} from "@/services/waimaiEta";
 import { buildAutoProgressMessages } from "@/services/waimaiProgress";
+import {
+    computeWaimaiShippingFee,
+    formatWaimaiRouteName,
+    resolveWaimaiRoute,
+} from "@/services/waimaiShipping";
 import { useCharactersStore } from "@/stores";
+import { useGameEconomyStore } from "@/stores/gameEconomy";
+import { useWaimaiAddressBookStore } from "@/stores/waimaiAddressBook";
 import type { WaimaiOrderSnapshot } from "@/types/chat";
 import type { WaimaiDestinationSnapshot } from "@/types/waimaiDelivery";
 import {
@@ -18,7 +29,7 @@ import {
     ShoppingBag,
     Store,
 } from "lucide-vue-next";
-import { computed, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 
 interface DeliveryMallInjectedMessage {
   content: string;
@@ -42,12 +53,24 @@ interface DeliveryMallSendToChatPayload {
 
 type PendingFlow = "share" | "order_self_pay" | "order_request_pay";
 
+// 跟 ShopScreen 一樣使用全域錢包
+const WALLET_ID = "global";
+
+const SECTION_EMOJI: Record<WaimaiMallSection, string> = {
+  kind: "🧴",
+  spicy: "🌙",
+  food: "🍱",
+};
+
 const emit = defineEmits<{
   back: [];
   sendToChat: [payload: DeliveryMallSendToChatPayload];
 }>();
 
 const charactersStore = useCharactersStore();
+const gameEconomyStore = useGameEconomyStore();
+const addressBookStore = useWaimaiAddressBookStore();
+addressBookStore.ensureLoaded();
 
 const activeSection = ref<WaimaiMallSection>("kind");
 const selectedItem = ref<WaimaiCatalogItem | null>(null);
@@ -57,16 +80,86 @@ const pendingFlow = ref<PendingFlow | null>(null);
 const showAddressPicker = ref(false);
 const selectedDestination = ref<WaimaiDestinationSnapshot | null>(null);
 
+// 確認訂單：進入時就算好快照，確認時送出同一份，畫面上的 ETA 才會一致
+const showConfirm = ref(false);
+const pendingOrder = ref<WaimaiOrderSnapshot | null>(null);
+const pendingCharacter = ref<{ id: string; name: string } | null>(null);
+const confirmError = ref("");
+const submitting = ref(false);
+
+// 載入失敗的圖片商品 id
+const failedImageIds = ref<Set<string>>(new Set());
+
+onMounted(() => {
+  void gameEconomyStore.loadState(WALLET_ID);
+});
+
+const balance = computed(() => gameEconomyStore.getBalance(WALLET_ID));
+
 const currentItems = computed(() =>
   getWaimaiCatalogBySection(activeSection.value),
 );
 
 const selectableCharacters = computed(() =>
-  charactersStore.characters.map((c) => ({
-    id: c.id,
-    name: c.nickname || c.data?.name || "角色",
-  })),
+  charactersStore.characters.map((c) => {
+    const name = c.nickname || c.data?.name || "角色";
+    return {
+      id: c.id,
+      name,
+      avatar: c.avatar || "",
+      initial: name.trim().charAt(0) || "角",
+    };
+  }),
 );
+
+const characterPickerTitle = computed(() => {
+  if (pendingFlow.value === "order_request_pay") return "要請誰幫你付？";
+  if (pendingFlow.value === "order_self_pay") return "要跟誰說你下單了？";
+  return "要分享給誰？";
+});
+
+// 商品詳情的運費估算：以預設地址的國家計算
+const detailEstimate = computed(() => {
+  const item = selectedItem.value;
+  if (!item) return null;
+  const country = addressBookStore.defaultAddress?.countryCode ?? "TW";
+  const routeType = resolveWaimaiRoute(item, country);
+  const fee = computeWaimaiShippingFee(routeType);
+  const routeName = formatWaimaiRouteName(routeType);
+  const routeText =
+    routeType === "cross_border" ? `${routeName}，依收貨地計算` : routeName;
+  return {
+    text: `運費 🪙 ${fee}（${routeText}）・合計 🪙 ${item.price + fee}`,
+  };
+});
+
+// 確認視窗用的小計算
+const confirmIsSelfPay = computed(
+  () => pendingFlow.value === "order_self_pay",
+);
+const balanceAfter = computed(() =>
+  pendingOrder.value ? balance.value - pendingOrder.value.totalPrice : 0,
+);
+const shortfall = computed(() => (balanceAfter.value < 0 ? -balanceAfter.value : 0));
+const confirmDisabled = computed(
+  () => submitting.value || (confirmIsSelfPay.value && shortfall.value > 0),
+);
+
+function formatCoin(value: number): string {
+  return value.toLocaleString("zh-TW");
+}
+
+function sectionEmoji(section: WaimaiMallSection): string {
+  return SECTION_EMOJI[section] ?? "🛍️";
+}
+
+function showPlaceholder(item: WaimaiCatalogItem): boolean {
+  return !item.imageUrl || failedImageIds.value.has(item.id);
+}
+
+function markImageFailed(itemId: string) {
+  failedImageIds.value.add(itemId);
+}
 
 function openItemDetail(item: WaimaiCatalogItem) {
   selectedItem.value = item;
@@ -74,6 +167,7 @@ function openItemDetail(item: WaimaiCatalogItem) {
 
 function closeItemDetail() {
   selectedItem.value = null;
+  closeConfirm();
   closeCharacterPicker();
   closePayMethodPicker();
   closeAddressPicker();
@@ -81,12 +175,14 @@ function closeItemDetail() {
 
 function buildOrderSnapshot(
   item: WaimaiCatalogItem,
-  targetCharacterName: string,
   destination?: WaimaiDestinationSnapshot,
 ): WaimaiOrderSnapshot {
   const subtotal = item.price;
-  const shippingFee = 60;
   const isRequestPay = pendingFlow.value === "order_request_pay";
+  // 分享沒有收貨地，用預設地址的國家估運費
+  const country =
+    destination?.countryCode ?? addressBookStore.defaultAddress?.countryCode ?? "TW";
+  const shippingFee = computeWaimaiShippingFee(resolveWaimaiRoute(item, country));
 
   const eta =
     destination && pendingFlow.value !== "share"
@@ -96,7 +192,7 @@ function buildOrderSnapshot(
           destinationCountry: destination.countryCode,
           destinationLat: destination.lat,
           destinationLon: destination.lon,
-          weatherLevel: "clear",
+          weatherLevel: pickWaimaiWeather(),
         })
       : undefined;
 
@@ -114,7 +210,8 @@ function buildOrderSnapshot(
     subtotal,
     shippingFee,
     totalPrice: subtotal + shippingFee,
-    recipientName: targetCharacterName,
+    // 收件人以收貨地址為準；分享沒有地址就留空
+    recipientName: destination?.recipientName ?? "",
     destination,
     eta,
     createdBy: "user",
@@ -149,8 +246,10 @@ function chooseRequestPay() {
 
 function closeCharacterPicker() {
   showCharacterPicker.value = false;
-  pendingFlow.value = null;
-  selectedDestination.value = null;
+  if (!showConfirm.value) {
+    pendingFlow.value = null;
+    selectedDestination.value = null;
+  }
 }
 
 function closePayMethodPicker() {
@@ -159,9 +258,31 @@ function closePayMethodPicker() {
 
 function closeAddressPicker() {
   showAddressPicker.value = false;
-  if (!showCharacterPicker.value) {
+  if (!showCharacterPicker.value && !showConfirm.value) {
     pendingFlow.value = null;
   }
+}
+
+// 關閉確認視窗並把整條下單流程的暫存清乾淨
+function closeConfirm() {
+  showConfirm.value = false;
+  pendingOrder.value = null;
+  pendingCharacter.value = null;
+  confirmError.value = "";
+  submitting.value = false;
+  if (!showCharacterPicker.value && !showAddressPicker.value) {
+    pendingFlow.value = null;
+    selectedDestination.value = null;
+  }
+}
+
+// 從確認視窗返回選角色
+function backToCharacterPicker() {
+  showConfirm.value = false;
+  pendingOrder.value = null;
+  pendingCharacter.value = null;
+  confirmError.value = "";
+  showCharacterPicker.value = true;
 }
 
 function handleAddressConfirm(payload: {
@@ -170,14 +291,6 @@ function handleAddressConfirm(payload: {
   selectedDestination.value = payload.destination;
   showAddressPicker.value = false;
   showCharacterPicker.value = true;
-}
-
-function formatRouteType(
-  routeType: NonNullable<WaimaiOrderSnapshot["eta"]>["routeType"],
-): string {
-  if (routeType === "local_instant") return "即時配送";
-  if (routeType === "domestic") return "國內物流";
-  return "跨境物流";
 }
 
 function formatDestination(order: WaimaiOrderSnapshot): string {
@@ -203,7 +316,7 @@ function formatOrderSummary(
 
   if (order.eta) {
     lines.push(
-      `預估送達：${formatEtaRangeText(order.eta)}（${formatRouteType(order.eta.routeType)}）`,
+      `預估送達：${formatEtaRangeText(order.eta)}（${formatWaimaiRouteName(order.eta.routeType)}）`,
     );
   }
 
@@ -211,74 +324,108 @@ function formatOrderSummary(
 }
 
 function sendToCharacter(characterId: string, characterName: string) {
-  if (!selectedItem.value || !pendingFlow.value) return;
-  if (pendingFlow.value !== "share" && !selectedDestination.value) return;
+  const item = selectedItem.value;
+  if (!item || !pendingFlow.value) return;
 
-  const order = buildOrderSnapshot(
-    selectedItem.value,
-    characterName,
-    pendingFlow.value === "share"
-      ? undefined
-      : (selectedDestination.value ?? undefined),
-  );
-
+  // 分享：不花錢，選完角色直接送出
   if (pendingFlow.value === "share") {
     const shareOrder: WaimaiOrderSnapshot = {
-      ...order,
+      ...buildOrderSnapshot(item),
       status: "created",
       payer: "user",
     };
     emit("sendToChat", {
       characterId,
       message: {
-        content: `分享商品：${selectedItem.value.name}\n${formatOrderSummary(selectedItem.value.name, shareOrder)}\n（僅分享資訊，未發起付款）`,
+        content: `🛍️ 分享商品\n${formatOrderSummary(item.name, shareOrder)}\n（僅分享資訊，未發起付款）`,
         isWaimaiShare: true,
         waimaiOrder: shareOrder,
       },
     });
-  } else if (pendingFlow.value === "order_self_pay") {
-    const paidOrder: WaimaiOrderSnapshot = {
-      ...order,
-      status: "paid",
-      paidAt: Date.now(),
-    };
-
-    const progressMessages = buildAutoProgressMessages(paidOrder).map(
-      (msg) => ({
-        content: msg.content,
-        isWaimaiProgress: true,
-        isWaimaiDelivery: msg.isWaimaiDelivery,
-        waimaiOrder: msg.order,
-        timestamp: msg.timestamp,
-      }),
-    );
-
-    emit("sendToChat", {
-      characterId,
-      message: {
-        content: `下單商品：${selectedItem.value.name}\n${formatOrderSummary(selectedItem.value.name, paidOrder)}\n（我已先付款，請協助追蹤送達）`,
-        isWaimaiPaymentConfirm: true,
-        waimaiOrder: paidOrder,
-        waimaiProgressMessages: progressMessages,
-      },
-    });
-  } else {
-    const requestPayOrder: WaimaiOrderSnapshot = {
-      ...order,
-      payer: "assistant",
-      status: "payment_requested",
-    };
-    emit("sendToChat", {
-      characterId,
-      message: {
-        content: `請你幫我支付！\n${formatOrderSummary(selectedItem.value.name, requestPayOrder)}\n（請確認是否願意代付，並回覆付款結果）`,
-        isWaimaiPaymentRequest: true,
-        waimaiOrder: requestPayOrder,
-      },
-    });
+    closeItemDetail();
+    return;
   }
 
-  closeItemDetail();
+  // 下單：先進確認視窗，快照在這裡算好
+  if (!selectedDestination.value) return;
+  pendingOrder.value = buildOrderSnapshot(item, selectedDestination.value);
+  pendingCharacter.value = { id: characterId, name: characterName };
+  confirmError.value = "";
+  showCharacterPicker.value = false;
+  showConfirm.value = true;
+}
+
+async function confirmOrder() {
+  const item = selectedItem.value;
+  const order = pendingOrder.value;
+  const character = pendingCharacter.value;
+  if (!item || !order || !character || !pendingFlow.value || submitting.value)
+    return;
+
+  submitting.value = true;
+  confirmError.value = "";
+
+  try {
+    if (pendingFlow.value === "order_self_pay") {
+      const r = gameEconomyStore.spendMoney(
+        WALLET_ID,
+        order.totalPrice,
+        "shop",
+        `外賣：${item.name}`,
+        item.id,
+      );
+      if (!r.success) {
+        confirmError.value = "餘額不足";
+        return;
+      }
+      await gameEconomyStore.saveState(WALLET_ID);
+
+      const paidOrder: WaimaiOrderSnapshot = {
+        ...order,
+        status: "paid",
+        paidAt: Date.now(),
+      };
+
+      const progressMessages = buildAutoProgressMessages(paidOrder).map(
+        (msg) => ({
+          content: msg.content,
+          isWaimaiProgress: true,
+          isWaimaiDelivery: msg.isWaimaiDelivery,
+          waimaiOrder: msg.order,
+          timestamp: msg.timestamp,
+        }),
+      );
+
+      emit("sendToChat", {
+        characterId: character.id,
+        message: {
+          content: `🧾 我下單了\n${formatOrderSummary(item.name, paidOrder)}\n（我已經付款了，物流進度會自動更新）`,
+          isWaimaiPaymentConfirm: true,
+          waimaiOrder: paidOrder,
+          waimaiProgressMessages: progressMessages,
+        },
+      });
+    } else {
+      // 請角色代付：不扣使用者的錢
+      const requestPayOrder: WaimaiOrderSnapshot = {
+        ...order,
+        payer: "assistant",
+        status: "payment_requested",
+      };
+      emit("sendToChat", {
+        characterId: character.id,
+        message: {
+          content: `請你幫我支付！\n${formatOrderSummary(item.name, requestPayOrder)}\n（請確認是否願意代付，並回覆付款結果）`,
+          isWaimaiPaymentRequest: true,
+          waimaiOrder: requestPayOrder,
+        },
+      });
+    }
+
+    closeItemDetail();
+  } finally {
+    submitting.value = false;
+  }
 }
 </script>
 
@@ -292,6 +439,7 @@ function sendToCharacter(characterId: string, characterName: string) {
         <ShoppingBag :size="20" />
         外賣商城
       </h1>
+      <div class="balance-chip">🪙 {{ formatCoin(balance) }}</div>
     </header>
 
     <div class="section-tabs">
@@ -317,7 +465,16 @@ function sendToCharacter(characterId: string, characterName: string) {
           @click="openItemDetail(item)"
         >
           <div class="item-image-wrap">
-            <img class="item-image" :src="item.imageUrl" :alt="item.name" />
+            <div v-if="showPlaceholder(item)" class="image-placeholder">
+              {{ sectionEmoji(item.section) }}
+            </div>
+            <img
+              v-else
+              class="item-image"
+              :src="item.imageUrl"
+              :alt="item.name"
+              @error="markImageFailed(item.id)"
+            />
             <span v-if="!item.isAvailable" class="sold-out">已下架</span>
           </div>
           <div class="item-meta">
@@ -351,10 +508,18 @@ function sendToCharacter(characterId: string, characterName: string) {
         >
           <div class="detail-sheet" @click.stop>
             <button class="close-btn" @click="closeItemDetail">×</button>
+            <div
+              v-if="showPlaceholder(selectedItem)"
+              class="image-placeholder detail-image"
+            >
+              {{ sectionEmoji(selectedItem.section) }}
+            </div>
             <img
+              v-else
               class="detail-image"
               :src="selectedItem.imageUrl"
               :alt="selectedItem.name"
+              @error="markImageFailed(selectedItem.id)"
             />
 
             <div class="detail-store">{{ selectedItem.storeName }}</div>
@@ -371,6 +536,9 @@ function sendToCharacter(characterId: string, characterName: string) {
             </div>
 
             <div class="detail-price">🪙 {{ selectedItem.price }}</div>
+            <div v-if="detailEstimate" class="detail-shipping">
+              {{ detailEstimate.text }}
+            </div>
 
             <div class="detail-actions">
               <button
@@ -438,10 +606,10 @@ function sendToCharacter(characterId: string, characterName: string) {
           @click="closeCharacterPicker"
         >
           <div class="picker-sheet" @click.stop>
-            <h3>選擇要分享的 char</h3>
+            <h3>{{ characterPickerTitle }}</h3>
             <p>發送後會直接切到對應聊天視窗。</p>
 
-            <div class="character-list">
+            <div v-if="selectableCharacters.length" class="character-list">
               <button
                 v-for="char in selectableCharacters"
                 :key="char.id"
@@ -449,16 +617,113 @@ function sendToCharacter(characterId: string, characterName: string) {
                 type="button"
                 @click="sendToCharacter(char.id, char.name)"
               >
-                <span>{{ char.name }}</span>
-                <small>
-                  {{
-                    pendingFlow === "order_request_pay"
-                      ? "請你幫我支付！"
-                      : pendingFlow === "order_self_pay"
-                        ? "我先自己付款"
-                        : "先分享討論"
-                  }}
-                </small>
+                <img
+                  v-if="char.avatar"
+                  class="character-avatar"
+                  :src="char.avatar"
+                  alt=""
+                />
+                <span v-else class="character-avatar fallback">{{
+                  char.initial
+                }}</span>
+                <span class="character-name">{{ char.name }}</span>
+              </button>
+            </div>
+            <div v-else class="character-empty">
+              還沒有角色，先去建立一個吧
+            </div>
+          </div>
+        </div>
+      </transition>
+    </teleport>
+
+    <teleport to="body">
+      <transition name="fade">
+        <div
+          v-if="showConfirm && pendingOrder"
+          class="picker-overlay"
+          @click="closeConfirm"
+        >
+          <div class="picker-sheet confirm-sheet" @click.stop>
+            <h3>確認訂單</h3>
+
+            <div class="confirm-body">
+              <div class="confirm-item">
+                <div class="confirm-item-name">{{ pendingOrder.item.name }}</div>
+                <div class="confirm-item-store">
+                  {{ pendingOrder.item.storeName }}
+                </div>
+              </div>
+
+              <div class="confirm-rows">
+                <div class="confirm-row">
+                  <span>小計</span>
+                  <span>🪙 {{ formatCoin(pendingOrder.subtotal) }}</span>
+                </div>
+                <div class="confirm-row">
+                  <span>{{
+                    pendingOrder.eta
+                      ? `運費（${formatWaimaiRouteName(pendingOrder.eta.routeType)}）`
+                      : "運費"
+                  }}</span>
+                  <span>🪙 {{ formatCoin(pendingOrder.shippingFee) }}</span>
+                </div>
+                <div class="confirm-row total">
+                  <span>總計</span>
+                  <span>🪙 {{ formatCoin(pendingOrder.totalPrice) }}</span>
+                </div>
+              </div>
+
+              <div class="confirm-rows">
+                <div class="confirm-row">
+                  <span>收件人</span>
+                  <span>{{ pendingOrder.recipientName || "—" }}</span>
+                </div>
+                <div class="confirm-row">
+                  <span>收貨地</span>
+                  <span>{{ formatDestination(pendingOrder) }}</span>
+                </div>
+                <div v-if="pendingOrder.eta" class="confirm-row">
+                  <span>預估送達</span>
+                  <span>{{ formatEtaRangeText(pendingOrder.eta) }}</span>
+                </div>
+                <div class="confirm-row">
+                  <span>付款方式</span>
+                  <span>{{
+                    confirmIsSelfPay
+                      ? "自己支付"
+                      : `請 ${pendingCharacter?.name ?? "對方"} 代付`
+                  }}</span>
+                </div>
+              </div>
+
+              <div v-if="confirmIsSelfPay" class="confirm-balance">
+                目前餘額 🪙 {{ formatCoin(balance) }} → 付款後 🪙
+                {{ formatCoin(balanceAfter) }}
+              </div>
+              <div v-if="confirmIsSelfPay && shortfall > 0" class="confirm-error">
+                餘額不足，還差 🪙 {{ formatCoin(shortfall) }}
+              </div>
+              <div v-else-if="confirmError" class="confirm-error">
+                {{ confirmError }}
+              </div>
+            </div>
+
+            <div class="confirm-actions">
+              <button
+                class="picker-btn secondary"
+                type="button"
+                @click="backToCharacterPicker"
+              >
+                返回
+              </button>
+              <button
+                class="picker-btn primary"
+                type="button"
+                :disabled="confirmDisabled"
+                @click="confirmOrder"
+              >
+                {{ confirmIsSelfPay ? "確認付款" : "送出代付請求" }}
               </button>
             </div>
           </div>
@@ -512,6 +777,17 @@ function sendToCharacter(characterId: string, characterName: string) {
     font-size: 18px;
     color: var(--color-text, #222);
   }
+
+  .balance-chip {
+    margin-left: auto;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: #fef3c7;
+    color: #92400e;
+    font-size: 13px;
+    font-weight: 700;
+    white-space: nowrap;
+  }
 }
 
 .section-tabs {
@@ -527,11 +803,12 @@ function sendToCharacter(characterId: string, characterName: string) {
   }
 
   .section-tab {
-    min-width: 150px;
+    flex: 1 1 0;
+    min-width: 0;
     border: 1px solid #d9d9d9;
     background: #fff;
     border-radius: 12px;
-    padding: 10px 12px;
+    padding: 10px 8px;
     text-align: left;
     cursor: pointer;
 
@@ -540,6 +817,9 @@ function sendToCharacter(characterId: string, characterName: string) {
       font-weight: 700;
       font-size: 14px;
       color: #222;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
 
     .tab-subtitle {
@@ -547,6 +827,9 @@ function sendToCharacter(characterId: string, characterName: string) {
       margin-top: 4px;
       font-size: 12px;
       color: #666;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
 
     &.active {
@@ -565,7 +848,13 @@ function sendToCharacter(characterId: string, characterName: string) {
 .item-grid {
   display: grid;
   gap: 12px;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+@media (min-width: 600px) {
+  .item-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 }
 
 @media (min-width: 1440px) {
@@ -597,6 +886,12 @@ function sendToCharacter(characterId: string, characterName: string) {
       height: 100%;
       object-fit: cover;
       display: block;
+    }
+
+    .image-placeholder {
+      width: 100%;
+      height: 100%;
+      font-size: 40px;
     }
 
     .sold-out {
@@ -646,9 +941,14 @@ function sendToCharacter(characterId: string, characterName: string) {
 
       .tags {
         display: flex;
+        flex-wrap: nowrap;
         gap: 4px;
+        min-width: 0;
+        overflow: hidden;
 
         span {
+          white-space: nowrap;
+          flex-shrink: 0;
           font-size: 10px;
           background: #f3f4f6;
           color: #4b5563;
@@ -662,9 +962,18 @@ function sendToCharacter(characterId: string, characterName: string) {
         font-size: 14px;
         font-weight: 700;
         white-space: nowrap;
+        flex-shrink: 0;
       }
     }
   }
+}
+
+// 圖片載入失敗或沒有圖片時的佔位方塊
+.image-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #eef2ff;
 }
 
 .detail-overlay {
@@ -682,7 +991,7 @@ function sendToCharacter(characterId: string, characterName: string) {
   overflow-y: auto;
   background: #fff;
   border-radius: 18px 18px 0 0;
-  padding: 14px 14px 18px;
+  padding: 14px 14px calc(18px + env(safe-area-inset-bottom, 0px));
   position: relative;
 
   .close-btn {
@@ -704,6 +1013,10 @@ function sendToCharacter(characterId: string, characterName: string) {
     border-radius: 12px;
     height: 180px;
     object-fit: cover;
+
+    &.image-placeholder {
+      font-size: 64px;
+    }
   }
 
   .detail-store {
@@ -746,6 +1059,12 @@ function sendToCharacter(characterId: string, characterName: string) {
     font-size: 24px;
     font-weight: 800;
     color: #ef4444;
+  }
+
+  .detail-shipping {
+    margin-top: 4px;
+    font-size: 13px;
+    color: #6b7280;
   }
 
   .detail-actions {
@@ -794,9 +1113,12 @@ function sendToCharacter(characterId: string, characterName: string) {
 
 .picker-sheet {
   width: 100%;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
   background: #fff;
   border-radius: 18px 18px 0 0;
-  padding: 16px 14px 20px;
+  padding: 16px 14px calc(20px + env(safe-area-inset-bottom, 0px));
 
   h3 {
     margin: 0;
@@ -834,12 +1156,94 @@ function sendToCharacter(characterId: string, characterName: string) {
     background: #eef2ff;
     color: #3730a3;
   }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
 }
 
 .character-list {
   margin-top: 14px;
   display: grid;
   gap: 8px;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.character-empty {
+  margin-top: 14px;
+  padding: 20px 0;
+  text-align: center;
+  font-size: 14px;
+  color: #6b7280;
+}
+
+.confirm-sheet {
+  .confirm-body {
+    margin-top: 12px;
+    overflow-y: auto;
+    min-height: 0;
+  }
+
+  .confirm-item-name {
+    font-size: 16px;
+    font-weight: 800;
+    color: #111827;
+  }
+
+  .confirm-item-store {
+    margin-top: 2px;
+    font-size: 12px;
+    color: #6b7280;
+  }
+
+  .confirm-rows {
+    margin-top: 12px;
+    padding: 8px 12px;
+    border-radius: 12px;
+    background: #f3f4f6;
+  }
+
+  .confirm-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 4px 0;
+    font-size: 13px;
+    color: #374151;
+
+    > span:last-child {
+      text-align: right;
+      min-width: 0;
+      word-break: break-all;
+    }
+
+    &.total {
+      font-weight: 800;
+      color: #111827;
+    }
+  }
+
+  .confirm-balance {
+    margin-top: 12px;
+    font-size: 13px;
+    color: #374151;
+  }
+
+  .confirm-error {
+    margin-top: 6px;
+    font-size: 13px;
+    font-weight: 700;
+    color: #dc2626;
+  }
+
+  .confirm-actions {
+    margin-top: 14px;
+    display: grid;
+    grid-template-columns: 1fr 2fr;
+    gap: 8px;
+  }
 }
 
 .character-item {
@@ -850,18 +1254,36 @@ function sendToCharacter(characterId: string, characterName: string) {
   padding: 10px 12px;
   cursor: pointer;
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
 
-  span {
+  .character-avatar {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    object-fit: cover;
+    flex-shrink: 0;
+
+    &.fallback {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #e0e7ff;
+      color: #3730a3;
+      font-size: 15px;
+      font-weight: 700;
+    }
+  }
+
+  .character-name {
     font-size: 14px;
     font-weight: 700;
     color: #111827;
-  }
-
-  small {
-    font-size: 12px;
-    color: #6b7280;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 }
 
@@ -881,6 +1303,15 @@ function sendToCharacter(characterId: string, characterName: string) {
 body.is-night-mode {
   .screen-header .back-btn:active {
     background: rgba(255, 255, 255, 0.08);
+  }
+
+  .screen-header .balance-chip {
+    background: rgba(251, 191, 36, 0.15);
+    color: #fcd34d;
+  }
+
+  .image-placeholder {
+    background: rgba(129, 140, 248, 0.15);
   }
 
   .section-tabs .section-tab {
@@ -957,6 +1388,35 @@ body.is-night-mode {
     .detail-price {
       color: #ff7b7b;
     }
+
+    .detail-shipping {
+      color: var(--color-text-secondary);
+    }
+  }
+
+  .confirm-sheet {
+    .confirm-item-name,
+    .confirm-row.total {
+      color: var(--color-text);
+    }
+
+    .confirm-item-store,
+    .confirm-row,
+    .confirm-balance {
+      color: var(--color-text-secondary);
+    }
+
+    .confirm-rows {
+      background: var(--color-surface-hover);
+    }
+
+    .confirm-error {
+      color: #ff7b7b;
+    }
+  }
+
+  .character-empty {
+    color: var(--color-text-secondary);
   }
 
   .picker-sheet {
@@ -986,12 +1446,13 @@ body.is-night-mode {
     border-color: var(--color-border);
     background: var(--color-surface-hover);
 
-    span {
+    .character-name {
       color: var(--color-text);
     }
 
-    small {
-      color: var(--color-text-secondary);
+    .character-avatar.fallback {
+      background: rgba(129, 140, 248, 0.15);
+      color: #c7d2fe;
     }
   }
 }
