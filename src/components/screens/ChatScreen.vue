@@ -2265,6 +2265,11 @@ const {
     chatFaceToFaceMode.value = enabled;
   },
   triggerAIResponse,
+  startNewTurn: () => {
+    clearSwipesOnLastAIMessage();
+    clearRoundSwipes();
+    currentTurnId.value = crypto.randomUUID();
+  },
   getCompleteMessages: async () => {
     await ensureAllMessagesLoaded();
     return getMessageHistory();

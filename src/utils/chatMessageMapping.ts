@@ -309,6 +309,7 @@ export function convertToStorableMessage(m: any, charName: string): ChatMessage 
     thought: m.thought,
     isTimetravel: m.isTimetravel,
     timetravelContent: m.timetravelContent,
+    theaterPhoneScript: m.theaterPhoneScript || undefined,
     isRedpacket: m.isRedpacket,
     redpacketData: m.redpacketData ? { ...m.redpacketData } : undefined,
     redpacketState: m.redpacketState

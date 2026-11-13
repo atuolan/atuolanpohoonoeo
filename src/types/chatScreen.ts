@@ -45,6 +45,8 @@ export interface ChatScreenMessage {
   thought?: string;
   isTimetravel?: boolean;
   timetravelContent?: string;
+  /** 小劇場指令訊息：開小劇場時勾了「小手機劇本格式」，重新生成時要沿用 */
+  theaterPhoneScript?: boolean;
   isRedpacket?: boolean;
   redpacketData?: {
     amount: string;

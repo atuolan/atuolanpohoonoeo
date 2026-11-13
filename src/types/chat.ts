@@ -377,6 +377,8 @@ export interface ChatMessage {
   isTimetravel?: boolean;
   /** 時空跳轉內容 */
   timetravelContent?: string;
+  /** 小劇場指令訊息：開小劇場時勾了「小手機劇本格式」，重新生成時要沿用 */
+  theaterPhoneScript?: boolean;
   /** 是否為紅包 */
   isRedpacket?: boolean;
   /** 紅包數據 */
