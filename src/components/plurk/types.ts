@@ -101,6 +101,8 @@ export interface ThreadResponseRow {
   isMe?: boolean;
   /** 被版主刪除：整列只顯示這行灰字 */
   removedText?: string;
+  /** 路人的回應：可以檢舉並封鎖這個暱稱 */
+  canReport?: boolean;
 }
 
 export interface ThreadPostData {

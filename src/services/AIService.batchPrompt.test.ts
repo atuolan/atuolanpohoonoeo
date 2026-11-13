@@ -72,3 +72,22 @@ describe("buildBatchCommentsPrompt 版主判定", () => {
     expect(buildBatchCommentsPrompt({ ...base, verdictFor: { commentId: "x", strictness: "hard" } })).toContain("1–3 天");
   });
 });
+
+describe("buildBatchCommentsPrompt 路人底線", () => {
+  it("有路人就帶底線、不再用固定範例暱稱", () => {
+    const prompt = buildBatchCommentsPrompt(base);
+    expect(prompt).toContain("# 路人底線");
+    expect(prompt).toContain("再買一個就好");
+    expect(prompt).not.toContain("憑甚麼要做報告");
+  });
+  it("只有路人時也帶底線", () => {
+    expect(buildBatchCommentsPrompt({ ...base, characters: [], passerbyOnly: true })).toContain("# 路人底線");
+  });
+  it("封鎖的暱稱寫進去", () => {
+    expect(buildBatchCommentsPrompt({ ...base, blockedNames: ["我就愛看戲"] })).toContain("「我就愛看戲」");
+  });
+  it("使用者的噗：角色要護著發文人", () => {
+    expect(buildBatchCommentsPrompt(base)).toContain("站在發文人這邊");
+    expect(buildBatchCommentsPrompt({ ...base, post: { ...post, authorType: "ai" } })).not.toContain("站在發文人這邊");
+  });
+});

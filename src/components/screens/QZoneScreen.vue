@@ -126,6 +126,7 @@
         @share="openShare(threadPostId!)"
         @share-comment="(cid) => openShare(threadPostId!, cid)"
         @remove="(id) => thread.remove(id)"
+        @report="reportPasserby"
         @cancel-reply="thread.replyingTo.value = null"
         @quick-action="runThreadQuickAction"
         @open-persona="personaFor = 'thread'"
@@ -1013,6 +1014,7 @@ const threadRows = computed<ThreadResponseRow[]>(() => {
       replyToName: target ? commentAuthor(post, target).name : c.replyToUsername,
       html: render(c.content, c.timestamp),
       canRegenerate: thread.isCharacterComment(c),
+      canReport: c.authorId.startsWith("passerby-") && !c.moderation,
       regenerating: !!plurkActivity.regenerating[c.id],
       removedText: isRemoved(c)
         ? `這則回應因「${c.moderation!.reason}」已被廣場管理員 ${c.moderation!.by} 刪除`
@@ -1059,6 +1061,24 @@ const threadBlockedText = computed(() => {
   const left = banRemaining(ban, now.value);
   return `你在廣場被禁言中，剩 ${left.days} 天 ${left.hours} 小時`;
 });
+
+/** 檢舉路人留言：版主刪掉他在這串的回應，暱稱封鎖，之後生成也不會再出現 */
+async function reportPasserby(commentId: string) {
+  const post = thread.post.value;
+  const target = post?.comments.find((c) => c.id === commentId);
+  if (!post || !target) return;
+  const name = target.username.trim();
+  if (!confirm(`檢舉「${name}」？
+版主 ${MODERATOR_NAME} 會刪掉他在這串的回應，之後也不會再看到這個人留言。`)) return;
+  const moderation = { action: "delete" as const, reason: "惡意留言", by: MODERATOR_NAME, at: now.value };
+  for (const c of post.comments) {
+    if (c.authorId.startsWith("passerby-") && c.username.trim() === name && !c.moderation) {
+      await qzoneStore.updateComment(post.id, c.id, { moderation });
+    }
+  }
+  const list = qzoneStore.settings.blockedPasserby ?? [];
+  if (!list.includes(name)) await qzoneStore.updateSettings({ blockedPasserby: [...list, name] });
+}
 
 async function toggleNpcFriend() {
   const npc = thread.post.value?.npc;
