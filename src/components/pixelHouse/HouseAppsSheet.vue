@@ -2,7 +2,7 @@
 /**
  * 下面那一排打開的面板，兩種：
  * - apps：「全部 App」——所有 App、還沒開放的家具功能
- * - house：「小屋」——換外觀、擺件商店、寵物、移動家具、怎麼玩、全局美化、切回畫布，小屋自己的功能都在這一個地方
+ * - house：「小屋」——換外觀、擺件商店、寵物、移動家具、常用 App、怎麼玩、全局美化、切回畫布，小屋自己的功能都在這一個地方
  */
 import { DOCK_APP_CATALOG } from "@/components/dock/dockApps";
 import { COMING_SOON } from "./houseData";
@@ -16,6 +16,7 @@ const emit = defineEmits<{
   close: [];
   pick: [app: string];
   "edit-layout": [];
+  "dock-apps": [];
   wardrobe: [];
   decor: [];
   cat: [];
@@ -67,6 +68,9 @@ function badgeText(n: number): string {
             </button>
             <button class="ph-row" @click="emit('edit-layout')">
               <span>移動家具</span><span class="ph-row-note">也可以長按房間</span>
+            </button>
+            <button class="ph-row" @click="emit('dock-apps')">
+              <span>常用 App</span><span class="ph-row-note">下面那一排放哪幾個</span>
             </button>
             <button class="ph-row" @click="emit('guide')">
               <span>小屋怎麼玩</span><span class="ph-row-note">哪裡可以點、怎麼換裝、怎麼佈置</span>

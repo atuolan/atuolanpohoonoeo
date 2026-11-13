@@ -1,14 +1,15 @@
 <script setup lang="ts">
 /**
- * 下面那一排：固定的常用 App、「小屋」、「全部 App」。
+ * 下面那一排：常用 App（「小屋 › 常用 App」可以換）、「小屋」、「全部 App」。
  * 平常收成右下角一顆小按鈕（不擋房間），點了才展開；展開後最右邊的箭頭收回去。開著還是收著會記住。
  * 不用記哪件家具是哪個 App；小屋的功能（換外觀、擺件商店、移動家具、怎麼玩）都從「小屋」進去。
  */
 import { computed } from "vue";
-import { DIAL_APPS, DOCK_APP_KEYS, HOUSE_GLYPH, INK } from "./houseData";
+import { ALL_APPS_GLYPH, HOUSE_DOCK_APPS, HOUSE_GLYPH, INK } from "./houseData";
 import { glyphSvg } from "./pixelArt";
 
-const props = defineProps<{ open: boolean; badges: Record<string, number> }>();
+/** apps：放哪幾個常用 App（App.vue handleNavigate 的 id），照順序 */
+const props = defineProps<{ open: boolean; apps: string[]; badges: Record<string, number> }>();
 const emit = defineEmits<{
   (e: "pick", app: string): void;
   (e: "house"): void;
@@ -16,13 +17,16 @@ const emit = defineEmits<{
   (e: "toggle"): void;
 }>();
 
-const ALL = DIAL_APPS.find((a) => a.app === "__all__");
-const appDefs = DOCK_APP_KEYS.map((k) => DIAL_APPS.find((a) => a.key === k)).filter((a): a is (typeof DIAL_APPS)[number] => !!a);
-const appIcons = appDefs.map((a) => glyphSvg(a.glyph, INK));
+const defs = new Map(HOUSE_DOCK_APPS.map((a) => [a.app, { ...a, icon: glyphSvg(a.glyph, INK) }]));
 const houseIcon = glyphSvg(HOUSE_GLYPH, INK);
-const allIcon = ALL ? glyphSvg(ALL.glyph, INK) : "";
+const allIcon = glyphSvg(ALL_APPS_GLYPH, INK);
 
-const apps = computed(() => appDefs.map((a, i) => ({ ...a, icon: appIcons[i], badge: props.badges[a.app] || 0 })));
+const apps = computed(() =>
+  props.apps.flatMap((id) => {
+    const a = defs.get(id);
+    return a ? [{ ...a, badge: props.badges[a.app] || 0 }] : [];
+  }),
+);
 
 /** 收起來時小按鈕上的未讀數：那一排 App 的加起來 */
 const total = computed(() => apps.value.reduce((n, a) => n + a.badge, 0));
@@ -40,7 +44,7 @@ function badgeText(n: number): string {
   <nav v-else class="ph-dock" aria-label="常用 App">
     <button
       v-for="a in apps"
-      :key="a.key"
+      :key="a.app"
       class="ph-dock-btn"
       :aria-label="a.name + (a.badge ? `，${a.badge} 則未讀` : '')"
       @click="emit('pick', a.app)"
