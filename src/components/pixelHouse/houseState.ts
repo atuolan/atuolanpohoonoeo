@@ -10,8 +10,9 @@
  * - 家具擺在哪（只存搬過的）
  * - 買過哪些擺件、有沒有擺出來
  * - 買過哪些家具款式、每件家具現在用哪個款式
+ * - 下面那一排放哪幾個常用 App
  */
-import type { RoomId } from "./houseData";
+import { parseHouseDock, type RoomId } from "./houseData";
 import { parseCustomParts, parseOutfit, type CustomPart, type Outfit } from "./wardrobeLogic";
 
 export type HomeStyle = "canvas" | "pixel-house";
@@ -32,6 +33,8 @@ export interface PixelHouseState {
   guideSeen: boolean;
   /** 下面那一排 App 展開著（預設收成右下角一顆小按鈕，不擋房間） */
   dockOpen: boolean;
+  /** 下面那一排的常用 App（App.vue handleNavigate 的 id），照順序 */
+  dockApps: string[];
   /** 房間 → 家具 id → [x, y]（房間格子） */
   placements: Partial<Record<RoomId, Record<string, [number, number]>>>;
   /** 買過的擺件 id → 有沒有擺出來（false = 收起來） */
@@ -46,7 +49,7 @@ const STORAGE_KEY = "pixel_house_state";
 export const PIXEL_HOUSE_CHANGED_EVENT = "aguaphone:pixel-house-changed";
 
 export function defaultPixelHouseState(): PixelHouseState {
-  return { homeStyle: "canvas", residentCharId: null, look: "boy", looks: {}, timeLight: true, calm: false, guideSeen: false, dockOpen: false, placements: {}, decor: {}, ownedSkins: [], skins: {} };
+  return { homeStyle: "canvas", residentCharId: null, look: "boy", looks: {}, timeLight: true, calm: false, guideSeen: false, dockOpen: false, dockApps: parseHouseDock(null), placements: {}, decor: {}, ownedSkins: [], skins: {} };
 }
 
 /** 讀不到或格式不對的欄位用預設值 */
@@ -99,6 +102,7 @@ export function parsePixelHouseState(raw: unknown): PixelHouseState {
     calm: r.calm === true,
     guideSeen: r.guideSeen === true,
     dockOpen: r.dockOpen === true,
+    dockApps: parseHouseDock(r.dockApps),
     placements,
     decor,
     ownedSkins,

@@ -70,6 +70,7 @@ import { DIRT_ART, DIRT_BY_ID, choreAct, type DirtKind } from "./houseChores";
 import { useHouseChores } from "./useHouseChores";
 import { useHouseInteract } from "./useHouseInteract";
 import HouseAppsSheet from "./HouseAppsSheet.vue";
+import HouseDockEditor from "./HouseDockEditor.vue";
 import HouseDecorShop from "./HouseDecorShop.vue";
 import HouseDock from "./HouseDock.vue";
 import HouseGuide, { type GuideAction } from "./HouseGuide.vue";
@@ -1283,6 +1284,12 @@ function toggleDock() {
   state.dockOpen = !state.dockOpen;
   persist();
 }
+/** 「小屋 › 常用 App」：換下面那一排放哪幾個 */
+const dockEditorOpen = ref(false);
+function setDockApps(apps: string[]) {
+  state.dockApps = apps;
+  persist();
+}
 
 // ===== 小屋待辦（右上的轉盤） =====
 
@@ -2293,7 +2300,7 @@ function labelStyle(room: RoomId, it: RenderItem) {
         <!-- 他在哪、在做什麼：在房間列下面；他不在畫面上時點了滑過去。待辦打開時藏起來（會蓋到面板，待辦裡也有寫） -->
         <button v-show="!menuOpen" class="ph-hint" aria-live="polite" @click="hintTap">{{ hint }}</button>
         <!-- 選單打開時藏起來（右下的圓按鈕會蓋到面板） -->
-        <HouseDock v-show="!menuOpen" :open="state.dockOpen" :badges="badges" @toggle="toggleDock" @pick="emit('navigate', $event)" @house="openSheet('house')" @all="openSheet('apps')" />
+        <HouseDock v-show="!menuOpen" :open="state.dockOpen" :apps="state.dockApps" :badges="badges" @toggle="toggleDock" @pick="emit('navigate', $event)" @house="openSheet('house')" @all="openSheet('apps')" />
       </template>
 
       <!-- 大門：商店還是外送 -->
@@ -2339,7 +2346,9 @@ function labelStyle(room: RoomId, it: RenderItem) {
         @global-theme="sheetOpen = false; emit('open-global-theme')"
         @back-to-canvas="backToCanvas"
         @guide="sheetOpen = false; guideOpen = true"
+        @dock-apps="sheetOpen = false; dockEditorOpen = true"
       />
+      <HouseDockEditor :open="dockEditorOpen" :apps="state.dockApps" @close="dockEditorOpen = false" @change="setDockApps" />
       <HouseGuide
         :open="guideOpen"
         :pronoun="pronoun"

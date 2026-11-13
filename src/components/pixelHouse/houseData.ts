@@ -289,34 +289,60 @@ export const WALK_SPEED = 30;
 /** 小人顯示的高度（房間格子） */
 export const CHAR_HEIGHT = 46;
 
-// ===== 側邊選單（右上角轉盤按鈕打開） =====
+// ===== 小屋裡的 App（「全部 App」、下面那一排的常用 App） =====
 
-export interface DialApp {
-  key: string;
-  /** 送給 App.vue handleNavigate 的 id；"__all__" 打開全部 App */
+export interface HouseApp {
+  /** 送給 App.vue handleNavigate 的 id，也是存起來的值 */
   app: string;
   name: string;
-  bg: string;
-  glyph: string[];
+  /** 這個 App 的主色：圖示的淡底和線條都從它調出來（houseApps.ts） */
+  color: string;
 }
 
-/** 9×9 的像素圖示，# 是有顏色的格子 */
-export const DIAL_APPS: DialApp[] = [
-  { key: "msg", app: "message", name: "訊息", bg: "#9ED3A5", glyph: [".........", ".#######.", "#########", "##.#.#.##", "#########", ".#######.", "..##.....", "..#......", "........."] },
-  { key: "char", app: "character", name: "角色", bg: "#F2B8A0", glyph: ["...###...", "..#####..", "..#####..", "..#####..", "...###...", ".........", ".#######.", "#########", "#########"] },
-  { key: "user", app: "user", name: "使用者", bg: "#F4A9B8", glyph: [".........", ".##...##.", "####.####", "#########", "#########", ".#######.", "..#####..", "...###...", "....#...."] },
-  { key: "world", app: "book", name: "世界書", bg: "#9CC7E6", glyph: ["...###...", ".##.#.##.", ".#..#..#.", "#########", "#...#...#", "#########", ".#..#..#.", ".##.#.##.", "...###..."] },
-  { key: "prompt", app: "prompt-manager", name: "提示詞", bg: "#F3D98B", glyph: [".#######.", ".#.....#.", ".#.###.#.", ".#.....#.", ".#.###.#.", ".#.....#.", ".#.##..#.", ".#.....#.", ".#######."] },
-  { key: "theater", app: "theater", name: "劇場", bg: "#C9A7E0", glyph: [".#######.", "#########", "##.###.##", "#########", "#.#####.#", "##.....##", ".##...##.", "..#####..", "........."] },
-  { key: "fate", app: "fate", name: "占卜", bg: "#B7B4EE", glyph: ["..#####..", ".#.....#.", "#..#....#", "#.......#", "#.......#", ".#.....#.", "..#####..", ".#######.", "#########"] },
-  { key: "read", app: "reading", name: "閱讀", bg: "#E8C79A", glyph: [".........", ".##...##.", "#..#.#..#", "#..#.#..#", "#..#.#..#", "#..#.#..#", "####.####", "...###...", "........."] },
-  { key: "all", app: "__all__", name: "全部 App", bg: "#D8CFC0", glyph: [".........", ".###.###.", ".###.###.", ".###.###.", ".........", ".###.###.", ".###.###.", ".###.###.", "........."] },
+/** 小屋裡開得到的每一個 App：「全部 App」照這個順序列，常用 App 也從這裡挑。圖示在 houseApps.ts，到哪裡都同一套 */
+export const HOUSE_APPS: HouseApp[] = [
+  { app: "message", name: "訊息", color: "#9CCBA0" },
+  { app: "character", name: "角色", color: "#F2B79E" },
+  { app: "user", name: "使用者", color: "#F0AEBB" },
+  { app: "book", name: "世界書", color: "#9FC6E3" },
+  { app: "prompt-manager", name: "提示詞", color: "#EBCD86" },
+  { app: "settings", name: "設置", color: "#C9BDAE" },
+  { app: "phone", name: "電話", color: "#98D0C2" },
+  { app: "space", name: "空間", color: "#E3B4DA" },
+  { app: "theater", name: "小劇場", color: "#C3ABE0" },
+  { app: "fate", name: "占卜", color: "#AEB4E8" },
+  { app: "reading", name: "閱讀", color: "#E2C398" },
+  { app: "bookshelf", name: "書架", color: "#D3B596" },
+  { app: "music", name: "音樂", color: "#F2ABA6" },
+  { app: "game", name: "遊戲", color: "#A4D2E6" },
+  { app: "fitness", name: "健身", color: "#F2BC90" },
+  { app: "shop", name: "購物", color: "#EBCB9A" },
+  { app: "delivery", name: "外賣", color: "#E3C0A2" },
+  { app: "calendar", name: "日曆", color: "#EFA9A2" },
+  { app: "weather", name: "天氣", color: "#B4CFEE" },
+  { app: "pomodoro", name: "番茄鐘", color: "#EDA59C" },
+  { app: "note-board", name: "留言板", color: "#EFD98F" },
+  { app: "food-log", name: "食記", color: "#BFD79A" },
+  { app: "date", name: "約會", color: "#F2B2C6" },
+  { app: "peek-phone", name: "頭盔TA", color: "#DDCB80" },
 ];
 
-/** 下面那一排固定的常用 App（DIAL_APPS 的 key），不用記哪件家具是哪個 App */
-export const DOCK_APP_KEYS = ["msg", "char", "world", "prompt"];
-/** 下面那一排的「小屋」：換外觀、擺件商店、移動家具、怎麼玩都在這裡 */
-export const HOUSE_GLYPH = ["....#....", "...###...", "..#####..", ".#######.", "#########", ".#######.", ".##.#.##.", ".##.###..", ".##.###.."];
+/** 沒自訂過時下面那一排放的 App */
+export const DEFAULT_HOUSE_DOCK = ["message", "character", "book", "prompt-manager"];
+/** 下面那一排最多放幾個（再多字會擠在一起） */
+export const HOUSE_DOCK_MAX = 4;
+
+/** 存起來的常用 App 整理一下：只留認得的、不重複、最多 HOUSE_DOCK_MAX 個；一個都沒有就用預設 */
+export function parseHouseDock(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [...DEFAULT_HOUSE_DOCK];
+  const known = new Set(HOUSE_APPS.map((a) => a.app));
+  const apps = [...new Set(raw.filter((id): id is string => typeof id === "string" && known.has(id)))].slice(0, HOUSE_DOCK_MAX);
+  return apps.length ? apps : [...DEFAULT_HOUSE_DOCK];
+}
+
+/** 下面那一排「小屋」「全部」兩顆的主色 */
+export const HOUSE_BUTTON_COLOR = "#EBC08E";
+export const ALL_BUTTON_COLOR = "#D6CABB";
 
 export const INK = "#3B2A26";
 export const PAPER = "#FBF7EE";
