@@ -5,6 +5,7 @@
  */
 import { ChevronDown, ChevronUp, Minus } from "lucide-vue-next";
 import { computed } from "vue";
+import HouseAppTile from "./HouseAppTile.vue";
 import { HOUSE_APP_ICONS, houseAppIcons } from "./houseApps";
 import { DEFAULT_HOUSE_DOCK, HOUSE_DOCK_MAX } from "./houseData";
 
@@ -51,7 +52,7 @@ function add(app: string) {
           </div>
           <ol class="ph-picked">
             <li v-for="(a, i) in picked" :key="a.app" class="ph-picked-row">
-              <span class="ph-icon is-small" :style="{ background: a.bg }"><img :src="a.icon" alt="" /></span>
+              <HouseAppTile :icon="a.icon" :color="a.color" size="sm" />
               <span class="ph-picked-name">{{ a.name }}</span>
               <button class="ph-mini" :disabled="i === 0" :aria-label="`${a.name}往前`" @click="move(i, -1)">
                 <ChevronUp :size="18" :stroke-width="2.4" />
@@ -69,7 +70,7 @@ function add(app: string) {
           <p class="ph-note">{{ full ? `放滿 ${HOUSE_DOCK_MAX} 個了，先從上面拿掉一個再換。` : "點一下加到最後面。" }}</p>
           <div class="ph-app-grid">
             <button v-for="a in others" :key="a.app" class="ph-app" :disabled="full" :aria-label="`加入${a.name}`" @click="add(a.app)">
-              <span class="ph-icon" :style="{ background: a.bg }"><img :src="a.icon" alt="" /></span>
+              <HouseAppTile class="ph-icon" :icon="a.icon" :color="a.color" />
               <span class="ph-app-name">{{ a.name }}</span>
             </button>
           </div>
@@ -247,42 +248,6 @@ function add(app: string) {
   cursor: default;
 }
 
-/* 跟下面那一排一樣的像素圖示 */
-.ph-icon {
-  position: relative;
-  flex: none;
-  width: 54px;
-  height: 54px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 16px;
-  transition: transform 120ms ease;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.55),
-    0 3px 8px rgba(30, 20, 18, 0.14);
-}
-
-/* 9 格放大成整數倍（×4、×3），每一格才一樣大 */
-.ph-icon img {
-  display: block;
-  width: 36px;
-  height: 36px;
-  image-rendering: pixelated;
-}
-
-.ph-icon.is-small {
-  width: 40px;
-  height: 40px;
-  border-radius: 12px;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55);
-}
-
-.ph-icon.is-small img {
-  width: 27px;
-  height: 27px;
-}
-
 .ph-app-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -314,8 +279,9 @@ function add(app: string) {
 
 .ph-app-name {
   max-width: 100%;
+  color: #7a5c4e;
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 500;
   line-height: 16px;
   white-space: nowrap;
   overflow: hidden;

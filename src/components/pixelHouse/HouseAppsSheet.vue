@@ -1,10 +1,11 @@
 <script setup lang="ts">
 /**
  * 下面那一排打開的面板，兩種：
- * - apps：「全部 App」——所有 App、還沒開放的家具功能
+ * - apps：「全部 App」——所有 App（圖示跟下面那一排同一套）、還沒開放的家具功能
  * - house：「小屋」——換外觀、擺件商店、寵物、移動家具、常用 App、怎麼玩、全局美化、切回畫布，小屋自己的功能都在這一個地方
  */
-import { DOCK_APP_CATALOG } from "@/components/dock/dockApps";
+import HouseAppTile from "./HouseAppTile.vue";
+import { HOUSE_APP_ICONS } from "./houseApps";
 import { COMING_SOON } from "./houseData";
 
 defineProps<{
@@ -42,17 +43,16 @@ function badgeText(n: number): string {
         <div class="ph-sheet-body">
           <div v-if="mode === 'apps'" class="ph-app-grid">
             <button
-              v-for="app in DOCK_APP_CATALOG"
-              :key="app.id"
+              v-for="a in HOUSE_APP_ICONS"
+              :key="a.app"
               class="ph-app"
-              :aria-label="app.label + (badges[app.id] ? `，${badges[app.id]} 則未讀` : '')"
-              @click="emit('pick', app.id)"
+              :aria-label="a.name + (badges[a.app] ? `，${badges[a.app]} 則未讀` : '')"
+              @click="emit('pick', a.app)"
             >
-              <span class="ph-app-icon">
-                <component :is="app.icon" :size="24" :stroke-width="2" />
-                <span v-if="badges[app.id]" class="ph-app-badge" aria-hidden="true">{{ badgeText(badges[app.id]) }}</span>
-              </span>
-              <span class="ph-app-name">{{ app.label }}</span>
+              <HouseAppTile class="ph-app-icon" :icon="a.icon" :color="a.color">
+                <span v-if="badges[a.app]" class="ph-app-badge" aria-hidden="true">{{ badgeText(badges[a.app]) }}</span>
+              </HouseAppTile>
+              <span class="ph-app-name">{{ a.name }}</span>
             </button>
           </div>
 
@@ -162,6 +162,7 @@ function badgeText(n: number): string {
 }
 
 .ph-app {
+  min-width: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -174,26 +175,9 @@ function badgeText(n: number): string {
   cursor: pointer;
 }
 
-.ph-app-icon {
-  position: relative;
-  width: 54px;
-  height: 54px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-sizing: border-box;
-  border-radius: 16px;
-  background: linear-gradient(160deg, #f8e3a3, #efc96c);
-  color: #3b2a26;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.6),
-    0 4px 10px rgba(59, 42, 38, 0.14);
+.ph-app:active .ph-app-icon {
+  transform: scale(0.92);
 }
-
-.ph-app:nth-child(5n + 2) .ph-app-icon { background: linear-gradient(160deg, #c3e8c8, #93cc9c); }
-.ph-app:nth-child(5n + 3) .ph-app-icon { background: linear-gradient(160deg, #c6e1f4, #92bfe2); }
-.ph-app:nth-child(5n + 4) .ph-app-icon { background: linear-gradient(160deg, #f9cdd6, #f0a2b2); }
-.ph-app:nth-child(5n + 5) .ph-app-icon { background: linear-gradient(160deg, #e2cdf0, #c3a0dc); }
 
 .ph-row:last-child,
 .ph-soon li:last-child {
@@ -236,9 +220,14 @@ function badgeText(n: number): string {
 }
 
 .ph-app-name {
+  max-width: 100%;
+  color: #7a5c4e;
   font-size: 12px;
+  font-weight: 500;
   line-height: 16px;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .ph-sheet-sub {

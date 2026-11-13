@@ -1,13 +1,26 @@
 import { describe, expect, it } from "vitest";
 import { DOCK_APP_CATALOG } from "@/components/dock/dockApps";
+import { HOUSE_APP_ICON, HOUSE_APP_ICONS, mixHex, tileColors } from "./houseApps";
 import { DEFAULT_HOUSE_DOCK, HOUSE_APPS, HOUSE_DOCK_MAX, parseHouseDock } from "./houseData";
 import { parsePixelHouseState } from "./houseState";
 
 describe("小屋裡的 App 清單", () => {
-  it("每個圖示都是 9×9，只有 . 和 #", () => {
+  it("每個 App 都有圖示和 #rrggbb 的主色", () => {
     for (const a of HOUSE_APPS) {
-      expect(a.glyph, a.app).toHaveLength(9);
-      for (const row of a.glyph) expect(row, a.app).toMatch(/^[.#]{9}$/);
+      expect(HOUSE_APP_ICON[a.app], a.app).toBeTruthy();
+      expect(a.color, a.app).toMatch(/^#[0-9A-Fa-f]{6}$/);
+    }
+    expect(HOUSE_APP_ICONS.map((a) => a.app)).toEqual(HOUSE_APPS.map((a) => a.app));
+  });
+
+  it("淡彩配色：底比主色淡、線條比主色深", () => {
+    expect(mixHex("#000000", "#ffffff", 0.5)).toBe("#808080");
+    expect(mixHex("#9CCBA0", "#fffaf2", 1)).toBe("#9ccba0");
+    const lum = (hex: string) => parseInt(hex.slice(1, 3), 16) + parseInt(hex.slice(3, 5), 16) + parseInt(hex.slice(5, 7), 16);
+    for (const a of HOUSE_APPS) {
+      const c = tileColors(a.color);
+      expect(lum(c.bg), a.app).toBeGreaterThan(lum(a.color));
+      expect(lum(c.ink), a.app).toBeLessThan(lum(a.color));
     }
   });
 
