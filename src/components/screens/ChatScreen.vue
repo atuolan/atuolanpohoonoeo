@@ -150,6 +150,7 @@ import { useChatInit } from "@/composables/useChatInit";
 import {
   applyWaimaiParsedResultToMessage,
   buildWaimaiAuthorsNote,
+  placeWaimaiProgressChronologically,
 } from "@/composables/useChatWaimai";
 import { useChatStreamingHandlers } from "@/composables/useChatStreamingHandlers";
 import { useChatCleanup } from "@/composables/useChatCleanup";
@@ -1339,10 +1340,10 @@ function exitSearchContextMode() {
 const visibleMessages = computed(() => {
   const now = waimaiProgressNow.value;
   if (isSearchContextMode.value) {
-    return searchContextMessages.value.filter((m) => isMessageDisplayable(m, now));
+    return placeWaimaiProgressChronologically(searchContextMessages.value).filter((m) => isMessageDisplayable(m, now));
   }
 
-  const filteredMessages = messages.value.filter((m) => isMessageDisplayable(m, now));
+  const filteredMessages = placeWaimaiProgressChronologically(messages.value).filter((m) => isMessageDisplayable(m, now));
   const total = filteredMessages.length;
   const result = total <= visibleCount.value
     ? filteredMessages
@@ -6255,7 +6256,7 @@ async function runAIResponseOnce(
 
     // 先過濾掉尚未到達排程時間的物流進度訊息，避免角色「看到未來」；生成失敗的錯誤氣泡也不送
     const now = Date.now();
-    const eligibleMessages = getMessageHistory().filter(
+    const eligibleMessages = placeWaimaiProgressChronologically(getMessageHistory()).filter(
       (m) =>
         !(m.isWaimaiProgress && m.timestamp > now) &&
         !isGenerationErrorMessage(m) &&

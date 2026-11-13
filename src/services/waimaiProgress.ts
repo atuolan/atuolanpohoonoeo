@@ -56,20 +56,23 @@ function calcEtaRemainingText(eta: WaimaiEtaSnapshot | undefined, at: number): s
 
 function getProgressContent(status: WaimaiOrderStatus, order: WaimaiOrderSnapshot, at: number): string {
   const etaText = calcEtaRemainingText(order.eta, at);
+  // 帶上商品名，讓 AI 知道是哪張單
+  const prefix = `📦 物流進度｜${order.item.name}：`;
+  const isLocal = order.eta?.routeType === "local_instant";
 
+  let body: string;
   if (status === "in_transit") {
-    return `📦 物流進度更新：訂單已出庫並進入運輸中。${etaText}`;
+    body = isLocal ? "🧑‍🍳 店家出餐了，外送員已取餐出發。" : "📦 商品已出貨，運送中。";
+  } else if (status === "customs") {
+    body = "🛃 包裹清關中。";
+  } else if (status === "delivering") {
+    body = isLocal ? "🛵 外送員快到了。" : "🚚 包裹已交給當地配送，正在派送。";
+  } else if (status === "delivered") {
+    return `${prefix}${isLocal ? "✅ 餐點送到了。" : "✅ 包裹送到了。"}`;
+  } else {
+    return `${prefix}物流進度更新。`;
   }
-  if (status === "customs") {
-    return `🛃 物流進度更新：包裹已進入清關流程。${etaText}`;
-  }
-  if (status === "delivering") {
-    return `🛵 物流進度更新：包裹已交由末端配送，正在派送。${etaText}`;
-  }
-  if (status === "delivered") {
-    return "✅ 物流進度更新：訂單已送達。";
-  }
-  return "📣 物流進度更新。";
+  return `${prefix}${body}${etaText}`;
 }
 
 /**

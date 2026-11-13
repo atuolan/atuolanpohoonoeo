@@ -6,12 +6,46 @@
 import type { ApologyFoodOrder } from '@/types/block'
 import type { Chat } from '@/types/chat'
 import { db, DB_STORES } from '@/db/database'
-import { getWaimaiCatalogItemById, WAIMAI_CATALOG } from '@/data/waimaiCatalog'
+import {
+  getWaimaiCatalogItemById,
+  WAIMAI_CATALOG,
+  type WaimaiCatalogItem,
+} from '@/data/waimaiCatalog'
 
 /** 送達計時器最小 ETA（毫秒）：5 分鐘 */
 const MIN_ETA_MS = 5 * 60 * 1000
 /** 送達計時器最大 ETA（毫秒）：15 分鐘 */
 const MAX_ETA_MS = 15 * 60 * 1000
+
+/**
+ * 解析道歉外賣的食物：AI 給的 ID 常對不上，所以只在餐飲館裡找。
+ * 順序：ID → 名稱（完全相同、再互相包含）→ 餐飲館隨機。
+ */
+export function resolveApologyFoodItem(
+  idOrName: string,
+  random: () => number = Math.random,
+): WaimaiCatalogItem | undefined {
+  const foods = WAIMAI_CATALOG.filter((i) => i.section === 'food')
+  const byId = getWaimaiCatalogItemById(idOrName)
+  if (byId && byId.section === 'food') return byId
+
+  const normalize = (v: string) => v.replace(/\s+/g, '').toLowerCase()
+  const key = normalize(idOrName || '')
+  const available = foods.filter((i) => i.isAvailable)
+  if (key) {
+    const exact = available.find((i) => normalize(i.name) === key)
+    if (exact) return exact
+    const partial = available.find((i) => {
+      const name = normalize(i.name)
+      return name.includes(key) || key.includes(name)
+    })
+    if (partial) return partial
+  }
+
+  const pool = available.length > 0 ? available : foods
+  if (pool.length === 0) return undefined
+  return pool[Math.min(pool.length - 1, Math.floor(random() * pool.length))]
+}
 
 class ApologyFoodService {
   private static instance: ApologyFoodService
@@ -27,7 +61,7 @@ class ApologyFoodService {
 
   /**
    * 處理角色道歉外賣（由 ResponseParser 觸發）
-   * 從 waimaiCatalog 取得食物資訊，不存在時隨機替代
+   * 從餐飲館取得食物資訊，對不上時隨機替代
    */
   async handleApologyFood(
     chatId: string,
@@ -35,18 +69,11 @@ class ApologyFoodService {
     itemId: string,
     message: string
   ): Promise<void> {
-    // 從目錄取得食物資訊
-    let catalogItem = getWaimaiCatalogItemById(itemId)
-
+    // AI 給的 ID 常對不上，只會從餐飲館挑，避免送出非食物商品
+    const catalogItem = resolveApologyFoodItem(itemId)
     if (!catalogItem) {
-      // 食物 ID 不存在，隨機選擇一個替代
-      console.warn(`[ApologyFood] 食物 ID "${itemId}" 不存在於 waimaiCatalog，隨機選擇替代食物`)
-      const available = WAIMAI_CATALOG.filter(i => i.isAvailable)
-      if (available.length === 0) {
-        console.warn('[ApologyFood] waimaiCatalog 中無可用食物，取消下單')
-        return
-      }
-      catalogItem = available[Math.floor(Math.random() * available.length)]
+      console.warn('[ApologyFood] waimaiCatalog 中無可用食物，取消下單')
+      return
     }
 
     const now = Date.now()
