@@ -91,3 +91,11 @@ describe("buildBatchCommentsPrompt 路人底線", () => {
     expect(buildBatchCommentsPrompt({ ...base, post: { ...post, authorType: "ai" } })).not.toContain("站在發文人這邊");
   });
 });
+
+describe("buildBatchCommentsPrompt 生老病死", () => {
+  it("有角色、只有路人、不加路人都帶這條", () => {
+    expect(buildBatchCommentsPrompt(base)).toContain("生老病死不吐槽");
+    expect(buildBatchCommentsPrompt({ ...base, characters: [], passerbyOnly: true })).toContain("生老病死不吐槽");
+    expect(buildBatchCommentsPrompt({ ...base, allowPasserby: false })).toContain("生老病死不吐槽");
+  });
+});

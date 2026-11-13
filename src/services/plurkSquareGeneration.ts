@@ -137,7 +137,7 @@ ${slots}
 ${topicRule}
 2. 每則 15–120 字，繁體中文口語，純文字，不要動作描述、不要 hashtag。
 ${nameRule}
-4. 每則附 0–3 則其他路人的回應（replies），像真的留言串；也給一個喜歡數 likes（0–200 的整數，大部分在 50 以下）。
+4. 每則附 0–3 則其他路人的回應（replies），像真的留言串，講到生老病死的噗回應只安慰、不吐槽不玩梗；也給一個喜歡數 likes（0–200 的整數，大部分在 50 以下）。
 5. qualifier 是噗浪發語詞，可省略；只能用：${qualifiers}
 6. 版主：${STRICTNESS_RULES[input.strictness]}
 ${characterSection}${announceSection}${recent}

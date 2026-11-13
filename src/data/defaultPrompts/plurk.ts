@@ -161,7 +161,7 @@ export const PLURK_COMMENT_PROMPT_DEFINITIONS: PromptDefinition[] = [
     role: "system",
     content: `評論風格要求：
 1. 每個角色都用自己的身份和語氣留言，像真的在滑噗浪
-2. 回覆要自然、有互動感，可以接話、吐槽、玩梗
+2. 回覆要自然、有互動感，可以接話、吐槽、玩梗；生老病死這類話題不吐槽、不玩梗
 3. 可以使用表情符號
 4. 長度適中，不要每則都一樣長
 

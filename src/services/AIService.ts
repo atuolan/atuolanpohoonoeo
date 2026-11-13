@@ -363,6 +363,11 @@ export function buildBatchCommentsPrompt(params: {
 
   // 路人底線：玩家發難過的事被路人辱罵、詛咒過，這段比評論風格優先
   const blockedNames = (params.blockedNames ?? []).filter(Boolean);
+  // 生老病死：角色和路人都不吐槽
+  const heavyTopicRule = `
+# 生老病死不吐槽（最高優先，角色和路人都要遵守）
+貼文或留言在講生老病死（過世、寵物離開、生病住院、受傷、意外、喪禮、年老、流產、難產……）時，所有人都不准吐槽、玩梗、調侃、開玩笑，也不准質疑對方的難過。嘴硬、毒舌的角色也只能用自己的方式關心或安慰（例如彆扭地說「別一直哭，吃點東西」），不能拿這件事損人。
+`;
   const passerbyConduct = `
 # 路人底線（最高優先，比評論風格更優先）
 - 吐槽、玩梗只能針對事情本身，不能衝著發文人；禁止辱罵、人身攻擊、嘲諷、詛咒，禁止叫人或對方家人去死、罵人神經病這類話。
@@ -442,7 +447,7 @@ export function buildBatchCommentsPrompt(params: {
 2. 路人之間可以互相回覆，形成對話串
 3. 評論必須是純文字，禁止任何動作描述（如「（微笑）」「*轉筆*」）
 4. 使用繁體中文，口語化表達
-${styleSection}
+${styleSection}${heavyTopicRule}
 # 路人評論者規則
 - characterId 使用 "passerby-1", "passerby-2", "passerby-3" 等格式
 - characterName 使用真實、多樣化的網路暱稱，例如：
@@ -586,7 +591,7 @@ ${passerbyConduct}`
 4. 口語化表達
 5. 每個角色依自己的國籍與背景判斷母語：母語是中文就直接寫繁體中文；母語不是中文，每則評論都完整用母語寫，content 寫成「母語原文<br>對應的中文翻譯」，禁止只有中文的評論。路人用繁體中文
 6. 噗浪作者、已有評論作者、被回覆者、路人、以及各角色私聊中的 {{user}} 是不同身份欄位；不得因為看到「用戶／玩家」就自動合併。
-${replyPrioritySection}${styleSection}${singleSection}
+${replyPrioritySection}${styleSection}${heavyTopicRule}${singleSection}
 # 評論區角色
 
 ${charactersPrompt}
