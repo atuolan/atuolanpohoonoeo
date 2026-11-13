@@ -475,7 +475,7 @@ onMounted(async () => {
 
     // ===== 第三屏（右側）：生活 =====
     canvasStore.addWidget({ type: "calendar", x: 57, y: 2, width: 14, height: 16, data: { customStyle: card("calendar") } });
-    app(73, 2, "購物");
+    app(73, 2, "商店");
     app(73, 7, "外賣");
     app(73, 12, "錢包");
     canvasStore.addWidget({ type: "weather", x: 57, y: 19, width: 10, height: 10, data: { customStyle: card("weather") } });

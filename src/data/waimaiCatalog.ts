@@ -2,7 +2,7 @@
  * 外賣/商城 MVP 商品目錄
  *
  * 三大館：
- * 1) 良心商店（日用品、化妝品、玩偶）
+ * 1) 良心商店（日用品、保養品；玩偶在商店的「禮物」）
  * 2) 邪氣商店（成人用品）
  * 3) 美食廣場（餐飲）
  */
@@ -44,7 +44,7 @@ export const WAIMAI_SECTION_META: WaimaiMallSectionMeta[] = [
   {
     id: "kind",
     label: "良心商店",
-    subtitle: "日用品、化妝品、玩偶",
+    subtitle: "日用品、保養品",
   },
   {
     id: "spicy",
@@ -180,50 +180,6 @@ const RAW_WAIMAI_CATALOG: Omit<WaimaiCatalogItem, "logisticsMeta">[] = [
     isAvailable: true,
     description: "清爽不泛白，通勤外出皆適用。",
   },
-  {
-    id: "kind_toy_plush_bunny",
-    section: "kind",
-    storeName: "抱抱玩偶社",
-    name: "奶油兔玩偶",
-    price: 490,
-    imageUrl: "https://images.unsplash.com/photo-1585155770913-5f0b1f9e5c44?w=400&h=400&fit=crop",
-    tags: ["玩偶", "禮物", "療癒"],
-    isAvailable: true,
-    description: "柔軟親膚，適合陪睡與擺飾。",
-  },
-  {
-    id: "kind_toy_plush_bear",
-    section: "kind",
-    storeName: "抱抱玩偶社",
-    name: "焦糖熊玩偶",
-    price: 620,
-    imageUrl: "https://images.unsplash.com/photo-1559715541-5daf8a0296d0?w=400&h=400&fit=crop",
-    tags: ["玩偶", "禮物", "收藏"],
-    isAvailable: true,
-    description: "經典熊系，送禮安全牌。",
-  },
-  {
-    id: "kind_toy_plush_cat_gray",
-    section: "kind",
-    storeName: "抱抱玩偶社",
-    name: "灰貓抱枕玩偶",
-    price: 540,
-    imageUrl: "https://images.unsplash.com/photo-1543852786-1cf6624b9987?w=400&h=400&fit=crop",
-    tags: ["玩偶", "抱枕", "療癒"],
-    isAvailable: true,
-    description: "可當腰靠與午睡枕，辦公室人氣款。",
-  },
-  {
-    id: "kind_toy_mystery_box_cute",
-    section: "kind",
-    storeName: "驚喜扭蛋屋",
-    name: "萌系盲盒（隨機款）",
-    price: 299,
-    imageUrl: "https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=400&h=400&fit=crop",
-    tags: ["玩偶", "盲盒", "驚喜"],
-    isAvailable: true,
-    description: "共 8 款含隱藏版，收藏樂趣滿點。",
-  },
 
   // ===== 邪氣商店 =====
   {
@@ -254,7 +210,7 @@ const RAW_WAIMAI_CATALOG: Omit<WaimaiCatalogItem, "logisticsMeta">[] = [
     storeName: "夜魅實驗室",
     name: "靜音跳蛋",
     price: 980,
-    imageUrl: "https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=400&h=400&fit=crop",
+    imageUrl: "",
     tags: ["成人", "情趣", "電動"],
     isAvailable: true,
     description: "多段震動模式，噪音控制良好。",

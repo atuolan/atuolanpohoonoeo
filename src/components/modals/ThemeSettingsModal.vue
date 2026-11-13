@@ -42,6 +42,7 @@ import type {
 } from "./theme-settings/types";
 import { resolveChatSkins } from "@/utils/chatSkinResolve";
 import { useChatSkinsStore } from "@/stores/chatSkins";
+import { setNextStoreTab } from "@/components/shop/storeTabs";
 
 // 從聊天頁開啟：可在「全域外觀」與「這個聊天專屬」之間切換；
 // 從聊天以外開啟（沒有 chatAppearance）：只編輯全域外觀
@@ -947,6 +948,7 @@ const previewLayout = computed(
 
 function openShopFromSkins() {
   emit("close");
+  setNextStoreTab("chatskin");
   window.dispatchEvent(new CustomEvent("aguaphone:open-shop"));
 }
 
@@ -1790,7 +1792,7 @@ function cancel() {
                       </div>
                       <div v-else class="empty-decorations">
                         <p>還沒有購買頭像框</p>
-                        <p class="hint">前往商城購買裝飾品</p>
+                        <p class="hint">前往商店購買裝飾品</p>
                       </div>
                     </section>
                   </template>

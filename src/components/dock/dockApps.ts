@@ -14,7 +14,6 @@ import {
   Music,
   Phone,
   Settings,
-  ShoppingBag,
   ShoppingCart,
   Sparkles,
   StickyNote,
@@ -41,7 +40,7 @@ export const DOCK_APP_CATALOG: DockApp[] = [
   { id: "music", icon: Music, label: "音樂" },
   { id: "fitness", icon: Dumbbell, label: "健身" },
   { id: "game", icon: Gamepad2, label: "遊戲" },
-  { id: "shop", icon: ShoppingCart, label: "購物" },
+  { id: "shop", icon: ShoppingCart, label: "商店" },
   { id: "book", icon: Book, label: "世界書" },
   { id: "calendar", icon: Calendar, label: "日曆" },
   { id: "weather", icon: Cloud, label: "天氣" },
@@ -49,7 +48,6 @@ export const DOCK_APP_CATALOG: DockApp[] = [
   { id: "reading", icon: BookOpen, label: "閱讀" },
   { id: "bookshelf", icon: Library, label: "書架" },
   { id: "user", icon: User, label: "使用者" },
-  { id: "delivery", icon: ShoppingBag, label: "外賣" },
   { id: "theater", icon: Drama, label: "小劇場" },
   { id: "peek-phone", icon: HardHat, label: "頭盔TA" },
   { id: "fate", icon: Moon, label: "占卜" },
@@ -81,6 +79,13 @@ const STORAGE_KEY = "dock_app_ids";
 
 const catalogById = new Map(DOCK_APP_CATALOG.map((app) => [app.id, app]));
 
+// 「外賣」併進「商店」了：舊的存檔換成商店，跟原本就有的商店重複就只留一個
+const MERGED_DOCK_IDS: Record<string, string> = { delivery: "shop" };
+
+export function migrateDockAppIds(ids: string[]): string[] {
+  return [...new Set(ids.map((id) => MERGED_DOCK_IDS[id] ?? id))];
+}
+
 export function resolveDockApps(ids: string[]): DockApp[] {
   return ids
     .map((id) => catalogById.get(id))
@@ -93,9 +98,9 @@ export function loadDockAppIds(): string[] {
     if (saved) {
       const ids = JSON.parse(saved);
       if (Array.isArray(ids)) {
-        const valid = ids.filter(
-          (id): id is string => typeof id === "string" && catalogById.has(id),
-        );
+        const valid = migrateDockAppIds(
+          ids.filter((id): id is string => typeof id === "string"),
+        ).filter((id) => catalogById.has(id));
         if (valid.length > 0) return valid;
       }
     }

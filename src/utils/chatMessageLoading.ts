@@ -53,7 +53,8 @@ function isCallOrSystemRecord(m: any): boolean {
     m.isGroupCallHistory ||
     m.isCalendarEvent ||
     m.isContinuePrompt ||
-    m.isFriendRequest
+    m.isFriendRequest ||
+    m.isWaimaiProgress
   );
 }
 

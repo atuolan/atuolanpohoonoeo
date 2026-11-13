@@ -479,6 +479,8 @@ export interface ChatMessage {
   isWaimaiPaymentResult?: boolean;
   /** 是否為送達卡 */
   isWaimaiDelivery?: boolean;
+  /** 是否為物流進度訊息（系統排程，時間未到前不顯示） */
+  isWaimaiProgress?: boolean;
   /** 外賣訂單快照（MVP 單品） */
   waimaiOrder?: WaimaiOrderSnapshot;
 

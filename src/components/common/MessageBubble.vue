@@ -95,6 +95,7 @@ import MusicShareCard from "./MusicShareCard.vue";
 import LiuyaoShareCard from "./LiuyaoShareCard.vue";
 import HouseNewsCard from "./HouseNewsCard.vue";
 import PlurkShareCard from "./PlurkShareCard.vue";
+import WaimaiOrderCard from "./WaimaiOrderCard.vue";
 import PixelGiftChest from "./PixelGiftChest.vue";
 import PixelTransferCard from "./PixelTransferCard.vue";
 import {
@@ -1955,7 +1956,9 @@ const hasSpecialBubbleBody = computed(() => {
     props.isTransfer ||
     props.isWaimaiShare ||
     props.isWaimaiPaymentRequest ||
+    props.isWaimaiPaymentConfirm ||
     props.isWaimaiPaymentResult ||
+    props.isWaimaiProgress ||
     props.isWaimaiDelivery ||
     props.isMusicShare ||
     !!props.plurkShare ||
@@ -2305,156 +2308,34 @@ const formattedPhotoDate = computed(() => {
   return `${year}.${month}.${day}`;
 });
 
-function formatWaimaiPrice(value?: number): string {
-  const amount = Number.isFinite(value) ? Number(value) : 0;
-  return `🪙 ${amount.toLocaleString("zh-TW")}`;
-}
+// 外賣卡片種類，判斷順序：share → request → confirm → result → progress → delivery
+const waimaiCardKind = computed<
+  "share" | "request" | "confirm" | "result" | "progress" | "delivery"
+>(() => {
+  if (props.isWaimaiShare) return "share";
+  if (props.isWaimaiPaymentRequest) return "request";
+  if (props.isWaimaiPaymentConfirm) return "confirm";
+  if (props.isWaimaiPaymentResult) return "result";
+  if (props.isWaimaiProgress) return "progress";
+  return "delivery";
+});
 
-const waimaiStatusLabel = computed(() => {
+// 系統字進度訊息旁的小狀態標籤
+const waimaiProgressTag = computed(() => {
   switch (props.waimaiOrder?.status) {
-    case "created":
-      return "待處理";
-    case "payment_requested":
-      return "待付款";
-    case "payment_reviewing":
-      return "付款確認中";
     case "paid":
       return "已付款";
-    case "rejected":
-      return "已拒絕";
-    case "failed":
-      return "失敗";
     case "in_transit":
       return "運輸中";
     case "customs":
       return "清關中";
     case "delivering":
-      return "末端派送";
+      return "派送中";
     case "delivered":
       return "已送達";
     default:
       return "";
   }
-});
-
-const waimaiCardTitle = computed(() => {
-  if (props.isWaimaiShare) return "🛍️ 外賣商品分享";
-  if (props.isWaimaiPaymentRequest) return "💸 請你幫我支付！";
-  if (props.isWaimaiPaymentConfirm) return "✅ 付款確認";
-  if (props.isWaimaiPaymentResult) return "📣 付款結果";
-  if (props.isWaimaiProgress) return "📍 物流進度";
-  if (props.isWaimaiDelivery) return "📦 外賣送達";
-  return "🧾 外賣訂單";
-});
-
-const waimaiSummaryText = computed(() => {
-  if (props.isWaimaiShare) return "你可以繼續討論後再決定是否下單。";
-  if (props.isWaimaiPaymentRequest) return "對方可在聊天中決定是否替你付款。";
-  if (props.isWaimaiPaymentConfirm) return "請先確認商品、總價、運費與收件人。";
-  if (props.isWaimaiDelivery) return "訂單已完成，餐點已送達。";
-
-  if (props.isWaimaiProgress) {
-    switch (props.waimaiOrder?.status) {
-      case "in_transit":
-        return "幹線運輸中，正在前往目的地國家。";
-      case "customs":
-        return "包裹進入清關流程，完成後交由當地配送。";
-      case "delivering":
-        return "已進入末端派送，請留意收貨通知。";
-      case "delivered":
-        return "配送完成，請留意是否已簽收。";
-      default:
-        return "物流節點已更新。";
-    }
-  }
-
-  if (props.isWaimaiPaymentResult) {
-    if (props.waimaiOrder?.status === "paid") return "支付成功，商家正在備餐。";
-    if (props.waimaiOrder?.status === "rejected")
-      return "對方已拒絕此次代付請求。";
-    if (props.waimaiOrder?.status === "failed") return "支付失敗，請稍後重試。";
-  }
-
-  switch (props.waimaiOrder?.status) {
-    case "in_transit":
-      return "幹線運輸中，正在前往目的地國家。";
-    case "customs":
-      return "包裹進入清關流程，完成後交由當地配送。";
-    case "delivering":
-      return "已進入末端派送，請留意收貨通知。";
-    default:
-      return "";
-  }
-});
-
-function formatWaimaiRouteType(order?: WaimaiOrderSnapshot): string {
-  if (!order?.eta) return "";
-  const eta = order.eta;
-  if (eta.routeType === "local_instant") return "即時配送";
-  if (eta.routeType === "domestic") return "國內物流";
-  if (eta.routeType === "cross_border") {
-    const toFlag = (code: string) => {
-      const upper = code.trim().toUpperCase();
-      if (upper.length !== 2) return "";
-      const a = upper.codePointAt(0)! - 65 + 0x1f1e6;
-      const b = upper.codePointAt(1)! - 65 + 0x1f1e6;
-      return String.fromCodePoint(a) + String.fromCodePoint(b);
-    };
-    return `跨境空運 ${toFlag(eta.originCountry)}→${toFlag(eta.destinationCountry)}`;
-  }
-  return "";
-}
-
-function formatWaimaiEtaRange(order?: WaimaiOrderSnapshot): string {
-  if (!order?.eta) {
-    return "未提供 ETA";
-  }
-
-  const now = order.eta.computedAt;
-  const minMinutes = Math.max(
-    1,
-    Math.round((order.eta.etaWindowStartAt - now) / 60000),
-  );
-  const maxMinutes = Math.max(
-    minMinutes,
-    Math.round((order.eta.etaWindowEndAt - now) / 60000),
-  );
-
-  if (maxMinutes < 180) {
-    return `預估送達：${minMinutes}-${maxMinutes} 分鐘`;
-  }
-
-  const minDays = Math.max(0.5, Math.round((minMinutes / 60 / 24) * 10) / 10);
-  const maxDays = Math.max(
-    minDays,
-    Math.round((maxMinutes / 60 / 24) * 10) / 10,
-  );
-  return `預估送達：${minDays}-${maxDays} 天`;
-}
-
-const waimaiDestinationText = computed(() => {
-  const destination = props.waimaiOrder?.destination;
-  if (!destination) return "";
-  return `${destination.countryName} ${destination.city}｜${destination.addressLine}`;
-});
-
-const waimaiEtaText = computed(() => formatWaimaiEtaRange(props.waimaiOrder));
-
-const waimaiRouteBadge = computed(() =>
-  formatWaimaiRouteType(props.waimaiOrder),
-);
-
-/** 延遲原因文案（暴雨延遲 / 清關中 / 尖峰時段） */
-const waimaiDelayReason = computed(() => {
-  const eta = props.waimaiOrder?.eta;
-  if (!eta) return "";
-  const reasons: string[] = [];
-  if (eta.weatherLevel === "storm") reasons.push("⛈️ 暴雨延遲");
-  else if (eta.weatherLevel === "rain") reasons.push("🌧️ 雨天延遲");
-  if (props.waimaiOrder?.status === "customs") reasons.push("🛃 清關中");
-  if (eta.isPeakHour && eta.routeType === "local_instant")
-    reasons.push("🕐 尖峰時段");
-  return reasons.join("　");
 });
 
 // 是否是用戶訊息
@@ -3803,6 +3684,29 @@ const showTextVoiceTranscript = ref(true);
         <CalendarEventCard :data="calendarEventData" />
       </div>
 
+      <!-- 外賣送達卡片（系統訊息角色發出的物流進度） -->
+      <div
+        v-else-if="isWaimaiProgress && isWaimaiDelivery && waimaiOrder"
+        class="waimai-message-wrapper"
+      >
+        <WaimaiOrderCard
+          :order="waimaiOrder"
+          kind="delivery"
+          :image-src="waimaiOrder.item.imageUrl ? getProxiedUrl(waimaiOrder.item.imageUrl) : undefined"
+        />
+      </div>
+
+      <!-- 外賣物流進度：維持一行系統字，加小狀態標籤 -->
+      <div
+        v-else-if="isWaimaiProgress && waimaiOrder"
+        class="system-message waimai-progress-line"
+      >
+        <span v-if="waimaiProgressTag" class="waimai-progress-tag">{{
+          waimaiProgressTag
+        }}</span>
+        <span>{{ content }}</span>
+      </div>
+
       <!-- 普通系統消息 -->
       <div v-else class="system-message">
         <span>{{ content }}</span>
@@ -4499,64 +4403,11 @@ const showTextVoiceTranscript = ref(true);
             "
             class="waimai-message-wrapper"
           >
-            <div class="waimai-card">
-              <div class="waimai-card-head">
-                <span class="waimai-card-title">{{ waimaiCardTitle }}</span>
-                <span v-if="waimaiStatusLabel" class="waimai-status">{{
-                  waimaiStatusLabel
-                }}</span>
-              </div>
-
-              <div class="waimai-item-row">
-                <img
-                  v-if="waimaiOrder.item.imageUrl"
-                  :src="getProxiedUrl(waimaiOrder.item.imageUrl)"
-                  :alt="waimaiOrder.item.name"
-                  class="waimai-item-image"
-                />
-                <div class="waimai-item-meta">
-                  <div class="waimai-item-name">
-                    {{ waimaiOrder.item.name }}
-                  </div>
-                  <div class="waimai-item-store">
-                    {{ waimaiOrder.item.storeName }}
-                  </div>
-                  <div class="waimai-item-qty">
-                    x{{ waimaiOrder.item.quantity }}
-                  </div>
-                </div>
-              </div>
-
-              <div class="waimai-price-grid">
-                <span>小計</span>
-                <span>{{ formatWaimaiPrice(waimaiOrder.subtotal) }}</span>
-                <span>運費</span>
-                <span>{{ formatWaimaiPrice(waimaiOrder.shippingFee) }}</span>
-                <span class="total-label">總計</span>
-                <span class="total-value">{{
-                  formatWaimaiPrice(waimaiOrder.totalPrice)
-                }}</span>
-              </div>
-
-              <div class="waimai-recipient">
-                送達給：{{ waimaiOrder.recipientName }}
-              </div>
-              <div v-if="waimaiDestinationText" class="waimai-destination">
-                收貨地：{{ waimaiDestinationText }}
-              </div>
-              <div v-if="waimaiOrder.eta" class="waimai-eta-row">
-                <span class="waimai-eta-text">{{ waimaiEtaText }}</span>
-                <span v-if="waimaiRouteBadge" class="waimai-route-badge">{{
-                  waimaiRouteBadge
-                }}</span>
-              </div>
-              <div v-if="waimaiDelayReason" class="waimai-delay-reason">
-                {{ waimaiDelayReason }}
-              </div>
-              <div v-if="waimaiSummaryText" class="waimai-card-foot">
-                {{ waimaiSummaryText }}
-              </div>
-            </div>
+            <WaimaiOrderCard
+              :order="waimaiOrder"
+              :kind="waimaiCardKind"
+              :image-src="waimaiOrder.item.imageUrl ? getProxiedUrl(waimaiOrder.item.imageUrl) : undefined"
+            />
           </div>
 
           <!-- 噗文分享卡片 -->
@@ -5577,6 +5428,19 @@ const showTextVoiceTranscript = ref(true);
   font-size: 12px;
   color: var(--color-text-muted);
   text-align: center;
+}
+
+// 物流進度那行系統字前面的小狀態標籤
+.waimai-progress-line .waimai-progress-tag {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 0 6px;
+  font-size: 10px;
+  line-height: 16px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.2);
+  color: inherit;
+  opacity: 0.8;
 }
 
 // 角色封鎖用戶通知
@@ -7244,139 +7108,6 @@ body.is-night-mode .pixel-gift-wrapper .gift-card-note {
   display: flex;
   justify-content: center;
   padding: 6px 2px;
-}
-
-.waimai-card {
-  width: min(320px, 100%);
-  border-radius: 14px;
-  border: 1px solid rgba(148, 163, 184, 0.25);
-  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
-  padding: 12px;
-  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.08);
-
-  .waimai-card-head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-    margin-bottom: 10px;
-  }
-
-  .waimai-card-title {
-    font-size: 13px;
-    font-weight: 700;
-    color: #334155;
-  }
-
-  .waimai-status {
-    font-size: 11px;
-    color: #475569;
-    background: rgba(148, 163, 184, 0.16);
-    border-radius: 999px;
-    padding: 2px 8px;
-    white-space: nowrap;
-  }
-
-  .waimai-item-row {
-    display: flex;
-    gap: 10px;
-    margin-bottom: 10px;
-  }
-
-  .waimai-item-image {
-    width: 52px;
-    height: 52px;
-    border-radius: 10px;
-    object-fit: cover;
-    flex-shrink: 0;
-    background: #e2e8f0;
-  }
-
-  .waimai-item-meta {
-    min-width: 0;
-    flex: 1;
-  }
-
-  .waimai-item-name {
-    font-size: 14px;
-    font-weight: 600;
-    color: #0f172a;
-    line-height: 1.3;
-  }
-
-  .waimai-item-store,
-  .waimai-item-qty {
-    font-size: 12px;
-    color: #64748b;
-    margin-top: 2px;
-  }
-
-  .waimai-price-grid {
-    display: grid;
-    grid-template-columns: 1fr auto;
-    gap: 4px 10px;
-    font-size: 12px;
-    color: #475569;
-    padding: 8px 0;
-    border-top: 1px dashed rgba(148, 163, 184, 0.45);
-    border-bottom: 1px dashed rgba(148, 163, 184, 0.45);
-
-    .total-label,
-    .total-value {
-      font-weight: 700;
-      color: #0f172a;
-    }
-  }
-
-  .waimai-recipient {
-    margin-top: 8px;
-    font-size: 12px;
-    color: #334155;
-  }
-
-  .waimai-destination {
-    margin-top: 6px;
-    font-size: 12px;
-    color: #334155;
-    line-height: 1.4;
-  }
-
-  .waimai-eta-row {
-    margin-top: 6px;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    flex-wrap: wrap;
-  }
-
-  .waimai-eta-text {
-    font-size: 12px;
-    color: #1e293b;
-    font-weight: 600;
-  }
-
-  .waimai-route-badge {
-    font-size: 11px;
-    color: #1d4ed8;
-    background: #dbeafe;
-    border-radius: 999px;
-    padding: 2px 8px;
-    white-space: nowrap;
-  }
-
-  .waimai-delay-reason {
-    margin-top: 5px;
-    font-size: 11px;
-    color: #b45309;
-    line-height: 1.4;
-  }
-
-  .waimai-card-foot {
-    margin-top: 8px;
-    font-size: 12px;
-    color: #64748b;
-    line-height: 1.45;
-  }
 }
 
 // 禮物標籤 (重用於 PixelGiftChest slot)

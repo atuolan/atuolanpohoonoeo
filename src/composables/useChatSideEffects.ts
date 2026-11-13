@@ -10,6 +10,7 @@ import type {
   ChatScreenMessage as Message,
   PendingInjectedMessage,
 } from "@/types/chatScreen";
+import { buildAutoProgressMessages } from "@/services/waimaiProgress";
 
 const EXTERNAL_CHAT_APPEND_EVENT = "aguaphone:chat-messages-appended";
 
@@ -37,6 +38,24 @@ export function useChatSideEffects(context: {
     if (message.isContinuePrompt) return false;
     if (message.isWaimaiProgress && message.timestamp > now) return false;
     return true;
+  }
+
+  /** 把物流進度條目轉成聊天訊息（依時間排序） */
+  function toProgressChatMessages(
+    entries: NonNullable<PendingInjectedMessage["waimaiProgressMessages"]>,
+    idPrefix = `msg_${Date.now()}_waimai_progress_`,
+  ): Message[] {
+    return entries
+      .map((entry, idx) => ({
+        id: `${idPrefix}${idx}`,
+        role: "system" as const,
+        content: entry.content,
+        timestamp: entry.timestamp ?? Date.now(),
+        isWaimaiProgress: entry.isWaimaiProgress ?? true,
+        isWaimaiDelivery: entry.isWaimaiDelivery,
+        waimaiOrder: entry.waimaiOrder,
+      }))
+      .sort((a, b) => a.timestamp - b.timestamp);
   }
 
   function injectPendingMessage(msg: string | PendingInjectedMessage) {
@@ -74,19 +93,9 @@ export function useChatSideEffects(context: {
     }
 
     if (typeof msg !== "string" && msg.waimaiProgressMessages?.length) {
-      const progressEntries = msg.waimaiProgressMessages
-        .map((entry, idx) => ({
-          id: `msg_${Date.now()}_waimai_progress_${idx}`,
-          role: "system" as const,
-          content: entry.content,
-          timestamp: entry.timestamp ?? Date.now(),
-          isWaimaiProgress: entry.isWaimaiProgress ?? true,
-          isWaimaiDelivery: entry.isWaimaiDelivery,
-          waimaiOrder: entry.waimaiOrder,
-        }))
-        .sort((a, b) => a.timestamp - b.timestamp);
-
-      context.messages.value.push(...progressEntries);
+      context.messages.value.push(
+        ...toProgressChatMessages(msg.waimaiProgressMessages),
+      );
     }
 
     context.scrollToBottom();
@@ -135,6 +144,41 @@ export function useChatSideEffects(context: {
       injectPendingMessage(msg);
     },
     { immediate: true },
+  );
+
+  // 角色代付成功後補上物流進度；生成中不動，避免干擾串流佔位訊息
+  watch(
+    [() => context.messages.value.length, () => context.isChatGenerating()],
+    () => {
+      if (context.isChatGenerating()) return;
+
+      const list = context.messages.value;
+      const pushed: Message[] = [];
+      for (const m of list.slice(-30)) {
+        if (!m.waimaiNeedsProgress || m.waimaiOrder?.status !== "paid") continue;
+        delete m.waimaiNeedsProgress;
+        const order = m.waimaiOrder;
+        const entries = buildAutoProgressMessages(order).map((p) => ({
+          content: p.content,
+          timestamp: p.timestamp,
+          isWaimaiProgress: true,
+          isWaimaiDelivery: p.isWaimaiDelivery,
+          waimaiOrder: p.order,
+        }));
+        if (!entries.length) continue;
+        pushed.push(
+          ...toProgressChatMessages(
+            entries,
+            `msg_${Date.now()}_waimai_progress_${order.orderId}_`,
+          ),
+        );
+      }
+
+      if (pushed.length) {
+        list.push(...pushed);
+        context.saveChatImmediate();
+      }
+    },
   );
 
   onMounted(() => {

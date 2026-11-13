@@ -166,7 +166,16 @@ export async function refreshChatDerivedMetadata(
   if (!chat) return undefined;
 
   const messages = await loadMessages(chatId);
-  const lastMessage = messages[messages.length - 1];
+  // 排程中的未來物流訊息（如「已送達」）不能當預覽或更新時間來源，否則聊天會一直排最上面
+  const nowTs = Date.now();
+  let lastMessage: ChatMessage | undefined;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    if (!(m.isWaimaiProgress && m.createdAt > nowTs)) {
+      lastMessage = m;
+      break;
+    }
+  }
 
   chat.messageCount = messages.length;
   chat.lastMessagePreview = lastMessage?.content?.slice(0, 100) || "";

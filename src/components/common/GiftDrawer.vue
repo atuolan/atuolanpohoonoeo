@@ -38,10 +38,10 @@
                 </div>
               </div>
 
-              <!-- 商城入口 -->
-              <button class="shop-entry-btn" @click="emit('openShop')">
+              <!-- 商店入口 -->
+              <button class="shop-entry-btn" @click="openShop('gift')">
                 <ShoppingBag :size="20" />
-                <span>前往商城</span>
+                <span>前往商店</span>
                 <ChevronRight :size="18" />
               </button>
 
@@ -281,8 +281,8 @@
               <div v-else class="empty-state">
                 <Gift :size="48" />
                 <span>還沒有禮物</span>
-                <button class="go-shop-btn" @click="emit('openShop')">
-                  去商城購買
+                <button class="go-shop-btn" @click="openShop('gift')">
+                  去商店買禮物
                 </button>
               </div>
 
@@ -334,8 +334,8 @@
               <div v-else class="empty-state">
                 <Package :size="48" />
                 <span>還沒有道具</span>
-                <button class="go-shop-btn" @click="emit('openShop')">
-                  去商城買（照顧他）
+                <button class="go-shop-btn" @click="openShop('care')">
+                  去商店買（照顧他）
                 </button>
               </div>
             </div>
@@ -348,6 +348,7 @@
 
 <script setup lang="ts">
 import { getShopItemById, type ShopItem } from "@/data/shopItems";
+import { setNextStoreTab, type StoreTabId } from "@/components/shop/storeTabs";
 import type { CareItemStatus } from "@/services/careItems";
 import { getCareIcon } from "@/utils/careIcon";
 import type { Transaction } from "@/schemas/gameEconomy";
@@ -412,6 +413,12 @@ const emit = defineEmits<{
     },
   ];
 }>();
+
+/** 去商店：停在對應的那一頁（禮物、照顧他） */
+function openShop(tab: StoreTabId) {
+  setNextStoreTab(tab);
+  emit("openShop");
+}
 
 // Store
 const gameEconomyStore = useGameEconomyStore();

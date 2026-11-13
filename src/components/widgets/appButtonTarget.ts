@@ -5,6 +5,8 @@ const PAGE_BY_LABEL: Record<string, string> = {
   設置: "settings",
   空間: "space",
   音樂: "music",
+  商店: "shop",
+  // 舊的圖示：購物、外賣都打開商店（外賣先停在美食廣場）
   購物: "shop",
   外賣: "外賣",
   世界書: "book",

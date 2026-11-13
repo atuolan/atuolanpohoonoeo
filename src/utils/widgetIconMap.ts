@@ -95,6 +95,7 @@ export const WIDGET_ICON_MAP: Record<string, Component> = {
   遊戲: Gamepad2,
   外賣: ShoppingBag,
   購物: ShoppingCart,
+  商店: ShoppingCart,
   世界書: Book,
   紀念日: Heart,
   短信: Mail,

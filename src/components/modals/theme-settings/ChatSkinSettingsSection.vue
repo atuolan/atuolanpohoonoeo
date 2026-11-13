@@ -118,7 +118,7 @@ function setChatOwnColors(slot: ChatSkinSlot, mode: "inherit" | "on" | "off") {
     <!-- 一件部件都沒有 -->
     <div v-if="!hasAnyOwned" class="empty-decorations">
       <p>還沒有聊天裝扮</p>
-      <button class="open-shop-btn" @click="emit('openShop')">去商城看看</button>
+      <button class="open-shop-btn" @click="emit('openShop')">去商店看看</button>
     </div>
 
     <!-- 欄位設定列表 -->

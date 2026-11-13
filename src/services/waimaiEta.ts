@@ -91,6 +91,17 @@ function getCountryFactor(countryCode: string): CountryEtaFactor {
   return COUNTRY_ETA_FACTORS[key] ?? DEFAULT_FACTOR;
 }
 
+/**
+ * 下單時隨機決定配送天氣：大多是晴天，偶爾下雨，很少遇到暴雨。
+ * 天氣會拉長配送時間，並在卡片上顯示延遲原因。
+ */
+export function pickWaimaiWeather(random: () => number = Math.random): WaimaiWeatherLevel {
+  const roll = random();
+  if (roll < 0.04) return "storm";
+  if (roll < 0.22) return "rain";
+  return "clear";
+}
+
 export function isPeakHour(timestamp: number = Date.now()): boolean {
   const d = new Date(timestamp);
   const minutes = d.getHours() * 60 + d.getMinutes();

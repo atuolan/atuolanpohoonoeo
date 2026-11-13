@@ -6,7 +6,7 @@ export { default as ChatScreen } from "./ChatScreen.vue";
 export { default as LorebookEditScreen } from "./LorebookEditScreen.vue";
 export { default as LorebookListScreen } from "./LorebookListScreen.vue";
 export { default as MusicAppScreen } from "./MusicAppScreen.vue";
-export { default as ShopScreen } from "./ShopScreen.vue";
+export { default as StoreScreen } from "./StoreScreen.vue";
 export { default as TheaterScreen } from "./TheaterScreen.vue";
 export { default as UserProfileScreen } from "./UserProfileScreen.vue";
 

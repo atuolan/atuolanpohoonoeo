@@ -40,7 +40,11 @@ export interface BuildChatMetadataOptions {
 }
 
 export function buildChatMetadataFromState(options: BuildChatMetadataOptions): Chat {
-  const lastMsg = options.storableMessages[options.storableMessages.length - 1];
+  // 排程中的未來物流訊息（例如「已送達」）還不能當聊天列表的預覽
+  const now = Date.now();
+  const lastMsg = [...options.storableMessages]
+    .reverse()
+    .find((m) => !(m.isWaimaiProgress && m.createdAt > now));
   return {
     id: options.chatId,
     name: options.currentChatData?.name || `與 ${options.charName} 的對話`,

@@ -71,6 +71,11 @@ export interface ShopItem {
   giftUse?: GiftUse;
   /** 照顧他的道具：在他忙碌、睡覺時用 */
   careUse?: CareUse;
+  /**
+   * 不再上架：商店不賣了（例如跟外送重複的日用品），但已經買進背包的照樣能送，
+   * 禮物櫃、日記也還查得到，所以資料要留著
+   */
+  retired?: boolean;
 }
 
 /**
@@ -505,6 +510,26 @@ export const GIFT_ITEMS: ShopItem[] = [
     icon: "gift-plush",
     giftUse: { hint: "睡前把它塞進對方懷裡，說這樣就不怕做噩夢" },
   },
+  {
+    id: "gift_plush_cat",
+    name: "灰貓抱枕",
+    description: "軟綿綿的灰貓抱枕，可以當腰靠，也可以抱著午睡",
+    price: 550,
+    category: "gift",
+    rarity: "common",
+    icon: "gift-plush",
+    giftUse: { hint: "看電影時搶同一個抱枕，最後乾脆兩個人一起抱著" },
+  },
+  {
+    id: "gift_blind_box",
+    name: "萌系盲盒",
+    description: "隨機一款小公仔，共 8 款含隱藏版",
+    price: 300,
+    category: "gift",
+    rarity: "common",
+    icon: "gift-box",
+    giftUse: { hint: "兩個人一起搖一搖猜是哪一款，拆出來那隻被擺在床頭" },
+  },
 
   // ===== Uncommon 優良禮物 =====
   {
@@ -515,6 +540,7 @@ export const GIFT_ITEMS: ShopItem[] = [
     category: "gift",
     rarity: "uncommon",
     icon: "gift-lotion",
+    retired: true,
     giftUse: { consumable: true, hint: "洗完澡幫你把乳液抹在背上，手心的溫度慢慢化開" },
   },
   {
@@ -525,6 +551,7 @@ export const GIFT_ITEMS: ShopItem[] = [
     category: "gift",
     rarity: "uncommon",
     icon: "gift-toner",
+    retired: true,
     giftUse: { consumable: true, hint: "早上一起站在鏡子前拍化妝水，互相說今天也要加油" },
   },
   {
