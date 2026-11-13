@@ -91,8 +91,14 @@ export function useHouseInteract(deps: {
     if (notice.value) noticeTimer = setTimeout(nextNotice, waiting.length ? NOTICE_SHORT_MS : NOTICE_MS);
   }
 
-  /** 下面提示列顯示一句話；前一句還在就排在後面 */
-  function showNotice(text: string) {
+  /** 下面提示列顯示一句話；前一句還在就排在後面。now：馬上換成這句（排著的照樣接在後面） */
+  function showNotice(text: string, now = false) {
+    if (now) {
+      if (noticeTimer) clearTimeout(noticeTimer);
+      waiting.unshift(text);
+      nextNotice();
+      return;
+    }
     waiting.push(text);
     if (!noticeTimer) nextNotice();
   }
