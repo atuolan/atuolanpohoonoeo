@@ -59,6 +59,7 @@ export function useChatSideEffects(context: {
       baseMessage.musicShareData = msg.musicShareData;
       baseMessage.plurkShare = msg.plurkShare;
       baseMessage.liuyaoShare = msg.liuyaoShare;
+      baseMessage.houseNews = msg.houseNews;
     }
 
     context.messages.value.push(baseMessage);

@@ -79,6 +79,10 @@ import type { PartSlot } from "./wardrobeData";
 import PixelWaveMenu, { type MenuTodo } from "./PixelWaveMenu.vue";
 import { houseTodos, type Ledger, type TodoIcon } from "./houseTodo";
 import { loadTodayLedger } from "./wardrobeShop";
+import type { PickerNews } from "./HouseNewsPicker.vue";
+import { buildNewsShare, HOUSE_NEWS_EVENT, loadNews, markTold, newsFor, newsHouseText, saveNews, type HouseNews } from "./houseNews";
+import { houseNewsTime } from "@/utils/houseNewsShare";
+import { sendHouseNewsToChat } from "@/services/houseNewsChat";
 import {
   ACTS,
   CHAR_HEIGHT,
@@ -520,6 +524,7 @@ const play = useHouseInteract({
   free: computed(() => isHome.value && status.value === "home"),
   sleeping: lying,
   pronoun,
+  charId: residentId,
 });
 
 // ===== 家事和每日收入：髒污、信箱每天一封信、他忙完帶錢回來 =====
@@ -530,6 +535,7 @@ const chores = useHouseChores({
   free: computed(() => isHome.value && status.value === "home"),
   pronoun,
   notify: play.showNotice,
+  charId: residentId,
 });
 
 /** 髒污畫在哪（水槽的碗、洗衣籃的衣服跟著家具走） */
@@ -542,6 +548,7 @@ const dirtSpots = computed(() =>
     return [
       {
         id,
+        room: def.room,
         label: `${ROOM_NAMES[def.room]}有點髒，點了打掃`,
         src: dirtImages[def.kind],
         style: {
@@ -897,6 +904,7 @@ const messSpots = computed(() =>
     return [
       {
         id,
+        room: spot.room,
         src: messImages[kind],
         style: {
           left: `${u(stripX({ room: spot.room, x: spot.x }))}px`,
@@ -1013,7 +1021,7 @@ function walkDog(id: string) {
       if (!isHome.value) return `${pronoun.value}不在家，等${pronoun.value}回來再去散步`;
       if (lying.value || status.value === "sleep") return `${pronoun.value}在睡覺`;
       if (status.value === "busy") return `${pronoun.value}在忙，等一下再去`;
-      return pets.walk(id);
+      return pets.walk(id, residentId.value ?? undefined);
     },
     () => {
       catSheetOpen.value = false;
@@ -1312,15 +1320,115 @@ const menuTodos = computed<MenuTodo[]>(() => todoList.value.map((t) => ({ key: t
 /** 今天在小屋的收支：打開待辦時讀一次 */
 const ledger = ref<Ledger | null>(null);
 watch(menuOpen, (open) => {
-  if (!open) return;
+  if (!open) {
+    newsNote.value = "";
+    return;
+  }
   now.value = new Date();
   void loadTodayLedger().then((l) => (ledger.value = l));
+  refreshNews();
 });
+
+// ===== 小屋記事：勾幾件告訴他（送進聊天，不叫他馬上回） =====
+const newsList = ref<HouseNews[]>([]);
+const newsBusy = ref(false);
+const newsNote = ref("");
+/** 讀記事（打開選單、選單開著時記了新的一件） */
+function refreshNews() {
+  newsList.value = newsFor(loadNews(), residentId.value);
+}
+function onNewsLogged() {
+  if (menuOpen.value) refreshNews();
+}
+const menuNews = computed<PickerNews[]>(() => {
+  const t = now.value.getTime();
+  return newsList.value.map((n) => ({ id: n.id, time: houseNewsTime(n.at, t), text: newsHouseText(n.text, pronoun.value), who: n.who, told: !!n.told }));
+});
+const newsBlocked = computed(() => {
+  if (!residentId.value) return "還沒有人住在小屋";
+  if (!residentChatId.value) return `還沒跟${pronoun.value}聊過天`;
+  return "";
+});
+async function tellNews(ids: string[]) {
+  const chatId = residentChatId.value;
+  if (!chatId || newsBusy.value) return;
+  const at = Date.now();
+  const share = buildNewsShare(loadNews(at), ids, at);
+  if (!share) return;
+  newsBusy.value = true;
+  try {
+    await sendHouseNewsToChat(chatId, share);
+    saveNews(markTold(loadNews(at), ids, at));
+    refreshNews();
+    newsNote.value = `已經告訴${pronoun.value}了，${pronoun.value}下次回話時會看到`;
+  } catch {
+    newsNote.value = "沒送出去，再試一次";
+  } finally {
+    newsBusy.value = false;
+  }
+}
+
+// ===== 從待辦點「可以打掃」「地上的便便」：瞬移到那間、把每一處標出來 =====
+type SpotKind = "dirt" | "mess";
+/** 標多久（一次性的計時器；清完了就提早收掉） */
+const SPOTLIGHT_MS = 15_000;
+const spotlight = ref<SpotKind | null>(null);
+let spotlightTimer: ReturnType<typeof setTimeout> | null = null;
+
+function spotsOf(kind: SpotKind): { room: RoomId }[] {
+  return kind === "dirt" ? dirtSpots.value : messSpots.value;
+}
+
+/** 有這種東西的房間裡，離現在看的那間最近的（一樣近就照房間順序） */
+function nearestSpotRoom(kind: SpotKind): RoomId | null {
+  const rooms = STRIP_ROOMS.filter((r) => spotsOf(kind).some((d) => d.room === r));
+  if (!rooms.length) return null;
+  const at = viewIdx.value;
+  return rooms.reduce((best, r) => (Math.abs(stripIndex(r) - at) < Math.abs(stripIndex(best) - at) ? r : best));
+}
+
+function stopSpotlight() {
+  if (spotlightTimer) clearTimeout(spotlightTimer);
+  spotlightTimer = null;
+  spotlight.value = null;
+}
+
+function startSpotlight(kind: SpotKind) {
+  const room = nearestSpotRoom(kind);
+  if (!room) return;
+  scrollToRoom(stripIndex(room), 0);
+  spotlight.value = kind;
+  if (spotlightTimer) clearTimeout(spotlightTimer);
+  spotlightTimer = setTimeout(stopSpotlight, SPOTLIGHT_MS);
+  const here = spotsOf(kind).filter((d) => d.room === room).length;
+  const others = STRIP_ROOMS.filter((r) => r !== room && spotsOf(kind).some((d) => d.room === r)).map((r) => ROOM_NAMES[r]);
+  const what = kind === "dirt" ? "處要打掃" : "灘便便";
+  play.showNotice(`這間有 ${here} ${what}${others.length ? `，${others.join("、")}也有` : ""}`, true);
+}
+
+// 清掉一處：這間清完了、別間還有 → 瞬移到下一間；全部清完就收掉
+watch(
+  () => (spotlight.value ? spotsOf(spotlight.value).map((d) => d.room).join(",") : ""),
+  (rooms, before) => {
+    const kind = spotlight.value;
+    if (!kind || rooms === before) return;
+    if (!rooms) {
+      stopSpotlight();
+      return;
+    }
+    const cur = STRIP_ROOMS[viewIdx.value];
+    if (!rooms.split(",").includes(cur)) startSpotlight(kind);
+  },
+);
 
 function onTodo(key: string) {
   const item = todoList.value.find((t) => t.key === key);
   menuOpen.value = false;
   if (!item) return;
+  if (key === "dirt" || key === "mess") {
+    startSpotlight(key);
+    return;
+  }
   const go = item.go;
   if (go.kind === "room") scrollToRoom(stripIndex(go.room));
   else if (go.kind === "pet") openCatSheet(go.id);
@@ -1668,6 +1776,7 @@ onMounted(async () => {
   window.addEventListener(CHAT_UNREAD_CHANGED_EVENT, onChatEvent);
   window.addEventListener("aguaphone:chat-messages-appended", onChatEvent);
   window.addEventListener(PIXEL_HOUSE_CHANGED_EVENT, onSettingsChanged);
+  window.addEventListener(HOUSE_NEWS_EVENT, onNewsLogged);
 
   await loadAssets();
   chores.open();
@@ -1690,6 +1799,7 @@ onMounted(async () => {
 onUnmounted(() => {
   if (started) setLastHouseRoom(STRIP_ROOMS[viewIdx.value]);
   stopAnim();
+  stopSpotlight();
   resizeObs?.disconnect();
   stopTimers();
   if (walkTimer) clearTimeout(walkTimer);
@@ -1698,6 +1808,7 @@ onUnmounted(() => {
   window.removeEventListener(CHAT_UNREAD_CHANGED_EVENT, onChatEvent);
   window.removeEventListener("aguaphone:chat-messages-appended", onChatEvent);
   window.removeEventListener(PIXEL_HOUSE_CHANGED_EVENT, onSettingsChanged);
+  window.removeEventListener(HOUSE_NEWS_EVENT, onNewsLogged);
   window.removeEventListener("pointermove", onPointerMove);
   window.removeEventListener("pointerup", onPointerUp);
   window.removeEventListener("pointercancel", onPointerUp);
@@ -1840,8 +1951,17 @@ function labelStyle(room: RoomId, it: RenderItem) {
 
       <!-- 髒污：點了打掃（靜態的圖，不動） -->
       <template v-if="!editMode">
-        <button v-for="d in dirtSpots" :key="`dirt-${d.id}`" class="ph-dirt" :style="d.style" :aria-label="d.label" @click.stop="chores.clean(d.id, 'user')">
+        <button
+          v-for="d in dirtSpots"
+          :key="`dirt-${d.id}`"
+          class="ph-dirt"
+          :class="{ 'is-spot': spotlight === 'dirt' }"
+          :style="d.style"
+          :aria-label="d.label"
+          @click.stop="chores.clean(d.id, 'user')"
+        >
           <img :src="d.src" alt="" draggable="false" />
+          <span v-if="spotlight === 'dirt'" class="ph-spot-mark" aria-hidden="true"></span>
         </button>
       </template>
 
@@ -2018,8 +2138,17 @@ function labelStyle(room: RoomId, it: RenderItem) {
           <img :src="litterImages[litterState]" alt="" draggable="false" />
         </button>
         <!-- 地上的便便：點了清掉 -->
-        <button v-for="m in messSpots" :key="m.id" class="ph-dirt" :style="m.style" aria-label="地上的便便，點了清掉" @click.stop="pets.cleanMess(m.id)">
+        <button
+          v-for="m in messSpots"
+          :key="m.id"
+          class="ph-dirt"
+          :class="{ 'is-spot': spotlight === 'mess' }"
+          :style="m.style"
+          aria-label="地上的便便，點了清掉"
+          @click.stop="pets.cleanMess(m.id)"
+        >
           <img :src="m.src" alt="" draggable="false" />
+          <span v-if="spotlight === 'mess'" class="ph-spot-mark" aria-hidden="true"></span>
         </button>
       </template>
 
@@ -2139,6 +2268,13 @@ function labelStyle(room: RoomId, it: RenderItem) {
         :todos="menuTodos"
         :ledger="ledger"
         :status="meLine"
+        :news="menuNews"
+        :pronoun="pronoun"
+        :news-busy="newsBusy"
+        :news-blocked="newsBlocked"
+        :news-note="newsNote"
+        @tell="tellNews"
+        @open-chat="menuOpen = false; openChat()"
         @toggle="menuOpen = !menuOpen; showAll = false"
         @close="menuOpen = false"
         @todo="onTodo"
@@ -2156,7 +2292,8 @@ function labelStyle(room: RoomId, it: RenderItem) {
       <template v-else>
         <!-- 他在哪、在做什麼：在房間列下面；他不在畫面上時點了滑過去。待辦打開時藏起來（會蓋到面板，待辦裡也有寫） -->
         <button v-show="!menuOpen" class="ph-hint" aria-live="polite" @click="hintTap">{{ hint }}</button>
-        <HouseDock :open="state.dockOpen" :badges="badges" @toggle="toggleDock" @pick="emit('navigate', $event)" @house="openSheet('house')" @all="openSheet('apps')" />
+        <!-- 選單打開時藏起來（右下的圓按鈕會蓋到面板） -->
+        <HouseDock v-show="!menuOpen" :open="state.dockOpen" :badges="badges" @toggle="toggleDock" @pick="emit('navigate', $event)" @house="openSheet('house')" @all="openSheet('apps')" />
       </template>
 
       <!-- 大門：商店還是外送 -->
@@ -2694,6 +2831,66 @@ function labelStyle(room: RoomId, it: RenderItem) {
   width: 44px;
   height: 44px;
   transform: translate(-50%, -50%);
+}
+
+/* 從待辦點過來：標出來（在他和寵物上面，才不會被擋住） */
+.ph-dirt.is-spot {
+  z-index: 8;
+}
+
+/* 一圈白框慢慢擴散＋上面一個往下指的箭頭（只動 transform、opacity） */
+.ph-spot-mark {
+  position: absolute;
+  inset: -6px;
+  border: 2px solid #fff;
+  border-radius: 10px;
+  box-shadow:
+    0 0 0 2px rgba(224, 83, 63, 0.9),
+    0 2px 8px rgba(30, 20, 18, 0.35);
+  pointer-events: none;
+  animation: ph-spot-ring 1.2s ease-out infinite;
+}
+
+.ph-spot-mark::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 6px);
+  width: 0;
+  height: 0;
+  margin-left: -8px;
+  border-left: 8px solid transparent;
+  border-right: 8px solid transparent;
+  border-top: 11px solid #e0533f;
+  filter: drop-shadow(0 0 1px #fff) drop-shadow(0 1px 1px #fff);
+  animation: ph-spot-arrow 0.8s ease-in-out infinite alternate;
+}
+
+@keyframes ph-spot-ring {
+  0% {
+    transform: scale(0.85);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1.25);
+    opacity: 0.35;
+  }
+}
+
+@keyframes ph-spot-arrow {
+  from {
+    transform: translateY(-4px);
+  }
+  to {
+    transform: translateY(2px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ph-spot-mark,
+  .ph-spot-mark::after {
+    animation: none;
+  }
 }
 
 .ph-dirt img,

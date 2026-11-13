@@ -6,6 +6,8 @@
 
 import type { PlurkShareSnapshot } from "@/types/chat";
 import type { LiuyaoShareSnapshot } from "@/types/liuyao";
+import type { HouseNewsShare } from "@/types/houseNews";
+import { describeHouseNewsForPrompt } from "@/utils/houseNewsShare";
 import {
   dollPromptNote,
   DOLL_TAG_RE,
@@ -60,6 +62,7 @@ export interface PromptMessageLike {
   waimaiOrder?: { status?: string };
   plurkShare?: PlurkShareSnapshot;
   liuyaoShare?: LiuyaoShareSnapshot;
+  houseNews?: HouseNewsShare;
 }
 
 export interface PromptMessageNames {
@@ -156,6 +159,10 @@ export function describeMessageForPrompt(
   // 六爻卦象卡片：同上，寫成角色看得懂的卦象說明
   if (m.liuyaoShare) {
     return describeLiuyaoShareForPrompt(m.liuyaoShare, { userName: names.userName, charId: names.charId });
+  }
+  // 小屋的事卡片：列出家裡發生的事，提醒回應一次就好
+  if (m.houseNews) {
+    return describeHouseNewsForPrompt(m.houseNews, { userName: names.userName });
   }
 
   let text = original;

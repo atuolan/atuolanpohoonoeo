@@ -21,7 +21,9 @@ import {
   type PetColor,
   type PetSpecies,
 } from "./houseCat";
+import { ROOM_NAMES } from "./houseData";
 import { loadHouseLifeState, saveHouseLifeState } from "./houseLife";
+import { logHouseNews } from "./houseNews";
 import {
   addCat,
   adoptPrice,
@@ -84,12 +86,25 @@ export function usePetHome(deps: { notify: (text: string) => void }) {
     const sick = [...new Set(events.filter((e) => e.kind === "sick").map((e) => (e as { catId: string }).catId))];
     const floor = events.filter((e) => e.kind === "floor").length;
     for (const e of events) {
-      if (e.kind === "shed") deps.notify(e.ok ? `${nameOf(e.catId)}蛻皮了，蛻得很完整` : `${nameOf(e.catId)}蛻皮蛻不乾淨（飼養箱太乾），生病了`);
+      if (e.kind === "shed") {
+        deps.notify(e.ok ? `${nameOf(e.catId)}蛻皮了，蛻得很完整` : `${nameOf(e.catId)}蛻皮蛻不乾淨（飼養箱太乾），生病了`);
+        logHouseNews(e.ok ? `${nameOf(e.catId)}蛻皮了` : `${nameOf(e.catId)}蛻皮蛻不乾淨，生病了`, "pet");
+      }
     }
-    if (sick.length) deps.notify(`${sick.map(nameOf).join("、")}生病了，點牠看看要不要帶去看醫生`);
-    if (floor) deps.notify(`你不在的時候，地上多了 ${floor} 灘便便`);
+    if (sick.length) {
+      deps.notify(`${sick.map(nameOf).join("、")}生病了，點牠看看要不要帶去看醫生`);
+      logHouseNews(`${sick.map(nameOf).join("、")}生病了`, "pet");
+    }
+    if (floor) {
+      deps.notify(`你不在的時候，地上多了 ${floor} 灘便便`);
+      const who = [...new Set(events.flatMap((e) => (e.kind === "floor" ? [nameOf(e.catId)] : [])))];
+      logHouseNews(`${who.join("、")}沒去廁所，地上多了 ${floor} 灘便便`, "pet");
+    }
     const out = [...new Set(events.flatMap((e) => (e.kind === "out" ? [SUPPLIES[e.supply].name] : [])))];
-    if (out.length) deps.notify(`${out.join("、")}用完了，點寵物的面板 ›「用品」補貨`);
+    if (out.length) {
+      deps.notify(`${out.join("、")}用完了，點寵物的面板 ›「用品」補貨`);
+      logHouseNews(`${out.join("、")}用完了`, "house");
+    }
   }
 
   /** 打開小屋、回到前景：把關著的那段時間補算完（牠們自己吃、自己上廁所、可能生病） */
@@ -136,6 +151,7 @@ export function usePetHome(deps: { notify: (text: string) => void }) {
     const cat = next.cats[next.cats.length - 1];
     const gifts = Object.keys(SPECIES_INFO[species].starter).map((id) => SUPPLIES[id as SupplyId].name);
     deps.notify(`${cat.name}來了！送你一份新手包（${gifts.join("、")}）`);
+    logHouseNews(`{user}${home.value.cats.length > 1 ? "又" : ""}養了一隻${SPECIES_NAMES[species]}，叫${cat.name}`, "user");
     return null;
   }
 
@@ -163,6 +179,7 @@ export function usePetHome(deps: { notify: (text: string) => void }) {
     const now = Date.now();
     set(updateCat(home.value, id, (c) => ({ ...c, checkupUntil: Math.max(c.checkupUntil, now) + COVER_DAYS * DAY })));
     deps.notify(`${cat.name}做完健康檢查了，${COVER_DAYS} 天內比較不會生病`);
+    logHouseNews(`{user}帶${cat.name}去做了健康檢查`, "user");
     return null;
   }
 
@@ -174,6 +191,7 @@ export function usePetHome(deps: { notify: (text: string) => void }) {
     const why = await pay(cost, `${cat.name}看醫生`, `pixel-house:${cat.species}:vet`);
     if (why) return why;
     set(treatCat(home.value, id, now));
+    logHouseNews(`{user}帶生病的${cat.name}去看醫生`, "user");
     deps.notify(`${cat.name}去看醫生了（${cost.toLocaleString()} 金幣${insured(now) ? "，保險付了一半" : ""}），大約 30 分鐘後回家`);
     return null;
   }
@@ -203,11 +221,14 @@ export function usePetHome(deps: { notify: (text: string) => void }) {
     if (supply && home.value.stock[supply] <= 0) return `沒有${SUPPLIES[supply].name}了，到「用品」買`;
     if (kind === "pet" && hamsterBites(cat)) {
       set(updateCat(home.value, id, (c) => ({ ...c, affinity: Math.min(100, c.affinity + 1) })));
+      logHouseNews(`{user}摸${cat.name}的時候被咬了一口`, "pet");
       return "bite";
     }
     let next = updateCat(home.value, id, (c) => careCat(c, kind, now));
     if (supply) next = { ...next, stock: { ...next.stock, [supply]: next.stock[supply] - 1 } };
     set(next);
+    if (kind === "wash")
+      logHouseNews(cat.species === "snake" ? `{user}幫${cat.name}的飼養箱噴了水` : roams(cat) ? `{user}幫${cat.name}洗了澡` : `{user}幫${cat.name}清了籠子`, "user");
     return null;
   }
 
@@ -233,6 +254,7 @@ export function usePetHome(deps: { notify: (text: string) => void }) {
   function hide(by: string, coins: number): boolean {
     if (home.value.stash) return false;
     set(hideStash(home.value, by, coins));
+    if (home.value.stash) logHouseNews(`${by || "雪貂"}叼走了東西，不知道藏到哪裡去了`, "pet");
     return !!home.value.stash;
   }
 
@@ -244,16 +266,18 @@ export function usePetHome(deps: { notify: (text: string) => void }) {
     const where = STASH_BY_ID[st.spot]?.where ?? "角落";
     await earnCoins(st.coins, `小屋：在${where}找到${st.by}藏的東西`, "pixel-house:ferret:stash");
     deps.notify(`在${where}找到${st.by || "雪貂"}藏的東西　＋${st.coins} 金幣`);
+    logHouseNews(`{user}在${where}找到${st.by || "雪貂"}藏的東西`, "user");
   }
 
   /** 帶狗出門散步（他在不在家外面先檢查）。做了回傳 null */
-  function walk(id: string): string | null {
+  function walk(id: string, charId?: string): string | null {
     const cat = catById(id);
     if (!cat || cat.species !== "dog") return null;
     const now = Date.now();
     if (cat.sickSince) return `${cat.name}生病了，先帶去看醫生`;
     if (awayUntil(cat) > now) return `${cat.name}不在家`;
     set(updateCat(home.value, id, (c) => walkDog(c, now)));
+    logHouseNews(`{char}帶${cat.name}出門散步`, "char", charId);
     deps.notify(`帶${cat.name}出門散步了，大約 ${Math.round(WALK_MS / 60_000)} 分鐘後回來`);
     return null;
   }
@@ -262,8 +286,12 @@ export function usePetHome(deps: { notify: (text: string) => void }) {
 
   /** 牠上了一次廁所（guided：小遊戲帶去的）。回傳去哪裡上、訓練度加了多少 */
   function toilet(id: string, guided = false): { result: ToiletResult; trained: number } {
+    const before = home.value.messes;
     const r = doToilet(home.value, id, Date.now(), Math.random, { guided, useTreat: true });
     set(r.home);
+    const spot = Object.keys(r.home.messes).find((m) => !(m in before));
+    if (spot && MESS_BY_ID[spot])
+      logHouseNews(`${nameOf(id)}在${ROOM_NAMES[MESS_BY_ID[spot].room]}地上${r.home.messes[spot] === "pee" ? "尿尿" : "大便"}了`, "pet");
     return { result: r.result, trained: r.trained };
   }
 
@@ -280,6 +308,7 @@ export function usePetHome(deps: { notify: (text: string) => void }) {
     if (home.value.box <= 0) return;
     set({ ...home.value, box: 0 });
     deps.notify("貓砂盆鏟乾淨了");
+    logHouseNews("{user}把貓砂盆鏟乾淨了", "user");
   }
 
   function cleanMess(id: string) {
@@ -287,6 +316,7 @@ export function usePetHome(deps: { notify: (text: string) => void }) {
     const { [id]: _gone, ...rest } = home.value.messes;
     set({ ...home.value, messes: rest });
     deps.notify("清乾淨了");
+    logHouseNews(`{user}把${ROOM_NAMES[MESS_BY_ID[id].room]}地上的便便清乾淨了`, "user");
   }
 
   function rename(id: string, name: string) {

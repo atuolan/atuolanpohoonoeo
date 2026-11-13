@@ -1,16 +1,17 @@
 <script setup lang="ts">
 /**
- * 右上的像素轉盤按鈕 → 從右邊滑出來的「小屋待辦」，左邊是一道波浪。
- * - 上面：他現在在做什麼、今天在小屋賺了多少花了多少
- * - 中間：現在有什麼要處理（點了跳過去）；沒事就寫「都處理好了」
- * - 下面：擺件商店、換外觀、移動家具
+ * 右上的圓按鈕（跟旁邊的「?」同一種樣子）→ 從右邊滑出來的「小屋」面板，左邊是一道波浪。
+ * 兩個分頁：
+ * - 待辦：他現在在做什麼、今天在小屋賺了多少花了多少；現在有什麼要處理（點了跳過去）；擺件商店、換外觀、移動家具
+ * - 記事：今天家裡發生的事，勾幾件「告訴他」送進聊天
  * - 打開時波浪像果凍一樣晃幾下再停成小小的弧，一列一列跟著滑進來
  * - 往右滑、點暗處、按 Esc 收起來
  * App 都在下面那一排（和「全部 App」），這裡不重複放。
  */
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { ClipboardList } from "lucide-vue-next";
+import HouseNewsPicker, { type PickerNews } from "./HouseNewsPicker.vue";
 import type { Ledger } from "./houseTodo";
-import { dialSvg } from "./pixelArt";
 
 export interface MenuTodo {
   key: string;
@@ -28,6 +29,16 @@ const props = defineProps<{
   ledger: Ledger | null;
   /** 他現在在做什麼（一句話） */
   status: string;
+  /** 小屋記事（新的在前面） */
+  news: PickerNews[];
+  /** 他、她 */
+  pronoun: string;
+  /** 記事送出中 */
+  newsBusy?: boolean;
+  /** 不能告訴他的原因（沒有住的人、還沒跟他聊過天） */
+  newsBlocked?: string;
+  /** 剛送出去的那句（「已經告訴他了」） */
+  newsNote?: string;
 }>();
 const emit = defineEmits<{
   toggle: [];
@@ -36,9 +47,13 @@ const emit = defineEmits<{
   decor: [];
   wardrobe: [];
   "edit-layout": [];
+  tell: [ids: string[]];
+  "open-chat": [];
 }>();
 
-const dialImg = dialSvg();
+type Tab = "todo" | "news";
+const tab = ref<Tab>("todo");
+const untold = computed(() => props.news.filter((n) => !n.told).length);
 /** 轉盤上的紅點：要趕快處理的和照顧的（有金幣的不算，不然一直有紅點） */
 const total = computed(() => props.todos.filter((t) => t.tone !== "coin").length);
 const fmt = (n: number) => n.toLocaleString();
@@ -209,7 +224,38 @@ function rowStyle(i: number) {
         <button class="pw-close" :tabindex="open ? 0 : -1" aria-label="收起選單" @click="emit('close')">×</button>
       </header>
 
-      <div class="pw-body">
+      <div class="pw-tabs" role="tablist">
+        <button
+          role="tab"
+          class="pw-tab"
+          :class="{ 'is-on': tab === 'todo' }"
+          :aria-selected="tab === 'todo' ? 'true' : 'false'"
+          :tabindex="open ? 0 : -1"
+          @click="tab = 'todo'"
+        >
+          待辦<span v-if="total" class="pw-tab-n">{{ badgeText(total) }}</span>
+        </button>
+        <button
+          role="tab"
+          class="pw-tab"
+          :class="{ 'is-on': tab === 'news' }"
+          :aria-selected="tab === 'news' ? 'true' : 'false'"
+          :tabindex="open ? 0 : -1"
+          @click="tab = 'news'"
+        >
+          記事<span v-if="untold" class="pw-tab-n is-soft">{{ badgeText(untold) }}</span>
+        </button>
+      </div>
+
+      <div v-if="tab === 'news'" class="pw-body is-news">
+        <div v-if="newsNote" class="pw-sent">
+          <span>{{ newsNote }}</span>
+          <button class="pw-sent-go" :tabindex="open ? 0 : -1" @click="emit('open-chat')">去聊天</button>
+        </div>
+        <HouseNewsPicker :items="news" :pronoun="pronoun" :busy="newsBusy" :blocked="newsBlocked" @send="(ids) => emit('tell', ids)" />
+      </div>
+
+      <div v-else class="pw-body">
         <p class="pw-status" :style="rowStyle(0)">{{ status }}</p>
         <div class="pw-ledger" :style="rowStyle(1)" aria-label="今天在小屋的收支">
           <span>今天</span>
@@ -250,11 +296,11 @@ function rowStyle(i: number) {
 
     <button
       class="pw-btn"
-      :aria-label="open ? '收起小屋待辦' : '打開小屋待辦' + (total ? `，${total} 件要處理` : '')"
+      :aria-label="open ? '收起小屋選單' : '打開小屋選單' + (total ? `，${total} 件要處理` : '')"
       :aria-expanded="open ? 'true' : 'false'"
       @click="emit('toggle')"
     >
-      <img :src="dialImg" alt="" width="52" height="52" :style="{ transform: `rotate(${open ? 90 : 0}deg)` }" />
+      <ClipboardList :size="21" :stroke-width="2" aria-hidden="true" />
       <span v-if="!open && total" class="pw-badge pw-btn-badge" aria-hidden="true">{{ badgeText(total) }}</span>
     </button>
   </div>
@@ -540,17 +586,31 @@ function rowStyle(i: number) {
 
 .pw-btn {
   position: absolute;
-  right: 10px;
-  top: calc(var(--ph-top) - 4px);
+  right: 22px;
+  top: var(--ph-top);
   z-index: 1;
-  width: 56px;
-  height: 56px;
+  width: 44px;
+  height: 44px;
   padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   border: 0;
-  background: transparent;
+  border-radius: 50%;
+  background: var(--ui-glass, rgba(255, 251, 245, 0.88));
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  color: var(--ui-ink, #3b2a26);
+  box-shadow: var(--ui-shadow, 0 4px 14px rgba(30, 20, 18, 0.16));
   cursor: pointer;
   pointer-events: auto;
-  transition: opacity 200ms ease;
+  transition:
+    opacity 200ms ease,
+    transform 160ms ease;
+}
+
+.pw-btn:active {
+  transform: scale(0.94);
 }
 
 /* 打開時按鈕藏到面板後面（面板有自己的關閉） */
@@ -559,16 +619,6 @@ function rowStyle(i: number) {
   pointer-events: none;
 }
 
-.pw-btn img {
-  position: absolute;
-  left: 2px;
-  top: 2px;
-  width: 52px;
-  height: 52px;
-  image-rendering: pixelated;
-  transition: transform 520ms cubic-bezier(0.34, 1.56, 0.64, 1);
-  filter: drop-shadow(0 4px 8px rgba(30, 20, 18, 0.3));
-}
 
 .pw-badge {
   min-width: 20px;
@@ -587,10 +637,97 @@ function rowStyle(i: number) {
 
 .pw-btn-badge {
   position: absolute;
-  left: 38px;
-  top: -4px;
+  left: 28px;
+  top: -6px;
   pointer-events: none;
   box-shadow: 0 0 0 2px #fff;
+}
+
+.pw-tabs {
+  display: flex;
+  gap: 4px;
+  margin: 2px 12px 8px 8px;
+  padding: 3px;
+  border-radius: 999px;
+  background: rgba(59, 42, 38, 0.07);
+}
+
+.pw-tab {
+  flex: 1;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: rgba(59, 42, 38, 0.7);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 160ms ease, color 160ms ease;
+}
+
+.pw-tab.is-on {
+  background: #fff;
+  color: #3b2a26;
+  box-shadow: 0 1px 4px rgba(30, 20, 18, 0.12);
+}
+
+.pw-tab-n {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  box-sizing: border-box;
+  border-radius: 999px;
+  background: #e0533f;
+  color: #fff;
+  font-size: 11px;
+  line-height: 18px;
+  font-variant-numeric: tabular-nums;
+}
+
+.pw-tab-n.is-soft {
+  background: rgba(59, 42, 38, 0.14);
+  color: #3b2a26;
+}
+
+.pw-body.is-news {
+  padding-left: 8px;
+  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 10px);
+}
+
+.pw-sent {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 8px 10px;
+  padding: 8px 8px 8px 12px;
+  border-radius: 12px;
+  background: #eef5e6;
+  color: #4f6b3f;
+  font-size: 13px;
+}
+
+.pw-sent span {
+  flex: 1;
+  min-width: 0;
+}
+
+.pw-sent-go {
+  flex: none;
+  min-height: 30px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 999px;
+  background: #fff;
+  color: #3b2a26;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
 }
 
 @media (prefers-reduced-motion: reduce) {

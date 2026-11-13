@@ -32,6 +32,8 @@ const props = defineProps<{
   chatFaceToFaceMode: boolean;
   /** 群聊：電話改成群通話，沒有視訊 */
   isGroupChat?: boolean;
+  /** 他住在小屋：＋選單多一個「小屋記事」 */
+  houseNews?: boolean;
   /** 這個角色綁了共感娃娃（單人線上才傳 true） */
   hasEmpathyDoll?: boolean;
   /** 群聊打 @ 時可以點名的成員 */
@@ -929,6 +931,18 @@ const isDarkBackground = computed(() =>
               </svg>
             </div>
             <span class="feature-label">約會</span>
+          </button>
+          <button
+            v-if="houseNews && !isGroupChat"
+            class="feature-item"
+            @click="emit('handleFeatureClick', 'house-news')"
+          >
+            <div class="feature-icon">
+              <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z" />
+              </svg>
+            </div>
+            <span class="feature-label">小屋記事</span>
           </button>
           <button
             class="feature-item"

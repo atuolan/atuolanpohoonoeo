@@ -10,6 +10,7 @@ import type {
   WaimaiOrderSnapshot,
 } from "@/types/chat";
 import type { LiuyaoShareSnapshot } from "@/types/liuyao";
+import type { HouseNewsShare } from "@/types/houseNews";
 import type { ToolActivityRecord } from "@/types/toolActivity";
 import type { DiceRollData } from "@/utils/diceRoller";
 
@@ -155,6 +156,8 @@ export interface ChatScreenMessage {
   plurkShare?: PlurkShareSnapshot;
   /** 六爻卦象卡片 */
   liuyaoShare?: LiuyaoShareSnapshot;
+  /** 「小屋的事」卡片 */
+  houseNews?: HouseNewsShare;
   /** 這輪回覆裡角色去噗浪留言了 */
   plurkActivity?: PlurkActivity;
   groupChatHistoryData?: ChatHistoryRecordData;
@@ -293,6 +296,8 @@ export interface PendingInjectedMessage {
   plurkShare?: PlurkShareSnapshot;
   /** 六爻卦象卡片 */
   liuyaoShare?: LiuyaoShareSnapshot;
+  /** 「小屋的事」卡片 */
+  houseNews?: HouseNewsShare;
   /** 卡片後面接著送的一句話 */
   followUpText?: string;
 }

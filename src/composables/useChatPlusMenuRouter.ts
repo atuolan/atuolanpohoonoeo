@@ -39,6 +39,8 @@ export function useChatPlusMenuRouter(deps: {
   openDatePicker?: () => void;
   /** 讓角色現在主動發一條訊息（不需開啟定時主動發訊） */
   sendProactiveNow?: () => void;
+  /** 小屋記事：勾幾件家裡的事放進聊天 */
+  openHouseNews?: () => void;
   emit: (e: string, ...args: any[]) => void;
 }) {
   const phoneCallStore = usePhoneCallStore();
@@ -135,6 +137,10 @@ export function useChatPlusMenuRouter(deps: {
         break;
       case "music":
         if (typeof deps.onShareMusic === "function") deps.onShareMusic();
+        break;
+      case "house-news":
+        if (deps.isGroupChat.value) break;
+        deps.openHouseNews?.();
         break;
       case "proactive-message":
         if (deps.isGroupChat.value) break;
