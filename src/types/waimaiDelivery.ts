@@ -13,36 +13,9 @@ export interface WaimaiItemLogisticsMeta {
   prepHoursRange?: [number, number];
 }
 
-export interface DeliveryAddress {
-  id: string;
-  label: string;
-  recipientName: string;
-  phone?: string;
-  /** ISO 3166-1 alpha-2 */
-  countryCode: string;
-  countryName: string;
-  city: string;
-  addressLine: string;
-  lat?: number;
-  lon?: number;
-  isDefault?: boolean;
-  createdAt: number;
-  updatedAt: number;
-}
-
-export interface TemporaryAddress {
-  source: "manual_temp";
-  displayName?: string;
-  countryCode: string;
-  countryName: string;
-  city: string;
-  addressLine: string;
-  lat?: number;
-  lon?: number;
-}
-
 export interface WaimaiDestinationSnapshot {
-  source: "address_book" | "manual_temp";
+  /** recipient：依收件人（自己／角色）所在地自動帶入；另外兩種是舊版地址簿留下的訂單 */
+  source: "recipient" | "address_book" | "manual_temp";
   addressId?: string;
   recipientName: string;
   phone?: string;

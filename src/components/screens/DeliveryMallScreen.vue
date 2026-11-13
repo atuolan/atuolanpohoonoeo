@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import WaimaiAddressPickerModal from "@/components/modals/WaimaiAddressPickerModal.vue";
 import {
     WAIMAI_SECTION_META,
     getWaimaiCatalogBySection,
@@ -18,8 +17,14 @@ import {
     resolveWaimaiRoute,
 } from "@/services/waimaiShipping";
 import { useCharactersStore } from "@/stores";
+import {
+    buildRecipientDestination,
+    formatWaimaiDestination,
+    resolvePlaceText,
+    type WaimaiRecipientKind,
+} from "@/services/waimaiLocation";
 import { useGameEconomyStore } from "@/stores/gameEconomy";
-import { useWaimaiAddressBookStore } from "@/stores/waimaiAddressBook";
+import { useWeatherStore } from "@/stores/weather";
 import type { WaimaiOrderSnapshot } from "@/types/chat";
 import type { WaimaiDestinationSnapshot } from "@/types/waimaiDelivery";
 import {
@@ -69,16 +74,13 @@ const emit = defineEmits<{
 
 const charactersStore = useCharactersStore();
 const gameEconomyStore = useGameEconomyStore();
-const addressBookStore = useWaimaiAddressBookStore();
-addressBookStore.ensureLoaded();
+const weatherStore = useWeatherStore();
 
 const activeSection = ref<WaimaiMallSection>("kind");
 const selectedItem = ref<WaimaiCatalogItem | null>(null);
 const showCharacterPicker = ref(false);
 const showPayMethodPicker = ref(false);
 const pendingFlow = ref<PendingFlow | null>(null);
-const showAddressPicker = ref(false);
-const selectedDestination = ref<WaimaiDestinationSnapshot | null>(null);
 
 // 確認訂單：進入時就算好快照，確認時送出同一份，畫面上的 ETA 才會一致
 const showConfirm = ref(false);
@@ -86,6 +88,15 @@ const pendingOrder = ref<WaimaiOrderSnapshot | null>(null);
 const pendingCharacter = ref<{ id: string; name: string } | null>(null);
 const confirmError = ref("");
 const submitting = ref(false);
+
+// 收件人：送給自己或送給角色，收貨地依收件人所在地自動帶入
+const recipientKind = ref<WaimaiRecipientKind>("me");
+// 這一單手動改的地點（只用這一次，不會改角色或天氣設定）
+const overridePlace = ref("");
+const editingPlace = ref(false);
+const placeDraft = ref("");
+// 用了替代地點時的說明（例如角色還沒設定所在地）
+const destinationNote = ref("");
 
 // 載入失敗的圖片商品 id
 const failedImageIds = ref<Set<string>>(new Set());
@@ -95,6 +106,18 @@ onMounted(() => {
 });
 
 const balance = computed(() => gameEconomyStore.getBalance(WALLET_ID));
+
+// 使用者所在地：天氣設定手動填的城市，或自動定位抓到的城市＋國家
+const userPlaceText = computed(() => {
+  const loc = weatherStore.userLocation;
+  const data = weatherStore.weatherData?.location;
+  const city = (loc.mode === "manual" && loc.city) || data?.name || "";
+  return [city, data?.country].filter(Boolean).join(", ");
+});
+
+const userCountryCode = computed(
+  () => resolvePlaceText(userPlaceText.value)?.countryCode ?? "TW",
+);
 
 const currentItems = computed(() =>
   getWaimaiCatalogBySection(activeSection.value),
@@ -118,16 +141,15 @@ const characterPickerTitle = computed(() => {
   return "要分享給誰？";
 });
 
-// 商品詳情的運費估算：以預設地址的國家計算
+// 商品詳情的運費估算：先以使用者所在國家計算，送給角色時依角色所在地重算
 const detailEstimate = computed(() => {
   const item = selectedItem.value;
   if (!item) return null;
-  const country = addressBookStore.defaultAddress?.countryCode ?? "TW";
-  const routeType = resolveWaimaiRoute(item, country);
+  const routeType = resolveWaimaiRoute(item, userCountryCode.value);
   const fee = computeWaimaiShippingFee(routeType);
   const routeName = formatWaimaiRouteName(routeType);
   const routeText =
-    routeType === "cross_border" ? `${routeName}，依收貨地計算` : routeName;
+    routeType === "cross_border" ? `${routeName}，依收件人所在地計算` : routeName;
   return {
     text: `運費 🪙 ${fee}（${routeText}）・合計 🪙 ${item.price + fee}`,
   };
@@ -170,7 +192,6 @@ function closeItemDetail() {
   closeConfirm();
   closeCharacterPicker();
   closePayMethodPicker();
-  closeAddressPicker();
 }
 
 function buildOrderSnapshot(
@@ -179,9 +200,8 @@ function buildOrderSnapshot(
 ): WaimaiOrderSnapshot {
   const subtotal = item.price;
   const isRequestPay = pendingFlow.value === "order_request_pay";
-  // 分享沒有收貨地，用預設地址的國家估運費
-  const country =
-    destination?.countryCode ?? addressBookStore.defaultAddress?.countryCode ?? "TW";
+  // 分享沒有收貨地，用使用者所在國家估運費
+  const country = destination?.countryCode ?? userCountryCode.value;
   const shippingFee = computeWaimaiShippingFee(resolveWaimaiRoute(item, country));
 
   const eta =
@@ -210,7 +230,7 @@ function buildOrderSnapshot(
     subtotal,
     shippingFee,
     totalPrice: subtotal + shippingFee,
-    // 收件人以收貨地址為準；分享沒有地址就留空
+    // 收件人：「我」或角色名字；分享沒有收件人就留空
     recipientName: destination?.recipientName ?? "",
     destination,
     eta,
@@ -235,20 +255,19 @@ function openOrderFlow() {
 function chooseSelfPay() {
   pendingFlow.value = "order_self_pay";
   showPayMethodPicker.value = false;
-  showAddressPicker.value = true;
+  showCharacterPicker.value = true;
 }
 
 function chooseRequestPay() {
   pendingFlow.value = "order_request_pay";
   showPayMethodPicker.value = false;
-  showAddressPicker.value = true;
+  showCharacterPicker.value = true;
 }
 
 function closeCharacterPicker() {
   showCharacterPicker.value = false;
   if (!showConfirm.value) {
     pendingFlow.value = null;
-    selectedDestination.value = null;
   }
 }
 
@@ -256,11 +275,52 @@ function closePayMethodPicker() {
   showPayMethodPicker.value = false;
 }
 
-function closeAddressPicker() {
-  showAddressPicker.value = false;
-  if (!showCharacterPicker.value && !showConfirm.value) {
-    pendingFlow.value = null;
-  }
+function resetRecipient() {
+  recipientKind.value = "me";
+  overridePlace.value = "";
+  editingPlace.value = false;
+  placeDraft.value = "";
+  destinationNote.value = "";
+}
+
+// 依收件人重算收貨地、運費與預估送達
+function rebuildPendingOrder() {
+  const item = selectedItem.value;
+  const character = pendingCharacter.value;
+  if (!item || !character) return;
+  const stored = charactersStore.characters.find((c) => c.id === character.id);
+  const { destination, note } = buildRecipientDestination({
+    recipient: recipientKind.value,
+    charName: character.name,
+    charPlace: stored?.worldSettings?.location,
+    userPlace: userPlaceText.value,
+    overridePlace: overridePlace.value,
+  });
+  pendingOrder.value = buildOrderSnapshot(item, destination);
+  destinationNote.value = note;
+}
+
+function setRecipient(kind: WaimaiRecipientKind) {
+  if (recipientKind.value === kind) return;
+  recipientKind.value = kind;
+  overridePlace.value = "";
+  editingPlace.value = false;
+  rebuildPendingOrder();
+}
+
+function startEditPlace() {
+  placeDraft.value = overridePlace.value;
+  editingPlace.value = true;
+}
+
+function applyPlace() {
+  overridePlace.value = placeDraft.value.trim();
+  editingPlace.value = false;
+  rebuildPendingOrder();
+}
+
+function cancelEditPlace() {
+  editingPlace.value = false;
 }
 
 // 關閉確認視窗並把整條下單流程的暫存清乾淨
@@ -270,9 +330,9 @@ function closeConfirm() {
   pendingCharacter.value = null;
   confirmError.value = "";
   submitting.value = false;
-  if (!showCharacterPicker.value && !showAddressPicker.value) {
+  resetRecipient();
+  if (!showCharacterPicker.value) {
     pendingFlow.value = null;
-    selectedDestination.value = null;
   }
 }
 
@@ -282,23 +342,12 @@ function backToCharacterPicker() {
   pendingOrder.value = null;
   pendingCharacter.value = null;
   confirmError.value = "";
-  showCharacterPicker.value = true;
-}
-
-function handleAddressConfirm(payload: {
-  destination: WaimaiDestinationSnapshot;
-}) {
-  selectedDestination.value = payload.destination;
-  showAddressPicker.value = false;
+  resetRecipient();
   showCharacterPicker.value = true;
 }
 
 function formatDestination(order: WaimaiOrderSnapshot): string {
-  if (!order.destination) {
-    return "未指定收貨地";
-  }
-  const d = order.destination;
-  return `${d.countryName} ${d.city}｜${d.addressLine}`;
+  return formatWaimaiDestination(order.destination) || "未指定收貨地";
 }
 
 function formatOrderSummary(
@@ -311,7 +360,7 @@ function formatOrderSummary(
   ];
 
   if (order.destination) {
-    lines.push(`收貨地：${formatDestination(order)}`);
+    lines.push(`收件人：${order.recipientName}｜送到：${formatDestination(order)}`);
   }
 
   if (order.eta) {
@@ -346,10 +395,10 @@ function sendToCharacter(characterId: string, characterName: string) {
     return;
   }
 
-  // 下單：先進確認視窗，快照在這裡算好
-  if (!selectedDestination.value) return;
-  pendingOrder.value = buildOrderSnapshot(item, selectedDestination.value);
+  // 下單：先進確認視窗，快照在這裡算好（預設送給自己）
   pendingCharacter.value = { id: characterId, name: characterName };
+  resetRecipient();
+  rebuildPendingOrder();
   confirmError.value = "";
   showCharacterPicker.value = false;
   showConfirm.value = true;
@@ -399,7 +448,7 @@ async function confirmOrder() {
       emit("sendToChat", {
         characterId: character.id,
         message: {
-          content: `🧾 我下單了\n${formatOrderSummary(item.name, paidOrder)}\n（我已經付款了，物流進度會自動更新）`,
+          content: `${recipientKind.value === "char" ? "🎁 我點了外賣送給你" : "🧾 我下單了"}\n${formatOrderSummary(item.name, paidOrder)}\n（我已經付款了，物流進度會自動更新）`,
           isWaimaiPaymentConfirm: true,
           waimaiOrder: paidOrder,
           waimaiProgressMessages: progressMessages,
@@ -655,6 +704,55 @@ async function confirmOrder() {
                 </div>
               </div>
 
+              <div class="recipient-block">
+                <div class="recipient-head">送給</div>
+                <div class="recipient-toggle">
+                  <button
+                    type="button"
+                    :class="{ active: recipientKind === 'me' }"
+                    @click="setRecipient('me')"
+                  >
+                    我
+                  </button>
+                  <button
+                    type="button"
+                    :class="{ active: recipientKind === 'char' }"
+                    @click="setRecipient('char')"
+                  >
+                    {{ pendingCharacter?.name }}
+                  </button>
+                </div>
+                <div class="recipient-place">
+                  <span class="place-text">送到：{{ formatDestination(pendingOrder) }}</span>
+                  <button
+                    v-if="!editingPlace"
+                    type="button"
+                    class="place-edit-btn"
+                    @click="startEditPlace"
+                  >
+                    改地點
+                  </button>
+                </div>
+                <div v-if="editingPlace" class="place-editor">
+                  <input
+                    v-model="placeDraft"
+                    class="place-input"
+                    type="text"
+                    placeholder="例如：東京、Taipei, Taiwan"
+                    @keydown.enter="applyPlace"
+                  />
+                  <button type="button" class="place-apply" @click="applyPlace">
+                    套用
+                  </button>
+                  <button type="button" class="place-cancel" @click="cancelEditPlace">
+                    取消
+                  </button>
+                </div>
+                <div v-if="destinationNote" class="place-note">
+                  {{ destinationNote }}
+                </div>
+              </div>
+
               <div class="confirm-rows">
                 <div class="confirm-row">
                   <span>小計</span>
@@ -675,14 +773,6 @@ async function confirmOrder() {
               </div>
 
               <div class="confirm-rows">
-                <div class="confirm-row">
-                  <span>收件人</span>
-                  <span>{{ pendingOrder.recipientName || "—" }}</span>
-                </div>
-                <div class="confirm-row">
-                  <span>收貨地</span>
-                  <span>{{ formatDestination(pendingOrder) }}</span>
-                </div>
                 <div v-if="pendingOrder.eta" class="confirm-row">
                   <span>預估送達</span>
                   <span>{{ formatEtaRangeText(pendingOrder.eta) }}</span>
@@ -730,12 +820,6 @@ async function confirmOrder() {
         </div>
       </transition>
     </teleport>
-
-    <WaimaiAddressPickerModal
-      :visible="showAddressPicker"
-      @close="closeAddressPicker"
-      @confirm="handleAddressConfirm"
-    />
   </div>
 </template>
 
@@ -1244,6 +1328,112 @@ async function confirmOrder() {
     grid-template-columns: 1fr 2fr;
     gap: 8px;
   }
+
+  .recipient-block {
+    margin-top: 12px;
+  }
+
+  .recipient-head {
+    font-size: 12px;
+    color: #6b7280;
+    margin-bottom: 6px;
+  }
+
+  .recipient-toggle {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+
+    button {
+      border: 1px solid #d1d5db;
+      background: #fff;
+      color: #374151;
+      border-radius: 10px;
+      padding: 9px 8px;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+
+      &.active {
+        border-color: #6366f1;
+        background: #eef2ff;
+        color: #3730a3;
+      }
+    }
+  }
+
+  .recipient-place {
+    margin-top: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: 13px;
+    color: #374151;
+
+    .place-text {
+      min-width: 0;
+      word-break: break-all;
+    }
+  }
+
+  .place-edit-btn {
+    flex-shrink: 0;
+    border: none;
+    background: transparent;
+    color: #4f46e5;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    padding: 2px 0;
+  }
+
+  .place-editor {
+    margin-top: 6px;
+    display: flex;
+    gap: 6px;
+
+    .place-input {
+      flex: 1;
+      min-width: 0;
+      border: 1px solid #d1d5db;
+      border-radius: 10px;
+      padding: 8px 10px;
+      font-size: 13px;
+      background: #fff;
+      color: #111827;
+    }
+
+    button {
+      flex-shrink: 0;
+      border: none;
+      border-radius: 10px;
+      padding: 8px 10px;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .place-apply {
+      background: #111827;
+      color: #fff;
+    }
+
+    .place-cancel {
+      background: #f3f4f6;
+      color: #374151;
+    }
+  }
+
+  .place-note {
+    margin-top: 6px;
+    font-size: 12px;
+    color: #b45309;
+    line-height: 1.4;
+  }
 }
 
 .character-item {
@@ -1412,6 +1602,49 @@ body.is-night-mode {
 
     .confirm-error {
       color: #ff7b7b;
+    }
+
+    .recipient-head,
+    .recipient-place {
+      color: var(--color-text-secondary);
+    }
+
+    .recipient-toggle button {
+      border-color: var(--color-border);
+      background: var(--color-surface-hover);
+      color: var(--color-text);
+
+      &.active {
+        border-color: #818cf8;
+        background: rgba(129, 140, 248, 0.15);
+        color: #c7d2fe;
+      }
+    }
+
+    .place-edit-btn {
+      color: #a5b4fc;
+    }
+
+    .place-editor {
+      .place-input {
+        border-color: var(--color-border);
+        background: var(--color-surface-hover);
+        color: var(--color-text);
+      }
+
+      .place-apply {
+        background: var(--color-text);
+        color: #1a1a2e;
+      }
+
+      .place-cancel {
+        background: rgba(255, 255, 255, 0.08);
+        color: var(--color-text);
+      }
+    }
+
+    .place-note {
+      color: #fbbf24;
     }
   }
 

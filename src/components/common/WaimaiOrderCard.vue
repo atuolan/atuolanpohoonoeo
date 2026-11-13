@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import type { WaimaiOrderSnapshot } from "@/types/chat";
+import { formatWaimaiDestination } from "@/services/waimaiLocation";
 
 export type WaimaiCardKind =
   | "share"
@@ -152,11 +153,8 @@ const etaText = computed(() => {
   return `預計 ${md(start)}–${md(end)} 送達`;
 });
 
-const destinationText = computed(() => {
-  const destination = props.order.destination;
-  if (!destination) return "";
-  return `${destination.countryName} ${destination.city}｜${destination.addressLine}`;
-});
+// 新訂單只有國家＋城市；舊版地址簿的訂單才有詳細地址
+const destinationText = computed(() => formatWaimaiDestination(props.order.destination));
 
 const recipientName = computed(() => (props.order.recipientName || "").trim());
 
@@ -208,7 +206,7 @@ const delayReason = computed(() => {
       收件人：{{ recipientName }}
     </div>
     <div v-if="destinationText" class="waimai-destination">
-      收貨地：{{ destinationText }}
+      送到：{{ destinationText }}
     </div>
     <div v-if="order.eta" class="waimai-eta-row">
       <span class="waimai-eta-text">{{ etaText }}</span>
