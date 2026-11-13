@@ -45,7 +45,7 @@ export const isCaged = (species: PetSpecies) => CAGED_SPECIES.includes(species);
 
 export type DogColor = "shiba" | "black" | "white" | "brown";
 export type HamsterColor = "golden" | "gray" | "pearl";
-export type FerretColor = "sable" | "albino" | "silver";
+export type FerretColor = "sable" | "cream" | "albino" | "silver";
 export type GuineaColor = "ginger" | "panda" | "cream";
 export type GliderColor = "classic" | "white" | "cream";
 export type SnakeColor = "corn" | "ball" | "green";
@@ -56,15 +56,19 @@ type ColorTable<K extends string> = Record<K, { name: string; palette: Record<st
 export const FERRET_COLORS: ColorTable<FerretColor> = {
   sable: {
     name: "貂色",
-    palette: { o: "#261B21", d: "#3F2F34", s: "#604B4D", b: "#826966", h: "#9C817C", l: "#BEA29A", v: "#D7BEB4", w: "#F0DED4", p: "#E2929E", x: "#FFFFFF" },
+    palette: { o: "#2C1D1F", d: "#4A3330", m: "#6F4E40", s: "#6F4E40", b: "#88614E", h: "#A7795E", l: "#C49678", v: "#DBB594", w: "#F7EBD6", p: "#E8A0A8", x: "#FFFFFF" },
+  },
+  cream: {
+    name: "奶油",
+    palette: { o: "#221714", d: "#41322F", m: "#806B63", s: "#D5C6BE", b: "#E8DBD1", h: "#FAF1E7", l: "#E8DBD1", v: "#E8DBD1", w: "#FAF5F0", p: "#E8A0A8", x: "#FFFFFF" },
   },
   albino: {
     name: "白化",
-    palette: { o: "#6B5A52", d: "#CDBBA2", s: "#DCCDB6", b: "#E8DCC8", h: "#EFE5D4", l: "#F5EDE1", v: "#F9F4EC", w: "#FFFFFF", p: "#F2A0AC", x: "#FFFFFF" },
+    palette: { o: "#6B5A52", d: "#D8CAB4", m: "#E4D8C6", s: "#E9E0D2", b: "#F3ECE2", h: "#FBF8F2", l: "#F3ECE2", v: "#F3ECE2", w: "#FFFFFF", p: "#F2A0AC", x: "#FFFFFF" },
   },
   silver: {
     name: "銀灰",
-    palette: { o: "#2B2830", d: "#4F4C57", s: "#73707C", b: "#97949E", h: "#AFADB6", l: "#C8C6CD", v: "#DCDADF", w: "#F4F2F2", p: "#E8A0AC", x: "#FFFFFF" },
+    palette: { o: "#2B2830", d: "#3F3C45", m: "#6A6773", s: "#8E8B95", b: "#A9A7B0", h: "#C3C1C8", l: "#CFCDD3", v: "#DCDADF", w: "#F4F2F2", p: "#E8A0AC", x: "#FFFFFF" },
   },
 };
 
@@ -672,8 +676,11 @@ export function catDwellMs(act: string, rand: () => number = Math.random, calm =
 
 /** 走路速度（房間格子／秒）：比他快一點 */
 export const CAT_SPEED = 38;
-/** 雪貂跑得快（彈著跑） */
-export const FERRET_SPEED = 62;
+/** 雪貂：短距離慢慢走、長距離（或跨房間）用跑的 */
+export const FERRET_SPEED = 30;
+export const FERRET_RUN_SPEED = 72;
+/** 這段路超過幾格就用跑的 */
+export const FERRET_RUN_OVER = 50;
 
 // ===== 狗：散步 =====
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { SPECIES_COLORS } from "./houseCat";
-import { CAGE_DEFS, cagedArt, FERRET_DANCE, walkerArt, type CagedSpecies } from "./petArt";
+import { CAGE_DEFS, cagedArt, FERRET_DANCE, FERRET_RUN, walkerArt, type CagedSpecies } from "./petArt";
 
 /** 每張圖：每一列一樣寬；用到的字母都在這個種類每個花色的調色盤裡（不然會畫成透明的洞） */
 function checkArt(rows: string[], palettes: Record<string, string>[], name: string) {
@@ -25,6 +25,13 @@ describe("寵物的圖", () => {
     const ferretPal = Object.values(SPECIES_COLORS.ferret).map((c) => c.palette);
     for (const [k, rows] of Object.entries(FERRET_DANCE)) checkArt(rows, ferretPal, `ferret:${k}`);
     expect(FERRET_DANCE["dance-a"][0].length).toBe(walkerArt("ferret").art.sit[0].length);
+    // 跑步 8 張：跟其他張一樣大
+    expect(FERRET_RUN).toHaveLength(8);
+    FERRET_RUN.forEach((rows, i) => {
+      checkArt(rows, ferretPal, `ferret:run-${i + 1}`);
+      expect(rows.length).toBe(walkerArt("ferret").art.sit.length);
+      expect(rows[0].length).toBe(walkerArt("ferret").art.sit[0].length);
+    });
   });
 
   it("住籠子的：動物和籠子都畫得出來", () => {

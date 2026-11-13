@@ -23,6 +23,8 @@ import {
   PERCH_FLOOR_Y,
   pickCatFind,
   CAT_SPEED,
+  FERRET_RUN_OVER,
+  FERRET_RUN_SPEED,
   FERRET_SPEED,
   pickCatAct,
   type CatCare,
@@ -86,6 +88,8 @@ export function useHouseCat(
   const me = reactive<Spot>({ room: "living", x: 30, y: 192 });
   const act = ref("sit-living");
   const walking = ref(false);
+  /** 雪貂這趟用跑的（長距離、跨房間）：換跑步的圖、跑得快 */
+  const running = ref(false);
   const facing = ref<1 | -1>(1);
   const moveMs = ref(0);
   /** 摸、洗、逗的時候頭上冒的東西 */
@@ -220,7 +224,7 @@ export function useHouseCat(
     playing.value = false;
     act.value = key;
     walking.value = true;
-    runLegs(routeTo(key), () => {
+    startRoute(routeTo(key), () => {
       walking.value = false;
       moveMs.value = 0;
       // 吃飯：頭要朝著碗（碗在右邊），吃掉一份
@@ -232,6 +236,20 @@ export function useHouseCat(
       onArrive?.();
       schedule(dwell(key));
     });
+  }
+
+  /** 開始走一趟：雪貂看這趟多遠，遠的（或跨房間）用跑的 */
+  function startRoute(legs: CatLeg[], done: () => void) {
+    if (cat.value?.species === "ferret") {
+      let total = 0;
+      let at: Spot = { ...me };
+      for (const leg of legs) {
+        total += Math.hypot(stripX(leg) - stripX(at), leg.y - at.y);
+        at = leg;
+      }
+      running.value = total > FERRET_RUN_OVER || legs.some((l) => l.room !== me.room);
+    } else running.value = false;
+    runLegs(legs, done);
   }
 
   function runLegs(legs: CatLeg[], done: () => void) {
@@ -248,7 +266,7 @@ export function useHouseCat(
       runLegs(rest, done);
       return;
     }
-    const speed = cat.value?.species === "ferret" ? FERRET_SPEED : CAT_SPEED;
+    const speed = cat.value?.species === "ferret" ? (running.value ? FERRET_RUN_SPEED : FERRET_SPEED) : CAT_SPEED;
     const ms = leg.jump ? CAT_JUMP_MS : Math.round((dist / speed) * 1000);
     moveMs.value = ms;
     if (Math.abs(dx) > 2) facing.value = dx > 0 ? 1 : -1;
@@ -488,7 +506,7 @@ export function useHouseCat(
     if (legTimer) clearTimeout(legTimer);
     legTimer = null;
     walking.value = true;
-    runLegs(routeTo(CAT_FOLLOW), () => {
+    startRoute(routeTo(CAT_FOLLOW), () => {
       walking.value = false;
       moveMs.value = 0;
       // 第一次走到之前就被叫去改路：到了才開始算這件事做多久
@@ -496,8 +514,12 @@ export function useHouseCat(
     });
   });
 
-  /** 現在用哪張圖 */
-  function poseAt(frame: number): CatPose {
+  /**
+   * 現在用哪張圖。"run" = 雪貂在跑（跑步那 8 張，畫面那邊照 frame 挑）。
+   * 雪貂的 frame 每 110 毫秒加一，走路兩張換慢一點（220 毫秒）
+   */
+  function poseAt(frame: number): CatPose | "run" {
+    if (walking.value && cat.value?.species === "ferret") return running.value ? "run" : Math.floor(frame / 2) % 2 ? "walk-b" : "walk-a";
     if (walking.value) return frame % 2 ? "walk-b" : "walk-a";
     if (playing.value || urge.value) return "sit";
     if (act.value === "eat") return "eat";
@@ -536,6 +558,7 @@ export function useHouseCat(
     me,
     act,
     walking,
+    running,
     facing,
     moveMs,
     fx,

@@ -42,6 +42,7 @@ import {
   cageTopRow,
   DOG_BOWL_PALETTE,
   FERRET_DANCE,
+  FERRET_RUN,
   PAD_ART,
   STASH_ART,
   walkerArt,
@@ -673,6 +674,17 @@ function ferretDanceImages(color: PetColor) {
     const palette = SPECIES_COLORS.ferret[color]?.palette ?? {};
     imgs = { "dance-a": pixelSvg(FERRET_DANCE["dance-a"], palette), "dance-b": pixelSvg(FERRET_DANCE["dance-b"], palette) };
     ferretDanceCache.set(color, imgs);
+  }
+  return imgs;
+}
+/** 雪貂跑步 8 張，照花色畫（先全部放著、只顯示一張） */
+const ferretRunCache = new Map<string, string[]>();
+function ferretRunImages(color: PetColor): string[] {
+  let imgs = ferretRunCache.get(color);
+  if (!imgs) {
+    const palette = SPECIES_COLORS.ferret[color]?.palette ?? {};
+    imgs = FERRET_RUN.map((rows) => pixelSvg(rows, palette));
+    ferretRunCache.set(color, imgs);
   }
   return imgs;
 }
@@ -2033,8 +2045,16 @@ function labelStyle(room: RoomId, it: RenderItem) {
                 alt=""
                 draggable="false"
               />
-              <!-- 雪貂舞的兩張先放著（不顯示），開始跳的時候不用臨時解碼 -->
+              <!-- 雪貂跑步 8 張、雪貂舞 2 張都先放著（不顯示），換的時候不用臨時解碼 -->
               <template v-if="k.cat.value.species === 'ferret'">
+                <img
+                  v-for="(src, n) in ferretRunImages(k.cat.value.color)"
+                  v-show="k.poseAt(fastFrame) === 'run' && n === fastFrame % 8"
+                  :key="`run-${n}`"
+                  :src="src"
+                  alt=""
+                  draggable="false"
+                />
                 <img v-show="ferretDancing(k)" :src="ferretDanceImages(k.cat.value.color)['dance-a']" class="ph-flip-a" alt="" draggable="false" />
                 <img v-show="ferretDancing(k)" :src="ferretDanceImages(k.cat.value.color)['dance-b']" class="ph-flip-b" alt="" draggable="false" />
               </template>
