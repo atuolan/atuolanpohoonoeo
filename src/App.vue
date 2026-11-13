@@ -3119,7 +3119,9 @@ async function handleNotificationNavigate(page: string, data?: Record<string, an
   if (page === "chat" && data?.chatId) {
     const restored = await restoreChatContextFromNotification(data);
     if (!restored) {
-      console.warn("[App] 無法恢復通知對應聊天，已忽略此次跳轉", data);
+      console.warn("[App] 無法恢復通知對應聊天", data);
+      // 像素小屋點他：那個聊天讀不到（被刪了、換過）就照角色重新找，不要點了沒反應
+      if (data.characterId) await startChat(data.characterId);
     }
   } else if (page === "chat" && data?.characterId) {
     // 像素小屋點他、但還沒跟他聊過：跟從角色卡開始聊天一樣

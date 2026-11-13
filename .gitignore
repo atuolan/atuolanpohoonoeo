@@ -104,3 +104,7 @@ docs/chat-skins-tools/huninn.ttf
 docs/chat-skins-tools/sheet.png
 aguaphone-sync-hf-space-root/data/
 .wrangler/
+
+# Python 快取（跑 scripts/pixel-house 的畫圖程式時產生）
+__pycache__/
+*.pyc

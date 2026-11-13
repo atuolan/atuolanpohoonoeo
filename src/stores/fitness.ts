@@ -31,6 +31,8 @@ const DEFAULT_SETTINGS: FitnessSettings = {
   weeklyGoal: 3,
 }
 
+import { markHouseDeed } from '@/components/pixelHouse/houseLife'
+
 export const useFitnessStore = defineStore('fitness', () => {
   // ===== 狀態 =====
   const workoutLogs = ref<WorkoutLog[]>([])
@@ -231,6 +233,8 @@ export const useFitnessStore = defineStore('fitness', () => {
       createdAt: Date.now(),
     }
     workoutLogs.value.push(newLog)
+    // 像素小屋：今天健身打卡過，回小屋可以領獎勵
+    markHouseDeed('fitness')
     
     // 儲存到 DB
     try {

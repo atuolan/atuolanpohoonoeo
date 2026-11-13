@@ -137,6 +137,51 @@ def floor_cushion():
     return cv.outline()
 
 
+def yarn_ball():
+    """毛線球（貓叼回來的）"""
+    cv = Cv(14, 10)
+    cv.ell(1, 1, 9, 8, "pk1")
+    cv.line(2, 3, 8, 7, "pk2").line(3, 1, 9, 5, "pk2").line(1, 6, 5, 8, "pk3")
+    cv.px(4, 2, "pk3").px(5, 2, "pk3")
+    cv.outline()
+    # 拖出來的一段線
+    cv.line(10, 7, 12, 8, "pk2").px(13, 7, "pk2")
+    return cv
+
+
+def feather():
+    """羽毛（貓叼回來的）"""
+    cv = Cv(14, 8)
+    rows = [
+        "........bbb.",
+        ".....bbbBBbb",
+        "..bbbBBBBbb.",
+        "bbbBBBbbb...",
+        ".bbbbb......",
+    ]
+    cv.art(1, 1, rows, {"b": "b3", "B": "b1"})
+    cv.outline("b2")
+    cv.line(0, 6, 9, 2, "wh3")
+    return cv
+
+
+def little_flower():
+    """插在小玻璃杯裡的一朵花（貓叼回來的）"""
+    cv = Cv(11, 16)
+    cv.art(1, 1, ["..p.p..", ".ppppp.", "ppPyPpp", ".ppppp.", "..p.p.."], {"p": "pk1", "P": "pk3", "y": "y1"})
+    cv.v_(4, 6, 4, "leaf2").px(5, 7, "leaf1").px(6, 7, "leaf1")
+    cv.rect(1, 9, 7, 5, "b3").v_(1, 9, 5, "b1").h_(1, 13, 7, "b1").v_(4, 9, 4, "leaf2")
+    cv.outline()
+    return cv
+
+
+# 貓叼回來的：商店不賣，只能等貓帶回家（價錢 0、cat_only）
+CAT_FINDS = [
+    ("cat-yarn", "毛線球", yarn_ball, 0, "living", 70, {"bottom": 200}, False),
+    ("cat-feather", "羽毛", feather, 0, "bedroom", 70, {"bottom": 214}, False),
+    ("cat-flower", "小花", little_flower, 0, "kitchen", 97, {"bottom": 221}, False),
+]
+
 # id、名字、圖、價錢、預設放哪間、x、底部那列（或 y）、是不是掛在牆上
 DECOR = [
     ("bed-shelf", "床頭書櫃和小夜燈", bed_shelf, 3800, "bedroom", 4, {"bottom": 192}, False),
@@ -151,10 +196,14 @@ DECOR = [
 def build():
     """回傳 [(定義, 圖)]"""
     out = []
-    for iid, name, fn, price, room, x, pos, wall in DECOR:
-        im, _ = fn().crop()
-        y = pos["y"] if "y" in pos else pos["bottom"] - im.height
-        out.append(({"id": iid, "name": name, "price": price, "room": room, "x": x, "y": y, "w": im.width, "h": im.height, "wall": wall}, im))
+    for cat_only, items in ((False, DECOR), (True, CAT_FINDS)):
+        for iid, name, fn, price, room, x, pos, wall in items:
+            im, _ = fn().crop()
+            y = pos["y"] if "y" in pos else pos["bottom"] - im.height
+            meta = {"id": iid, "name": name, "price": price, "room": room, "x": x, "y": y, "w": im.width, "h": im.height, "wall": wall}
+            if cat_only:
+                meta["catOnly"] = True
+            out.append((meta, im))
     return out
 
 

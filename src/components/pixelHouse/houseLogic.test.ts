@@ -17,6 +17,7 @@ import {
   planRoute,
   residentStatus,
   sceneAt,
+  snapRoomIndex,
 } from "./houseLogic";
 import { parsePixelHouseState } from "./houseState";
 import type { CharAway } from "@/types/chat";
@@ -98,29 +99,24 @@ describe("pickAct", () => {
 });
 
 describe("planRoute", () => {
-  const door = { x: 113, y: 158 };
   it("同一間後排直接走過去", () => {
-    expect(planRoute({ room: "living", x: 10, y: 160 }, { room: "living", x: 80, y: 160 }, door)).toEqual([
-      { room: "living", x: 80, y: 160 },
-    ]);
+    expect(planRoute({ room: "living", x: 10, y: 160 }, { room: "living", x: 80, y: 160 })).toEqual([{ room: "living", x: 80, y: 160 }]);
   });
   it("跨房間：走到邊上，從隔壁的邊上接著走，最後到目的地", () => {
-    const legs = planRoute({ room: "living", x: 81, y: 158 }, { room: "kitchen", x: 113, y: 160 }, door);
-    const last = legs[legs.length - 1];
-    expect(last).toEqual({ room: "kitchen", x: 113, y: 160 });
-    expect(legs.some((l) => l.room === "bedroom")).toBe(true);
-    expect(legs.some((l) => l.teleport)).toBe(false);
+    const legs = planRoute({ room: "kitchen", x: 113, y: 160 }, { room: "bedroom", x: 66, y: 157 });
+    expect(legs[legs.length - 1]).toEqual({ room: "bedroom", x: 66, y: 157 });
+    expect(legs.some((l) => l.room === "living")).toBe(true);
   });
-  it("進浴室：走到臥室的門，穿過去", () => {
-    const legs = planRoute({ room: "living", x: 81, y: 158 }, { room: "bath", x: 85, y: 158 }, door);
-    const tp = legs.findIndex((l) => l.teleport);
-    expect(legs[tp - 1]).toMatchObject({ room: "bedroom", x: 113, y: 158 });
-    expect(legs[tp].room).toBe("bath");
+  it("浴室在臥室右邊：從臥室的右邊走過去，出現在浴室的左邊", () => {
+    const legs = planRoute({ room: "bedroom", x: 66, y: 157 }, { room: "bath", x: 85, y: 158 });
+    const enter = legs.findIndex((l) => l.room === "bath");
+    expect(legs[enter - 1]).toMatchObject({ room: "bedroom", x: 130 });
+    expect(legs[enter]).toMatchObject({ room: "bath", x: 0 });
     expect(legs[legs.length - 1]).toEqual({ room: "bath", x: 85, y: 158 });
   });
-  it("出浴室：從門穿回臥室再走", () => {
-    const legs = planRoute({ room: "bath", x: 85, y: 158 }, { room: "kitchen", x: 27, y: 158 }, door);
-    expect(legs.find((l) => l.teleport)).toMatchObject({ room: "bedroom", x: 113, y: 158 });
+  it("出浴室：往左一間一間走回去", () => {
+    const legs = planRoute({ room: "bath", x: 85, y: 158 }, { room: "kitchen", x: 27, y: 158 });
+    expect(legs.map((l) => l.room).filter((r, n, a) => r !== a[n - 1])).toEqual(["bath", "bedroom", "living", "kitchen"]);
     expect(legs[legs.length - 1]).toEqual({ room: "kitchen", x: 27, y: 158 });
   });
 });
@@ -156,7 +152,7 @@ describe("residentStatus", () => {
 
 describe("parsePixelHouseState", () => {
   it("壞掉的資料用預設值，擺放只留數字", () => {
-    expect(parsePixelHouseState(null)).toEqual({ homeStyle: "canvas", residentCharId: null, look: "boy", looks: {}, timeLight: true, calm: false, guideSeen: false, placements: {}, decor: {}, ownedSkins: [], skins: {} });
+    expect(parsePixelHouseState(null)).toEqual({ homeStyle: "canvas", residentCharId: null, look: "boy", looks: {}, timeLight: true, calm: false, guideSeen: false, dockOpen: false, placements: {}, decor: {}, ownedSkins: [], skins: {} });
     expect(
       parsePixelHouseState({
         homeStyle: "pixel-house",
@@ -165,8 +161,9 @@ describe("parsePixelHouseState", () => {
         timeLight: false,
         placements: { living: { sofa: [1, 2], bad: ["x", 2], worse: 3 } },
       }),
-    ).toEqual({ homeStyle: "pixel-house", residentCharId: "c1", look: "girl", looks: {}, timeLight: false, calm: false, guideSeen: false, placements: { living: { sofa: [1, 2] } }, decor: {}, ownedSkins: [], skins: {} });
+    ).toEqual({ homeStyle: "pixel-house", residentCharId: "c1", look: "girl", looks: {}, timeLight: false, calm: false, guideSeen: false, dockOpen: false, placements: { living: { sofa: [1, 2] } }, decor: {}, ownedSkins: [], skins: {} });
     expect(parsePixelHouseState({ guideSeen: true }).guideSeen).toBe(true);
+    expect(parsePixelHouseState({ dockOpen: true }).dockOpen).toBe(true);
     expect(parsePixelHouseState({ calm: true }).calm).toBe(true);
     expect(parsePixelHouseState({ calm: "yes" }).calm).toBe(false);
     expect(parsePixelHouseState({ timeLight: "x" }).timeLight).toBe(true);
@@ -297,7 +294,9 @@ describe("家具的圖", () => {
     for (const d of defs) {
       expect(existsSync(`${decorDir}/${d.id}.png`), d.id).toBe(true);
       expect(ROOMS, d.id).toContain(d.room);
-      expect(d.price, d.id).toBeGreaterThan(0);
+      // 貓叼回來的不賣（0 元）；商店賣的都要有價錢
+      if (d.catOnly) expect(d.price, d.id).toBe(0);
+      else expect(d.price, d.id).toBeGreaterThan(0);
       expect(d.x >= 0 && d.y >= 0 && d.x + d.w <= 130 && d.y + d.h <= 282, d.id).toBe(true);
       const layout = JSON.parse(readFileSync(`${dir(d.room)}/layout.json`, "utf-8")) as { floor: { y: number }; items: { id: string }[] };
       expect(layout.items.map((i) => i.id), d.id).not.toContain(d.id);
@@ -342,5 +341,26 @@ describe("家具的圖", () => {
     expect(itemZone("living", "mailbox", 107, 158)).toBe("wall");
     expect(FURNITURE_ACTIONS.living.mailbox).toEqual({ kind: "app", app: "message", to: "訊息" });
     expect(roomDepths("living").mailbox).toBe(-1);
+  });
+});
+
+describe("snapRoomIndex：放開後停在哪一間", () => {
+  const W = 390;
+  it("慢慢拖不到一半就放開：回原本那間", () => {
+    expect(snapRoomIndex(W / 2 + 150, 0, 0, W)).toBe(0);
+  });
+  it("慢慢拖過一半：換到隔壁", () => {
+    expect(snapRoomIndex(W / 2 + 220, 0, 0, W)).toBe(1);
+  });
+  it("輕輕一撥就換間", () => {
+    expect(snapRoomIndex(W / 2 + 40, -0.5, 0, W)).toBe(1);
+    expect(snapRoomIndex(W * 1.5 - 40, 0.5, 1, W)).toBe(0);
+  });
+  it("撥再大力也只換一間", () => {
+    expect(snapRoomIndex(W / 2 + 100, -5, 0, W)).toBe(1);
+  });
+  it("第一間往右撥、最後一間往左撥：留在原地", () => {
+    expect(snapRoomIndex(W / 2, 2, 0, W)).toBe(0);
+    expect(snapRoomIndex(W * 3.5, -2, 3, W)).toBe(3);
   });
 });

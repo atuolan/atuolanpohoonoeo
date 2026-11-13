@@ -5,8 +5,10 @@
  */
 
 export type RoomId = "living" | "bedroom" | "kitchen" | "bath";
-/** 排成一條、可以左右滑的三間（浴室從臥室的門進去，蓋在上面） */
-export const STRIP_ROOMS: RoomId[] = ["living", "bedroom", "kitchen"];
+/** 四間排成一條左右滑：客廳在中間偏左，廚房在它左邊；臥室右邊的門過去就是浴室 */
+export const STRIP_ROOMS: RoomId[] = ["kitchen", "living", "bedroom", "bath"];
+/** 一打開看的那一間 */
+export const HOME_ROOM: RoomId = "living";
 export const ROOM_W = 130;
 export const ROOM_H = 282;
 
@@ -134,6 +136,8 @@ export interface DecorDef {
   h: number;
   /** 掛在牆上的 */
   wall: boolean;
+  /** 貓叼回來的：商店不賣，只能等貓帶回家 */
+  catOnly?: boolean;
 }
 
 /**
@@ -159,7 +163,7 @@ export function skinSlot(room: RoomId, item: string): string {
   return `${room}:${item}`;
 }
 
-/** 點家具打開的東西：App（handleNavigate 的 id）、幾個 App 選一個、或進浴室 */
+/** 點家具打開的東西：App（handleNavigate 的 id）、幾個 App 選一個、或滑到浴室 */
 export type FurnitureAction =
   | { kind: "app"; app: string; to: string }
   | { kind: "choose"; to: string; options: { app: string; label: string }[] }
@@ -190,7 +194,7 @@ export const FURNITURE_ACTIONS: Record<RoomId, Record<string, FurnitureAction>> 
     bookshelf: { kind: "app", app: "bookshelf", to: "書架" },
     board: { kind: "app", app: "note-board", to: "便利貼" },
     monitor: { kind: "app", app: "space", to: "噗浪．空間" },
-    door: { kind: "enter-bath", to: "進浴室" },
+    door: { kind: "enter-bath", to: "去浴室" },
     tv: { kind: "app", app: "game", to: "遊戲中心" },
     "desk-lamp": { kind: "app", app: "pomodoro", to: "番茄鐘" },
     phone: { kind: "app", app: "peek-phone", to: "偷看手機" },
@@ -308,6 +312,11 @@ export const DIAL_APPS: DialApp[] = [
   { key: "read", app: "reading", name: "閱讀", bg: "#E8C79A", glyph: [".........", ".##...##.", "#..#.#..#", "#..#.#..#", "#..#.#..#", "#..#.#..#", "####.####", "...###...", "........."] },
   { key: "all", app: "__all__", name: "全部 App", bg: "#D8CFC0", glyph: [".........", ".###.###.", ".###.###.", ".###.###.", ".........", ".###.###.", ".###.###.", ".###.###.", "........."] },
 ];
+
+/** 下面那一排固定的常用 App（DIAL_APPS 的 key），不用記哪件家具是哪個 App */
+export const DOCK_APP_KEYS = ["msg", "char", "world", "prompt"];
+/** 下面那一排的「小屋」：換外觀、擺件商店、移動家具、怎麼玩都在這裡 */
+export const HOUSE_GLYPH = ["....#....", "...###...", "..#####..", ".#######.", "#########", ".#######.", ".##.#.##.", ".##.###..", ".##.###.."];
 
 export const INK = "#3B2A26";
 export const PAPER = "#FBF7EE";

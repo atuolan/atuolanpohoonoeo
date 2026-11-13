@@ -4,5 +4,8 @@
  {"id": "star-lamp", "name": "星星燈", "price": 1800, "room": "bedroom", "x": 61, "y": 73, "w": 13, "h": 14, "wall": false},
  {"id": "headphones", "name": "耳機", "price": 1500, "room": "bedroom", "x": 37, "y": 99, "w": 13, "h": 16, "wall": true},
  {"id": "pendant-lamp", "name": "吊燈", "price": 2600, "room": "bedroom", "x": 13, "y": 0, "w": 17, "h": 35, "wall": true},
- {"id": "floor-cushion", "name": "圓坐墊", "price": 1200, "room": "bedroom", "x": 1, "y": 257, "w": 24, "h": 11, "wall": false}
+ {"id": "floor-cushion", "name": "圓坐墊", "price": 1200, "room": "bedroom", "x": 1, "y": 257, "w": 24, "h": 11, "wall": false},
+ {"id": "cat-yarn", "name": "毛線球", "price": 0, "room": "living", "x": 70, "y": 190, "w": 14, "h": 10, "wall": false, "catOnly": true},
+ {"id": "cat-feather", "name": "羽毛", "price": 0, "room": "bedroom", "x": 70, "y": 207, "w": 14, "h": 7, "wall": false, "catOnly": true},
+ {"id": "cat-flower", "name": "小花", "price": 0, "room": "kitchen", "x": 97, "y": 206, "w": 9, "h": 15, "wall": false, "catOnly": true}
 ]
