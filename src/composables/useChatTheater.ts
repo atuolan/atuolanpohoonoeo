@@ -25,6 +25,11 @@ export function useChatTheater(deps: {
   switchChatFile: (chatId: string) => Promise<void>;
   setFaceToFaceMode: (enabled: boolean) => void | Promise<void>;
   triggerAIResponse: (opts?: { theaterNudge?: boolean; theaterPhoneScript?: boolean }) => Promise<void>;
+  /**
+   * 小劇場是新的一輪：跟用戶送出訊息一樣換新的 turnId。沿用上一輪的 turnId 的話，
+   * 重 roll 小劇場會把上一輪的正文回覆一起刪掉、混進同一組候選
+   */
+  startNewTurn: () => void;
   getCompleteMessages?: () => Promise<any[]>;
 }) {
   const showSmallTheaterModal = ref(false);
@@ -176,6 +181,8 @@ export function useChatTheater(deps: {
         status: "sent",
         createdAt: now + 1,
         updatedAt: now + 1,
+        // 記在指令上，重新生成這一輪時才知道要沿用小手機劇本格式
+        ...(theaterPhoneScript.value ? { theaterPhoneScript: true } : {}),
       } as any;
       branchMessages.push(theaterStartMsg);
 
@@ -268,8 +275,15 @@ export function useChatTheater(deps: {
         targetChatId = newChatId;
       } else {
         targetChatId = deps.currentChatId.value || "";
+        deps.startNewTurn();
+        // 畫面上的訊息要用 role/timestamp（存檔格式的 sender 在這裡讀不到，
+        // 小劇場指令會被當成角色說的話送出去）
         for (const msg of branchMessages) {
-          deps.messages.value.push(msg as any);
+          deps.messages.value.push({
+            ...(msg as any),
+            role: "system",
+            timestamp: msg.createdAt,
+          });
         }
         deps.scrollToBottom();
         await applyTheaterFaceToFaceMode();
@@ -281,14 +295,17 @@ export function useChatTheater(deps: {
 
       smallTheaterInput.value = "";
       await deps.switchChatFile(targetChatId);
+      deps.startNewTurn();
       await applyTheaterFaceToFaceMode();
       await deps.triggerAIResponse({ theaterNudge: true, theaterPhoneScript: theaterPhoneScript.value });
     } else {
+      deps.startNewTurn();
       const smallTheaterMessage = {
         id: `msg_theater_${Date.now()}`,
         role: "system",
         content: `小劇場：${content}`,
         timestamp: Date.now(),
+        ...(theaterPhoneScript.value ? { theaterPhoneScript: true } : {}),
       };
       deps.messages.value.push(smallTheaterMessage);
       deps.scrollToBottom();

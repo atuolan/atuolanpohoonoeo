@@ -17,6 +17,37 @@ export function canCarryRoundSwipes(m: Message): boolean {
   );
 }
 
+/** 小劇場指令（system「小劇場：…」）：AI 要接著它回覆，跟用戶訊息一樣是一輪的開頭 */
+function isTheaterStartMessage(m: Pick<Message, "role" | "content">): boolean {
+  return m.role === "system" && typeof m.content === "string" && m.content.startsWith("小劇場：");
+}
+
+/** 一輪回覆從這種訊息之後開始：用戶訊息、小劇場指令 */
+function isRoundStart(m: Message): boolean {
+  return m.role === "user" || isTheaterStartMessage(m);
+}
+
+/** 一輪回覆裡會被重新生成／翻頁換掉的訊息 */
+function isRoundMessage(m: Message): boolean {
+  return (
+    m.role === "ai" ||
+    (m.role === "system" && !!(m.isTimetravel || m.isAvatarChange || m.isCalendarEvent))
+  );
+}
+
+function stripRoundSwipes(m: Message): Message {
+  const clone = { ...m };
+  delete clone.roundSwipes;
+  delete clone.roundSwipeId;
+  return clone;
+}
+
+type RegenerateTriggerOptions = {
+  skipAutoTrigger?: boolean;
+  theaterNudge?: boolean;
+  theaterPhoneScript?: boolean;
+};
+
 export function useChatRegeneration(context: {
   messages: Ref<Message[]>;
   isGenerating: ComputedRef<boolean>;
@@ -24,11 +55,29 @@ export function useChatRegeneration(context: {
   currentTurnId: Ref<string>;
   saveChat: () => void | Promise<void>;
   deleteMessage: (id: string) => Promise<void>;
-  triggerAIResponse: (options?: { skipAutoTrigger?: boolean }) => Promise<void>;
+  triggerAIResponse: (options?: RegenerateTriggerOptions) => Promise<void>;
   /** 一輪回覆被換下（重新生成、換候選）時：收回那一輪做過的事，換回來的再做一次（例如加的行程） */
   onRoundReplaced?: (removed: Message[], restored: Message[]) => void | Promise<void>;
 }) {
   const pendingRoundSwipes = ref<Message[][] | null>(null);
+
+  /**
+   * 重新生成的回覆會接在目前聊天最後面。最近一則「一輪的開頭」是小劇場指令時，
+   * 這一輪就是在回小劇場，要跟第一次生成一樣帶上小劇場的提示，不然重 roll 會跑回正文。
+   */
+  function triggerOptionsForNextReply(): RegenerateTriggerOptions {
+    for (let i = context.messages.value.length - 1; i >= 0; i--) {
+      const m = context.messages.value[i];
+      if (!isRoundStart(m)) continue;
+      if (!isTheaterStartMessage(m)) break;
+      return {
+        skipAutoTrigger: true,
+        theaterNudge: true,
+        ...(m.theaterPhoneScript ? { theaterPhoneScript: true } : {}),
+      };
+    }
+    return { skipAutoTrigger: true };
+  }
 
   function handleMessageSwipe(id: string, direction: "prev" | "next") {
     const msgIndex = context.messages.value.findIndex((m) => m.id === id);
@@ -86,7 +135,7 @@ export function useChatRegeneration(context: {
       }
     }
 
-    if (lastMessage.role === "user") {
+    if (isRoundStart(lastMessage)) {
       if (lastTurnId) {
         const userChoice = confirm(
           "當前輪次尚未有 AI 回復。\n\n" +
@@ -108,7 +157,7 @@ export function useChatRegeneration(context: {
           await doRegenerateByTurnId(lastTurnId);
         } else {
           context.currentTurnId.value = crypto.randomUUID();
-          await context.triggerAIResponse({ skipAutoTrigger: true });
+          await context.triggerAIResponse(triggerOptionsForNextReply());
         }
       } else {
         const firstAIOfLastRound = findFirstAIMessageOfLastRound();
@@ -120,7 +169,8 @@ export function useChatRegeneration(context: {
           );
           if (userChoice) {
             const lastAIIdx = context.messages.value.reduce(
-              (acc, m, i) => (m.role === "ai" || m.role === "system" ? i : acc),
+              (acc, m, i) =>
+                m.role === "ai" || (m.role === "system" && !isTheaterStartMessage(m)) ? i : acc,
               -1,
             );
             if (lastAIIdx !== -1) {
@@ -133,11 +183,11 @@ export function useChatRegeneration(context: {
             await doRegenerateFromMessage(firstAIOfLastRound);
           } else {
             context.currentTurnId.value = crypto.randomUUID();
-            await context.triggerAIResponse({ skipAutoTrigger: true });
+            await context.triggerAIResponse(triggerOptionsForNextReply());
           }
         } else {
           context.currentTurnId.value = crypto.randomUUID();
-          await context.triggerAIResponse({ skipAutoTrigger: true });
+          await context.triggerAIResponse(triggerOptionsForNextReply());
         }
       }
       return;
@@ -156,7 +206,7 @@ export function useChatRegeneration(context: {
   function findFirstAIMessageOfCurrentRound(): Message | null {
     let lastUserIndex = -1;
     for (let i = context.messages.value.length - 1; i >= 0; i--) {
-      if (context.messages.value[i].role === "user") {
+      if (isRoundStart(context.messages.value[i])) {
         lastUserIndex = i;
         break;
       }
@@ -180,7 +230,7 @@ export function useChatRegeneration(context: {
 
     for (let i = context.messages.value.length - 1; i >= 0; i--) {
       const msg = context.messages.value[i];
-      if (msg.role === "user") {
+      if (isRoundStart(msg)) {
         if (!foundLastUser) {
           foundLastUser = true;
         } else if (lastAIIndex !== -1) {
@@ -227,11 +277,8 @@ export function useChatRegeneration(context: {
     const roundMessages: Message[] = [];
     for (let i = targetIndex; i < context.messages.value.length; i++) {
       const msg = context.messages.value[i];
-      if (msg.role === "user" && i > targetIndex) break;
-      if (
-        msg.role === "ai" ||
-        (msg.role === "system" && (msg.isTimetravel || msg.isAvatarChange || msg.isCalendarEvent))
-      ) {
+      if (isRoundStart(msg) && i > targetIndex) break;
+      if (isRoundMessage(msg)) {
         roundMessages.push(msg);
       }
     }
@@ -247,7 +294,7 @@ export function useChatRegeneration(context: {
 
     let startIdx = anchorIndex;
     for (let i = anchorIndex - 1; i >= 0; i--) {
-      if (context.messages.value[i].role === "user") {
+      if (isRoundStart(context.messages.value[i])) {
         startIdx = i + 1;
         break;
       }
@@ -256,16 +303,17 @@ export function useChatRegeneration(context: {
 
     let endIdx = context.messages.value.length;
     for (let i = anchorIndex + 1; i < context.messages.value.length; i++) {
-      if (context.messages.value[i].role === "user") {
+      if (isRoundStart(context.messages.value[i])) {
         endIdx = i;
         break;
       }
     }
 
+    // 有 turnId 時只算同一輪的：別輪的回覆（turnId 不同）不能被這一輪的翻頁換掉
+    const anchorTurnId = context.messages.value[anchorIndex].turnId;
     const roundMessages = context.messages.value.slice(startIdx, endIdx).filter(
       (msg) =>
-        msg.role === "ai" ||
-        (msg.role === "system" && (msg.isTimetravel || msg.isAvatarChange || msg.isCalendarEvent)),
+        isRoundMessage(msg) && (!anchorTurnId || !msg.turnId || msg.turnId === anchorTurnId),
     );
 
     return { startIdx, endIdx, roundMessages };
@@ -313,7 +361,7 @@ export function useChatRegeneration(context: {
     await Promise.all(idsToRemove.map((id) => context.deleteMessage(id)));
 
     context.currentTurnId.value = crypto.randomUUID();
-    await context.triggerAIResponse({ skipAutoTrigger: true });
+    await context.triggerAIResponse(triggerOptionsForNextReply());
   }
 
   async function doRegenerateFromMessage(targetAIMessage: Message) {
@@ -361,7 +409,7 @@ export function useChatRegeneration(context: {
     await Promise.all([...idsToDelete].map((id) => context.deleteMessage(id)));
 
     context.currentTurnId.value = crypto.randomUUID();
-    await context.triggerAIResponse({ skipAutoTrigger: true });
+    await context.triggerAIResponse(triggerOptionsForNextReply());
   }
 
   function attachPendingRoundSwipes(targetTurnId?: string) {
@@ -428,19 +476,9 @@ export function useChatRegeneration(context: {
     if (!targetRound || targetRound.length === 0) return;
 
     const displayedRound = getDisplayedRoundBounds(carrierIndex);
-    if (displayedRound) {
-      const currentRound = displayedRound.roundMessages.map((m) => {
-        const clone = { ...m };
-        delete clone.roundSwipes;
-        delete clone.roundSwipeId;
-        return clone;
-      });
-      carrier.roundSwipes[currentIdx] = currentRound;
-    }
-
-    const roundBounds = displayedRound;
-    if (!roundBounds) return;
-    const { startIdx, endIdx } = roundBounds;
+    if (!displayedRound) return;
+    const { startIdx, endIdx, roundMessages } = displayedRound;
+    carrier.roundSwipes[currentIdx] = roundMessages.map(stripRoundSwipes);
 
     let carrierIdx = -1;
     for (let i = targetRound.length - 1; i >= 0; i--) {
@@ -460,10 +498,21 @@ export function useChatRegeneration(context: {
       return clone;
     });
 
-    const removedMessages = context.messages.value.splice(
+    // 只換掉這一輪自己的訊息。同一段裡的其他訊息（小劇場指令、轉發的聊天記錄、別輪的回覆）
+    // 留在原位：整段換掉會連它們一起從 IDB 刪掉，小劇場指令一不見，再重 roll 就接著正文寫了
+    const roundIds = new Set(roundMessages.map((m) => m.id));
+    const windowMessages = context.messages.value.slice(startIdx, endIdx);
+    const firstRoundPos = windowMessages.findIndex((m) => roundIds.has(m.id));
+    const insertPos = firstRoundPos === -1 ? windowMessages.length : firstRoundPos;
+    const keptBefore = windowMessages.slice(0, insertPos);
+    const keptAfter = windowMessages.slice(insertPos).filter((m) => !roundIds.has(m.id));
+    const removedMessages = windowMessages.filter((m) => roundIds.has(m.id));
+    context.messages.value.splice(
       startIdx,
       endIdx - startIdx,
+      ...keptBefore,
       ...newMessages,
+      ...keptAfter,
     );
 
     const restoredTurnId = newMessages.find((m) => m.turnId)?.turnId;
