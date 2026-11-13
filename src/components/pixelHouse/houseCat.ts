@@ -58,6 +58,7 @@ export const FERRET_COLORS: ColorTable<FerretColor> = {
     name: "貂色",
     palette: { o: "#2C1D1F", d: "#4A3330", m: "#6F4E40", s: "#6F4E40", b: "#88614E", h: "#A7795E", l: "#C49678", v: "#DBB594", w: "#F7EBD6", p: "#E8A0A8", x: "#FFFFFF" },
   },
+  // 使用者修好的那張用的顏色
   cream: {
     name: "奶油",
     palette: { o: "#221714", d: "#41322F", m: "#806B63", s: "#D5C6BE", b: "#E8DBD1", h: "#FAF1E7", l: "#E8DBD1", v: "#E8DBD1", w: "#FAF5F0", p: "#E8A0A8", x: "#FFFFFF" },
