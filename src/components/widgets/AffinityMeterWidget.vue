@@ -33,8 +33,10 @@ const activeMetric = computed(() => {
     const found = list.find((m) => m.id === props.data?.metricId);
     if (found) return found;
   }
+  // 有範圍的數字（好感度這類）優先；金錢這種沒上限的值畫成百分比沒意義
+  const bounded = list.find((m) => m.type === "number" && m.bounded !== false);
   const numeric = list.find((m) => m.type === "number");
-  return numeric || list[0];
+  return bounded || numeric || list[0];
 });
 
 const percent = computed(() => {
@@ -42,6 +44,13 @@ const percent = computed(() => {
   if (!m) return 0;
   return Math.round((m.percentage ?? 0) * 100);
 });
+
+/** 沒有範圍的指標直接顯示數值，不顯示百分比 */
+const percentText = computed(() =>
+  activeMetric.value && activeMetric.value.bounded === false
+    ? String(activeMetric.value.value)
+    : `${percent.value}%`,
+);
 
 const metricName = computed(() => activeMetric.value?.name || "好感度");
 const stage = computed(() => activeMetric.value?.stage || "");
@@ -149,7 +158,7 @@ function handleClick() {
           />
         </svg>
         <div class="ring-center">
-          <span class="percent">{{ percent }}%</span>
+          <span class="percent">{{ percentText }}</span>
           <span class="stage" v-if="stage">{{ stage }}</span>
         </div>
       </div>
@@ -162,7 +171,7 @@ function handleClick() {
         <div class="heart-bg">♡</div>
         <div class="heart-fill" :style="{ height: `${percent}%`, color: meterColor }">♥</div>
       </div>
-      <span class="percent-sm">{{ percent }}%</span>
+      <span class="percent-sm">{{ percentText }}</span>
       <span class="metric-name">{{ metricName }}</span>
     </template>
 

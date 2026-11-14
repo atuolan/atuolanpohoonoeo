@@ -18,6 +18,8 @@ export function useChatMessageActions(context: {
   focusReplyInput?: () => void;
   /** 接受「切回線上」之後（劇情時鐘要問怎麼接時間） */
   onReturnedOnline?: () => void;
+  /** 刪掉訊息後呼叫（好感度對齊到還在的訊息） */
+  onMessagesDeleted?: (deletedIds: string[]) => void;
 }) {
   const editingMessageId = ref<string | null>(null);
   const editingContent = ref("");
@@ -120,6 +122,7 @@ export function useChatMessageActions(context: {
     if (!confirm("確定要刪除這條訊息嗎？")) return;
     context.messages.value = context.messages.value.filter((m) => m.id !== id);
     await deleteMessage(id, { chatId: context.currentChatId.value || undefined });
+    context.onMessagesDeleted?.([id]);
     await context.saveChatImmediate();
   }
 

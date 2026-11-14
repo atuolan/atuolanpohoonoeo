@@ -6,7 +6,22 @@
           <header class="affinity-header">
             <h3>角色數值</h3>
             <div class="header-actions">
-              <button class="rescan-btn" @click="rescan" title="從最新訊息重新獲取變量">
+              <button class="rescan-btn" title="使用說明" aria-label="使用說明" @click="showGuide = true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3"></path>
+                  <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                </svg>
+              </button>
+              <button
+                class="rescan-btn"
+                @click="rescan"
+                :title="
+                  isJudgeMode
+                    ? '請旁觀者重新判斷最新這一輪'
+                    : '重新讀取 AI 最新一次的回報（從那則之前的數值算，不會重複加）'
+                "
+              >
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <polyline points="23 4 23 10 17 10"></polyline>
                   <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
@@ -24,8 +39,12 @@
 
           <div class="affinity-content">
             <div v-if="metrics.length === 0" class="empty-state">
-              尚未配置數值指標
+              還沒有設定數值。到角色編輯 → 模組 → 好感度數值 加一個。
             </div>
+
+            <p v-else class="affinity-status-line">
+              {{ lastAutoUpdateText }} · {{ isJudgeMode ? "由旁觀者判斷" : "由角色自己回報" }}
+            </p>
 
             <!-- 重置按鈕 -->
             <div v-if="metrics.length > 0" class="reset-section">
@@ -68,11 +87,11 @@
               <!-- 數字型指標：進度條 + ±按鈕 -->
               <template v-if="m.type !== 'string'">
                 <div class="metric-top">
-                  <span class="metric-name">{{ m.name }}</span>
-                  <span class="metric-value">{{ m.value }}/{{ m.max }}</span>
+                  <span class="metric-name" :title="m.description || undefined">{{ m.name }}</span>
+                  <span class="metric-value">{{ m.value }}<template v-if="m.bounded">/{{ m.max }}</template></span>
                 </div>
 
-                <div class="metric-bar-wrap">
+                <div v-if="m.bounded" class="metric-bar-wrap">
                   <div
                     class="metric-bar-fill"
                     :style="{ width: (m.percentage * 100) + '%' }"
@@ -80,19 +99,23 @@
                 </div>
 
                 <div class="metric-bottom">
-                  <span v-if="m.stage" class="metric-stage">{{ m.stage }}</span>
+                  <span
+                    v-if="m.stage"
+                    class="metric-stage"
+                    :title="m.stageDescription || undefined"
+                  >{{ m.stage }}</span>
                   <span v-else class="metric-stage empty"></span>
                   <div class="metric-controls">
                     <button
                       class="adj-btn"
-                      :disabled="typeof m.value === 'number' && m.value <= m.min"
+                      :disabled="m.bounded && typeof m.value === 'number' && m.value <= m.min"
                       @click="adjust(m.id, -1)"
                     >
                       −
                     </button>
                     <button
                       class="adj-btn"
-                      :disabled="typeof m.value === 'number' && m.value >= m.max"
+                      :disabled="m.bounded && typeof m.value === 'number' && m.value >= m.max"
                       @click="adjust(m.id, 1)"
                     >
                       +
@@ -104,7 +127,7 @@
               <!-- 字串型指標：標籤 + 下拉選擇器 -->
               <template v-else>
                 <div class="metric-top">
-                  <span class="metric-name">{{ m.name }}</span>
+                  <span class="metric-name" :title="m.description || undefined">{{ m.name }}</span>
                   <span class="metric-tag">{{ m.value }}</span>
                 </div>
                 <div class="metric-bottom">
@@ -158,10 +181,12 @@
       </div>
     </Transition>
   </Teleport>
+  <AffinityGuideModal :visible="showGuide" @close="showGuide = false" />
 </template>
 
 <script setup lang="ts">
 import { computed, ref } from "vue";
+import AffinityGuideModal from "@/components/modals/AffinityGuideModal.vue";
 import { useAffinityStore } from "@/stores/affinity";
 import {
   applyGreetingInitToAffinity,
@@ -184,6 +209,26 @@ const emit = defineEmits<{
 const affinityStore = useAffinityStore();
 
 const metrics = computed(() => affinityStore.getMetricsSnapshot(props.chatId));
+
+const isJudgeMode = computed(
+  () => affinityStore.getConfig(props.characterId)?.updateMode === "judge",
+);
+
+/** 最近一次由 AI 回覆造成的變化是什麼時候 */
+const lastAutoUpdateText = computed(() => {
+  const history = affinityStore.getState(props.chatId)?.history ?? [];
+  let latest = 0;
+  for (const h of history) {
+    if (h.messageId && h.timestamp > latest) latest = h.timestamp;
+  }
+  if (!latest) return "還沒有自動更新過";
+  const minutes = Math.floor((Date.now() - latest) / 60000);
+  if (minutes < 1) return "剛剛自動更新";
+  if (minutes < 60) return `${minutes} 分鐘前自動更新`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} 小時前自動更新`;
+  return `${Math.floor(hours / 24)} 天前自動更新`;
+});
 
 const recentHistory = computed(() => {
   const state = affinityStore.getState(props.chatId);
@@ -241,6 +286,7 @@ function rescan() {
 }
 
 const showGreetingPicker = ref(false);
+const showGuide = ref(false);
 const selectedGreetingIdx = ref(0);
 
 async function handleResetDefaults() {
@@ -282,6 +328,13 @@ async function handleResetGreeting() {
 </script>
 
 <style scoped lang="scss">
+.affinity-status-line {
+  margin: 0 0 12px;
+  font-size: 12px;
+  color: #9ca3af;
+  text-align: center;
+}
+
 .affinity-overlay {
   position: fixed;
   inset: 0;

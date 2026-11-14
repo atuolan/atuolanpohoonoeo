@@ -7,8 +7,10 @@ import type {
 import { createDefaultConfig } from "@/schemas/affinity";
 import {
   affinityTemplateService,
-  DEFAULT_PROMPT_TEMPLATE,
+  resolveUpdateFormat,
 } from "@/services/AffinityTemplateService";
+import { AFFINITY_PRESETS, createMetricFromPreset } from "@/data/affinityPresets";
+import AffinityGuideModal from "@/components/modals/AffinityGuideModal.vue";
 import { CHARACTER_DELETE_CONFIRM } from "@/services/characterDeletion";
 import { showFloatingToast } from "@/utils/floatingToast";
 import { searchCities } from "@/services/WeatherService";
@@ -234,21 +236,91 @@ async function selectWorldLocation(city: {
 }
 
 // 好感度設定（使用 placeholder ID，onMounted 時會替換為真實 characterId）
-const affinityConfig = ref<CharacterAffinityConfig>({
-  characterId: "_placeholder",
-  enabled: false,
-  statKey: "",
-  mvuEnabled: false,
-  mvuInitialData: {},
-  mvuPromptTemplate: "",
-  mvuUpdateInstruction: "",
-  postMutationRules: [],
-  metrics: [],
-  promptTemplate: "",
-  updateInstruction: "",
-  lastUpdated: 0,
-});
+const affinityConfig = ref<CharacterAffinityConfig>(createDefaultConfig("_placeholder"));
 const affinityTemplatePreview = ref("");
+const showAffinityAiPreview = ref(false);
+const showAffinityGuide = ref(false);
+
+const affinityUpdateFormat = computed(() => resolveUpdateFormat(affinityConfig.value));
+
+/** 預覽：實際會送給 AI 的更新規則（自訂 > MVU 卡帶的 > 自動產生） */
+const affinityRulesPreview = computed(() => {
+  const config = affinityConfig.value;
+  const draft = {
+    ...config,
+    enabled: true,
+    metrics: config.metrics.filter((m) => m.name?.trim()),
+  };
+  // 旁觀者判斷：規則給旁觀者，不給聊天的 AI
+  if (config.updateMode === "judge") {
+    return draft.metrics.length ? affinityTemplateService.buildAutoUpdateRules(draft) : "";
+  }
+  if (!config.injectRules) return "";
+  return affinityTemplateService.renderUpdateInstruction(draft);
+});
+
+function addAffinityPreset(key: string) {
+  const metric = createMetricFromPreset(key);
+  if (!metric) return;
+  affinityConfig.value.metrics.push(metric);
+  _updateAffinityPreview();
+}
+
+/** 一打開、還沒有任何數值時，直接加好「好感度」，不用先做選擇 */
+function onAffinityToggle() {
+  if (affinityConfig.value.enabled && affinityConfig.value.metrics.length === 0) {
+    addAffinityPreset("affection");
+  }
+}
+
+function hasPreset(name: string): boolean {
+  return affinityConfig.value.metrics.some((m) => m.name === name);
+}
+
+// 數值卡片預設收成一行；自己新建的、還沒取名的展開
+const expandedMetricIds = ref(new Set<string>());
+
+function isMetricExpanded(metric: AffinityMetricConfig): boolean {
+  return expandedMetricIds.value.has(metric.id) || !metric.name?.trim();
+}
+
+function toggleMetricExpanded(id: string) {
+  const next = new Set(expandedMetricIds.value);
+  if (next.has(id)) next.delete(id);
+  else next.add(id);
+  expandedMetricIds.value = next;
+}
+
+/** 收起時的一行摘要：「一開始 30／100 · 5 個關係階段」 */
+function metricSummary(metric: AffinityMetricConfig): string {
+  if (metric.type === "string") {
+    const opts = metric.options?.length ? `${metric.options.length} 種可選` : "自由填寫";
+    return `一開始 ${metric.initial || "—"} · ${opts}`;
+  }
+  const parts = [
+    metric.bounded === false
+      ? `一開始 ${metric.initial}`
+      : `一開始 ${metric.initial}／${metric.max}`,
+  ];
+  if (metric.bounded === false) parts.push("不限範圍");
+  if (metric.stages?.length) parts.push(`${metric.stages.length} 個關係階段`);
+  return parts.join(" · ");
+}
+
+/** 自訂規則欄位填入自動產生的規則，讓使用者在上面改 */
+function fillAutoUpdateRules() {
+  const config = affinityConfig.value;
+  if (
+    config.updateInstruction.trim() &&
+    !confirm("自訂規則欄位已經有內容，要用自動產生的規則取代嗎？")
+  ) {
+    return;
+  }
+  config.updateInstruction = affinityTemplateService.buildAutoUpdateRules({
+    ...config,
+    metrics: config.metrics.filter((m) => m.name?.trim()),
+  });
+}
 
 // 「生成 AI 更新指令」Modal 狀態
 const showUpdateInstructionModal = ref(false);
@@ -257,7 +329,11 @@ const generatedUpdateInstruction = ref("");
 function generateUpdateInstruction() {
   generatedUpdateInstruction.value =
     affinityTemplateService.generateUpdateInstructionEntry(
-      affinityConfig.value,
+      {
+        ...affinityConfig.value,
+        metrics: affinityConfig.value.metrics.filter((m) => m.name?.trim()),
+      },
+      formData.value.data.name,
     );
   showUpdateInstructionModal.value = true;
 }
@@ -292,7 +368,10 @@ async function addInstructionToLinkedLorebook() {
     order: 0,
   });
   showUpdateInstructionModal.value = false;
-  alert("已成功加入世界書！");
+  // 世界書已經會送出數值和規則，模組這邊就不要再送一份
+  affinityConfig.value.injectStatus = false;
+  affinityConfig.value.injectRules = false;
+  alert("已加入世界書！\n已同時關掉「送給 AI」的兩個選項，避免同樣的內容送兩次。");
 }
 
 // 可用世界書列表（從 store 獲取）
@@ -600,6 +679,10 @@ function tidyAffinityConfigForSave(
     }
     if (!Number.isFinite(metric.min)) metric.min = 0;
     if (!Number.isFinite(metric.max)) metric.max = 100;
+    if (!Number.isFinite(metric.maxChange) || metric.maxChange < 0) metric.maxChange = 0;
+    if (metric.bounded !== false && metric.min > metric.max) {
+      return `好感度指標「${metric.name}」的最小值比最大值大`;
+    }
     if (metric.type === "number" && !Number.isFinite(metric.initial)) {
       metric.initial = metric.min;
     }
@@ -649,6 +732,7 @@ async function saveAll(): Promise<boolean> {
 
 function addAffinityMetric() {
   const id = `metric_${Date.now()}`;
+  toggleMetricExpanded(id);
   affinityConfig.value.metrics.push({
     id,
     name: "",
@@ -659,6 +743,9 @@ function addAffinityMetric() {
     initial: 50,
     options: [],
     stages: [],
+    description: "",
+    maxChange: 0,
+    bounded: true,
   });
 }
 
@@ -668,9 +755,13 @@ function removeAffinityMetric(index: number) {
 }
 
 function addAffinityStage(metricIndex: number) {
-  affinityConfig.value.metrics[metricIndex].stages.push({
+  const stages = affinityConfig.value.metrics[metricIndex].stages;
+  // 新階段預設接在最後一個階段後面
+  const last = stages.length ? Math.max(...stages.map((s) => s.minValue || 0)) : -1;
+  stages.push({
     name: "",
-    minValue: 0,
+    minValue: last < 0 ? 0 : last + 10,
+    description: "",
   });
 }
 
@@ -688,11 +779,11 @@ function removeAffinityStage(metricIndex: number, stageIndex: number) {
 }
 
 function _updateAffinityPreview() {
-  const template =
-    affinityConfig.value.promptTemplate || DEFAULT_PROMPT_TEMPLATE;
+  const template = affinityTemplateService.resolvePromptTemplate(affinityConfig.value);
   affinityTemplatePreview.value = affinityTemplateService.previewTemplate(
     template,
-    affinityConfig.value.metrics,
+    affinityConfig.value,
+    formData.value.data.name,
   );
 }
 
@@ -2182,223 +2273,425 @@ async function submitPasteRegex() {
                   <span class="module-icon affinity" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z" /></svg></span>
                   <div>
                     <span class="module-name">好感度數值</span>
-                    <span class="module-desc">自定義數值指標系統</span>
+                    <span class="module-desc">
+                      角色會依聊天內容自動增減好感
+                      <button
+                        type="button"
+                        class="affinity-guide-link"
+                        @click.stop="showAffinityGuide = true"
+                      >
+                        怎麼用？
+                      </button>
+                    </span>
                   </div>
                 </div>
                 <label class="toggle-switch">
-                  <input type="checkbox" v-model="affinityConfig.enabled" />
+                  <input
+                    type="checkbox"
+                    v-model="affinityConfig.enabled"
+                    @change="onAffinityToggle"
+                  />
                   <span class="toggle-slider"></span>
                 </label>
               </div>
 
               <Transition name="slide">
                 <div v-if="affinityConfig.enabled" class="module-settings">
-                  <!-- EJS 路徑名稱 -->
-                  <div class="setting-group">
-                    <label class="setting-label">
-                      EJS 路徑名稱
-                      <span class="setting-hint"
-                        >（留空使用角色名「{{ formData.data.name }}」）</span
-                      >
-                    </label>
-                    <input
-                      v-model="affinityConfig.statKey"
-                      class="soft-input"
-                      :placeholder="formData.data.name"
-                    />
-                    <p class="setting-desc">
-                      世界書 EJS 中引用數值的路徑前綴，例如填「黎靖青」後可在
-                      EJS 寫
-                      <code>getvar('stat_data.黎靖青.亲密值')</code>，
-                      也支援
-                      <code>getvar('display_data.黎靖青.亲密值')</code>
-                      與
-                      <code>getvar('delta_data.黎靖青.亲密值')</code>，
-                      即使卡片名字不同也能正確解析。
-                    </p>
-                  </div>
+                  <p v-if="affinityConfig.mvuEnabled" class="affinity-mvu-note">
+                    偵測到 MVU 變數，已自動套用。卡片世界書裡已經有的說明，這裡不會再送一次。
+                  </p>
+                  <p v-else class="setting-desc affinity-lead">
+                    聊天時 AI 訊息下面會顯示這一輪的變化，點一下就能看全部數值。
+                  </p>
 
-                  <!-- 指標列表 -->
+                  <!-- 數值列表 -->
                   <div class="setting-group">
-                    <label class="setting-label">數值指標</label>
+                    <label class="setting-label">角色數值</label>
                     <div
                       v-for="(metric, mIdx) in affinityConfig.metrics"
                       :key="metric.id"
                       class="affinity-metric-card"
+                      :class="{ 'is-collapsed': !isMetricExpanded(metric) }"
                     >
-                      <div class="affinity-metric-header">
-                        <input
-                          v-model="metric.name"
-                          placeholder="指標名稱（如 好感度）"
-                          class="soft-input affinity-name-input"
-                          @blur="_updateAffinityPreview()"
-                        />
+                      <!-- 收起：一行摘要 -->
+                      <div v-if="!isMetricExpanded(metric)" class="affinity-metric-summary">
+                        <span class="affinity-summary-name">{{ metric.name || "（未命名）" }}</span>
+                        <span class="affinity-summary-text">{{ metricSummary(metric) }}</span>
+                        <span
+                          v-if="!metric.description?.trim()"
+                          class="affinity-summary-dot"
+                          title="還沒寫說明：AI 會不知道這個數值什麼時候該變"
+                        >未填說明</span>
                         <button
-                          class="btn-icon-sm btn-danger-sm"
-                          @click="removeAffinityMetric(mIdx)"
-                          title="刪除指標"
+                          type="button"
+                          class="affinity-summary-edit"
+                          @click="toggleMetricExpanded(metric.id)"
                         >
-                          ✕
+                          編輯
                         </button>
                       </div>
-                      <div class="affinity-metric-type-row">
-                        <label class="setting-label-sm">類型</label>
-                        <select
-                          v-model="metric.type"
-                          class="soft-input type-select"
-                          @change="_updateAffinityPreview()"
-                        >
-                          <option value="number">數字</option>
-                          <option value="string">字串/枚舉</option>
-                        </select>
-                      </div>
 
-                      <div
-                        v-if="metric.type !== 'string'"
-                        class="affinity-metric-ranges"
-                      >
-                        <div class="range-field">
-                          <label>最小</label>
+                      <!-- 展開：全部欄位 -->
+                      <template v-else>
+                        <div class="affinity-metric-header">
                           <input
-                            type="number"
-                            v-model.number="metric.min"
-                            class="soft-input range-input"
-                          />
-                        </div>
-                        <div class="range-field">
-                          <label>最大</label>
-                          <input
-                            type="number"
-                            v-model.number="metric.max"
-                            class="soft-input range-input"
-                          />
-                        </div>
-                        <div class="range-field">
-                          <label>初始</label>
-                          <input
-                            type="number"
-                            v-model.number="metric.initial"
-                            class="soft-input range-input"
-                            @change="_updateAffinityPreview()"
-                          />
-                        </div>
-                      </div>
-
-                      <div v-else class="affinity-string-config">
-                        <div class="range-field">
-                          <label>初始值</label>
-                          <input
-                            v-model="metric.initial"
-                            class="soft-input"
-                            placeholder="初始狀態值"
-                            @change="_updateAffinityPreview()"
-                          />
-                        </div>
-                        <div class="range-field">
-                          <label>可選值（逗號分隔）</label>
-                          <!-- 離開欄位才拆：邊打邊拆會把剛打的逗號吃掉，永遠打不出第二個值 -->
-                          <input
-                            :value="(metric.options ?? []).join(', ')"
-                            @change="
-                              metric.options = parseMetricOptions(
-                                ($event.target as HTMLInputElement).value,
-                              )
-                            "
-                            class="soft-input"
-                            placeholder="例如：未識破, 已識破"
-                          />
-                        </div>
-                      </div>
-
-                      <!-- 階段定義 -->
-                      <div class="affinity-stages">
-                        <label class="setting-label-sm">階段定義</label>
-                        <div
-                          v-for="(stage, sIdx) in metric.stages"
-                          :key="sIdx"
-                          class="affinity-stage-row"
-                        >
-                          <input
-                            v-model="stage.name"
-                            placeholder="階段名"
-                            class="soft-input stage-name-input"
+                            v-model="metric.name"
+                            placeholder="名稱（如 好感度）"
+                            class="soft-input affinity-name-input"
                             @blur="_updateAffinityPreview()"
                           />
-                          <input
-                            type="number"
-                            v-model.number="stage.minValue"
-                            placeholder="起始值"
-                            class="soft-input stage-value-input"
-                          />
-                          <button
-                            class="btn-icon-sm btn-danger-sm"
-                            @click="removeAffinityStage(mIdx, sIdx)"
+                          <select
+                            v-model="metric.type"
+                            class="soft-input type-select"
+                            aria-label="類型"
+                            @change="_updateAffinityPreview()"
                           >
-                            ✕
+                            <option value="number">數字</option>
+                            <option value="string">文字</option>
+                          </select>
+                          <button
+                            type="button"
+                            class="affinity-summary-edit"
+                            @click="toggleMetricExpanded(metric.id)"
+                          >
+                            收起
                           </button>
                         </div>
-                        <button
-                          class="btn-add-sm"
-                          @click="addAffinityStage(mIdx)"
+
+                        <template v-if="metric.type !== 'string'">
+                          <div class="affinity-metric-ranges">
+                            <div class="range-field">
+                              <label>一開始</label>
+                              <input
+                                type="number"
+                                v-model.number="metric.initial"
+                                class="soft-input range-input"
+                                @change="_updateAffinityPreview()"
+                              />
+                            </div>
+                            <template v-if="metric.bounded !== false">
+                              <div class="range-field">
+                                <label>最低</label>
+                                <input
+                                  type="number"
+                                  v-model.number="metric.min"
+                                  class="soft-input range-input"
+                                />
+                              </div>
+                              <div class="range-field">
+                                <label>最高</label>
+                                <input
+                                  type="number"
+                                  v-model.number="metric.max"
+                                  class="soft-input range-input"
+                                />
+                              </div>
+                            </template>
+                            <div class="range-field">
+                              <label>每次最多增減</label>
+                              <input
+                                type="number"
+                                min="0"
+                                v-model.number="metric.maxChange"
+                                class="soft-input range-input"
+                                placeholder="不限"
+                              />
+                            </div>
+                          </div>
+                          <p class="setting-desc affinity-field-hint">
+                            「每次最多增減」避免一句話就從陌生變戀人；0 表示不限。
+                          </p>
+                        </template>
+
+                        <div v-else class="affinity-string-config">
+                          <div class="range-field">
+                            <label>一開始</label>
+                            <input
+                              v-model="metric.initial"
+                              class="soft-input"
+                              placeholder="例如：平靜"
+                              @change="_updateAffinityPreview()"
+                            />
+                          </div>
+                          <div class="range-field">
+                            <label>可以是哪些？（用逗號分開；留空就讓 AI 自由寫）</label>
+                            <!-- 離開欄位才拆：邊打邊拆會把剛打的逗號吃掉，永遠打不出第二個值 -->
+                            <input
+                              :value="(metric.options ?? []).join(', ')"
+                              @change="
+                                metric.options = parseMetricOptions(
+                                  ($event.target as HTMLInputElement).value,
+                                )
+                              "
+                              class="soft-input"
+                              placeholder="例如：開心, 平靜, 低落"
+                            />
+                          </div>
+                        </div>
+
+                        <div class="range-field affinity-desc-field">
+                          <label>什麼時候會變？（會告訴 AI）</label>
+                          <textarea
+                            v-model="metric.description"
+                            class="soft-input"
+                            rows="2"
+                            placeholder="例如：被關心、被誇獎時增加；被冷落、被冒犯時減少"
+                          ></textarea>
+                        </div>
+
+                        <!-- 關係階段 -->
+                        <div v-if="metric.type !== 'string'" class="affinity-stages">
+                          <label class="setting-label-sm">
+                            關係階段：分數到了某個階段，角色的態度會跟著變
+                          </label>
+                          <div
+                            v-for="(stage, sIdx) in metric.stages"
+                            :key="sIdx"
+                            class="affinity-stage-block"
+                          >
+                            <div class="affinity-stage-row">
+                              <input
+                                type="number"
+                                v-model.number="stage.minValue"
+                                placeholder="從"
+                                class="soft-input stage-value-input"
+                                title="分數到這裡就進入這個階段"
+                              />
+                              <input
+                                v-model="stage.name"
+                                placeholder="階段名（如 曖昧）"
+                                class="soft-input stage-name-input"
+                                @blur="_updateAffinityPreview()"
+                              />
+                              <button
+                                class="btn-icon-sm btn-danger-sm"
+                                @click="removeAffinityStage(mIdx, sIdx)"
+                                title="刪除這個階段"
+                              >
+                                ✕
+                              </button>
+                            </div>
+                            <input
+                              v-model="stage.description"
+                              placeholder="這時候角色會怎樣？（選填）例如：會主動找話題、偶爾吃醋"
+                              class="soft-input stage-desc-input"
+                              @blur="_updateAffinityPreview()"
+                            />
+                          </div>
+                          <button
+                            class="btn-add-sm"
+                            @click="addAffinityStage(mIdx)"
+                          >
+                            + 新增階段
+                          </button>
+                        </div>
+
+                        <div
+                          v-if="affinityConfig.mvuEnabled || metric.path"
+                          class="range-field affinity-desc-field"
                         >
-                          + 新增階段
+                          <label>變數路徑（MVU 用，例如 悠纪.好感度）</label>
+                          <input
+                            v-model="metric.path"
+                            class="soft-input"
+                            :placeholder="metric.name"
+                          />
+                        </div>
+
+                        <label v-if="metric.type !== 'string'" class="affinity-check">
+                          <input
+                            type="checkbox"
+                            :checked="metric.bounded !== false"
+                            @change="
+                              metric.bounded = ($event.target as HTMLInputElement).checked;
+                              _updateAffinityPreview();
+                            "
+                          />
+                          限制在最低～最高之間
+                          <span class="setting-hint">（金錢、天數這類沒有上限的值就取消）</span>
+                        </label>
+
+                        <button
+                          type="button"
+                          class="affinity-remove-metric"
+                          @click="removeAffinityMetric(mIdx)"
+                        >
+                          刪除這個數值
+                        </button>
+                      </template>
+                    </div>
+
+                    <!-- 再加一個 -->
+                    <div class="affinity-add-more">
+                      <span class="setting-label-sm">＋ 再加一個數值</span>
+                      <div class="affinity-preset-row">
+                        <button
+                          v-for="preset in AFFINITY_PRESETS"
+                          :key="preset.key"
+                          type="button"
+                          class="affinity-preset-btn"
+                          :disabled="hasPreset(preset.metric.name)"
+                          :title="hasPreset(preset.metric.name) ? '已經加過了' : `加入「${preset.label}」，內容都先填好了`"
+                          @click="addAffinityPreset(preset.key)"
+                        >
+                          {{ preset.label }}<span v-if="hasPreset(preset.metric.name)"> ✓</span>
+                        </button>
+                        <button type="button" class="affinity-preset-btn is-blank" @click="addAffinityMetric">
+                          自己建一個
                         </button>
                       </div>
                     </div>
-                    <button class="btn-add" @click="addAffinityMetric">
-                      + 新增指標
-                    </button>
                   </div>
 
-                  <!-- 生成 AI 更新指令按鈕 -->
-                  <div
-                    v-if="affinityConfig.metrics.length > 0"
-                    class="setting-group generate-instruction-group"
-                  >
-                    <label class="setting-label">AI 更新指令生成器</label>
-                    <p class="setting-hint-text">
-                      根據你配置的指標，自動生成「告訴 AI
-                      如何更新數值」的世界書條目文字。
-                    </p>
-                    <button
-                      class="btn-generate-instruction"
-                      @click="generateUpdateInstruction"
-                    >
-                      生成 AI 更新指令
-                    </button>
-                  </div>
+                  <!-- 進階 -->
+                  <details class="affinity-advanced">
+                    <summary>進階設定（一般使用不用動）</summary>
 
-                  <!-- EJS 模板編輯器 -->
-                  <div class="setting-group">
-                    <label class="setting-label">Prompt 注入模板（EJS）</label>
-                    <textarea
-                      v-model="affinityConfig.promptTemplate"
-                      class="soft-input code-textarea"
-                      rows="5"
-                      :placeholder="'留空使用預設模板'"
-                      @input="_updateAffinityPreview()"
-                    ></textarea>
-                    <div
-                      v-if="affinityTemplatePreview"
-                      class="template-preview"
-                    >
-                      <label class="setting-label-sm">預覽</label>
-                      <pre class="preview-text">{{
-                        affinityTemplatePreview
-                      }}</pre>
+                    <div class="setting-group">
+                      <label class="setting-label">數值由誰判斷</label>
+                      <label class="affinity-check">
+                        <input type="radio" value="inline" v-model="affinityConfig.updateMode" />
+                        角色自己回報（預設）
+                      </label>
+                      <label class="affinity-check">
+                        <input type="radio" value="judge" v-model="affinityConfig.updateMode" />
+                        另外請一位旁觀者判斷
+                        <span class="setting-hint">（較穩定、回覆裡不會出現標籤，但每次回覆會多花一次呼叫）</span>
+                      </label>
+                      <p v-if="affinityConfig.updateMode === 'judge'" class="setting-desc">
+                        旁觀者用「設定 → 備用 API」裡綁給「好感度旁觀者」的 API；沒有另外綁就用聊天的 API。
+                      </p>
                     </div>
-                  </div>
 
-                  <!-- AI 更新規則 -->
-                  <div class="setting-group">
-                    <label class="setting-label">AI 更新規則</label>
-                    <textarea
-                      v-model="affinityConfig.updateInstruction"
-                      class="soft-input"
-                      rows="4"
-                      placeholder="留空使用預設規則（告知 AI 如何用 <affinity-update> 標籤更新數值）"
-                    ></textarea>
-                  </div>
+                    <div class="setting-group">
+                      <label class="setting-label">聊天畫面</label>
+                      <label class="affinity-check">
+                        <input type="checkbox" v-model="affinityConfig.showChangeChips" />
+                        在 AI 訊息下顯示數值變化
+                      </label>
+                    </div>
+
+                    <div class="setting-group">
+                      <label class="setting-label">送給 AI</label>
+                      <label class="affinity-check">
+                        <input type="checkbox" v-model="affinityConfig.injectStatus" />
+                        目前數值
+                        <span class="setting-hint">（讓 AI 知道現在幾分、在哪個階段）</span>
+                      </label>
+                      <label class="affinity-check">
+                        <input type="checkbox" v-model="affinityConfig.injectRules" />
+                        更新規則
+                        <span class="setting-hint">（告訴 AI 什麼時候、用什麼格式回報）</span>
+                      </label>
+                      <p
+                        v-if="!affinityConfig.injectStatus || !affinityConfig.injectRules"
+                        class="setting-desc affinity-warn"
+                      >
+                        關掉的部分要由世界書提供，不然數值不會動。
+                      </p>
+                      <div class="affinity-format-row">
+                        <span class="setting-label-sm">回報格式</span>
+                        <select
+                          :value="affinityUpdateFormat"
+                          class="soft-input type-select"
+                          @change="
+                            affinityConfig.updateFormat = ($event.target as HTMLSelectElement)
+                              .value as 'tag' | 'mvu'
+                          "
+                        >
+                          <option value="tag">簡單標籤</option>
+                          <option value="mvu">MVU 指令（相容 MVU 卡）</option>
+                        </select>
+                      </div>
+                      <button
+                        type="button"
+                        class="btn-add-sm affinity-preview-toggle"
+                        @click="showAffinityAiPreview = !showAffinityAiPreview"
+                      >
+                        {{ showAffinityAiPreview ? "收起預覽" : "預覽 AI 會看到的內容" }}
+                      </button>
+                      <div v-if="showAffinityAiPreview" class="template-preview">
+                        <label class="setting-label-sm">目前數值（用一開始的數值預覽）</label>
+                        <pre class="preview-text">{{
+                          affinityConfig.injectStatus ? affinityTemplatePreview || "（空白）" : "（不送）"
+                        }}</pre>
+                        <label class="setting-label-sm affinity-preview-gap">
+                          {{ affinityConfig.updateMode === "judge" ? "旁觀者收到的規則" : "更新規則" }}
+                        </label>
+                        <pre class="preview-text">{{ affinityRulesPreview || "（不送）" }}</pre>
+                      </div>
+                    </div>
+
+                    <div class="setting-group">
+                      <label class="setting-label">
+                        變數名稱
+                        <span class="setting-hint"
+                          >（留空使用角色名「{{ formData.data.name }}」）</span
+                        >
+                      </label>
+                      <input
+                        v-model="affinityConfig.statKey"
+                        class="soft-input"
+                        :placeholder="formData.data.name"
+                      />
+                      <p class="setting-desc">
+                        世界書 EJS 讀數值時用的名字。例如填「黎靖青」後可以寫
+                        <code>getvar('stat_data.黎靖青.好感度')</code>，
+                        也支援 <code>display_data</code> 與 <code>delta_data</code>（上次變化）。
+                      </p>
+                    </div>
+
+                    <div class="setting-group">
+                      <label class="setting-label">目前數值的模板（EJS）</label>
+                      <textarea
+                        v-model="affinityConfig.promptTemplate"
+                        class="soft-input code-textarea"
+                        rows="5"
+                        :placeholder="
+                          affinityConfig.mvuEnabled && affinityConfig.mvuPromptTemplate
+                            ? '留空使用卡片原本的模板'
+                            : '留空使用預設模板'
+                        "
+                        @input="_updateAffinityPreview()"
+                      ></textarea>
+                      <div v-if="affinityTemplatePreview" class="template-preview">
+                        <label class="setting-label-sm">預覽</label>
+                        <pre class="preview-text">{{ affinityTemplatePreview }}</pre>
+                      </div>
+                    </div>
+
+                    <div class="setting-group">
+                      <label class="setting-label">自訂更新規則</label>
+                      <textarea
+                        v-model="affinityConfig.updateInstruction"
+                        class="soft-input"
+                        rows="5"
+                        placeholder="留空就依上面的數值自動產生（推薦）。要自己寫的話，可以按下面的按鈕拿自動規則當起點。"
+                      ></textarea>
+                      <button
+                        type="button"
+                        class="btn-add-sm"
+                        @click="fillAutoUpdateRules"
+                      >
+                        用自動產生的規則當起點
+                      </button>
+                    </div>
+
+                    <div class="setting-group generate-instruction-group">
+                      <label class="setting-label">做成世界書條目</label>
+                      <p class="setting-hint-text">
+                        想用世界書管理的話，可以把「目前數值 + 更新規則」做成一個條目。
+                        加進世界書後會自動關掉上面的「送給 AI」，避免送兩次。
+                      </p>
+                      <button
+                        class="btn-generate-instruction"
+                        :disabled="affinityConfig.metrics.length === 0"
+                        @click="generateUpdateInstruction"
+                      >
+                        產生世界書條目
+                      </button>
+                    </div>
+                  </details>
                 </div>
               </Transition>
             </div>
@@ -2479,6 +2772,8 @@ async function submitPasteRegex() {
         </section>
       </div>
     </main>
+
+    <AffinityGuideModal :visible="showAffinityGuide" @close="showAffinityGuide = false" />
 
     <!-- ===== 生成 AI 更新指令 Modal ===== -->
     <Teleport to="body">
@@ -3168,8 +3463,225 @@ async function submitPasteRegex() {
 
 .affinity-name-input {
   flex: 1;
+  min-width: 0;
   font-weight: 500;
   padding: 8px 10px;
+}
+
+.affinity-metric-header .type-select {
+  width: 76px;
+  flex-shrink: 0;
+  padding: 6px 8px;
+  font-size: 13px;
+}
+
+.affinity-mvu-note {
+  margin: 0 0 12px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #eef6ff;
+  color: #3b5b7d;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.affinity-preset-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.affinity-lead {
+  margin: 0 0 12px;
+}
+
+.affinity-guide-link {
+  margin-left: 4px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: #e0457b;
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.affinity-metric-card.is-collapsed {
+  padding: 10px 12px;
+}
+
+.affinity-metric-summary {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+}
+
+.affinity-summary-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.affinity-summary-text {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.affinity-summary-dot {
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: #fff4e5;
+  color: #b7791f;
+  font-size: 11px;
+}
+
+.affinity-summary-edit {
+  flex-shrink: 0;
+  padding: 4px 10px;
+  border: 1px solid #e5e7eb;
+  border-radius: 999px;
+  background: transparent;
+  font-size: 12px;
+  color: #374151;
+  cursor: pointer;
+
+  &:hover {
+    border-color: #7dd3a8;
+    color: #2f9e6a;
+  }
+}
+
+.affinity-field-hint {
+  margin: -2px 0 8px;
+}
+
+.affinity-warn {
+  color: #b7791f;
+}
+
+.affinity-remove-metric {
+  display: block;
+  margin: 4px 0 0 auto;
+  padding: 4px 0;
+  border: none;
+  background: none;
+  font-size: 12px;
+  color: #9ca3af;
+  cursor: pointer;
+
+  &:hover {
+    color: #ef4444;
+  }
+}
+
+.affinity-add-more {
+  margin-top: 4px;
+
+  .affinity-preset-btn.is-blank {
+    border-style: dashed;
+    color: #6b7280;
+  }
+}
+
+.affinity-preset-btn {
+  padding: 6px 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 999px;
+  background: white;
+  font-size: 13px;
+  color: #374151;
+  cursor: pointer;
+
+  &:hover:not(:disabled) {
+    border-color: #7dd3a8;
+    color: #2f9e6a;
+  }
+
+  &:disabled {
+    opacity: 0.45;
+    cursor: default;
+  }
+}
+
+.affinity-check {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 13px;
+  color: #374151;
+  margin: 4px 0 8px;
+  cursor: pointer;
+
+  input {
+    margin: 0;
+  }
+}
+
+.affinity-desc-field {
+  margin-bottom: 8px;
+
+  textarea,
+  input {
+    width: 100%;
+    padding: 6px 8px;
+    font-size: 13px;
+    line-height: 1.5;
+    resize: vertical;
+  }
+}
+
+.affinity-stage-block {
+  margin-bottom: 8px;
+}
+
+.stage-desc-input {
+  width: 100%;
+  padding: 6px 8px !important;
+  font-size: 12px;
+}
+
+.affinity-format-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+
+  .setting-label-sm {
+    margin: 0;
+  }
+
+  .type-select {
+    flex: 1;
+    max-width: 220px;
+    padding: 4px 8px;
+    font-size: 13px;
+  }
+}
+
+.affinity-preview-toggle {
+  margin-bottom: 4px;
+}
+
+.affinity-preview-gap {
+  margin-top: 10px;
+}
+
+.affinity-advanced {
+  margin-top: 4px;
+  border-top: 1px dashed #e5e7eb;
+  padding-top: 10px;
+
+  > summary {
+    cursor: pointer;
+    font-size: 13px;
+    color: #6b7280;
+    margin-bottom: 10px;
+  }
 }
 
 .affinity-metric-type-row {
@@ -3877,6 +4389,39 @@ body.is-night-mode {
   .affinity-metric-card {
     background: var(--color-surface);
     border-color: var(--color-border);
+  }
+
+  .affinity-mvu-note {
+    background: rgba(100, 160, 255, 0.12);
+    color: var(--color-text-secondary);
+  }
+
+  .affinity-preset-btn {
+    background: var(--color-surface);
+    border-color: var(--color-border);
+    color: var(--color-text);
+  }
+
+  .affinity-check,
+  .affinity-advanced > summary {
+    color: var(--color-text-secondary);
+  }
+
+  .affinity-advanced {
+    border-top-color: var(--color-border);
+  }
+
+  .affinity-summary-name {
+    color: var(--color-text);
+  }
+
+  .affinity-summary-text {
+    color: var(--color-text-secondary);
+  }
+
+  .affinity-summary-edit {
+    border-color: var(--color-border);
+    color: var(--color-text-secondary);
   }
 
   .affinity-stages {

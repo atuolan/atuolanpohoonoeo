@@ -242,7 +242,11 @@ export function useChatMultiDelete(deps: {
           if (config?.enabled) {
             const mode = branchAffinityMode.value;
             if (mode === "inherit" && srcChatId) {
-              await affinityStore.cloneStateForBranch(srcChatId, newChatId);
+              // 繼承「分支點那一則」的數值，不是原聊天最新的數值
+              await affinityStore.cloneStateForBranch(srcChatId, newChatId, {
+                idMap,
+                branchMessageIds: branchedMessages.map((m) => m.id),
+              });
               if (lastAiMsgId) {
                 affinityStore.setLastRescannedMessageId(newChatId, lastAiMsgId);
                 await affinityStore.saveState(newChatId);

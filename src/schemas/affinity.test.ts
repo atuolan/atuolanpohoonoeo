@@ -33,6 +33,6 @@ describe("safeParseAffinityConfig", () => {
     expect(config.statKey).toBe("譚堯");
     expect(config.metrics.map((m) => m.id)).toEqual(["m1", "m3"]);
     expect(config.metrics[0].min).toBe(0);
-    expect(config.metrics[1].stages).toEqual([{ name: "陌生", minValue: 0 }]);
+    expect(config.metrics[1].stages).toEqual([{ name: "陌生", minValue: 0, description: "" }]);
   });
 });

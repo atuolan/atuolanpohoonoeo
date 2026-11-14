@@ -9,19 +9,34 @@
  */
 import { db, DB_STORES } from "@/db/database";
 import {
+  type AffinityChangeRecord,
+  type AffinityFloorState,
+  type AffinityMetricConfig,
   type AffinityPostMutationRule,
   type AffinityRuleCondition,
   type CharacterAffinityConfig,
   type ChatAffinityState,
   type MetricValue,
   buildDynamicValidator,
+  clampMetricNumber,
   computePercentage,
   computeStage,
   createDefaultState,
+  findStage,
+  isValueWithDescription,
+  MAX_FLOOR_STATES,
   MAX_HISTORY_LENGTH,
+  readMvuLeaf,
   safeParseAffinityConfig,
   safeParseAffinityState,
+  writeMvuLeaf,
 } from "@/schemas/affinity";
+import {
+  checkMvuCreate,
+  checkMvuInsert,
+  checkMvuRemove,
+  isStrictSet,
+} from "@/services/mvuSchema";
 import { defineStore } from "pinia";
 import { ref, toRaw } from "vue";
 import _ from "lodash";
@@ -29,6 +44,28 @@ import _ from "lodash";
 const AFFINITY_STATES_STORE = DB_STORES.CHAT_AFFINITY_STATES;
 const AFFINITY_CONFIG_STORE = DB_STORES.CHARACTER_AFFECTIONS;
 const AUTO_SAVE_DELAY_MS = 300;
+
+/** batchUpdateByPath 收到的一筆更新（ResponseParser.AffinityUpdateEntry 的子集） */
+export interface AffinityPathUpdate {
+  metric: string;
+  change: number;
+  reason: string;
+  operation?: "remove" | "insert";
+  stringValue?: string;
+  isAbsolute?: boolean;
+  absoluteValue?: number;
+  /** 布林、物件、陣列等非數字/字串的值 */
+  rawValue?: unknown;
+  sourceMetric?: string;
+  insertIndex?: string | number;
+  /** remove 的第二個參數：陣列索引、要刪的值或物件鍵 */
+  removeTarget?: unknown;
+}
+
+export interface AffinityUpdateOptions {
+  /** 套用指標的「單次最大變化」；開場白初始值、手動調整不受限 */
+  limitChange?: boolean;
+}
 
 export interface AffinityBatchUpdateResult {
   applied: boolean;
@@ -66,8 +103,34 @@ function normalizeMetricPath(path: string): string {
   return normalized;
 }
 
+/** 比對指標用：`好感度[0]` / `好感度.0` 指的是 [值, 說明] 的值，視同 `好感度` */
+function normalizeForMatch(path: string): string {
+  return normalizeMetricPath(path)
+    .replace(/\[(\d+)\]/g, ".$1")
+    .replace(/\.0$/, "");
+}
+
 function deepClone<T>(value: T): T {
+  if (value === undefined) return value;
   return JSON.parse(JSON.stringify(value)) as T;
+}
+
+/** 數字運算的浮點誤差（0.1+0.2）收掉，跟 MVU 一樣取 12 位有效數字 */
+function roundNumber(value: number): number {
+  return Number(value.toPrecision(12));
+}
+
+function limitByMaxChange(
+  oldValue: number,
+  newValue: number,
+  metric: AffinityMetricConfig | undefined,
+  options?: AffinityUpdateOptions,
+): number {
+  const max = metric?.maxChange ?? 0;
+  if (!options?.limitChange || !(max > 0)) return newValue;
+  const diff = newValue - oldValue;
+  if (Math.abs(diff) <= max) return newValue;
+  return roundNumber(oldValue + Math.sign(diff) * max);
 }
 
 function evaluateCondition(
@@ -123,6 +186,10 @@ export const useAffinityStore = defineStore("affinity", () => {
   // ===== 內部追蹤 =====
 
   const _autoSaveTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  /** 正在套用哪一則訊息的更新（期間寫入的「近期變化」會標上這個 id） */
+  const _activeMessageIds = new Map<string, string>();
+  /** 正在對齊樓層的聊天（對齊本身不算手動修改） */
+  const _syncingChats = new Set<string>();
   const _loadingPromises = new Map<string, Promise<ChatAffinityState | null>>();
   const _dbLoadedIds = new Set<string>();
 
@@ -171,6 +238,7 @@ export const useAffinityStore = defineStore("affinity", () => {
     metricId: string,
     value: MetricValue,
     delta?: unknown,
+    change?: { oldValue: unknown; reason: string },
   ): void {
     const state = affinityStates.value.get(chatId);
     if (!state) return;
@@ -181,9 +249,99 @@ export const useAffinityStore = defineStore("affinity", () => {
 
     const mvuState = _ensureMvuState(chatId);
     if (!mvuState) return;
-    _.set(mvuState.statData, path, deepClone(value));
-    _.set(mvuState.displayData, path, deepClone(value));
+    writeMvuLeaf(mvuState.statData, path, deepClone(value));
+    if (change && _usesMvuDisplay(chatId)) {
+      _writeMvuChangeText(chatId, path, change.oldValue, value, change.reason);
+      return;
+    }
+    writeMvuLeaf(mvuState.displayData, path, deepClone(value));
     _.set(mvuState.deltaData, path, deepClone(delta ?? value));
+  }
+
+  // ===== MVU 卡專用：display_data / delta_data 用原版格式 =====
+
+  function _mvuSchema(chatId: string): Record<string, unknown> | undefined {
+    const state = affinityStates.value.get(chatId);
+    const config = state ? configCache.value.get(state.characterId) : undefined;
+    return config?.mvuEnabled ? config.mvuInitialData : undefined;
+  }
+
+  /**
+   * MVU 卡的狀態欄（正則、HTML）讀 display_data，期待變過的值寫成「舊->新 (原因)」，
+   * delta_data 只放這一輪變過的東西。自己建的數值維持原本的格式（delta 是數字差）。
+   */
+  function _usesMvuDisplay(chatId: string): boolean {
+    return !!_mvuSchema(chatId);
+  }
+
+  function _displayValue(v: unknown): string {
+    if (v === undefined || v === null) return "";
+    if (typeof v === "string") return v;
+    try {
+      return JSON.stringify(v);
+    } catch {
+      return String(v);
+    }
+  }
+
+  function _writeMvuChangeText(
+    chatId: string,
+    path: string,
+    oldValue: unknown,
+    newValue: unknown,
+    reason: string,
+  ): void {
+    const mvuState = _ensureMvuState(chatId);
+    if (!mvuState) return;
+    const text = `${_displayValue(oldValue)}->${_displayValue(newValue)}${reason ? ` (${reason})` : ""}`;
+    _.set(mvuState.displayData, path, text);
+    _.set(mvuState.deltaData, path, text);
+  }
+
+  /** 卡片的 $meta 擋下的操作：記一筆、不套用 */
+  function _rejectByMeta(path: string, reason?: string): void {
+    console.warn("[AffinityStore] MVU $meta 拒絕這個操作", { path, reason });
+  }
+
+  function _pushHistory(
+    chatId: string,
+    record: Omit<AffinityChangeRecord, "messageId">,
+  ): void {
+    const state = affinityStates.value.get(chatId);
+    if (!state) return;
+    const messageId = _activeMessageIds.get(chatId);
+    state.history.push(messageId ? { ...record, messageId } : record);
+    if (state.history.length > MAX_HISTORY_LENGTH) {
+      state.history = state.history.slice(-MAX_HISTORY_LENGTH);
+    }
+  }
+
+  /**
+   * stat_data 某個路徑被整塊換掉（物件、插入、刪除）後，把底下的指標值拉回 values，
+   * 避免面板顯示舊數字。
+   */
+  function _pullMetricsFromStatData(chatId: string, changedPath: string): void {
+    const state = affinityStates.value.get(chatId);
+    const config = state ? configCache.value.get(state.characterId) : undefined;
+    const statData = state?.mvuState?.statData;
+    if (!state || !config || !statData) return;
+    const changed = normalizeForMatch(changedPath);
+    for (const m of config.metrics) {
+      const metricPath = normalizeMetricPath(m.path || m.name);
+      if (!metricPath) continue;
+      const related =
+        metricPath === changed ||
+        metricPath.startsWith(`${changed}.`) ||
+        changed.startsWith(`${metricPath}.`);
+      if (!related) continue;
+      const leaf = readMvuLeaf(statData, metricPath);
+      if (m.type === "string") {
+        if (leaf === undefined || leaf === null || typeof leaf === "object") continue;
+        setMetric(chatId, m.id, String(leaf), "MVU stat_data");
+      } else if (typeof leaf === "number" || (typeof leaf === "string" && leaf.trim() !== "" && Number.isFinite(Number(leaf)))) {
+        setMetric(chatId, m.id, Number(leaf), "MVU stat_data");
+      }
+    }
   }
 
   function _ruleConditionsMatch(
@@ -242,6 +400,12 @@ export const useAffinityStore = defineStore("affinity", () => {
   }
 
   function _scheduleAutoSave(chatId: string): void {
+    // 不是在套用某則訊息、也不是在對齊樓層時改的（手動調整、電話、EJS setvar…）
+    // → 寫回目前那一樓，之後對齊時才不會被蓋掉
+    if (!_activeMessageIds.has(chatId) && !_syncingChats.has(chatId)) {
+      const state = affinityStates.value.get(chatId);
+      if (state) _writeAnchor(state);
+    }
     const existing = _autoSaveTimers.get(chatId);
     if (existing) clearTimeout(existing);
 
@@ -442,6 +606,8 @@ export const useAffinityStore = defineStore("affinity", () => {
 
     configCache.value.set(config.characterId, config);
     const state = createDefaultState(chatId, config);
+    // 強制重置：之前的訊息不再自動重新套用（否則重置完一進聊天又被最後一則覆蓋回去）
+    if (options?.force) state.resetAt = Date.now();
     affinityStates.value.set(chatId, state);
     _reconcileStateAfterRules(chatId);
     _dbLoadedIds.add(chatId);
@@ -456,6 +622,12 @@ export const useAffinityStore = defineStore("affinity", () => {
   async function cloneStateForBranch(
     srcChatId: string,
     newChatId: string,
+    options?: {
+      /** 舊訊息 id → 分支裡的新 id；給了就把樓層記錄換成新 id，並對齊到分支點 */
+      idMap?: Map<string, string>;
+      /** 分支裡的訊息 id（新 id，依順序） */
+      branchMessageIds?: string[];
+    },
   ): Promise<ChatAffinityState | null> {
     let src = affinityStates.value.get(srcChatId);
     if (!src) {
@@ -466,9 +638,47 @@ export const useAffinityStore = defineStore("affinity", () => {
     const cloned = JSON.parse(JSON.stringify(toRaw(src))) as ChatAffinityState;
     cloned.chatId = newChatId;
     cloned.lastUpdated = Date.now();
-    // 不繼承 lastRescannedMessageId 以外的快照鍵會跟著 messageId 走，這裡保留
+
+    const idMap = options?.idMap;
+    if (idMap) {
+      // 分支的訊息換了新 id：樓層記錄跟著換，分支點之後的丟掉
+      const remap = (id: string | undefined) => (id ? idMap.get(id) : undefined);
+      const states: ChatAffinityState["messageStates"] = {};
+      for (const [oldId, floor] of Object.entries(cloned.messageStates ?? {})) {
+        const newId = remap(oldId);
+        if (!newId) continue;
+        states[newId] = {
+          ...floor,
+          changes: floor.changes.map((c) => ({ ...c, messageId: newId })),
+        };
+      }
+      cloned.messageStates = states;
+      cloned.history = cloned.history.flatMap((h) => {
+        if (!h.messageId) return [h];
+        const newId = remap(h.messageId);
+        return newId ? [{ ...h, messageId: newId }] : [];
+      });
+      cloned.anchorMessageId = remap(cloned.anchorMessageId);
+      const snapshots: ChatAffinityState["snapshots"] = {};
+      for (const [oldId, snap] of Object.entries(cloned.snapshots ?? {})) {
+        const newId = remap(oldId);
+        if (newId) snapshots[newId] = snap;
+      }
+      cloned.snapshots = snapshots;
+      cloned.lastRescannedMessageId = remap(cloned.lastRescannedMessageId);
+    } else if (cloned.baseState || Object.keys(cloned.messageStates ?? {}).length > 0) {
+      // 新聊天的訊息跟來源對不上（小劇場另開新檔等）：只帶走目前的數值當起點
+      cloned.baseState = _captureFloor(cloned);
+      cloned.messageStates = {};
+      cloned.anchorMessageId = undefined;
+      cloned.history = cloned.history.map(({ messageId: _id, ...rest }) => rest);
+    }
+
     affinityStates.value.set(newChatId, cloned);
     _dbLoadedIds.add(newChatId);
+    if (options?.branchMessageIds) {
+      syncToMessages(newChatId, options.branchMessageIds);
+    }
     await saveState(newChatId);
     return cloned;
   }
@@ -487,8 +697,206 @@ export const useAffinityStore = defineStore("affinity", () => {
     _scheduleAutoSave(chatId);
   }
 
+  /** 這個聊天不再提示改用旁觀者判斷 */
+  function setJudgeHintDismissed(chatId: string): void {
+    const state = affinityStates.value.get(chatId);
+    if (!state) return;
+    state.judgeHintDismissed = true;
+    state.lastUpdated = Date.now();
+    _triggerReactivity(chatId);
+    _scheduleAutoSave(chatId);
+  }
+
   function getLastRescannedMessageId(chatId: string): string | undefined {
     return affinityStates.value.get(chatId)?.lastRescannedMessageId;
+  }
+
+  // ===== 樓層狀態（跟著訊息走） =====
+
+  function _captureFloor(state: ChatAffinityState): AffinityFloorState {
+    return {
+      values: deepClone(state.values),
+      statData: deepClone(state.mvuState?.statData ?? {}),
+      deltaData: deepClone(state.mvuState?.deltaData ?? {}),
+      // MVU 卡的 display_data 有「舊->新」文字，不是 statData 的鏡像，要另外存
+      ...(_usesMvuDisplay(state.chatId)
+        ? { displayData: deepClone(state.mvuState?.displayData ?? {}) }
+        : {}),
+      changes: [],
+      seq: 0,
+    };
+  }
+
+  function _restoreFloor(state: ChatAffinityState, floor: AffinityFloorState): void {
+    state.values = deepClone(floor.values);
+    state.mvuState = {
+      statData: deepClone(floor.statData),
+      // 自己建的數值：displayData 一直都是 statData 的鏡像
+      displayData: deepClone(floor.displayData ?? floor.statData),
+      deltaData: deepClone(floor.deltaData),
+    };
+  }
+
+  function _sameFloor(state: ChatAffinityState, floor: AffinityFloorState): boolean {
+    return (
+      _.isEqual(toRaw(state.values), floor.values) &&
+      _.isEqual(toRaw(state.mvuState?.statData ?? {}), floor.statData) &&
+      _.isEqual(toRaw(state.mvuState?.deltaData ?? {}), floor.deltaData)
+    );
+  }
+
+  /** 超過上限時把最舊的樓層併進 baseState */
+  function _pruneFloors(state: ChatAffinityState): void {
+    const entries = Object.entries(state.messageStates ?? {});
+    if (entries.length <= MAX_FLOOR_STATES) return;
+    entries.sort((a, b) => a[1].seq - b[1].seq);
+    const dropCount = entries.length - MAX_FLOOR_STATES;
+    for (let i = 0; i < dropCount; i++) {
+      const [id, floor] = entries[i];
+      delete state.messageStates[id];
+      // 刪到比這更早的地方時，最接近的近似值就是被丟掉的最新一層
+      if (i === dropCount - 1) state.baseState = { ...floor, changes: [] };
+    }
+  }
+
+  /** 這個聊天是否已經在用樓層狀態（舊聊天第一次套用更新前都是 false） */
+  function hasFloorStates(chatId: string): boolean {
+    const state = affinityStates.value.get(chatId);
+    if (!state) return false;
+    return !!state.baseState || Object.keys(state.messageStates ?? {}).length > 0;
+  }
+
+  function hasMessageState(chatId: string, messageId: string): boolean {
+    return !!affinityStates.value.get(chatId)?.messageStates?.[messageId];
+  }
+
+  /**
+   * 把數值對齊到訊息列表：取最後一則有記錄的訊息的狀態；
+   * 一則都沒有就回到 baseState。
+   *
+   * @param orderedMessageIds 目前聊天裡（或某則訊息之前）的訊息 id，依顯示順序
+   * @returns 有沒有用樓層狀態對齊（舊聊天沒有樓層時回傳 false，呼叫端可改用舊的回滾）
+   */
+  function syncToMessages(chatId: string, orderedMessageIds: string[]): boolean {
+    const state = affinityStates.value.get(chatId);
+    if (!state || !hasFloorStates(chatId)) return false;
+    state.messageStates ??= {};
+
+    let anchorId: string | undefined;
+    for (let i = orderedMessageIds.length - 1; i >= 0; i--) {
+      if (state.messageStates[orderedMessageIds[i]]) {
+        anchorId = orderedMessageIds[i];
+        break;
+      }
+    }
+    const target = anchorId ? state.messageStates[anchorId] : state.baseState;
+    if (!target) return false;
+
+    let changed = false;
+    if (!_sameFloor(state, target)) {
+      _restoreFloor(state, target);
+      changed = true;
+    }
+    if (state.anchorMessageId !== anchorId) {
+      state.anchorMessageId = anchorId;
+      changed = true;
+    }
+
+    // 「近期變化」只留還在的訊息造成的；換回某則回覆時把它當時的變化補回來
+    const live = new Set(orderedMessageIds);
+    const kept = state.history.filter((h) => !h.messageId || live.has(h.messageId));
+    const present = new Set(kept.map((h) => h.messageId).filter(Boolean));
+    const restored: AffinityChangeRecord[] = [];
+    for (const id of orderedMessageIds) {
+      const floor = state.messageStates[id];
+      if (floor?.changes.length && !present.has(id)) restored.push(...floor.changes);
+    }
+    if (kept.length !== state.history.length || restored.length > 0) {
+      state.history = [...kept, ...restored]
+        .sort((a, b) => a.timestamp - b.timestamp)
+        .slice(-MAX_HISTORY_LENGTH);
+      changed = true;
+    }
+
+    if (changed) {
+      state.lastUpdated = Date.now();
+      _triggerReactivity(chatId);
+      _syncingChats.add(chatId);
+      try {
+        _scheduleAutoSave(chatId);
+      } finally {
+        _syncingChats.delete(chatId);
+      }
+    }
+    return true;
+  }
+
+  /**
+   * 準備套用某則訊息的更新：先回到「這則訊息之前」的狀態，
+   * 這樣重抽、重新掃描都是從同一個起點算，不會疊加。
+   *
+   * @param previousMessageIds 這則訊息之前的所有訊息 id（依順序）；不知道時省略
+   */
+  function beginMessageUpdate(
+    chatId: string,
+    messageId: string,
+    previousMessageIds?: string[],
+  ): void {
+    const state = affinityStates.value.get(chatId);
+    if (!state) return;
+
+    const synced = previousMessageIds
+      ? syncToMessages(chatId, previousMessageIds)
+      : false;
+    if (!synced) {
+      // 舊聊天：有這則訊息套用前的舊快照就用它
+      const legacy = state.snapshots?.[messageId];
+      if (legacy && !hasFloorStates(chatId)) state.values = { ...legacy };
+    }
+    // 第一次記錄樓層：目前的數值就是「所有樓層之前」的狀態
+    if (!state.baseState) state.baseState = _captureFloor(state);
+    _activeMessageIds.set(chatId, messageId);
+  }
+
+  /** 套用完某則訊息的更新：記下這則之後的狀態 */
+  function commitMessageUpdate(chatId: string, messageId: string): void {
+    _activeMessageIds.delete(chatId);
+    const state = affinityStates.value.get(chatId);
+    if (!state) return;
+    const floor = _captureFloor(state);
+    floor.changes = state.history.filter((h) => h.messageId === messageId);
+    state.floorSeq = (state.floorSeq ?? 0) + 1;
+    floor.seq = state.floorSeq;
+    state.messageStates ??= {};
+    state.messageStates[messageId] = floor;
+    state.anchorMessageId = messageId;
+    _pruneFloors(state);
+    state.lastUpdated = Date.now();
+    _triggerReactivity(chatId);
+    _scheduleAutoSave(chatId);
+  }
+
+  /**
+   * 手動調整後呼叫：把目前數值寫回對應的那一則訊息，
+   * 之後重新對齊（刪掉後面的訊息、換回覆再換回來）時不會被蓋掉。
+   */
+  function commitManualEdit(chatId: string): void {
+    const state = affinityStates.value.get(chatId);
+    if (!state) return;
+    _writeAnchor(state);
+    _scheduleAutoSave(chatId);
+  }
+
+  function _writeAnchor(state: ChatAffinityState): void {
+    if (!state.baseState && Object.keys(state.messageStates ?? {}).length === 0) return;
+    const anchorId = state.anchorMessageId;
+    const anchor = anchorId ? state.messageStates?.[anchorId] : undefined;
+    const floor = _captureFloor(state);
+    if (anchorId && anchor) {
+      state.messageStates[anchorId] = { ...floor, changes: anchor.changes, seq: anchor.seq };
+    } else {
+      state.baseState = floor;
+    }
   }
 
   // ===== 獲取狀態 =====
@@ -548,6 +956,7 @@ export const useAffinityStore = defineStore("affinity", () => {
     metricId: string,
     delta: number,
     reason = "",
+    options?: AffinityUpdateOptions,
   ): boolean {
     const state = affinityStates.value.get(chatId);
     if (!state) return false;
@@ -556,30 +965,36 @@ export const useAffinityStore = defineStore("affinity", () => {
     const metricConfig = config?.metrics.find((m) => m.id === metricId);
 
     if (metricConfig?.type === "string") return false;
+    if (!Number.isFinite(delta)) return false;
 
     const oldValue = state.values[metricId];
-    const numOld = typeof oldValue === "number" ? oldValue : 0;
-    let newValue = numOld + delta;
+    const numOld =
+      typeof oldValue === "number"
+        ? oldValue
+        : typeof metricConfig?.initial === "number"
+          ? metricConfig.initial
+          : 0;
+    let newValue = roundNumber(numOld + delta);
 
     if (metricConfig) {
-      newValue = Math.min(metricConfig.max, Math.max(metricConfig.min, newValue));
+      newValue = limitByMaxChange(numOld, newValue, metricConfig, options);
+      newValue = clampMetricNumber(newValue, metricConfig);
     }
 
-    if (newValue === numOld) return false;
+    if (newValue === oldValue) return false;
 
     state.values[metricId] = newValue;
-    _syncMetricToMvuViews(chatId, metricId, newValue, newValue - numOld);
-    state.history.push({
+    _syncMetricToMvuViews(chatId, metricId, newValue, roundNumber(newValue - numOld), {
+      oldValue: numOld,
+      reason,
+    });
+    _pushHistory(chatId, {
       metricId,
       oldValue: numOld,
       newValue,
       reason,
       timestamp: Date.now(),
     });
-
-    if (state.history.length > MAX_HISTORY_LENGTH) {
-      state.history = state.history.slice(-MAX_HISTORY_LENGTH);
-    }
 
     _scheduleAutoSave(chatId);
     _applyPostMutationRules(chatId);
@@ -593,25 +1008,33 @@ export const useAffinityStore = defineStore("affinity", () => {
     metricId: string,
     value: MetricValue,
     reason = "",
+    options?: AffinityUpdateOptions,
   ): boolean {
     const state = affinityStates.value.get(chatId);
     if (!state) return false;
 
     const config = configCache.value.get(state.characterId);
     const metricConfig = config?.metrics.find((m) => m.id === metricId);
+    const oldValue = state.values[metricId] ?? (metricConfig?.initial ?? 0);
 
     let finalValue: MetricValue = value;
     if (metricConfig?.type === "string") {
       finalValue = String(value);
-    } else if (typeof value === "number" && metricConfig) {
-      finalValue = Math.min(
-        metricConfig.max,
-        Math.max(metricConfig.min, value),
-      );
+    } else if (metricConfig) {
+      // 數字指標收到 "74" 這種字串也當數字；真的不是數字就不動
+      const numeric = typeof value === "number" ? value : Number(value);
+      if (typeof value === "string" && (value.trim() === "" || !Number.isFinite(numeric))) {
+        return false;
+      }
+      if (!Number.isFinite(numeric)) return false;
+      finalValue = numeric;
+      if (typeof oldValue === "number") {
+        finalValue = limitByMaxChange(oldValue, finalValue, metricConfig, options);
+      }
+      finalValue = clampMetricNumber(finalValue, metricConfig);
     }
 
-    const oldValue = state.values[metricId] ?? (metricConfig?.initial ?? 0);
-    if (finalValue === oldValue) return false;
+    if (finalValue === oldValue && state.values[metricId] !== undefined) return false;
 
     state.values[metricId] = finalValue;
     _syncMetricToMvuViews(
@@ -619,26 +1042,25 @@ export const useAffinityStore = defineStore("affinity", () => {
       metricId,
       finalValue,
       typeof finalValue === "number" && typeof oldValue === "number"
-        ? finalValue - oldValue
+        ? roundNumber(finalValue - oldValue)
         : finalValue,
+      finalValue !== oldValue ? { oldValue, reason } : undefined,
     );
-    state.history.push({
-      metricId,
-      oldValue,
-      newValue: finalValue,
-      reason,
-      timestamp: Date.now(),
-    });
-
-    if (state.history.length > MAX_HISTORY_LENGTH) {
-      state.history = state.history.slice(-MAX_HISTORY_LENGTH);
+    if (finalValue !== oldValue) {
+      _pushHistory(chatId, {
+        metricId,
+        oldValue,
+        newValue: finalValue,
+        reason,
+        timestamp: Date.now(),
+      });
     }
 
     _scheduleAutoSave(chatId);
     _applyPostMutationRules(chatId);
     // 觸發 Vue 響應式更新（重新設置 Map 條目）
     _triggerReactivity(chatId);
-    return true;
+    return finalValue !== oldValue;
   }
 
   /**
@@ -670,7 +1092,7 @@ export const useAffinityStore = defineStore("affinity", () => {
       return null;
     }
 
-    const normalizedPath = normalizeMetricPath(path);
+    const normalizedPath = normalizeForMatch(path);
     if (!normalizedPath) {
       console.warn("[AffinityStore][getMetricByPath] normalizedPath 為空", { path });
       return null;
@@ -679,7 +1101,7 @@ export const useAffinityStore = defineStore("affinity", () => {
     const tail = normalizedPath.split(".").pop() ?? "";
 
     const metric = config.metrics.find((m) => {
-      const metricPath = m.path ? normalizeMetricPath(m.path) : "";
+      const metricPath = m.path ? normalizeForMatch(m.path) : "";
       const metricTail = metricPath ? metricPath.split(".").pop() ?? "" : "";
 
       // 1. 直接相等
@@ -710,12 +1132,6 @@ export const useAffinityStore = defineStore("affinity", () => {
       return null;
     }
 
-    console.log("[AffinityStore][getMetricByPath] 匹配成功", {
-      rawPath: path,
-      normalizedPath,
-      matchedMetricId: metric.id,
-      matchedMetricName: metric.name,
-    });
     return {
       metricId: metric.id,
       value: state.values[metric.id] ?? metric.initial,
@@ -746,6 +1162,8 @@ export const useAffinityStore = defineStore("affinity", () => {
     if (!state || !mvuState) return false;
 
     mvuState.deltaData = {};
+    // MVU 卡：每一輪開始時 display_data 回到 stat_data 的複本，只標這輪變過的
+    if (_usesMvuDisplay(chatId)) mvuState.displayData = deepClone(mvuState.statData);
     state.lastUpdated = Date.now();
     _triggerReactivity(chatId);
     _scheduleAutoSave(chatId);
@@ -757,6 +1175,7 @@ export const useAffinityStore = defineStore("affinity", () => {
     path: string,
     value: unknown,
     reason = "",
+    options?: AffinityUpdateOptions,
   ): boolean {
     const state = affinityStates.value.get(chatId);
     if (!state) return false;
@@ -767,14 +1186,52 @@ export const useAffinityStore = defineStore("affinity", () => {
     const mvuState = _ensureMvuState(chatId);
     if (!mvuState) return false;
 
-    _.set(mvuState.statData, normalizedPath, deepClone(value));
-    _.set(mvuState.displayData, normalizedPath, deepClone(value));
-    _.set(mvuState.deltaData, normalizedPath, deepClone(value));
-
     const metric = getMetricByPath(chatId, normalizedPath);
-    if (metric && (typeof value === "string" || typeof value === "number")) {
-      setMetric(chatId, metric.metricId, value, reason || "MVU stat_data set");
+    if (metric && (typeof value === "string" || typeof value === "number" || typeof value === "boolean")) {
+      // 指標用 setMetric 寫（會同步 stat_data、夾範圍、記近期變化）
+      const changed = setMetric(
+        chatId,
+        metric.metricId,
+        typeof value === "boolean" ? String(value) : value,
+        reason || "MVU stat_data set",
+        options,
+      );
+      if (typeof value === "boolean") {
+        // 布林原樣留在 stat_data，EJS 的 `=== true` 才判斷得到
+        writeMvuLeaf(mvuState.statData, normalizedPath, value);
+        writeMvuLeaf(mvuState.displayData, normalizedPath, value);
+      }
+      void changed;
       return true;
+    }
+
+    const schema = _mvuSchema(chatId);
+    if (schema && !_.has(mvuState.statData, normalizedPath)) {
+      const check = checkMvuCreate(schema, normalizedPath);
+      if (!check.ok) {
+        _rejectByMeta(normalizedPath, check.reason);
+        return false;
+      }
+    }
+    const previous = readMvuLeaf(mvuState.statData, normalizedPath);
+    if (schema && isStrictSet(schema)) _.set(mvuState.statData, normalizedPath, deepClone(value));
+    else writeMvuLeaf(mvuState.statData, normalizedPath, deepClone(value));
+    if (schema) {
+      _writeMvuChangeText(chatId, normalizedPath, previous, value, reason);
+    } else {
+      writeMvuLeaf(mvuState.displayData, normalizedPath, deepClone(value));
+      _.set(mvuState.deltaData, normalizedPath, deepClone(value));
+    }
+    if (value !== null && typeof value === "object") {
+      _pullMetricsFromStatData(chatId, normalizedPath);
+    } else if (!_.isEqual(previous, value)) {
+      _pushHistory(chatId, {
+        metricId: normalizedPath,
+        oldValue: _toHistoryValue(previous),
+        newValue: _toHistoryValue(value),
+        reason,
+        timestamp: Date.now(),
+      });
     }
 
     state.lastUpdated = Date.now();
@@ -783,7 +1240,27 @@ export const useAffinityStore = defineStore("affinity", () => {
     return true;
   }
 
-  function removeMvuValueByPath(chatId: string, path: string): boolean {
+  function _toHistoryValue(v: unknown): MetricValue {
+    if (typeof v === "number" || typeof v === "string") return v;
+    if (v === undefined || v === null) return "";
+    if (typeof v === "boolean") return String(v);
+    try {
+      return JSON.stringify(v);
+    } catch {
+      return String(v);
+    }
+  }
+
+  /**
+   * 刪除 stat_data 裡的路徑。
+   * - 只給路徑：刪掉那個鍵（路徑最後是數字且父層是陣列時，刪掉那一格）
+   * - 再給 target：父層是陣列時刪掉該索引或等於該值的項目；物件時刪掉該鍵
+   */
+  function removeMvuValueByPath(
+    chatId: string,
+    path: string,
+    target?: unknown,
+  ): boolean {
     const state = affinityStates.value.get(chatId);
     const mvuState = _ensureMvuState(chatId);
     if (!state || !mvuState) return false;
@@ -791,15 +1268,74 @@ export const useAffinityStore = defineStore("affinity", () => {
     const normalizedPath = normalizeMetricPath(path);
     if (!normalizedPath) return false;
 
-    _.unset(mvuState.statData, normalizedPath);
-    _.unset(mvuState.displayData, normalizedPath);
-    _.unset(mvuState.deltaData, normalizedPath);
+    const apply = (root: Record<string, unknown>): boolean => {
+      if (target === undefined) {
+        const segments = _.toPath(normalizedPath);
+        const last = segments[segments.length - 1];
+        const parentPath = segments.slice(0, -1);
+        const parent = parentPath.length ? _.get(root, parentPath) : root;
+        if (Array.isArray(parent) && /^\d+$/.test(last)) {
+          const idx = Number(last);
+          if (idx >= parent.length) return false;
+          parent.splice(idx, 1);
+          return true;
+        }
+        if (!_.has(root, normalizedPath)) return false;
+        return _.unset(root, normalizedPath);
+      }
+      const container = _.get(root, normalizedPath);
+      if (Array.isArray(container)) {
+        const idx =
+          typeof target === "number"
+            ? target
+            : container.findIndex((item) => _.isEqual(item, target));
+        if (idx < 0 || idx >= container.length) return false;
+        container.splice(idx, 1);
+        return true;
+      }
+      if (container && typeof container === "object") {
+        const keys = Object.keys(container as Record<string, unknown>);
+        const key = typeof target === "number" ? keys[target] : String(target);
+        if (key === undefined || !(key in (container as Record<string, unknown>))) return false;
+        delete (container as Record<string, unknown>)[key];
+        return true;
+      }
+      return false;
+    };
+
+    const schema = _mvuSchema(chatId);
+    if (schema) {
+      const check = checkMvuRemove(schema, normalizedPath, target);
+      if (!check.ok) {
+        _rejectByMeta(normalizedPath, check.reason);
+        return false;
+      }
+    }
+    const removed = apply(mvuState.statData);
+    if (!removed) return false;
+    apply(mvuState.displayData);
+    _.set(mvuState.deltaData, normalizedPath, target === undefined ? "REMOVED" : `REMOVED ${_toHistoryValue(target)}`);
+    _pushHistory(chatId, {
+      metricId: normalizedPath,
+      oldValue: target === undefined ? "存在" : _toHistoryValue(target),
+      newValue: "已刪除",
+      reason: "MVU 刪除",
+      timestamp: Date.now(),
+    });
+    _pullMetricsFromStatData(chatId, normalizedPath);
     state.lastUpdated = Date.now();
     _triggerReactivity(chatId);
     _scheduleAutoSave(chatId);
     return true;
   }
 
+  /**
+   * 插入 stat_data（MVU 的 _.insert / _.assign）：
+   * - 陣列：沒給索引或給 "-" 就加在最後，給數字就插在那個位置
+   * - 物件：給鍵就設那個鍵；沒給鍵且值是物件就合併進去
+   * - 路徑不存在：給了文字鍵就建物件，否則建陣列
+   * - 路徑是單一值（舊版把 _.assign 當賦值用）：直接改成新值
+   */
   function insertMvuValueByPath(
     chatId: string,
     path: string,
@@ -815,33 +1351,70 @@ export const useAffinityStore = defineStore("affinity", () => {
     const mvuState = _ensureMvuState(chatId);
     if (!mvuState) return undefined;
 
+    const isIndex = (i: unknown) =>
+      i === undefined || i === "-" || typeof i === "number" || (typeof i === "string" && /^\d+$/.test(i));
+
+    const schema = _mvuSchema(chatId);
     const current = _.get(mvuState.statData, normalizedPath);
-    if (Array.isArray(current)) {
+    const isLeaf =
+      current !== undefined &&
+      (isValueWithDescription(current) || current === null || typeof current !== "object");
+    if (schema && !isLeaf) {
+      const check = checkMvuInsert(
+        schema,
+        normalizedPath,
+        value,
+        index === "-" ? "-" : index,
+      );
+      if (!check.ok) {
+        _rejectByMeta(normalizedPath, check.reason);
+        return undefined;
+      }
+      value = check.value;
+    }
+    let next: unknown;
+    if (Array.isArray(current) && !isValueWithDescription(current)) {
       const copy = [...current];
-      const targetIndex = typeof index === "number" ? index : copy.length;
-      copy.splice(targetIndex, 0, deepClone(value));
-      _.set(mvuState.statData, normalizedPath, copy);
-      _.set(mvuState.displayData, normalizedPath, deepClone(copy));
-      _.set(mvuState.deltaData, normalizedPath, deepClone(value));
-      state.lastUpdated = Date.now();
-      _triggerReactivity(chatId);
-      _scheduleAutoSave(chatId);
-      return copy;
+      if (index === undefined || index === "-") copy.push(deepClone(value));
+      else if (isIndex(index)) copy.splice(Number(index), 0, deepClone(value));
+      else copy.push(deepClone(value));
+      next = copy;
+    } else if (current && typeof current === "object" && !Array.isArray(current)) {
+      if (index === undefined) {
+        next =
+          value && typeof value === "object" && !Array.isArray(value)
+            ? _.merge({}, current, deepClone(value))
+            : { ...(current as Record<string, unknown>), [String(Object.keys(current).length)]: deepClone(value) };
+      } else {
+        next = { ...(current as Record<string, unknown>), [String(index)]: deepClone(value) };
+      }
+    } else if (current === undefined) {
+      next =
+        index !== undefined && !isIndex(index)
+          ? { [String(index)]: deepClone(value) }
+          : [deepClone(value)];
+    } else {
+      // 單一值（含 [值, 說明]）：當成賦值
+      const target = index !== undefined && !isIndex(index) ? `${normalizedPath}.${index}` : normalizedPath;
+      setMvuValueByPath(chatId, target, value, "MVU _.assign");
+      return _.get(mvuState.statData, normalizedPath);
     }
 
-    if (current && typeof current === "object") {
-      const key = index === undefined ? String(Object.keys(current).length) : String(index);
-      const copy = { ...(current as Record<string, unknown>), [key]: deepClone(value) };
-      _.set(mvuState.statData, normalizedPath, copy);
-      _.set(mvuState.displayData, normalizedPath, deepClone(copy));
-      _.set(mvuState.deltaData, normalizedPath, deepClone(value));
-      state.lastUpdated = Date.now();
-      _triggerReactivity(chatId);
-      _scheduleAutoSave(chatId);
-      return copy;
-    }
-
-    return undefined;
+    _.set(mvuState.statData, normalizedPath, next);
+    _.set(mvuState.displayData, normalizedPath, deepClone(next));
+    _.set(mvuState.deltaData, normalizedPath, deepClone(value));
+    _pushHistory(chatId, {
+      metricId: normalizedPath,
+      oldValue: "",
+      newValue: `+ ${_toHistoryValue(value)}`,
+      reason: "MVU 插入",
+      timestamp: Date.now(),
+    });
+    _pullMetricsFromStatData(chatId, normalizedPath);
+    state.lastUpdated = Date.now();
+    _triggerReactivity(chatId);
+    _scheduleAutoSave(chatId);
+    return next;
   }
 
   function setMetricByPath(
@@ -872,14 +1445,7 @@ export const useAffinityStore = defineStore("affinity", () => {
    */
   function _autoRepairMvuUpdate(
     chatId: string,
-    u: {
-      metric: string;
-      change: number;
-      reason: string;
-      stringValue?: string;
-      isAbsolute?: boolean;
-      absoluteValue?: number;
-    },
+    u: AffinityPathUpdate,
     sourceTreeValue: unknown,
     sourceStringValue: string | undefined,
     sourceNumberValue: number | undefined,
@@ -902,7 +1468,7 @@ export const useAffinityStore = defineStore("affinity", () => {
       return;
     }
 
-    const previousValue = _.get(mvuState.statData, normalizedPath);
+    const previousValue = readMvuLeaf(mvuState.statData, normalizedPath);
     console.log("[AffinityStore][_autoRepairMvuUpdate] 開始修復", {
       rawMetric: u.metric,
       normalizedPath,
@@ -937,50 +1503,49 @@ export const useAffinityStore = defineStore("affinity", () => {
       else if (sourceNumberValue !== undefined) newValue = sourceNumberValue;
       else return;
     } else {
-      const base = typeof previousValue === "number" ? previousValue : 0;
-      newValue = base + u.change;
+      const base =
+        typeof previousValue === "number"
+          ? previousValue
+          : Number.isFinite(Number(previousValue)) && previousValue !== "" && previousValue !== null
+            ? Number(previousValue)
+            : 0;
+      newValue = roundNumber(base + u.change);
     }
 
-    _.set(mvuState.statData, normalizedPath, deepClone(newValue));
-    _.set(mvuState.displayData, normalizedPath, deepClone(newValue));
-    // deltaData：對 delta 操作記錄差值，其他情況存最終值
-    const deltaValue =
-      !u.isAbsolute && !isStringWrite && typeof newValue === "number"
-        ? u.change
-        : newValue;
-    _.set(mvuState.deltaData, normalizedPath, deepClone(deltaValue));
+    const schema = _mvuSchema(chatId);
+    if (schema && !_.has(mvuState.statData, normalizedPath)) {
+      const check = checkMvuCreate(schema, normalizedPath);
+      if (!check.ok) {
+        _rejectByMeta(normalizedPath, check.reason);
+        return;
+      }
+    }
+    if (schema && isStrictSet(schema)) _.set(mvuState.statData, normalizedPath, deepClone(newValue));
+    else writeMvuLeaf(mvuState.statData, normalizedPath, deepClone(newValue));
+    if (schema) {
+      _writeMvuChangeText(chatId, normalizedPath, previousValue, newValue, u.reason);
+    } else {
+      writeMvuLeaf(mvuState.displayData, normalizedPath, deepClone(newValue));
+      // deltaData：對 delta 操作記錄差值，其他情況存最終值
+      const deltaValue =
+        !u.isAbsolute && !isStringWrite && typeof newValue === "number"
+          ? u.change
+          : newValue;
+      _.set(mvuState.deltaData, normalizedPath, deepClone(deltaValue));
+    }
 
     // 友善 history：metricId 用完整 normalizedPath，oldValue/newValue 取 MetricValue 可接受的型別
-    const toMetricValue = (v: unknown): MetricValue => {
-      if (typeof v === "number" || typeof v === "string") return v;
-      if (v === undefined || v === null) return 0;
-      return String(v);
-    };
-    const oldForHistory = toMetricValue(previousValue);
-    const newForHistory = toMetricValue(newValue);
+    const oldForHistory =
+      previousValue === undefined || previousValue === null ? 0 : _toHistoryValue(previousValue);
+    const newForHistory = _toHistoryValue(newValue);
 
     if (oldForHistory !== newForHistory) {
-      state.history.push({
+      _pushHistory(chatId, {
         metricId: normalizedPath,
         oldValue: oldForHistory,
         newValue: newForHistory,
         reason: u.reason,
         timestamp: Date.now(),
-      });
-      if (state.history.length > MAX_HISTORY_LENGTH) {
-        state.history = state.history.slice(-MAX_HISTORY_LENGTH);
-      }
-      console.log("[AffinityStore][_autoRepairMvuUpdate] 寫入完成", {
-        normalizedPath,
-        oldForHistory,
-        newForHistory,
-        historyLength: state.history.length,
-      });
-    } else {
-      console.log("[AffinityStore][_autoRepairMvuUpdate] 新舊值相同，未推 history", {
-        normalizedPath,
-        oldForHistory,
-        newForHistory,
       });
     }
 
@@ -991,17 +1556,8 @@ export const useAffinityStore = defineStore("affinity", () => {
 
   function batchUpdateByPath(
     chatId: string,
-    updates: {
-      metric: string;
-      change: number;
-      reason: string;
-      operation?: "remove" | "insert";
-      stringValue?: string;
-      isAbsolute?: boolean;
-      absoluteValue?: number;
-      sourceMetric?: string;
-      insertIndex?: string | number;
-    }[],
+    updates: AffinityPathUpdate[],
+    options?: AffinityUpdateOptions,
   ): AffinityBatchUpdateResult {
     console.log("[AffinityStore][batchUpdateByPath] 收到 MVU/好感更新", {
       chatId,
@@ -1058,14 +1614,26 @@ export const useAffinityStore = defineStore("affinity", () => {
 
     const resolved = updates.flatMap((u) => {
       if (u.operation === "remove") {
-        console.log("[AffinityStore][batchUpdateByPath] remove 操作", { metric: u.metric });
-        if (removeMvuValueByPath(chatId, u.metric)) repairedCount += 1;
+        if (removeMvuValueByPath(chatId, u.metric, u.removeTarget)) repairedCount += 1;
+        else skippedCount += 1;
+        return [];
+      }
+
+      // 布林、物件、陣列：直接寫 stat_data（對應到指標時會一起同步）
+      if (
+        u.operation !== "insert" &&
+        u.isAbsolute &&
+        u.rawValue !== undefined &&
+        u.stringValue === undefined &&
+        u.absoluteValue === undefined
+      ) {
+        if (setMvuValueByPath(chatId, u.metric, u.rawValue, u.reason, options)) repairedCount += 1;
         else skippedCount += 1;
         return [];
       }
 
       if (u.operation === "insert") {
-        const insertValue = u.stringValue ?? u.absoluteValue;
+        const insertValue = u.rawValue !== undefined ? u.rawValue : (u.stringValue ?? u.absoluteValue);
         console.log("[AffinityStore][batchUpdateByPath] insert 操作", {
           metric: u.metric,
           insertValue,
@@ -1141,7 +1709,7 @@ export const useAffinityStore = defineStore("affinity", () => {
       resolved,
     });
 
-    const appliedCount = batchUpdate(chatId, resolved) + repairedCount;
+    const appliedCount = batchUpdate(chatId, resolved, options) + repairedCount;
     const result: AffinityBatchUpdateResult = {
       applied: appliedCount > 0,
       appliedCount,
@@ -1174,6 +1742,7 @@ export const useAffinityStore = defineStore("affinity", () => {
       isAbsolute?: boolean;
       absoluteValue?: number;
     }[],
+    options?: AffinityUpdateOptions,
   ): number {
     let appliedCount = 0;
     for (const u of updates) {
@@ -1186,14 +1755,14 @@ export const useAffinityStore = defineStore("affinity", () => {
       if (u.isAbsolute) {
         // _.set() 絕對賦值：字串或數字直接 setMetric
         if (u.stringValue !== undefined) {
-          applied = setMetric(chatId, u.metricId, u.stringValue, u.reason);
+          applied = setMetric(chatId, u.metricId, u.stringValue, u.reason, options);
         } else if (u.absoluteValue !== undefined) {
-          applied = setMetric(chatId, u.metricId, u.absoluteValue, u.reason);
+          applied = setMetric(chatId, u.metricId, u.absoluteValue, u.reason, options);
         }
       } else if (mc?.type === "string" && u.stringValue !== undefined) {
-        applied = setMetric(chatId, u.metricId, u.stringValue, u.reason);
+        applied = setMetric(chatId, u.metricId, u.stringValue, u.reason, options);
       } else {
-        applied = updateMetric(chatId, u.metricId, u.change, u.reason);
+        applied = updateMetric(chatId, u.metricId, u.change, u.reason, options);
       }
 
       if (applied) appliedCount += 1;
@@ -1231,6 +1800,7 @@ export const useAffinityStore = defineStore("affinity", () => {
     const metricConfig = config?.metrics.find((m) => m.id === metricId);
     if (!metricConfig) return 0;
 
+    if (metricConfig.bounded === false) return 0;
     const value = state.values[metricId] ?? metricConfig.initial;
     return computePercentage(value, metricConfig.min, metricConfig.max);
   }
@@ -1255,9 +1825,12 @@ export const useAffinityStore = defineStore("affinity", () => {
         min: m.min,
         max: m.max,
         options: m.options,
-        percentage: computePercentage(value, m.min, m.max),
+        percentage: m.bounded === false ? 0 : computePercentage(value, m.min, m.max),
         stage: computeStage(value, m.stages),
+        stageDescription: findStage(value, m.stages)?.description ?? "",
         stages: m.stages,
+        bounded: m.bounded !== false,
+        description: m.description ?? "",
       };
     });
   }
@@ -1326,6 +1899,7 @@ export const useAffinityStore = defineStore("affinity", () => {
     initializeFromConfig,
     cloneStateForBranch,
     setLastRescannedMessageId,
+    setJudgeHintDismissed,
     getLastRescannedMessageId,
     getState,
 
@@ -1344,6 +1918,12 @@ export const useAffinityStore = defineStore("affinity", () => {
     batchUpdate,
     snapshotBeforeMessage,
     rollbackToBeforeMessages,
+    hasFloorStates,
+    hasMessageState,
+    syncToMessages,
+    beginMessageUpdate,
+    commitMessageUpdate,
+    commitManualEdit,
 
     getCurrentStage,
     getMetricPercentage,

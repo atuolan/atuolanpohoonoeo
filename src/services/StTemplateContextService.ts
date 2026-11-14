@@ -4,7 +4,8 @@ import type {
   ChatAffinityState,
   MetricValue,
 } from "@/schemas/affinity";
-import { computeStage } from "@/schemas/affinity";
+import { computeStage, readMvuLeaf, writeMvuLeaf } from "@/schemas/affinity";
+import { stripMvuMeta } from "@/services/mvuSchema";
 import { useAffinityStore } from "@/stores/affinity";
 import { useChatVariablesStore } from "@/stores/chatVariables";
 import type { ChatMessage } from "@/types/chat";
@@ -76,16 +77,21 @@ function normalizePath(path: string): string {
   return path.replace(/^\/+/, "").replace(/\//g, ".");
 }
 
+/**
+ * 讀路徑。`stat_data.` / `display_data.` / `delta_data.` 開頭時，
+ * root 底下有那棵樹就到那棵樹裡找（root 是整包變數時），沒有就把 root 當成那棵樹。
+ */
 function getByPath(root: Record<string, unknown>, path: string): unknown {
   if (!path) return root;
-  const normalized = path.startsWith("stat_data.")
-    ? path.slice("stat_data.".length)
-    : path.startsWith("display_data.")
-      ? path.slice("display_data.".length)
-      : path.startsWith("delta_data.")
-        ? path.slice("delta_data.".length)
-        : normalizePath(path);
-  return _.get(root, normalized);
+  for (const prefix of ["stat_data", "display_data", "delta_data"]) {
+    if (path === prefix) return root[prefix] ?? root;
+    if (path.startsWith(`${prefix}.`)) {
+      const tree = root[prefix];
+      const base = tree && typeof tree === "object" ? (tree as Record<string, unknown>) : root;
+      return _.get(base, normalizePath(path.slice(prefix.length + 1)));
+    }
+  }
+  return _.get(root, normalizePath(path));
 }
 
 function setByPath(root: Record<string, unknown>, path: string, value: unknown): void {
@@ -140,6 +146,7 @@ function serializeStoredValue(value: unknown): string {
 function buildStatData(
   affinityConfig?: CharacterAffinityConfig | null,
   affinityState?: ChatAffinityState | null,
+  charName?: string,
 ): {
   statData: Record<string, unknown>;
   displayData: Record<string, unknown>;
@@ -149,16 +156,21 @@ function buildStatData(
 } {
   const values: Record<string, MetricValue> = {};
   const stages: Record<string, string | null> = {};
-  const statData = affinityState?.mvuState?.statData
-    ? deepClone(affinityState.mvuState.statData)
-    : affinityConfig?.mvuEnabled
-      ? deepClone(affinityConfig.mvuInitialData)
-      : {};
-  const displayData = affinityState?.mvuState?.displayData
-    ? deepClone(affinityState.mvuState.displayData)
-    : affinityConfig?.mvuEnabled
-      ? deepClone(affinityConfig.mvuInitialData)
-      : {};
+  // $meta 是卡片的結構設定，不給模板／AI 看（舊聊天的 stat_data 可能還帶著）
+  const statData = stripMvuMeta(
+    affinityState?.mvuState?.statData
+      ? deepClone(affinityState.mvuState.statData)
+      : affinityConfig?.mvuEnabled
+        ? deepClone(affinityConfig.mvuInitialData)
+        : {},
+  );
+  const displayData = stripMvuMeta(
+    affinityState?.mvuState?.displayData
+      ? deepClone(affinityState.mvuState.displayData)
+      : affinityConfig?.mvuEnabled
+        ? deepClone(affinityConfig.mvuInitialData)
+        : {},
+  );
   const deltaData = affinityState?.mvuState?.deltaData
     ? deepClone(affinityState.mvuState.deltaData)
     : {};
@@ -167,14 +179,31 @@ function buildStatData(
     return { statData, displayData, deltaData, values, stages };
   }
 
+  // 沒設路徑的指標存在 stat_data.指標名；另外鏡像一份到 stat_data.角色名.指標名，
+  // 這樣 `stat_data['角色名']['好感度']`、`getvar('stat_data.角色名.好感度')` 都讀得到
+  const charKey = (affinityConfig.statKey || charName || "").trim();
   for (const metric of affinityConfig.metrics) {
     const value = affinityState.values[metric.id] ?? metric.initial;
     values[metric.name] = value;
     stages[metric.name] = computeStage(value, metric.stages);
-    const path = metric.path || metric.name;
-    if (path) {
-      setByPath(statData, path, value);
-      setByPath(displayData, path, value);
+    const paths = metric.path
+      ? [metric.path]
+      : [metric.name, ...(charKey && charKey !== metric.name ? [`${charKey}.${metric.name}`] : [])];
+    for (const path of paths) {
+      if (!path) continue;
+      // 不能把 stat_data.角色名 這個「值」蓋成物件
+      const parent = path.includes(".") ? path.slice(0, path.lastIndexOf(".")) : "";
+      const parentValue = parent ? _.get(statData, parent) : statData;
+      if (parent && parentValue !== undefined && (typeof parentValue !== "object" || parentValue === null)) {
+        continue;
+      }
+      writeMvuLeaf(statData, normalizePath(path), value);
+      // MVU 卡的 display_data 由 store 維護（變過的是「舊->新」文字），不要蓋掉
+      if (!affinityConfig.mvuEnabled) writeMvuLeaf(displayData, normalizePath(path), value);
+      if (!metric.path && path !== metric.name) {
+        const delta = readMvuLeaf(deltaData, metric.name);
+        if (delta !== undefined) _.set(deltaData, normalizePath(path), delta);
+      }
     }
   }
 
@@ -190,6 +219,7 @@ export function createStTemplateContext(
   const { statData, displayData, deltaData, values, stages } = buildStatData(
     options.affinityConfig,
     options.affinityState,
+    charName,
   );
 
   const chatVariables = useChatVariablesStore();
@@ -219,10 +249,8 @@ export function createStTemplateContext(
 
   const getInitialValue = (path: string): unknown => {
     if (!path.startsWith("stat_data.") && !path.startsWith("display_data.")) return undefined;
-    return getByPath({
-      stat_data: options.affinityConfig?.mvuInitialData ?? {},
-      display_data: options.affinityConfig?.mvuInitialData ?? {},
-    }, path);
+    const initial = stripMvuMeta(options.affinityConfig?.mvuInitialData ?? {});
+    return getByPath({ stat_data: initial, display_data: initial }, path);
   };
 
   const getMessageValue = (_path: string): unknown => undefined;

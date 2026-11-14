@@ -75,6 +75,7 @@ import { formatGiftTag } from "@/utils/giftTag";
 import MediaSendDrawer from "@/components/common/MediaSendDrawer.vue";
 import AISummaryPanel from "@/components/modals/AISummaryPanel.vue";
 import AffinityPanel from "@/components/modals/AffinityPanel.vue";
+import AffinityChangeChip from "@/components/chat/AffinityChangeChip.vue";
 import ChatInfoModal from "@/components/modals/ChatInfoModal.vue";
 import DiaryViewModal from "@/components/modals/DiaryViewModal.vue";
 import DiarySticker from "@/components/diary/DiarySticker.vue";
@@ -2045,9 +2046,23 @@ const {
   handleAvatarClick,
   _handleAffinityUpdates,
   rescanAffinityFromMessages,
+  resyncAffinityToMessages,
   _loadAffinityForChat,
   onAffinityRollback,
-} = useChatAffinity({ currentChatId, messages });
+  judgingMessageIds,
+  afterAiReply: afterAffinityAiReply,
+  affinityChips,
+  judgeHintMessageId,
+  switchToJudgeMode,
+  dismissJudgeHint,
+} = useChatAffinity({
+  currentChatId,
+  messages,
+  getNames: () => ({
+    char: displayCharacterName.value || "角色",
+    user: userStore.currentName || "使用者",
+  }),
+});
 
 // ===== 多訊息刪除 composable =====
 const {
@@ -2203,6 +2218,13 @@ const {
   deleteMessage: deleteCurrentChatMessage,
   triggerAIResponse,
   onRoundReplaced: async (removed, restored) => {
+    // 好感度跟著換上來的那一輪走（重抽時回到這一輪之前，換回覆時用那則回覆的數值）
+    const restoredIds = new Set(restored.map((m) => m.id));
+    resyncAffinityToMessages(
+      removed.map((m) => m.id).filter((id) => !restoredIds.has(id)),
+    );
+    // 換回的回覆如果是改版前生成的（沒有樓層記錄），補套用它的更新
+    if (restored.length > 0) rescanAffinityFromMessages();
     syncRoundStoryClock(removed, restored);
     await syncRoundCalendarEvents(removed, restored);
     await syncRoundPlanner(removed, restored);
@@ -3911,6 +3933,8 @@ const {
   currentCharacter,
   saveChatImmediate,
   onReturnedOnline: () => promptStoryClockReturn(),
+  // 單刪：舊聊天（沒有樓層記錄）維持原本「不動數值」，避免刪中間一則把後面的變化也抹掉
+  onMessagesDeleted: (ids) => resyncAffinityToMessages(ids, { legacyRollback: false }),
   focusReplyInput: () => {
     const textarea = isInputExpanded.value
       ? expandedInputRef.value
@@ -8785,6 +8809,8 @@ async function runAIResponseOnce(
             if (_pendingAffinityUpdates?.length) {
               _handleAffinityUpdates(_pendingAffinityUpdates, _firstNewAiMsgId);
             }
+            // 好感度設定成「旁觀者判斷」時，回覆完另外請 AI 判斷這輪的變化（不擋聊天）
+            afterAffinityAiReply(_firstNewAiMsgId, !!_pendingAffinityUpdates?.length);
 
             if (parsed.messages.length === 0 || _shownMsgs1 === 0) {
               if (_shownMsgs1 === 0 && parsed.messages.length > 0) {
@@ -9751,6 +9777,7 @@ async function handleStreamingClose() {
           if (parsed.hasAffinityUpdate && parsed.affinityUpdates) {
             _handleAffinityUpdates(parsed.affinityUpdates, _firstNewAiMsgId3);
           }
+          afterAffinityAiReply(_firstNewAiMsgId3, !!parsed.affinityUpdates?.length);
 
           // 處理角色動作標籤（封鎖、解封、道歉外賣等）— 窗口關閉時解析
           if (
@@ -13009,6 +13036,21 @@ useChatCleanup({
             @reject-online-mode-request="onMessageRejectOnlineModeRequest"
             @claim-redpacket="onMessageClaimRedpacket"
             @favorite-audio="onMessageFavoriteAudio"
+          />
+          <!-- 好感度：這一輪的數值變化（點了打開數值面板） -->
+          <AffinityChangeChip
+            v-if="
+              message.role === 'ai' &&
+              (affinityChips.has(message.id) ||
+                judgingMessageIds.has(message.id) ||
+                judgeHintMessageId === message.id)
+            "
+            :chip="affinityChips.get(message.id)"
+            :judging="judgingMessageIds.has(message.id)"
+            :show-judge-hint="judgeHintMessageId === message.id"
+            @open="showAffinityPanel = true"
+            @use-judge="switchToJudgeMode(message.id)"
+            @dismiss-hint="dismissJudgeHint"
           />
           <!-- 封鎖期間訊息的驚嘆號指示器（獨立行，在訊息下方顯示） -->
           <div
