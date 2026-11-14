@@ -22,6 +22,22 @@ describe("寵物的圖", () => {
       expect(h).toBeGreaterThan(0);
       for (const [pose, rows] of Object.entries(art)) checkArt(rows, palettes, `${sp}:${pose}`);
     }
+    // 每一格都是正方形（不會被拉扁）
+    for (const sp of ["cat", "dog", "ferret"] as const) {
+      const { art, w, h } = walkerArt(sp);
+      expect(art.sit[0].length / w, sp).toBeCloseTo(art.sit.length / h, 6);
+    }
+    // 貓、狗睡覺的 zZ 在圖裡面；雪貂沒有
+    for (const sp of ["cat", "dog"] as const) {
+      const { art, zzz } = walkerArt(sp);
+      expect(zzz, sp).toBeTruthy();
+      expect(zzz!.rows).toHaveLength(zzz!.spot.h);
+      for (const r of zzz!.rows) expect(r.length).toBe(zzz!.spot.w);
+      expect(zzz!.spot.x).toBeGreaterThanOrEqual(0);
+      expect(zzz!.spot.y).toBeGreaterThanOrEqual(0);
+      expect(zzz!.spot.x + zzz!.spot.w, sp).toBeLessThanOrEqual(art.sleep[0].length);
+    }
+    expect(walkerArt("ferret").zzz).toBeUndefined();
     const ferretPal = Object.values(SPECIES_COLORS.ferret).map((c) => c.palette);
     for (const [k, rows] of Object.entries(FERRET_DANCE)) checkArt(rows, ferretPal, `ferret:${k}`);
     expect(FERRET_DANCE["dance-a"][0].length).toBe(walkerArt("ferret").art.sit[0].length);

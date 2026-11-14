@@ -3,91 +3,216 @@
  *
  * 省電：倉鼠跑滾輪只用 CSS 換兩張圖（opacity），不用計時器；籠子在畫面外就停。
  */
-import { CAT_ART, CAT_H, CAT_W, type CagePose, type CatPose, type HamsterPose, type PetSpecies } from "./houseCat";
+import { CAT_ART, CAT_H, CAT_W, CAT_ZZZ, CAT_ZZZ_SPOT, type CagePose, type CatPose, type HamsterPose, type PetSpecies } from "./houseCat";
 
-// ===== 狗：22×13，面向右，腳底在最下面一列 =====
+// ===== 狗：格子 47×33（使用者畫的），畫面上一格 6/11 點，面向右，腳底在最下面一列 =====
 
-export const DOG_W = 22;
-export const DOG_H = 13;
+/** 一格在畫面上多大：使用者的圖比貓細，縮到跟之前的狗差不多大（高 18） */
+export const DOG_CELL = 6 / 11;
+export const DOG_W = 47 * DOG_CELL;
+export const DOG_H = 33 * DOG_CELL;
 
-/** o 外框、b 身體、w 白色（嘴、胸口、肚子）、e 眼睛、n 鼻子、c 閉著的眼睛 */
+/**
+ * 使用者畫的垂耳小狗（原稿朝左，這裡左右翻成朝右；原稿 scripts/pixel-house/source/dog-sheet.png）。
+ * 字母是部位，顏色由花色決定（DOG_COLORS）：o 外框（眼睛也是）｜w 奶油色的毛｜s 花斑｜k 耳朵｜g 遠的腳｜i 眼睛反光
+ */
 export const DOG_ART: Record<CatPose, string[]> = {
   "walk-a": [
-    "..............o..o....",
-    ".............oboobo...",
-    "..oo........obbbbbbo..",
-    ".obbo.......obbbbebo..",
-    ".obo........obbbbbwwwo",
-    ".obo.oooooooobbbbwwwwn",
-    "..obobbbbbbbbbbbwwwoo.",
-    "...obbbbbbbbbbbbwo....",
-    "...obbbbbbbbbbbbwo....",
-    "...owwwwwwwwwwwwwo....",
-    "...obooooooooooboo....",
-    "...owo........owo.....",
-    "...ooo........ooo.....",
+    "...............................................",
+    "...............................................",
+    ".................................ooo...........",
+    "...........................ooo..osssoo.........",
+    "..........................osssooooossso........",
+    ".........................ossssowwwwoosso.......",
+    "........................ossssosswwwssosso......",
+    "........oooo...........ossssssssswwwssosso.....",
+    "......oowwwwoo........ossssssossswwwsssokko....",
+    ".....owwwwwo.........okksssssossssswwssokkko...",
+    "....owwwwwwo........okkkkkssosssssswwsssokko...",
+    "...owwwwwwo.........okkkkkkkosssssswwwssoko....",
+    "...owwwwwso.........okkkkkkkosssssswwwwwoo.....",
+    "...owwsssso..oooooo..okkkkkossssooiwwwwwo......",
+    "...owwwssssookkkkksoookkkkkossssooowwwwwwo.....",
+    "....owwssssokkkkksssssokkkosssswooowwwwwwo.....",
+    ".....owwssowkkkkksssssokkosssswwwwwwwwwowo.....",
+    "......owwwowwkkkkssssssooowssswwwwwwwwowo......",
+    ".......ooowwwkkkksswwssssoowwwwwwwwwwwwwo......",
+    ".........owwwwkkkwwwwwsssssoowwwwwwwwwwo.......",
+    ".........owwwwkkwwwwwwwwwssssoowwoooooo........",
+    ".........owwwwkkwwwwwwwwwswsswwwwwo............",
+    "........oowwwwkkwwwwwwwwwwwwwwwwwwo............",
+    ".......owwwwwwkkwwwwwwwwwwwwwwwwwwo............",
+    "......owwwwwwwwwwwwwwwwwwwwwwwwwwwo............",
+    ".....owwwwwwwwwwwwwoooowwwwwwwwwwwoo...........",
+    "....owwwwwwwwwooooo...ooo.owwwwwwoggo..........",
+    "....owwwwoooooggggo......oowwwwwwoggo..........",
+    "....owwwo....ogggggo......owwwwwwogggo.........",
+    ".....ooo......oggggo......owwwwwogggggo........",
+    "...............ogggo......owwwwoooggggo........",
+    "................oooo......owwwwwo.oooo.........",
+    "..........................ooooooo..............",
   ],
   "walk-b": [
-    "..............o..o....",
-    ".............oboobo...",
-    "..oo........obbbbbbo..",
-    ".obbo.......obbbbebo..",
-    ".obo........obbbbbwwwo",
-    ".obo.oooooooobbbbwwwwn",
-    "..obobbbbbbbbbbbwwwoo.",
-    "...obbbbbbbbbbbbwo....",
-    "...obbbbbbbbbbbbwo....",
-    "...owwwwwwwwwwwwwo....",
-    "...ooobooooooboooo....",
-    ".....owo....owo.......",
-    ".....ooo....ooo.......",
+    "...............................................",
+    "...............................................",
+    "...............................................",
+    ".................................ooo...........",
+    ".........o.................ooo..osssoo.........",
+    "........owo...............osssooooossso........",
+    ".......owwo..............ossssowwwwoosso.......",
+    "......owwwo.............ossssosswwwssosso......",
+    ".....owwwwo............ossssssssswwwssosso.....",
+    "....owwwwo............ossssssossswwwsssokko....",
+    "...owwwwso...........okksssssossssswwssokkko...",
+    "...owwwwso..........okkkkkssosssssswwsssokko...",
+    "...owwwsso..........okkkkkkkosssssswwwssoko....",
+    "...owwssso..........okkkkkkkosssssswwwwwoo.....",
+    "...owwsssso..oooooo..okkkkkossssooiwwwwwo......",
+    "...owwwssssookkkkksoookkkkkossssooowwwwwwo.....",
+    "....owwssssokkkkksssssokkkosssswooowwwwwwo.....",
+    ".....owwssowkkkkksssssokkosssswwwwwwwwwowo.....",
+    "......owwwowwkkkkssssssooowssswwwwwwwwowo......",
+    ".......ooowwwkkkksswwssssoowwwwwwwwwwwwwo......",
+    ".........owwwwkkkwwwwwsssssoowwwwwwwwwwo.......",
+    ".........owwwwkkwwwwwwwwwssssoowwoooooo........",
+    ".........owwwwkkwwwwwwwwwswsswwwwwo............",
+    "........oowwwwkkwwwwwwwwwwwwwwwwwwo............",
+    ".......ogowwwwkkwwwwwwwwwwwwwwwwwwwo...........",
+    "......oggowwwwwwwwwwwwwwwwwwwwwwwwwo...........",
+    ".....oggggowwwwwwwwoooowwwwwwwwwwwwo...........",
+    "....ogggggowwwwwwwo...ooowwwwwwwwwwwo..........",
+    "....oggggooowwwwwwo......ooooowwwwwwo..........",
+    "....ogggo...owwwwwwo......ogggowwwwwwoo........",
+    ".....ooo....owwwwwwo......ogggoowwwwwwo........",
+    ".............owwwwwo......oggggoowwwwwo........",
+    "..............ooooo.......oooooo.ooooo.........",
   ],
-  "sit": [
-    "..............o..o....",
-    ".............oboobo...",
-    "............obbbbbbo..",
-    "............obbbbebo..",
-    "............obbbbbwwwo",
-    "...........oobbbbwwwwn",
-    "..oo......obbbbbwwwoo.",
-    ".obbo....obbbbbbwwo...",
-    ".obo....obbbbbbbwwo...",
-    "..oboo.obbbbbbbbwwo...",
-    "...obbobbbbbbbbbwwo...",
-    "....obbbbbbbbbbowwo...",
-    "....ooooooooooooooo...",
+  sit: [
+    "............................oooo...............",
+    "...................ooo.....ossssoo.............",
+    "..................ossso.ooooooosssoo...........",
+    ".................ossssoosswwwssossssoo.........",
+    "................ossssssosswwwsssossssso........",
+    "...............ossssssssssswwssssoskkkko.......",
+    "..............ossssssossssswwwssssokkkkko......",
+    ".............ossssssosssssswwwsssssokkkko......",
+    ".............okkkkssosssssswwwwssssokkkko......",
+    "............okkkkkkossssoiswwwwwoissokko.......",
+    "............okkkkkkossssoowwwwwwoossokko.......",
+    "............okkkkkkossssoowwwwwwoosssoo........",
+    ".............okkkkosssswwwwwwwwwwwwsso.........",
+    ".............okkkkossswwwwwwwwowwwwwwo.........",
+    "..............okkoswwwwwwwwwwowowwwwo..........",
+    "..............ooooowwwwwwwwwwwwwwwwo...........",
+    "...................oowwwwwwwwwwwwoo............",
+    "...........oooo......oowwwwwwwwwo..............",
+    ".........oowwo.....ooswwwwwwwwwwwo.............",
+    ".........owwwo....ossswwwwwwwwwwwo.............",
+    ".........owwso...oksssswwwwwwwwwwo.............",
+    "........oowwso..okkssssswwwwwwwwwwo............",
+    "........owwsssookkksssssswwwwwwwwwo............",
+    "........owwsssokkkkksssswwwwwwwowo.............",
+    "........owssssowwkkkksswwwwwwwowwo.............",
+    "........owwwsosswwwkkkkwwwwowowwwo.............",
+    "........owwwwosssswwwkkwwwwooowwwwo............",
+    ".........owwwosswwwwwwkkwwwowwwwwwo............",
+    "..........oowosswwwwwwkkwwwowwwwwwo............",
+    "............oosswwwwwwwowwwwowwwwwo............",
+    "..............osswwwwwwowwwwwowwwwo............",
+    "...............oooooooooowwwwowwwo.............",
+    ".........................oooo.ooo..............",
   ],
-  "sleep": [
-    "......................",
-    "......................",
-    "......................",
-    "......................",
-    "......................",
-    "..............o..o....",
-    ".....ooooooooooboobo..",
-    "....obbbbbbbbobbbbbbo.",
-    "...obbbbbbbbbobcbbbwwo",
-    "..obbbbbbbbbbobbbwwwwn",
-    ".oobbbbbbbbbbbowwwwoo.",
-    "obbowwwwwwwwwwwoooo...",
-    ".oooooooooooooo.......",
+  sleep: [
+    "...............................................",
+    "...............................................",
+    "...............................................",
+    "...............................................",
+    "...............................................",
+    "...............................................",
+    "...............................................",
+    "...............................................",
+    "...............................................",
+    "...............................................",
+    "...............................................",
+    "...............................................",
+    ".........................oooooooo..............",
+    ".......................oosssssssso.............",
+    "..........oooooooooo..oossssssssso.............",
+    "........oossssssssssooosssssssssoooo...........",
+    ".......owwssssssssssossssssssssssssso..........",
+    "......owwwwwwwssssssosssssssssossssswo.........",
+    ".....okkwwwwwwwwssssokkkssssssossssswwoo.......",
+    "....okkkkkwwwwwwwwssokkkkssssossssswwwwso......",
+    "...okkkkkkkkwwwwwwwwokkkkkkksossssswwwsssoo....",
+    "...okkkkwwwwwwoowwwwokkkkkkkosssssswwwssossoo..",
+    "..ookkkwwwwwwwwwowwwokkkkkkoossssswwwwssosssso.",
+    ".ossokkwwwwwwwwwwowwwokkkooosssswwwwwwsssosssso",
+    "osssokkwwwwwwwwwwwowwwooowwssosswwwwwwsssosssso",
+    "ossssoooowwwwwwwwwowwwwwwwwwwwoowwwwwwsssosssso",
+    "osssswwwwoowwwwwwwowooooooowwwwwwwwwwwsssosssso",
+    "osswwwwwwwwowwwwwwoowwwwwwwoowwwwwwwwwsssokkkso",
+    "osswwwwwwwwwowwwwoowwwwwwwwwwowwoowwowsssokkko.",
+    "osswwwwwwwwwowwwwwwowwwwwwwwwwowwowwwoossoooo..",
+    "osswwwwwwwwwwowwwwwwowwowwwwwwowwwwwwwwso......",
+    ".osswwwwwwwwwowwwwwwooooowwwwwoooooooooo.......",
+    "..ooooooooooo.ooooooo....ooooo.................",
   ],
-  "eat": [
-    "......................",
-    "..oo..................",
-    ".obbo.................",
-    ".obo..................",
-    ".obo.ooooooooo........",
-    "..obobbbbbbbbbo..o..o.",
-    "...obbbbbbbbbbbooboobo",
-    "...obbbbbbbbbbbbbbbbbo",
-    "...obbbbbbbbbbbbbebbbo",
-    "...owwwwwwwwwwwbbbbwwo",
-    "...obooooooooobowwwwwn",
-    "...owo.......owo.oooo.",
-    "...ooo.......ooo......",
+  eat: [
+    "...............................................",
+    "...............................................",
+    "...............................................",
+    ".......oooo....................................",
+    ".....oowwwwoo..................................",
+    "....owwwwwo....................................",
+    "...owwwwsso....................................",
+    "..owwwssso.....................................",
+    ".owwwwsso...............oooo.......ooo.........",
+    ".owwwwsso..............ossssooooooossso........",
+    ".owwwsssso.....oooooo.ossssssowwwwwossso.......",
+    ".owwwsssso..ooossssssosssssssswwwwwwossso......",
+    ".owwwssssooossssssssossssssssssswwwwwosso......",
+    ".owwwwssssossssssssosssssssssssswwwwwsosso.....",
+    "..owwwwwookssssssssossssssssosssswwwwssoso.....",
+    "...oowwokkkwssssssosssssssssosssswwwwssosso....",
+    ".....ookkkkwssssssossssssssossssswwwwssosso....",
+    ".....okkkkkwssssssosskkssssossssswwwwsssokko...",
+    ".....okkkkkwwsssssokkkkkkssossssswwwwsssokko...",
+    ".....okkkkkwwwsssssokkkkkkosssssswwwwsssokko...",
+    "....owkkkkkwwwwssssokkkkkkossssswwwwwwssoko....",
+    "....owwkkkkwwwwwssssokkkkossssswwwwwwwssoko....",
+    "....owwkkkkwwwwwwwwwokkkkossswwwwwwwwwwwoo.....",
+    "....owwwkkkkwwwwwwwwwokkoswwwooowwwwwoowo......",
+    "...owwwwwkkkwwwwwwwwwwooowwwwwwwwwwwwwwwo......",
+    "...owwwwwwwkoowwwwwwwwwwowwwwwwwwwwowwwo.......",
+    "...owwwwwwwoggoowwwowwwwwoowwwwwwwowowwo.......",
+    "..owwwwwwoogggggoooowwwwwogoowwwwwwwwoo........",
+    "..owwwwwo.oggggo...owwwwwogggoooooooo..........",
+    "..owwwwo..ogggo....owwwwwogggo.................",
+    "..owwwoo..oggggo...owwwwwwogggo................",
+    "..owwwo....ooooo....owwwwwoooo.................",
+    "...ooo..............ooooooo....................",
   ],
 };
+
+/**
+ * 睡覺時頭上的 zZ：另外疊在狗上面，不跟著狗左右翻（不然 Z 會反過來）。
+ * DOG_ZZZ_SPOT 是在朝右的圖上的位置（左上角，格子）；朝左時 x 換成 寬 − x − w
+ */
+export const DOG_ZZZ: string[] = [
+  ".....oooo",
+  ".......o.",
+  "......o..",
+  "oooo.oooo",
+  "..o......",
+  ".o.......",
+  "oooo.....",
+  ".........",
+  "....oooo.",
+  "......o..",
+  ".....o...",
+  "....oooo.",
+];
+export const DOG_ZZZ_SPOT = { x: 38, y: 5, w: 9, h: 12 };
 
 // ===== 雪貂：照使用者給的參考圖縮成像素圖（56×34 格，畫成 28×17 個房間格子：比房間細一倍） =====
 
@@ -651,11 +776,17 @@ export const FERRET_DANCE: Record<"dance-a" | "dance-b", string[]> = {
   ],
 };
 
-/** 會在家裡走的：這種動物的圖和大小 */
-export function walkerArt(species: PetSpecies): { art: Record<CatPose, string[]>; w: number; h: number } {
-  if (species === "dog") return { art: DOG_ART, w: DOG_W, h: DOG_H };
+/** 睡覺時頭上的 zZ（格子圖，和它在朝右的圖上的位置） */
+export interface WalkerZzz {
+  rows: string[];
+  spot: { x: number; y: number; w: number; h: number };
+}
+
+/** 會在家裡走的：這種動物的圖和大小；有 zzz 的睡覺時頭上會冒 zZ */
+export function walkerArt(species: PetSpecies): { art: Record<CatPose, string[]>; w: number; h: number; zzz?: WalkerZzz } {
+  if (species === "dog") return { art: DOG_ART, w: DOG_W, h: DOG_H, zzz: { rows: DOG_ZZZ, spot: DOG_ZZZ_SPOT } };
   if (species === "ferret") return { art: FERRET_ART, w: FERRET_W, h: FERRET_H };
-  return { art: CAT_ART, w: CAT_W, h: CAT_H };
+  return { art: CAT_ART, w: CAT_W, h: CAT_H, zzz: { rows: CAT_ZZZ, spot: CAT_ZZZ_SPOT } };
 }
 
 // ===== 倉鼠：11×9 =====

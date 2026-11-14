@@ -12,7 +12,7 @@ import {
   CAT_WASH_BELOW,
   eatKibble,
   hamsterBites,
-  KIBBLE_HUNGRY,
+  hungryBelow,
   SPECIES_NAMES,
   walkDog,
   WALK_MS,
@@ -237,7 +237,7 @@ export function usePetHome(deps: { notify: (text: string) => void }) {
     const cat = catById(id);
     if (!cat) return false;
     const food = SPECIES_INFO[cat.species].food;
-    if (home.value.stock[food] <= 0 || catStat(cat, "food", Date.now()) >= KIBBLE_HUNGRY) return false;
+    if (home.value.stock[food] <= 0 || catStat(cat, "food", Date.now()) >= hungryBelow(cat.species)) return false;
     set({ ...updateCat(home.value, id, (c) => eatKibble(c, Date.now())), stock: { ...home.value.stock, [food]: home.value.stock[food] - 1 } });
     return true;
   }
