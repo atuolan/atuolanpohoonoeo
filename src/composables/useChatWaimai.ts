@@ -211,7 +211,7 @@ export function buildWaimaiAuthorsNote(
     const name = order.recipientName?.trim();
     const recipient = !name || name === "我" ? "{{user}}" : name;
     const city = order.destination?.city?.trim();
-    amountLine = `目前可見訂單：${order.item.name}，小計🪙 ${order.subtotal}、運費🪙 ${order.shippingFee}、總計🪙 ${order.totalPrice}，收件人：${recipient}${city ? `，收貨城市：${city}` : ""}。`;
+    amountLine = `目前可見訂單：${order.item.name}，小計 ${order.subtotal} 金幣、運費 ${order.shippingFee} 金幣、總計 ${order.totalPrice} 金幣，收件人：${recipient}${city ? `，收貨城市：${city}` : ""}。`;
   }
 
   const lines: string[] = [

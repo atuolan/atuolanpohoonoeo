@@ -4,9 +4,9 @@ import { decideRouteType } from "./waimaiEta";
 
 /**
  * 外賣運費：依配送路線計價。
- * - 就近外送（美食廣場）：🪙 30
- * - 國內物流：🪙 60
- * - 跨境物流：🪙 150
+ * - 就近外送（美食廣場）：30 金幣
+ * - 國內物流：60 金幣
+ * - 跨境物流：150 金幣
  */
 export const WAIMAI_SHIPPING_FEES: Record<WaimaiRouteType, number> = {
   local_instant: 30,
