@@ -112,12 +112,15 @@ export const SNAKE_COLORS: ColorTable<SnakeColor> = {
   green: { name: "綠樹蟒", palette: { o: "#2E3B22", b: "#7FB04A", s: "#4F7A2E", w: "#E8E2A6", e: "#1F1D24", t: "#D9453A", c: "#2E3B22" } },
 };
 
-/** 狗的顏色：字母是哪個部位見 petArt.ts 的 DOG_ART */
+/**
+ * 狗的顏色：字母是哪個部位見 petArt.ts 的 DOG_ART。第一個（花花）是使用者畫的顏色，領養時預設選它。
+ * id 沿用舊的（存檔裡存的是 id），名字跟著新的圖（垂耳，不是柴犬了）改
+ */
 export const DOG_COLORS: Record<DogColor, { name: string; palette: Record<string, string> }> = {
-  shiba: { name: "柴犬", palette: { o: "#3B2A26", h: "#F2B26E", b: "#E39A4F", d: "#C97B38", k: "#D98A44", p: "#FBE6CF", w: "#FFF6EA", x: "#EED9C2", r: "#F59A9A", e: "#2A1A14", i: "#2A1A14", n: "#2A1A14", m: "#EE7F8A", c: "#3B2A26", a: "#FFF6EA", t: "#E39A4F", y: "#FFF6EA", f: "#FFF6EA", g: "#EED9C2" } },
-  black: { name: "黑柴", palette: { o: "#16151B", h: "#4E4A56", b: "#3A3742", d: "#2A2830", k: "#2A2830", p: "#E2B880", w: "#F7EDE0", x: "#E2D3C0", r: "#E58C96", e: "#121116", i: "#FFFFFF", n: "#121116", m: "#EE7F8A", c: "#E2B880", a: "#E2B880", t: "#3A3742", y: "#F7EDE0", f: "#F7EDE0", g: "#E2D3C0" } },
-  white: { name: "白狗", palette: { o: "#5B4A44", h: "#FFFFFF", b: "#F7F3EC", d: "#E4DCCE", k: "#EDE5D8", p: "#F7B9BC", w: "#FFFFFF", x: "#EDE5D8", r: "#F7A8AE", e: "#2A1A14", i: "#2A1A14", n: "#3B2A26", m: "#EE7F8A", c: "#5B4A44", a: "#F7F3EC", t: "#F7F3EC", y: "#FFFFFF", f: "#FFFFFF", g: "#E4DCCE" } },
-  brown: { name: "米克斯", palette: { o: "#3B2A26", h: "#C29468", b: "#A87850", d: "#8A5E3B", k: "#8A5E3B", p: "#E3B89A", w: "#F4E6CC", x: "#DFCBA9", r: "#EE9C96", e: "#2A1A14", i: "#2A1A14", n: "#2A1A14", m: "#EE7F8A", c: "#3B2A26", a: "#A87850", t: "#A87850", y: "#F4E6CC", f: "#F4E6CC", g: "#DFCBA9" } },
+  brown: { name: "花花", palette: { o: "#281D1D", w: "#F8EBE3", s: "#8F7368", k: "#654D48", g: "#C3B0A7", i: "#FFFFFF" } },
+  shiba: { name: "奶茶", palette: { o: "#3B2A26", w: "#FBF1E6", s: "#D9A066", k: "#B07A45", g: "#E2CDB4", i: "#FFFFFF" } },
+  black: { name: "黑白", palette: { o: "#16151B", w: "#F7EFE6", s: "#4A4652", k: "#2E2B35", g: "#CFC6BE", i: "#FFFFFF" } },
+  white: { name: "白白", palette: { o: "#5B4A44", w: "#FFFFFF", s: "#EFE3D3", k: "#DCC7AE", g: "#E6DDD3", i: "#FFFFFF" } },
 };
 
 export const HAMSTER_COLORS: Record<HamsterColor, { name: string; palette: Record<string, string> }> = {

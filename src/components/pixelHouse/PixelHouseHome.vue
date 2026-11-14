@@ -41,6 +41,9 @@ import {
   cageSprite,
   cageTopRow,
   DOG_BOWL_PALETTE,
+  DOG_CELL,
+  DOG_ZZZ,
+  DOG_ZZZ_SPOT,
   FERRET_DANCE,
   FERRET_RUN,
   PAD_ART,
@@ -737,6 +740,22 @@ function catBowlSrc(k: HouseCat) {
   return pets.home.value.stock.kibble > 0 ? bowlImages.full : bowlImages.empty;
 }
 
+/** 狗睡覺時頭上的 zZ：疊在狗外面、不跟著左右翻（Z 才不會反過來）；靜態的圖，不動 */
+const zzzImage = pixelSvg(DOG_ZZZ, { o: "#281D1D" });
+const dogZzz = (k: HouseCat) => k.cat.value?.species === "dog" && !k.walking.value && k.poseAt(0) === "sleep";
+function zzzStyle(k: HouseCat) {
+  const { w, h } = walkerArt("dog");
+  const gridW = Math.round(w / DOG_CELL);
+  const s = DOG_ZZZ_SPOT;
+  const x = k.facing.value < 0 ? gridW - s.x - s.w : s.x;
+  return {
+    left: `${u(-w / 2 + x * DOG_CELL)}px`,
+    top: `${u(-h + s.y * DOG_CELL)}px`,
+    width: `${u(s.w * DOG_CELL)}px`,
+    height: `${u(s.h * DOG_CELL)}px`,
+  };
+}
+
 /** 狗碗：在貓碗右邊，藍色 */
 const dogBowlImages = { empty: pixelSvg(BOWL_ART.empty, DOG_BOWL_PALETTE), full: pixelSvg(BOWL_ART.full, DOG_BOWL_PALETTE) };
 const dogBowlStyle = computed(() => ({
@@ -1341,7 +1360,7 @@ const todoIcons = computed<Record<TodoIcon, string>>(() => ({
   urge: iconImages.urge,
   poop: messImages.poop,
   litter: litterImages.dirty,
-  walk: catImages("dog", "shiba")["walk-a"],
+  walk: catImages("dog", "brown")["walk-a"],
   cage: cageImages.front,
   supply: bowlImages.empty,
   dirt: dirtImages.dust,
@@ -2246,6 +2265,7 @@ function labelStyle(room: RoomId, it: RenderItem) {
               alt=""
               draggable="false"
             />
+            <img v-if="dogZzz(k)" class="ph-cat-bowl" :src="zzzImage" :style="zzzStyle(k)" alt="" draggable="false" />
             <button
               class="ph-cat-hit"
               :style="catBox(k.cat.value.species)"

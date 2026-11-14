@@ -148,7 +148,7 @@ export function useHouseCat(
     if (key === URGE_ACT) return { ...me };
     if (key === CAT_WANDER) return wanderTo ? { ...wanderTo } : { ...me };
     // 狗碗在貓碗右邊：站在碗後面一點，頭朝右低下去埋進碗裡（畫面那邊在牠前面再疊一個碗）
-    if (key === "eat" && isDog.value) return { room: DOG_BOWL_SPOT.room, x: DOG_BOWL_SPOT.x, y: DOG_BOWL_SPOT.y + 3 };
+    if (key === "eat" && isDog.value) return { room: DOG_BOWL_SPOT.room, x: DOG_BOWL_SPOT.x, y: DOG_BOWL_SPOT.y + 4 };
     // 雪貂的碗在貓碗左邊
     if (key === "eat" && cat.value?.species === "ferret") return { room: FERRET_BOWL_SPOT.room, x: FERRET_BOWL_SPOT.x - 6, y: FERRET_BOWL_SPOT.y + 7 };
     const a = CAT_ACTS[key];

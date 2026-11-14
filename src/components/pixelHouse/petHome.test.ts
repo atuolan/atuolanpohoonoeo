@@ -314,7 +314,7 @@ describe("狗和倉鼠", () => {
   });
 
   it("花色不是這個種類的：用這個種類的第一種", () => {
-    expect(adoptCat("", "orange", T0, () => 0.5, "x", "dog").color).toBe("shiba");
+    expect(adoptCat("", "orange", T0, () => 0.5, "x", "dog").color).toBe("brown");
     expect(adoptCat("", "orange", T0, () => 0.5, "x", "hamster").color).toBe("golden");
   });
 
