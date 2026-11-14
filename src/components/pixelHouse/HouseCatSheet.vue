@@ -76,7 +76,7 @@ watch(
 );
 const msg = computed(() => (msgTab.value === tab.value ? props.message : ""));
 const species = ref<PetSpecies>("cat");
-const color = ref<PetColor>("orange");
+const color = ref<PetColor>("gray");
 const name = ref("");
 const renaming = ref(false);
 const newName = ref("");

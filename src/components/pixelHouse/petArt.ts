@@ -3,7 +3,7 @@
  *
  * 省電：倉鼠跑滾輪只用 CSS 換兩張圖（opacity），不用計時器；籠子在畫面外就停。
  */
-import { CAT_ART, CAT_H, CAT_W, type CagePose, type CatPose, type HamsterPose, type PetSpecies } from "./houseCat";
+import { CAT_ART, CAT_H, CAT_W, CAT_ZZZ, CAT_ZZZ_SPOT, type CagePose, type CatPose, type HamsterPose, type PetSpecies } from "./houseCat";
 
 // ===== 狗：格子 47×33（使用者畫的），畫面上一格 6/11 點，面向右，腳底在最下面一列 =====
 
@@ -776,11 +776,17 @@ export const FERRET_DANCE: Record<"dance-a" | "dance-b", string[]> = {
   ],
 };
 
-/** 會在家裡走的：這種動物的圖和大小 */
-export function walkerArt(species: PetSpecies): { art: Record<CatPose, string[]>; w: number; h: number } {
-  if (species === "dog") return { art: DOG_ART, w: DOG_W, h: DOG_H };
+/** 睡覺時頭上的 zZ（格子圖，和它在朝右的圖上的位置） */
+export interface WalkerZzz {
+  rows: string[];
+  spot: { x: number; y: number; w: number; h: number };
+}
+
+/** 會在家裡走的：這種動物的圖和大小；有 zzz 的睡覺時頭上會冒 zZ */
+export function walkerArt(species: PetSpecies): { art: Record<CatPose, string[]>; w: number; h: number; zzz?: WalkerZzz } {
+  if (species === "dog") return { art: DOG_ART, w: DOG_W, h: DOG_H, zzz: { rows: DOG_ZZZ, spot: DOG_ZZZ_SPOT } };
   if (species === "ferret") return { art: FERRET_ART, w: FERRET_W, h: FERRET_H };
-  return { art: CAT_ART, w: CAT_W, h: CAT_H };
+  return { art: CAT_ART, w: CAT_W, h: CAT_H, zzz: { rows: CAT_ZZZ, spot: CAT_ZZZ_SPOT } };
 }
 
 // ===== 倉鼠：11×9 =====

@@ -45,11 +45,13 @@ const kitty = (patch: Record<string, unknown> = {}) => ({ ...adoptCat("咪", "gr
 const HOUR = 3_600_000;
 
 describe("貓的圖", () => {
-  it("每個姿勢都是 36×24（畫面上 24×16，比例一樣），用到的顏色每種花色都有", () => {
-    expect(36 / 24).toBe(CAT_W / CAT_H);
+  it("每個姿勢都是 43×35（畫面上一格 6/11 點，比例一樣），用到的顏色每種花色都有", () => {
+    expect(CAT_W / CAT_H).toBeCloseTo(43 / 35, 9);
     for (const [pose, rows] of Object.entries(CAT_ART)) {
-      expect(rows.length, pose).toBe(24);
-      for (const row of rows) expect(row.length, `${pose}: ${row}`).toBe(36);
+      expect(rows.length, pose).toBe(35);
+      for (const row of rows) expect(row.length, `${pose}: ${row}`).toBe(43);
+      // 腳底貼在最下面一列
+      expect(rows[rows.length - 1].replace(/\./g, "").length, pose).toBeGreaterThan(0);
       const used = new Set(rows.join("").replace(/\./g, ""));
       for (const id of CAT_COLOR_IDS) for (const ch of used) expect(CAT_COLORS[id].palette[ch], `${pose} ${id} ${ch}`).toBeTruthy();
     }

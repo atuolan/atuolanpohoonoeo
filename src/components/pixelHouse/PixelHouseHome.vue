@@ -41,9 +41,6 @@ import {
   cageSprite,
   cageTopRow,
   DOG_BOWL_PALETTE,
-  DOG_CELL,
-  DOG_ZZZ,
-  DOG_ZZZ_SPOT,
   FERRET_DANCE,
   FERRET_RUN,
   PAD_ART,
@@ -740,19 +737,31 @@ function catBowlSrc(k: HouseCat) {
   return pets.home.value.stock.kibble > 0 ? bowlImages.full : bowlImages.empty;
 }
 
-/** 狗睡覺時頭上的 zZ：疊在狗外面、不跟著左右翻（Z 才不會反過來）；靜態的圖，不動 */
-const zzzImage = pixelSvg(DOG_ZZZ, { o: "#281D1D" });
-const dogZzz = (k: HouseCat) => k.cat.value?.species === "dog" && !k.walking.value && k.poseAt(0) === "sleep";
+/** 貓、狗睡覺時頭上的 zZ：疊在外面、不跟著左右翻（Z 才不會反過來），顏色跟牠的外框一樣；靜態的圖，不動 */
+const zzzCache = new Map<string, string>();
+function zzzImage(k: HouseCat): string {
+  const c = k.cat.value!;
+  const key = `${c.species}:${c.color}`;
+  let src = zzzCache.get(key);
+  if (!src) {
+    const o = SPECIES_COLORS[c.species][c.color]?.palette.o ?? "#281D1D";
+    src = pixelSvg(walkerArt(c.species).zzz?.rows ?? [], { o });
+    zzzCache.set(key, src);
+  }
+  return src;
+}
+const showZzz = (k: HouseCat) => !!k.cat.value && !!walkerArt(k.cat.value.species).zzz && !k.walking.value && k.poseAt(0) === "sleep";
 function zzzStyle(k: HouseCat) {
-  const { w, h } = walkerArt("dog");
-  const gridW = Math.round(w / DOG_CELL);
-  const s = DOG_ZZZ_SPOT;
+  const { art, w, h, zzz } = walkerArt(k.cat.value!.species);
+  const gridW = art.sleep[0].length;
+  const cell = w / gridW;
+  const s = zzz!.spot;
   const x = k.facing.value < 0 ? gridW - s.x - s.w : s.x;
   return {
-    left: `${u(-w / 2 + x * DOG_CELL)}px`,
-    top: `${u(-h + s.y * DOG_CELL)}px`,
-    width: `${u(s.w * DOG_CELL)}px`,
-    height: `${u(s.h * DOG_CELL)}px`,
+    left: `${u(-w / 2 + x * cell)}px`,
+    top: `${u(-h + s.y * cell)}px`,
+    width: `${u(s.w * cell)}px`,
+    height: `${u(s.h * cell)}px`,
   };
 }
 
@@ -2265,7 +2274,7 @@ function labelStyle(room: RoomId, it: RenderItem) {
               alt=""
               draggable="false"
             />
-            <img v-if="dogZzz(k)" class="ph-cat-bowl" :src="zzzImage" :style="zzzStyle(k)" alt="" draggable="false" />
+            <img v-if="showZzz(k)" class="ph-cat-bowl" :src="zzzImage(k)" :style="zzzStyle(k)" alt="" draggable="false" />
             <button
               class="ph-cat-hit"
               :style="catBox(k.cat.value.species)"
