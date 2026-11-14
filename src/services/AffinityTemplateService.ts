@@ -181,6 +181,8 @@ class AffinityTemplateService {
    */
   renderUpdateInstruction(config: CharacterAffinityConfig): string {
     if (!config.enabled || config.injectRules === false) return "";
+    // 旁觀者判斷：聊天的 AI 不用寫，回覆才乾淨
+    if (config.updateMode === "judge") return "";
     if (config.updateInstruction?.trim()) return config.updateInstruction;
     if (config.mvuEnabled && config.mvuUpdateInstruction?.trim()) {
       return config.mvuUpdateInstruction;
@@ -193,17 +195,29 @@ class AffinityTemplateService {
    * 依指標設定產生給 AI 的更新規則（說明、範圍、單次上限、可選值都會寫進去）
    */
   buildAutoUpdateRules(config: CharacterAffinityConfig): string {
-    const format = resolveUpdateFormat(config);
-    const metrics = config.metrics.filter((m) => m.name.trim());
-    const numMetrics = metrics.filter((m) => m.type !== "string");
-    const strMetrics = metrics.filter((m) => m.type === "string");
-    const pathOf = (m: AffinityMetricConfig) => m.path?.trim() || m.name;
-
     const lines: string[] = ["[數值更新規則]"];
     lines.push(
       "回覆的最後，如果這一輪的劇情讓下面的數值有變化，就用下面的格式寫出來；沒有變化就不用寫。",
     );
     lines.push("");
+    lines.push(...this._formatLines(config));
+    lines.push("");
+    lines.push(...this._metricLines(config));
+    lines.push("");
+    lines.push(
+      "只有劇情裡真的發生了會影響這些數值的事才更新，不要每輪都改；變化要合理、符合角色個性，一次不要跳太多。",
+    );
+    return lines.join("\n");
+  }
+
+  /** 回報格式的範例和說明 */
+  private _formatLines(config: CharacterAffinityConfig): string[] {
+    const format = resolveUpdateFormat(config);
+    const metrics = config.metrics.filter((m) => m.name.trim());
+    const numMetrics = metrics.filter((m) => m.type !== "string");
+    const strMetrics = metrics.filter((m) => m.type === "string");
+    const pathOf = (m: AffinityMetricConfig) => m.path?.trim() || m.name;
+    const lines: string[] = [];
 
     if (format === "mvu") {
       lines.push("<UpdateVariable>");
@@ -234,23 +248,81 @@ class AffinityTemplateService {
       lines.push("- 數字型寫變化量，用 + 或 - 開頭；文字型直接寫新的值");
       lines.push("- 有變化的才寫，可以一次寫好幾個");
     }
+    return lines;
+  }
 
-    lines.push("");
-    lines.push("各數值：");
-    for (const m of numMetrics) {
+  /** 每個數值的範圍、上限、可選值和說明 */
+  private _metricLines(config: CharacterAffinityConfig): string[] {
+    const format = resolveUpdateFormat(config);
+    const metrics = config.metrics.filter((m) => m.name.trim());
+    const pathOf = (m: AffinityMetricConfig) => m.path?.trim() || m.name;
+    const lines: string[] = ["各數值："];
+    for (const m of metrics.filter((x) => x.type !== "string")) {
       const range = m.bounded === false ? "沒有上下限" : `範圍 ${m.min}～${m.max}`;
       const step = m.maxChange > 0 ? `，每次最多變動 ${m.maxChange}` : "";
       const desc = m.description?.trim() ? `。${m.description.trim()}` : "";
       lines.push(`- ${m.name}${format === "mvu" ? `（路徑 ${pathOf(m)}）` : ""}：${range}${step}${desc}`);
     }
-    for (const m of strMetrics) {
+    for (const m of metrics.filter((x) => x.type === "string")) {
       const opts = m.options.length > 0 ? `，只能是「${m.options.join("」「")}」其中之一` : "";
       const desc = m.description?.trim() ? `。${m.description.trim()}` : "";
       lines.push(`- ${m.name}${format === "mvu" ? `（路徑 ${pathOf(m)}）` : ""}：文字${opts}${desc}`);
     }
-    lines.push("");
+    return lines;
+  }
+
+  /**
+   * 旁觀者判斷用的提示詞：讀這一輪對話，只輸出數值變化。
+   * 卡片自己有寫規則（自訂規則或 MVU 卡的 [mvu_update]）時用它的規則。
+   */
+  buildJudgePrompt(
+    config: CharacterAffinityConfig,
+    state: ChatAffinityState,
+    input: { charName: string; userName: string; dialogue: string },
+  ): string {
+    const charName = input.charName || "角色";
+    const status =
+      this.renderAffinityPrompt({ ...config, enabled: true, injectStatus: true }, state, charName) ||
+      this._fallbackRender(this.buildContext(config, state, charName));
+
+    const customRules =
+      config.updateInstruction?.trim() ||
+      (config.mvuEnabled ? config.mvuUpdateInstruction?.trim() : "") ||
+      "";
+    let rules = customRules;
+    if (customRules && customRules.includes("<%")) {
+      try {
+        rules = ejs.render(customRules, this.buildContext(config, state, charName), { async: false });
+      } catch {
+        rules = customRules;
+      }
+    }
+
+    const lines: string[] = [];
     lines.push(
-      "只有劇情裡真的發生了會影響這些數值的事才更新，不要每輪都改；變化要合理、符合角色個性，一次不要跳太多。",
+      `你是在旁邊記錄數值的旁觀者，不是${charName}本人。讀下面這一輪對話，判斷${charName}的數值有沒有因此改變。`,
+    );
+    lines.push("");
+    lines.push("[目前數值]");
+    lines.push(status);
+    lines.push("");
+    if (rules) {
+      lines.push("[數值規則]");
+      lines.push(rules);
+      lines.push("");
+    }
+    lines.push(...this._metricLines(config));
+    lines.push("");
+    lines.push("[這一輪對話]");
+    lines.push(input.dialogue.trim());
+    lines.push("");
+    lines.push("[輸出方式]");
+    lines.push("有變化時，只輸出：");
+    lines.push(...this._formatLines(config));
+    lines.push("");
+    lines.push("沒有變化時，只輸出「無」。不要輸出任何其他文字、不要續寫對話。");
+    lines.push(
+      "只有這一輪真的發生了會影響數值的事才改；變化要合理、符合角色個性，一次不要跳太多。",
     );
     return lines.join("\n");
   }
@@ -306,7 +378,7 @@ class AffinityTemplateService {
   }
 
   /** 最終回退：純文字渲染 */
-  private _fallbackRender(context: AffinityTemplateContext): string {
+  _fallbackRender(context: AffinityTemplateContext): string {
     const lines = ["[角色數值狀態]"];
     for (const m of context.metrics) {
       let line: string;

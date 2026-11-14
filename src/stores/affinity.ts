@@ -31,6 +31,12 @@ import {
   safeParseAffinityState,
   writeMvuLeaf,
 } from "@/schemas/affinity";
+import {
+  checkMvuCreate,
+  checkMvuInsert,
+  checkMvuRemove,
+  isStrictSet,
+} from "@/services/mvuSchema";
 import { defineStore } from "pinia";
 import { ref, toRaw } from "vue";
 import _ from "lodash";
@@ -232,6 +238,7 @@ export const useAffinityStore = defineStore("affinity", () => {
     metricId: string,
     value: MetricValue,
     delta?: unknown,
+    change?: { oldValue: unknown; reason: string },
   ): void {
     const state = affinityStates.value.get(chatId);
     if (!state) return;
@@ -243,8 +250,57 @@ export const useAffinityStore = defineStore("affinity", () => {
     const mvuState = _ensureMvuState(chatId);
     if (!mvuState) return;
     writeMvuLeaf(mvuState.statData, path, deepClone(value));
+    if (change && _usesMvuDisplay(chatId)) {
+      _writeMvuChangeText(chatId, path, change.oldValue, value, change.reason);
+      return;
+    }
     writeMvuLeaf(mvuState.displayData, path, deepClone(value));
     _.set(mvuState.deltaData, path, deepClone(delta ?? value));
+  }
+
+  // ===== MVU 卡專用：display_data / delta_data 用原版格式 =====
+
+  function _mvuSchema(chatId: string): Record<string, unknown> | undefined {
+    const state = affinityStates.value.get(chatId);
+    const config = state ? configCache.value.get(state.characterId) : undefined;
+    return config?.mvuEnabled ? config.mvuInitialData : undefined;
+  }
+
+  /**
+   * MVU 卡的狀態欄（正則、HTML）讀 display_data，期待變過的值寫成「舊->新 (原因)」，
+   * delta_data 只放這一輪變過的東西。自己建的數值維持原本的格式（delta 是數字差）。
+   */
+  function _usesMvuDisplay(chatId: string): boolean {
+    return !!_mvuSchema(chatId);
+  }
+
+  function _displayValue(v: unknown): string {
+    if (v === undefined || v === null) return "";
+    if (typeof v === "string") return v;
+    try {
+      return JSON.stringify(v);
+    } catch {
+      return String(v);
+    }
+  }
+
+  function _writeMvuChangeText(
+    chatId: string,
+    path: string,
+    oldValue: unknown,
+    newValue: unknown,
+    reason: string,
+  ): void {
+    const mvuState = _ensureMvuState(chatId);
+    if (!mvuState) return;
+    const text = `${_displayValue(oldValue)}->${_displayValue(newValue)}${reason ? ` (${reason})` : ""}`;
+    _.set(mvuState.displayData, path, text);
+    _.set(mvuState.deltaData, path, text);
+  }
+
+  /** 卡片的 $meta 擋下的操作：記一筆、不套用 */
+  function _rejectByMeta(path: string, reason?: string): void {
+    console.warn("[AffinityStore] MVU $meta 拒絕這個操作", { path, reason });
   }
 
   function _pushHistory(
@@ -641,6 +697,16 @@ export const useAffinityStore = defineStore("affinity", () => {
     _scheduleAutoSave(chatId);
   }
 
+  /** 這個聊天不再提示改用旁觀者判斷 */
+  function setJudgeHintDismissed(chatId: string): void {
+    const state = affinityStates.value.get(chatId);
+    if (!state) return;
+    state.judgeHintDismissed = true;
+    state.lastUpdated = Date.now();
+    _triggerReactivity(chatId);
+    _scheduleAutoSave(chatId);
+  }
+
   function getLastRescannedMessageId(chatId: string): string | undefined {
     return affinityStates.value.get(chatId)?.lastRescannedMessageId;
   }
@@ -652,6 +718,10 @@ export const useAffinityStore = defineStore("affinity", () => {
       values: deepClone(state.values),
       statData: deepClone(state.mvuState?.statData ?? {}),
       deltaData: deepClone(state.mvuState?.deltaData ?? {}),
+      // MVU 卡的 display_data 有「舊->新」文字，不是 statData 的鏡像，要另外存
+      ...(_usesMvuDisplay(state.chatId)
+        ? { displayData: deepClone(state.mvuState?.displayData ?? {}) }
+        : {}),
       changes: [],
       seq: 0,
     };
@@ -661,8 +731,8 @@ export const useAffinityStore = defineStore("affinity", () => {
     state.values = deepClone(floor.values);
     state.mvuState = {
       statData: deepClone(floor.statData),
-      // displayData 一直都是 statData 的鏡像
-      displayData: deepClone(floor.statData),
+      // 自己建的數值：displayData 一直都是 statData 的鏡像
+      displayData: deepClone(floor.displayData ?? floor.statData),
       deltaData: deepClone(floor.deltaData),
     };
   }
@@ -914,7 +984,10 @@ export const useAffinityStore = defineStore("affinity", () => {
     if (newValue === oldValue) return false;
 
     state.values[metricId] = newValue;
-    _syncMetricToMvuViews(chatId, metricId, newValue, roundNumber(newValue - numOld));
+    _syncMetricToMvuViews(chatId, metricId, newValue, roundNumber(newValue - numOld), {
+      oldValue: numOld,
+      reason,
+    });
     _pushHistory(chatId, {
       metricId,
       oldValue: numOld,
@@ -971,6 +1044,7 @@ export const useAffinityStore = defineStore("affinity", () => {
       typeof finalValue === "number" && typeof oldValue === "number"
         ? roundNumber(finalValue - oldValue)
         : finalValue,
+      finalValue !== oldValue ? { oldValue, reason } : undefined,
     );
     if (finalValue !== oldValue) {
       _pushHistory(chatId, {
@@ -1088,6 +1162,8 @@ export const useAffinityStore = defineStore("affinity", () => {
     if (!state || !mvuState) return false;
 
     mvuState.deltaData = {};
+    // MVU 卡：每一輪開始時 display_data 回到 stat_data 的複本，只標這輪變過的
+    if (_usesMvuDisplay(chatId)) mvuState.displayData = deepClone(mvuState.statData);
     state.lastUpdated = Date.now();
     _triggerReactivity(chatId);
     _scheduleAutoSave(chatId);
@@ -1129,10 +1205,23 @@ export const useAffinityStore = defineStore("affinity", () => {
       return true;
     }
 
+    const schema = _mvuSchema(chatId);
+    if (schema && !_.has(mvuState.statData, normalizedPath)) {
+      const check = checkMvuCreate(schema, normalizedPath);
+      if (!check.ok) {
+        _rejectByMeta(normalizedPath, check.reason);
+        return false;
+      }
+    }
     const previous = readMvuLeaf(mvuState.statData, normalizedPath);
-    writeMvuLeaf(mvuState.statData, normalizedPath, deepClone(value));
-    writeMvuLeaf(mvuState.displayData, normalizedPath, deepClone(value));
-    _.set(mvuState.deltaData, normalizedPath, deepClone(value));
+    if (schema && isStrictSet(schema)) _.set(mvuState.statData, normalizedPath, deepClone(value));
+    else writeMvuLeaf(mvuState.statData, normalizedPath, deepClone(value));
+    if (schema) {
+      _writeMvuChangeText(chatId, normalizedPath, previous, value, reason);
+    } else {
+      writeMvuLeaf(mvuState.displayData, normalizedPath, deepClone(value));
+      _.set(mvuState.deltaData, normalizedPath, deepClone(value));
+    }
     if (value !== null && typeof value === "object") {
       _pullMetricsFromStatData(chatId, normalizedPath);
     } else if (!_.isEqual(previous, value)) {
@@ -1214,6 +1303,14 @@ export const useAffinityStore = defineStore("affinity", () => {
       return false;
     };
 
+    const schema = _mvuSchema(chatId);
+    if (schema) {
+      const check = checkMvuRemove(schema, normalizedPath, target);
+      if (!check.ok) {
+        _rejectByMeta(normalizedPath, check.reason);
+        return false;
+      }
+    }
     const removed = apply(mvuState.statData);
     if (!removed) return false;
     apply(mvuState.displayData);
@@ -1257,7 +1354,24 @@ export const useAffinityStore = defineStore("affinity", () => {
     const isIndex = (i: unknown) =>
       i === undefined || i === "-" || typeof i === "number" || (typeof i === "string" && /^\d+$/.test(i));
 
+    const schema = _mvuSchema(chatId);
     const current = _.get(mvuState.statData, normalizedPath);
+    const isLeaf =
+      current !== undefined &&
+      (isValueWithDescription(current) || current === null || typeof current !== "object");
+    if (schema && !isLeaf) {
+      const check = checkMvuInsert(
+        schema,
+        normalizedPath,
+        value,
+        index === "-" ? "-" : index,
+      );
+      if (!check.ok) {
+        _rejectByMeta(normalizedPath, check.reason);
+        return undefined;
+      }
+      value = check.value;
+    }
     let next: unknown;
     if (Array.isArray(current) && !isValueWithDescription(current)) {
       const copy = [...current];
@@ -1398,14 +1512,27 @@ export const useAffinityStore = defineStore("affinity", () => {
       newValue = roundNumber(base + u.change);
     }
 
-    writeMvuLeaf(mvuState.statData, normalizedPath, deepClone(newValue));
-    writeMvuLeaf(mvuState.displayData, normalizedPath, deepClone(newValue));
-    // deltaData：對 delta 操作記錄差值，其他情況存最終值
-    const deltaValue =
-      !u.isAbsolute && !isStringWrite && typeof newValue === "number"
-        ? u.change
-        : newValue;
-    _.set(mvuState.deltaData, normalizedPath, deepClone(deltaValue));
+    const schema = _mvuSchema(chatId);
+    if (schema && !_.has(mvuState.statData, normalizedPath)) {
+      const check = checkMvuCreate(schema, normalizedPath);
+      if (!check.ok) {
+        _rejectByMeta(normalizedPath, check.reason);
+        return;
+      }
+    }
+    if (schema && isStrictSet(schema)) _.set(mvuState.statData, normalizedPath, deepClone(newValue));
+    else writeMvuLeaf(mvuState.statData, normalizedPath, deepClone(newValue));
+    if (schema) {
+      _writeMvuChangeText(chatId, normalizedPath, previousValue, newValue, u.reason);
+    } else {
+      writeMvuLeaf(mvuState.displayData, normalizedPath, deepClone(newValue));
+      // deltaData：對 delta 操作記錄差值，其他情況存最終值
+      const deltaValue =
+        !u.isAbsolute && !isStringWrite && typeof newValue === "number"
+          ? u.change
+          : newValue;
+      _.set(mvuState.deltaData, normalizedPath, deepClone(deltaValue));
+    }
 
     // 友善 history：metricId 用完整 normalizedPath，oldValue/newValue 取 MetricValue 可接受的型別
     const oldForHistory =
@@ -1772,6 +1899,7 @@ export const useAffinityStore = defineStore("affinity", () => {
     initializeFromConfig,
     cloneStateForBranch,
     setLastRescannedMessageId,
+    setJudgeHintDismissed,
     getLastRescannedMessageId,
     getState,
 

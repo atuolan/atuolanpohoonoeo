@@ -88,6 +88,7 @@ export const ROUTABLE_TASKS = [
   "characterGen",
   "fate",
   "themeAssistant",
+  "affinityJudge",
 ] as const;
 
 export type RoutableTaskType = (typeof ROUTABLE_TASKS)[number];
@@ -124,6 +125,7 @@ export const AUXILIARY_TASKS: readonly AuxiliaryTaskOption[] = [
   { id: "characterGen", name: "生成角色卡", icon: "👤", description: "AI 角色卡生成" },
   { id: "fate", name: "占卜", icon: "🔮", description: "塔羅占卜 AI 解讀" },
   { id: "themeAssistant", name: "介面美化助手", icon: "✨", description: "對話式 AI 美化介面外觀" },
+  { id: "affinityJudge", name: "好感度旁觀者", icon: "💗", description: "回覆後另外判斷這輪的數值變化（好感度設定成「旁觀者判斷」時才會用到）" },
 ] as const;
 
 export interface EmbeddingAPIConfig {

@@ -228,4 +228,39 @@ _.set('悠纪.已告白', true);
       已告白: true,
     });
   });
+
+  it("MVU 卡：display_data 寫成「舊->新 (原因)」，$meta 擋住不該新增的東西", () => {
+    const t = setup(
+      makeConfig({
+        mvuEnabled: true,
+        mvuInitialData: {
+          $meta: { extensible: false },
+          悠纪: { 好感度: [50, "0~100"], 背包: ["$__META_EXTENSIBLE__$"], 技能: ["劍術"] },
+        },
+        metrics: [{ id: "aff", name: "好感度", path: "悠纪.好感度", min: 0, max: 100, initial: 50 }] as never,
+      }),
+    );
+    // $meta 不會出現在 stat_data
+    expect(t.store.getMvuStatData(CHAT)).toEqual({
+      悠纪: { 好感度: [50, "0~100"], 背包: [], 技能: ["劍術"] },
+    });
+    t.user("u1");
+    t.reply(
+      "a1",
+      `<UpdateVariable>
+_.set('悠纪.好感度', 50, 55);//被誇獎
+_.insert('悠纪.背包', '地圖');
+_.insert('悠纪.技能', '魔法');
+_.set('世界.天氣', '晴');
+</UpdateVariable>`,
+    );
+    const stat = t.store.getMvuStatData(CHAT)!;
+    expect(stat).toEqual({ 悠纪: { 好感度: [55, "0~100"], 背包: ["地圖"], 技能: ["劍術"] } });
+    expect(t.store.getMvuDisplayData(CHAT)!.悠纪).toMatchObject({ 好感度: "50->55 (被誇獎)" });
+    expect(t.store.getMvuDeltaData(CHAT)).toMatchObject({ 悠纪: { 好感度: "50->55 (被誇獎)" } });
+
+    // 換回上一則時 display_data 也跟著回去
+    t.remove("a1");
+    expect(t.store.getMvuDisplayData(CHAT)!.悠纪).toMatchObject({ 好感度: [50, "0~100"] });
+  });
 });

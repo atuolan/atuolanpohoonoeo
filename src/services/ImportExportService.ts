@@ -794,6 +794,8 @@ export function detectAndConvertMvuConfig(
     injectStatus: !statusEntryEnabled,
     injectRules: !ruleEntryEnabled,
     updateFormat: "mvu",
+    updateMode: "inline",
+    showChangeChips: true,
     lastUpdated: Date.now(),
   };
 }

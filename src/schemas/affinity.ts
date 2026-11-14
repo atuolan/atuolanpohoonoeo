@@ -6,6 +6,7 @@
  */
 import { z } from "zod";
 import _ from "lodash";
+import { stripMvuMeta } from "@/services/mvuSchema";
 
 // ===== 階段定義 =====
 
@@ -147,6 +148,14 @@ export const CharacterAffinityConfigSchema = z.object({
    * 沒設定時 MVU 卡用 mvu，其他用 tag。
    */
   updateFormat: z.enum(["tag", "mvu"]).optional(),
+  /**
+   * 數值由誰判斷：
+   * inline = 聊天的 AI 自己在回覆最後寫（不多花呼叫）；
+   * judge = 回覆完另外請一個 AI（旁觀者）讀這輪對話來判斷（MVU 的額外模型解析）
+   */
+  updateMode: z.enum(["inline", "judge"]).default("inline"),
+  /** 在 AI 訊息下面顯示這則造成的數值變化 */
+  showChangeChips: z.boolean().default(true),
   lastUpdated: z.number().default(0),
 });
 
@@ -179,6 +188,8 @@ export const AffinityFloorStateSchema = z.object({
   values: z.record(z.string(), z.union([z.number(), z.string()])).default({}),
   statData: z.record(z.string(), z.any()).default({}),
   deltaData: z.record(z.string(), z.any()).default({}),
+  /** 只有 MVU 卡會存（display_data 有「舊->新」文字）；沒有就是 statData 的鏡像 */
+  displayData: z.record(z.string(), z.any()).optional(),
   /** 這則訊息造成的變化，換回這則回覆時拿來還原「近期變化」 */
   changes: z.array(AffinityChangeRecordSchema).default([]),
   /** 寫入順序，超過上限時先丟最舊的 */
@@ -222,6 +233,8 @@ export const ChatAffinityStateSchema = z.object({
   floorSeq: z.number().default(0),
   /** 重置的時間；比這更早的訊息不會被自動重新套用 */
   resetAt: z.number().optional(),
+  /** 使用者按過「先不用」：這個聊天不再提示改用旁觀者判斷 */
+  judgeHintDismissed: z.boolean().optional(),
   lastUpdated: z.number().default(0),
 });
 
@@ -264,13 +277,15 @@ export function createDefaultState(
       values[m.id] = m.initial;
     }
   }
+  // $meta 只是卡片的結構設定，不放進 stat_data（不送給 AI、不佔 token）
+  const initialStat = stripMvuMeta(JSON.parse(JSON.stringify(mvuInitial))) as Record<string, unknown>;
   return ChatAffinityStateSchema.parse({
     chatId,
     characterId: config.characterId,
     values,
     mvuState: {
-      statData: JSON.parse(JSON.stringify(mvuInitial)) as Record<string, unknown>,
-      displayData: JSON.parse(JSON.stringify(mvuInitial)) as Record<string, unknown>,
+      statData: initialStat,
+      displayData: JSON.parse(JSON.stringify(initialStat)) as Record<string, unknown>,
       deltaData: {},
     },
   });
@@ -440,6 +455,9 @@ export function safeParseAffinityConfig(
     if (typeof obj.injectRules === "boolean") fallback.injectRules = obj.injectRules;
     if (obj.updateFormat === "tag" || obj.updateFormat === "mvu")
       fallback.updateFormat = obj.updateFormat;
+    if (obj.updateMode === "inline" || obj.updateMode === "judge")
+      fallback.updateMode = obj.updateMode;
+    if (typeof obj.showChangeChips === "boolean") fallback.showChangeChips = obj.showChangeChips;
   }
   return CharacterAffinityConfigSchema.parse(fallback);
 }
