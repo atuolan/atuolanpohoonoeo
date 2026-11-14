@@ -38,6 +38,7 @@ import {
     Store,
 } from "lucide-vue-next";
 import { computed, onMounted, ref } from "vue";
+import { formatCoins, formatCoinsShortfall } from "@/utils/coins";
 
 interface DeliveryMallInjectedMessage {
   content: string;
@@ -169,10 +170,6 @@ const shortfall = computed(() => (balanceAfter.value < 0 ? -balanceAfter.value :
 const confirmDisabled = computed(
   () => submitting.value || (confirmIsSelfPay.value && shortfall.value > 0),
 );
-
-function formatCoin(value: number): string {
-  return value.toLocaleString("zh-TW");
-}
 
 function sectionEmoji(section: WaimaiMallSection): string {
   return SECTION_EMOJI[section] ?? "🛍️";
@@ -521,7 +518,7 @@ async function confirmOrder() {
                 >
               </div>
               <div class="price">
-                <Coins :size="14" class="coin" />{{ formatCoin(item.price) }}
+                <Coins :size="14" class="coin" />{{ formatCoins(item.price) }}
               </div>
             </div>
           </div>
@@ -567,11 +564,11 @@ async function confirmOrder() {
             </div>
 
             <div class="detail-price">
-              <Coins :size="22" class="coin" />{{ formatCoin(selectedItem.price) }}
+              <Coins :size="22" class="coin" />{{ formatCoins(selectedItem.price) }}
             </div>
             <div v-if="detailEstimate" class="detail-shipping">
-              運費 <Coins :size="13" class="coin inline" />{{ formatCoin(detailEstimate.fee) }}（{{ detailEstimate.routeText }}）・合計
-              <Coins :size="13" class="coin inline" />{{ formatCoin(detailEstimate.total) }}
+              運費 <Coins :size="13" class="coin inline" />{{ formatCoins(detailEstimate.fee) }}（{{ detailEstimate.routeText }}）・合計
+              <Coins :size="13" class="coin inline" />{{ formatCoins(detailEstimate.total) }}
             </div>
 
             <div class="detail-actions">
@@ -741,7 +738,7 @@ async function confirmOrder() {
               <div class="confirm-rows">
                 <div class="confirm-row">
                   <span>小計</span>
-                  <span class="amount"><Coins :size="13" class="coin" />{{ formatCoin(pendingOrder.subtotal) }}</span>
+                  <span class="amount"><Coins :size="13" class="coin" />{{ formatCoins(pendingOrder.subtotal) }}</span>
                 </div>
                 <div class="confirm-row">
                   <span>{{
@@ -749,11 +746,11 @@ async function confirmOrder() {
                       ? `運費（${formatWaimaiRouteName(pendingOrder.eta.routeType)}）`
                       : "運費"
                   }}</span>
-                  <span class="amount"><Coins :size="13" class="coin" />{{ formatCoin(pendingOrder.shippingFee) }}</span>
+                  <span class="amount"><Coins :size="13" class="coin" />{{ formatCoins(pendingOrder.shippingFee) }}</span>
                 </div>
                 <div class="confirm-row total">
                   <span>總計</span>
-                  <span class="amount"><Coins :size="13" class="coin" />{{ formatCoin(pendingOrder.totalPrice) }}</span>
+                  <span class="amount"><Coins :size="13" class="coin" />{{ formatCoins(pendingOrder.totalPrice) }}</span>
                 </div>
               </div>
 
@@ -773,11 +770,11 @@ async function confirmOrder() {
               </div>
 
               <div v-if="confirmIsSelfPay" class="confirm-balance">
-                目前餘額 <Coins :size="13" class="coin inline" />{{ formatCoin(balance) }}
-                → 付款後 <Coins :size="13" class="coin inline" />{{ formatCoin(balanceAfter) }}
+                目前餘額 <Coins :size="13" class="coin inline" />{{ formatCoins(balance) }}
+                → 付款後 <Coins :size="13" class="coin inline" />{{ formatCoins(balanceAfter) }}
               </div>
               <div v-if="confirmIsSelfPay && shortfall > 0" class="confirm-error">
-                餘額不足，還差 <Coins :size="13" class="coin inline" />{{ formatCoin(shortfall) }}
+                餘額不足，還差 <Coins :size="13" class="coin inline" />{{ formatCoinsShortfall(shortfall) }}
               </div>
               <div v-else-if="confirmError" class="confirm-error">
                 {{ confirmError }}

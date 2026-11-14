@@ -34,7 +34,7 @@
                 <div class="balance-label">當前餘額</div>
                 <div class="balance-amount">
                   <Coins :size="24" />
-                  <span>{{ balance.toLocaleString() }}</span>
+                  <span>{{ formatCoins(balance) }}</span>
                 </div>
               </div>
 
@@ -108,7 +108,7 @@
                     />
                   </div>
                   <div class="balance-hint">
-                    可用餘額：{{ balance.toLocaleString() }}
+                    可用餘額：{{ formatCoins(balance) }}
                   </div>
                 </div>
 
@@ -191,7 +191,7 @@
                     />
                   </div>
                   <div class="balance-hint">
-                    可用餘額：{{ balance.toLocaleString() }}
+                    可用餘額：{{ formatCoins(balance) }}
                   </div>
                 </div>
 
@@ -371,6 +371,7 @@ import {
     X,
 } from "lucide-vue-next";
 import { computed, ref, watch } from "vue";
+import { formatCoins } from "@/utils/coins";
 
 type TabId = "wallet" | "transfer" | "redpacket" | "gift" | "care";
 

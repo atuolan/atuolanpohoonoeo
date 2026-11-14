@@ -79,6 +79,7 @@
 import { useGameEconomyStore, type GambleChoice, type GambleResult } from "@/stores/gameEconomy";
 import { ChevronLeft, Minus, Plus } from "lucide-vue-next";
 import { computed, ref, watch, onUnmounted } from "vue";
+import { wholeCoins } from "@/utils/coins";
 
 const props = defineProps<{ visible: boolean; chatId?: string; }>();
 const emit = defineEmits<{ close: []; result: [result: GambleResult]; }>();
@@ -101,7 +102,8 @@ try {
   if (saved) recentRolls.value = JSON.parse(saved);
 } catch (e) {}
 
-const balance = computed(() => gameEconomyStore.getBalance(GLOBAL_WALLET_ID));
+// 錢包可能有小數（紅包），下注和顯示都用整數
+const balance = computed(() => wholeCoins(gameEconomyStore.getBalance(GLOBAL_WALLET_ID)));
 const gamblingStats = computed(() => gameEconomyStore.getGamblingStats(GLOBAL_WALLET_ID));
 const dailyLimit = computed(() => gameEconomyStore.getGamblingConfig().DAILY_LIMIT);
 const minBet = computed(() => gameEconomyStore.getGamblingConfig().MIN_BET);

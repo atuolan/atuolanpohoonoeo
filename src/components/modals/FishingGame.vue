@@ -19,7 +19,7 @@
                   <circle cx="10" cy="10" r="6" fill="none" stroke="#FFF1CF" stroke-width="1.5" />
                   <path d="M10 7v6" stroke="#FFF1CF" stroke-width="1.5" stroke-linecap="round" />
                 </svg>
-                <span class="coin-amount">{{ gameEconomyStore.getBalance(GLOBAL_WALLET_ID).toLocaleString() }}</span>
+                <span class="coin-amount">{{ formatCoins(gameEconomyStore.getBalance(GLOBAL_WALLET_ID)) }}</span>
               </div>
             </div>
           </div>
@@ -343,6 +343,7 @@ import {
   X,
 } from "lucide-vue-next";
 import { computed, onUnmounted, ref, watch } from "vue";
+import { formatCoins } from "@/utils/coins";
 
 type GamePhase =
   | "idle"

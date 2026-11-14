@@ -7,6 +7,7 @@
  * 金幣用跟商店同一個錢包；外觀每個角色各一套，存到小屋的狀態。
  */
 import { computed, onUnmounted, ref, watch } from "vue";
+import { formatCoins, formatCoinsShortfall } from "@/utils/coins";
 import {
   composeLook,
   composePartPreview,
@@ -266,7 +267,7 @@ async function wear() {
       const r = await payCoins(c.total, `幫${props.charName}買衣服：${names}`, `pixel-house:${next.base}`);
       if (!r.ok) {
         message.value =
-          r.error === "insufficient_funds" ? `金幣不夠，還差 ${(c.total - (balance.value ?? 0)).toLocaleString()}` : "付款失敗，再試一次";
+          r.error === "insufficient_funds" ? `金幣不夠，還差 ${formatCoinsShortfall(c.total - (balance.value ?? 0))}` : "付款失敗，再試一次";
         confirming.value = false;
         return;
       }
@@ -407,7 +408,7 @@ function customFilename(c: CustomPart): string {
       <section class="wd" role="dialog" :aria-label="`${charName}的衣櫃`">
         <header class="wd-head">
           <h2>{{ charName }}的衣櫃</h2>
-          <span class="wd-coins" aria-label="金幣">金幣 {{ balance === null ? "…" : balance.toLocaleString() }}</span>
+          <span class="wd-coins" aria-label="金幣">金幣 {{ balance === null ? "…" : formatCoins(balance) }}</span>
           <button class="wd-x" aria-label="關閉" @click="tryClose">×</button>
         </header>
 
