@@ -11,6 +11,16 @@ import {
 } from "@/services/AffinityTemplateService";
 import { AFFINITY_PRESETS, createMetricFromPreset } from "@/data/affinityPresets";
 import AffinityGuideModal from "@/components/modals/AffinityGuideModal.vue";
+import AffinityGeneratorPanel from "@/components/affinity/AffinityGeneratorPanel.vue";
+import AffinityStageLadder from "@/components/affinity/AffinityStageLadder.vue";
+import {
+  type AffinityPace,
+  maxChangeForPace,
+  metricSummary,
+  PACE_LABELS,
+  paceOf,
+} from "@/services/affinityLadder";
+import { sanitizeMetricName } from "@/services/affinityGenerator";
 import { CHARACTER_DELETE_CONFIRM } from "@/services/characterDeletion";
 import { showFloatingToast } from "@/utils/floatingToast";
 import { searchCities } from "@/services/WeatherService";
@@ -291,20 +301,63 @@ function toggleMetricExpanded(id: string) {
   expandedMetricIds.value = next;
 }
 
-/** 收起時的一行摘要：「一開始 30／100 · 5 個關係階段」 */
-function metricSummary(metric: AffinityMetricConfig): string {
-  if (metric.type === "string") {
-    const opts = metric.options?.length ? `${metric.options.length} 種可選` : "自由填寫";
-    return `一開始 ${metric.initial || "—"} · ${opts}`;
+const AFFINITY_PACES: AffinityPace[] = ["slow", "normal", "fast"];
+
+// 細部調整裡打開「顯示每一階從幾分開始」的數值
+const showStageNumbers = ref(new Set<string>());
+function toggleStageNumbers(id: string) {
+  const next = new Set(showStageNumbers.value);
+  if (next.has(id)) next.delete(id);
+  else next.add(id);
+  showStageNumbers.value = next;
+}
+
+/** 名稱會變成回報標籤的屬性名：空格、引號、等號、角括號拿掉 */
+function cleanMetricName(name: string): string {
+  return (name ?? "").replace(/[\s"'=<>`]/g, "");
+}
+
+// 「用一句話做一個數值」
+const showAffinityGenerator = ref(false);
+const affinityGeneratorCharacter = computed(() => ({
+  name: formData.value.data.name,
+  description: formData.value.data.description,
+  personality: formData.value.data.personality,
+  scenario: formData.value.data.scenario,
+  firstMessage: formData.value.data.first_mes,
+}));
+
+function onAffinityGenerated(metric: AffinityMetricConfig) {
+  const metrics = affinityConfig.value.metrics;
+  metric.name = sanitizeMetricName(metric.name);
+  const sameIndex = metrics.findIndex((m) => m.name === metric.name);
+  if (
+    sameIndex >= 0 &&
+    confirm(
+      `已經有「${metric.name}」了，要用新做的取代它嗎？\n按「取消」會兩個都留著。`,
+    )
+  ) {
+    // 取代：放在原本的位置；沿用原本的 id 和路徑，聊天裡已經累積的分數不會不見
+    const old = metrics[sameIndex];
+    metrics.splice(sameIndex, 1, { ...metric, id: old.id, path: old.path });
+  } else {
+    if (sameIndex >= 0) {
+      metric.name = sanitizeMetricName(
+        metric.name,
+        metrics.map((m) => m.name),
+      );
+    }
+    metrics.push(metric);
   }
-  const parts = [
-    metric.bounded === false
-      ? `一開始 ${metric.initial}`
-      : `一開始 ${metric.initial}／${metric.max}`,
-  ];
-  if (metric.bounded === false) parts.push("不限範圍");
-  if (metric.stages?.length) parts.push(`${metric.stages.length} 個關係階段`);
-  return parts.join(" · ");
+  showAffinityGenerator.value = false;
+  _updateAffinityPreview();
+  const start =
+    metric.type === "string"
+      ? String(metric.initial)
+      : metricSummary(metric).match(/「(.+?)」/)?.[1] ?? String(metric.initial);
+  showFloatingToast(
+    `加好「${metric.name}」了！記得按右上角「儲存」。已經在聊的對話也會加上它，從「${start}」開始。`,
+  );
 }
 
 /** 自訂規則欄位填入自動產生的規則，讓使用者在上面改 */
@@ -2331,24 +2384,15 @@ async function submitPasteRegex() {
                         </button>
                       </div>
 
-                      <!-- 展開：全部欄位 -->
+                      <!-- 展開：名稱、什麼時候會變、階段梯子；其他收進細部調整 -->
                       <template v-else>
                         <div class="affinity-metric-header">
                           <input
                             v-model="metric.name"
                             placeholder="名稱（如 好感度）"
                             class="soft-input affinity-name-input"
-                            @blur="_updateAffinityPreview()"
+                            @blur="metric.name = cleanMetricName(metric.name); _updateAffinityPreview()"
                           />
-                          <select
-                            v-model="metric.type"
-                            class="soft-input type-select"
-                            aria-label="類型"
-                            @change="_updateAffinityPreview()"
-                          >
-                            <option value="number">數字</option>
-                            <option value="string">文字</option>
-                          </select>
                           <button
                             type="button"
                             class="affinity-summary-edit"
@@ -2358,63 +2402,43 @@ async function submitPasteRegex() {
                           </button>
                         </div>
 
+                        <div class="range-field affinity-desc-field">
+                          <label>什麼時候會變？（會告訴 AI，寫越清楚越準）</label>
+                          <textarea
+                            v-model="metric.description"
+                            class="soft-input"
+                            rows="2"
+                            placeholder="例如：被關心、被誇獎時增加；被冷落、被冒犯時減少"
+                          ></textarea>
+                        </div>
+
                         <template v-if="metric.type !== 'string'">
-                          <div class="affinity-metric-ranges">
-                            <div class="range-field">
-                              <label>一開始</label>
-                              <input
-                                type="number"
-                                v-model.number="metric.initial"
-                                class="soft-input range-input"
-                                @change="_updateAffinityPreview()"
-                              />
-                            </div>
-                            <template v-if="metric.bounded !== false">
-                              <div class="range-field">
-                                <label>最低</label>
-                                <input
-                                  type="number"
-                                  v-model.number="metric.min"
-                                  class="soft-input range-input"
-                                />
-                              </div>
-                              <div class="range-field">
-                                <label>最高</label>
-                                <input
-                                  type="number"
-                                  v-model.number="metric.max"
-                                  class="soft-input range-input"
-                                />
-                              </div>
-                            </template>
-                            <div class="range-field">
-                              <label>每次最多增減</label>
-                              <input
-                                type="number"
-                                min="0"
-                                v-model.number="metric.maxChange"
-                                class="soft-input range-input"
-                                placeholder="不限"
-                              />
-                            </div>
+                          <label class="setting-label-sm">
+                            關係階段：分數到了哪一階，角色的態度就跟著變
+                          </label>
+                          <AffinityStageLadder
+                            :metric="metric"
+                            :show-numbers="showStageNumbers.has(metric.id)"
+                            @change="_updateAffinityPreview()"
+                          />
+                          <div class="affinity-pace-row">
+                            <span class="setting-label-sm">節奏</span>
+                            <button
+                              v-for="p in AFFINITY_PACES"
+                              :key="p"
+                              type="button"
+                              class="affinity-pace-btn"
+                              :class="{ 'is-active': paceOf(metric) === p }"
+                              @click="metric.maxChange = maxChangeForPace(metric, p)"
+                            >
+                              {{ PACE_LABELS[p] }}
+                            </button>
                           </div>
-                          <p class="setting-desc affinity-field-hint">
-                            「每次最多增減」避免一句話就從陌生變戀人；0 表示不限。
-                          </p>
                         </template>
 
                         <div v-else class="affinity-string-config">
                           <div class="range-field">
-                            <label>一開始</label>
-                            <input
-                              v-model="metric.initial"
-                              class="soft-input"
-                              placeholder="例如：平靜"
-                              @change="_updateAffinityPreview()"
-                            />
-                          </div>
-                          <div class="range-field">
-                            <label>可以是哪些？（用逗號分開；留空就讓 AI 自由寫）</label>
+                            <label>有哪些狀態？（用逗號分開；留空就讓 AI 自由寫）</label>
                             <!-- 離開欄位才拆：邊打邊拆會把剛打的逗號吃掉，永遠打不出第二個值 -->
                             <input
                               :value="(metric.options ?? []).join(', ')"
@@ -2427,89 +2451,91 @@ async function submitPasteRegex() {
                               placeholder="例如：開心, 平靜, 低落"
                             />
                           </div>
-                        </div>
-
-                        <div class="range-field affinity-desc-field">
-                          <label>什麼時候會變？（會告訴 AI）</label>
-                          <textarea
-                            v-model="metric.description"
-                            class="soft-input"
-                            rows="2"
-                            placeholder="例如：被關心、被誇獎時增加；被冷落、被冒犯時減少"
-                          ></textarea>
-                        </div>
-
-                        <!-- 關係階段 -->
-                        <div v-if="metric.type !== 'string'" class="affinity-stages">
-                          <label class="setting-label-sm">
-                            關係階段：分數到了某個階段，角色的態度會跟著變
-                          </label>
-                          <div
-                            v-for="(stage, sIdx) in metric.stages"
-                            :key="sIdx"
-                            class="affinity-stage-block"
-                          >
-                            <div class="affinity-stage-row">
-                              <input
-                                type="number"
-                                v-model.number="stage.minValue"
-                                placeholder="從"
-                                class="soft-input stage-value-input"
-                                title="分數到這裡就進入這個階段"
-                              />
-                              <input
-                                v-model="stage.name"
-                                placeholder="階段名（如 曖昧）"
-                                class="soft-input stage-name-input"
-                                @blur="_updateAffinityPreview()"
-                              />
-                              <button
-                                class="btn-icon-sm btn-danger-sm"
-                                @click="removeAffinityStage(mIdx, sIdx)"
-                                title="刪除這個階段"
-                              >
-                                ✕
-                              </button>
-                            </div>
+                          <div class="range-field">
+                            <label>一開始是</label>
                             <input
-                              v-model="stage.description"
-                              placeholder="這時候角色會怎樣？（選填）例如：會主動找話題、偶爾吃醋"
-                              class="soft-input stage-desc-input"
-                              @blur="_updateAffinityPreview()"
+                              v-model="metric.initial"
+                              class="soft-input"
+                              placeholder="例如：平靜"
+                              @change="_updateAffinityPreview()"
                             />
                           </div>
-                          <button
-                            class="btn-add-sm"
-                            @click="addAffinityStage(mIdx)"
+                        </div>
+
+                        <details class="affinity-fine-tune">
+                          <summary>細部調整</summary>
+                          <div class="range-field affinity-desc-field">
+                            <label>類型</label>
+                            <select
+                              v-model="metric.type"
+                              class="soft-input type-select"
+                              @change="_updateAffinityPreview()"
+                            >
+                              <option value="number">會慢慢累積的分數</option>
+                              <option value="string">幾種狀態切換</option>
+                            </select>
+                          </div>
+                          <template v-if="metric.type !== 'string'">
+                            <div class="affinity-metric-ranges">
+                              <div class="range-field">
+                                <label>一開始</label>
+                                <input
+                                  type="number"
+                                  v-model.number="metric.initial"
+                                  class="soft-input range-input"
+                                  @change="_updateAffinityPreview()"
+                                />
+                              </div>
+                              <template v-if="metric.bounded !== false">
+                                <div class="range-field">
+                                  <label>最低</label>
+                                  <input type="number" v-model.number="metric.min" class="soft-input range-input" />
+                                </div>
+                                <div class="range-field">
+                                  <label>最高</label>
+                                  <input type="number" v-model.number="metric.max" class="soft-input range-input" />
+                                </div>
+                              </template>
+                              <div class="range-field">
+                                <label>每次最多增減</label>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  v-model.number="metric.maxChange"
+                                  class="soft-input range-input"
+                                  placeholder="不限"
+                                />
+                              </div>
+                            </div>
+                            <label class="affinity-check">
+                              <input
+                                type="checkbox"
+                                :checked="showStageNumbers.has(metric.id)"
+                                @change="toggleStageNumbers(metric.id)"
+                              />
+                              顯示每一階從幾分開始
+                            </label>
+                            <label class="affinity-check">
+                              <input
+                                type="checkbox"
+                                :checked="metric.bounded !== false"
+                                @change="
+                                  metric.bounded = ($event.target as HTMLInputElement).checked;
+                                  _updateAffinityPreview();
+                                "
+                              />
+                              限制在最低～最高之間
+                              <span class="setting-hint">（金錢、天數這類沒有上限的值就取消）</span>
+                            </label>
+                          </template>
+                          <div
+                            v-if="affinityConfig.mvuEnabled || metric.path"
+                            class="range-field affinity-desc-field"
                           >
-                            + 新增階段
-                          </button>
-                        </div>
-
-                        <div
-                          v-if="affinityConfig.mvuEnabled || metric.path"
-                          class="range-field affinity-desc-field"
-                        >
-                          <label>變數路徑（MVU 用，例如 悠纪.好感度）</label>
-                          <input
-                            v-model="metric.path"
-                            class="soft-input"
-                            :placeholder="metric.name"
-                          />
-                        </div>
-
-                        <label v-if="metric.type !== 'string'" class="affinity-check">
-                          <input
-                            type="checkbox"
-                            :checked="metric.bounded !== false"
-                            @change="
-                              metric.bounded = ($event.target as HTMLInputElement).checked;
-                              _updateAffinityPreview();
-                            "
-                          />
-                          限制在最低～最高之間
-                          <span class="setting-hint">（金錢、天數這類沒有上限的值就取消）</span>
-                        </label>
+                            <label>變數路徑（MVU 用，例如 悠纪.好感度）</label>
+                            <input v-model="metric.path" class="soft-input" :placeholder="metric.name" />
+                          </div>
+                        </details>
 
                         <button
                           type="button"
@@ -2521,25 +2547,43 @@ async function submitPasteRegex() {
                       </template>
                     </div>
 
-                    <!-- 再加一個 -->
+                    <!-- 再加一個：主路是用一句話做，範本和空白在下面當小字 -->
                     <div class="affinity-add-more">
-                      <span class="setting-label-sm">＋ 再加一個數值</span>
-                      <div class="affinity-preset-row">
+                      <AffinityGeneratorPanel
+                        v-if="showAffinityGenerator"
+                        :character="affinityGeneratorCharacter"
+                        :existing-names="affinityConfig.metrics.map((m) => m.name)"
+                        @done="onAffinityGenerated"
+                        @cancel="showAffinityGenerator = false"
+                        @use-preset="(key) => { addAffinityPreset(key); showAffinityGenerator = false; }"
+                      />
+                      <template v-else>
                         <button
-                          v-for="preset in AFFINITY_PRESETS"
-                          :key="preset.key"
                           type="button"
-                          class="affinity-preset-btn"
-                          :disabled="hasPreset(preset.metric.name)"
-                          :title="hasPreset(preset.metric.name) ? '已經加過了' : `加入「${preset.label}」，內容都先填好了`"
-                          @click="addAffinityPreset(preset.key)"
+                          class="affinity-gen-open"
+                          @click="showAffinityGenerator = true"
                         >
-                          {{ preset.label }}<span v-if="hasPreset(preset.metric.name)"> ✓</span>
+                          ✨ 用一句話做一個數值
                         </button>
-                        <button type="button" class="affinity-preset-btn is-blank" @click="addAffinityMetric">
-                          自己建一個
+                        <p class="affinity-add-alt">
+                          或直接用：
+                          <template v-for="(preset, pIdx) in AFFINITY_PRESETS" :key="preset.key">
+                            <span v-if="pIdx > 0" aria-hidden="true">／</span>
+                            <button
+                              type="button"
+                              class="affinity-add-link"
+                              :disabled="hasPreset(preset.metric.name)"
+                              :title="hasPreset(preset.metric.name) ? '已經加過了' : `加入「${preset.label}」`"
+                              @click="addAffinityPreset(preset.key)"
+                            >
+                              {{ preset.label }}<span v-if="hasPreset(preset.metric.name)"> ✓</span>
+                            </button>
+                          </template>
+                        </p>
+                        <button type="button" class="affinity-add-link is-blank" @click="addAffinityMetric">
+                          自己從空白填
                         </button>
-                      </div>
+                      </template>
                     </div>
                   </div>
 
@@ -3580,10 +3624,89 @@ async function submitPasteRegex() {
 
 .affinity-add-more {
   margin-top: 4px;
+}
 
-  .affinity-preset-btn.is-blank {
-    border-style: dashed;
+.affinity-gen-open {
+  width: 100%;
+  padding: 10px 14px;
+  border: 1px dashed #ff9ec0;
+  border-radius: 12px;
+  background: rgba(255, 107, 157, 0.06);
+  color: #e0457b;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+
+  &:hover {
+    background: rgba(255, 107, 157, 0.12);
+  }
+}
+
+.affinity-add-alt {
+  margin: 8px 0 2px;
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.affinity-add-link {
+  padding: 0 2px;
+  border: none;
+  background: none;
+  color: #e0457b;
+  font: inherit;
+  font-size: 12px;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+
+  &:disabled {
+    color: #9ca3af;
+    text-decoration: none;
+    cursor: default;
+  }
+
+  &.is-blank {
     color: #6b7280;
+  }
+}
+
+.affinity-pace-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0;
+
+  .setting-label-sm {
+    margin: 0 4px 0 0;
+  }
+}
+
+.affinity-pace-btn {
+  padding: 3px 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 999px;
+  background: transparent;
+  font-size: 12px;
+  color: #374151;
+  cursor: pointer;
+
+  &.is-active {
+    border-color: #ff6b9d;
+    background: rgba(255, 107, 157, 0.1);
+    color: #e0457b;
+    font-weight: 600;
+  }
+}
+
+.affinity-fine-tune {
+  margin: 6px 0 4px;
+
+  > summary {
+    cursor: pointer;
+    font-size: 12px;
+    color: #6b7280;
+    margin-bottom: 8px;
   }
 }
 
@@ -4419,8 +4542,14 @@ body.is-night-mode {
     color: var(--color-text-secondary);
   }
 
-  .affinity-summary-edit {
+  .affinity-summary-edit,
+  .affinity-pace-btn {
     border-color: var(--color-border);
+    color: var(--color-text-secondary);
+  }
+
+  .affinity-add-alt,
+  .affinity-fine-tune > summary {
     color: var(--color-text-secondary);
   }
 
