@@ -1357,16 +1357,24 @@ export const usePhoneCallStore = defineStore("phoneCall", () => {
       const { useAffinityStore } = await import("@/stores/affinity");
       const affinityStore = useAffinityStore();
 
-      // 確認好感度功能已啟用
+      // 確認好感度功能已啟用（設定存在角色上，不在聊天紀錄上）
       const chat = await db.get<any>(DB_STORES.CHATS, chatId);
-      const affinityConfig = chat?.affinityConfig;
+      const characterId: string | undefined = chat?.characterId || info?.characterId;
+      await affinityStore.initialize();
+      const affinityConfig = characterId
+        ? await affinityStore.loadConfig(characterId)
+        : null;
       if (!affinityConfig?.enabled) {
         console.log("[phoneCall] 好感度未啟用，跳過 MVU 更新");
         return;
       }
+      if (!affinityStore.getState(chatId)) {
+        const loaded = await affinityStore.loadState(chatId);
+        if (!loaded) await affinityStore.initializeFromConfig(chatId, affinityConfig);
+      }
 
       affinityStore.resetMvuDeltaData(chatId);
-      affinityStore.batchUpdateByPath(chatId, updates);
+      affinityStore.batchUpdateByPath(chatId, updates, { limitChange: true });
       console.log(
         "[phoneCall] MVU 變量更新:",
         updates

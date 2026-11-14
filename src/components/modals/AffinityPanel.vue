@@ -6,7 +6,7 @@
           <header class="affinity-header">
             <h3>角色數值</h3>
             <div class="header-actions">
-              <button class="rescan-btn" @click="rescan" title="從最新訊息重新獲取變量">
+              <button class="rescan-btn" @click="rescan" title="從最新一則帶數值更新的訊息重新套用一次（從它之前的數值算，不會重複加）">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <polyline points="23 4 23 10 17 10"></polyline>
                   <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
@@ -68,11 +68,11 @@
               <!-- 數字型指標：進度條 + ±按鈕 -->
               <template v-if="m.type !== 'string'">
                 <div class="metric-top">
-                  <span class="metric-name">{{ m.name }}</span>
-                  <span class="metric-value">{{ m.value }}/{{ m.max }}</span>
+                  <span class="metric-name" :title="m.description || undefined">{{ m.name }}</span>
+                  <span class="metric-value">{{ m.value }}<template v-if="m.bounded">/{{ m.max }}</template></span>
                 </div>
 
-                <div class="metric-bar-wrap">
+                <div v-if="m.bounded" class="metric-bar-wrap">
                   <div
                     class="metric-bar-fill"
                     :style="{ width: (m.percentage * 100) + '%' }"
@@ -80,19 +80,23 @@
                 </div>
 
                 <div class="metric-bottom">
-                  <span v-if="m.stage" class="metric-stage">{{ m.stage }}</span>
+                  <span
+                    v-if="m.stage"
+                    class="metric-stage"
+                    :title="m.stageDescription || undefined"
+                  >{{ m.stage }}</span>
                   <span v-else class="metric-stage empty"></span>
                   <div class="metric-controls">
                     <button
                       class="adj-btn"
-                      :disabled="typeof m.value === 'number' && m.value <= m.min"
+                      :disabled="m.bounded && typeof m.value === 'number' && m.value <= m.min"
                       @click="adjust(m.id, -1)"
                     >
                       −
                     </button>
                     <button
                       class="adj-btn"
-                      :disabled="typeof m.value === 'number' && m.value >= m.max"
+                      :disabled="m.bounded && typeof m.value === 'number' && m.value >= m.max"
                       @click="adjust(m.id, 1)"
                     >
                       +
@@ -104,7 +108,7 @@
               <!-- 字串型指標：標籤 + 下拉選擇器 -->
               <template v-else>
                 <div class="metric-top">
-                  <span class="metric-name">{{ m.name }}</span>
+                  <span class="metric-name" :title="m.description || undefined">{{ m.name }}</span>
                   <span class="metric-tag">{{ m.value }}</span>
                 </div>
                 <div class="metric-bottom">

@@ -6,6 +6,7 @@
 
 import { strFromU8, strToU8, unzip, zip } from "fflate";
 import jsYaml from "js-yaml";
+import _ from "lodash";
 import type { ConversationSummary, DiaryEntry } from "../db/database";
 import { db, DB_STORES } from "../db/database";
 import {
@@ -21,6 +22,7 @@ import type {
   AffinityMetricConfig,
   CharacterAffinityConfig,
 } from "../schemas/affinity";
+import { isValueWithDescription } from "../schemas/affinity";
 import type {
   CharacterBook,
   CharacterBookEntry,
@@ -60,25 +62,67 @@ function _deepClone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
 
+/** 像好感度這種「通常 0~100」的數值；其他沒寫範圍的數值（金錢、天數…）不夾範圍 */
+const AFFINITY_LIKE_NAME =
+  /好感|親密|亲密|信任|依賴|依赖|愛意|爱意|喜愛|喜爱|心動|心动|慾望|欲望|理智|墮落|堕落|羞恥|羞耻|服從|服从|忠誠|忠诚|戒備|戒备|警戒|興趣|兴趣|好奇|度$/;
+
+/** 從說明文字找範圍：「範圍0~100」「[-1,1]」「区间 0 到 10」 */
+export function inferRangeFromDescription(desc: string): { min: number; max: number } | null {
+  if (!desc) return null;
+  const num = "(-?\\d+(?:\\.\\d+)?)";
+  const sep = "\\s*(?:~|～|〜|到|至|-|—|–|,|，)\\s*";
+  const patterns = [
+    new RegExp(`(?:範圍|范围|區間|区间|取值|range)[^\\d-]{0,6}${num}${sep}${num}`, "i"),
+    new RegExp(`[\\[［【(（]\\s*${num}${sep}${num}\\s*[\\]］】)）]`),
+  ];
+  for (const re of patterns) {
+    const m = desc.match(re);
+    if (!m) continue;
+    const a = Number(m[1]);
+    const b = Number(m[2]);
+    if (Number.isFinite(a) && Number.isFinite(b) && a < b) return { min: a, max: b };
+  }
+  return null;
+}
+
 function _extractLeafMetrics(
   value: unknown,
   path: string[],
   metrics: AffinityMetricConfig[],
 ): void {
-  if (typeof value === "number" || typeof value === "string") {
+  const key = path[path.length - 1] ?? "";
+  // MVU 的 $meta 等設定鍵不是變數
+  if (key.startsWith("$")) return;
+
+  let leaf: unknown = value;
+  let description = "";
+  if (isValueWithDescription(value)) {
+    leaf = value[0];
+    description = value[1];
+  }
+
+  if (typeof leaf === "number" || typeof leaf === "string" || typeof leaf === "boolean") {
     const fullPath = path.join(".");
-    const metricName = path[path.length - 1] ?? fullPath;
+    const metricName = key || fullPath;
     const namespace = path.slice(0, -1).join("_");
+    const isNumber = typeof leaf === "number";
+    const range = isNumber ? inferRangeFromDescription(description) : null;
+    const looksLikeAffinity =
+      isNumber && AFFINITY_LIKE_NAME.test(metricName) && (leaf as number) >= 0 && (leaf as number) <= 100;
     metrics.push({
       id: `mvu_${namespace ? `${namespace}_` : ""}${metricName}`,
       name: metricName,
       path: fullPath,
-      type: typeof value === "number" ? "number" : "string",
-      min: 0,
-      max: 100,
-      initial: value,
-      options: [],
+      type: isNumber ? "number" : "string",
+      min: range?.min ?? 0,
+      max: range?.max ?? 100,
+      initial: typeof leaf === "boolean" ? String(leaf) : (leaf as number | string),
+      options: typeof leaf === "boolean" ? ["true", "false"] : [],
       stages: [],
+      description,
+      maxChange: 0,
+      // MVU 本身不夾範圍：說明裡有寫範圍、或看起來是好感度這類 0~100 的值才限制
+      bounded: isNumber ? Boolean(range) || looksLikeAffinity : true,
     });
     return;
   }
@@ -87,9 +131,36 @@ function _extractLeafMetrics(
     return;
   }
 
-  for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
-    _extractLeafMetrics(child, [...path, key], metrics);
+  for (const [childKey, child] of Object.entries(value as Record<string, unknown>)) {
+    _extractLeafMetrics(child, [...path, childKey], metrics);
   }
+}
+
+/** [initvar] 內容：YAML、JSON 或帶 // 註解的 JSON5 都接受，外面包程式碼框也行 */
+export function parseInitvarContent(content: string): Record<string, unknown> | null {
+  const text = content.trim().replace(/^```[\w-]*\s*\n?([\s\S]*?)\n?```$/, "$1");
+  // 去掉字串外面的 // 註解（字串裡的 // 例如網址要留著）
+  const withoutComments = text.replace(
+    /("(?:[^"\\]|\\.)*")|\/\/[^\n]*/g,
+    (_m, str: string | undefined) => str ?? "",
+  );
+  const attempts: Array<() => unknown> = [
+    () => jsYaml.load(text),
+    () => JSON.parse(text),
+    () => JSON.parse(withoutComments.replace(/,(\s*[}\]])/g, "$1")),
+    () => jsYaml.load(withoutComments),
+  ];
+  for (const attempt of attempts) {
+    try {
+      const parsed = attempt();
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>;
+      }
+    } catch {
+      // 試下一種
+    }
+  }
+  return null;
 }
 
 function _extractMvuPromptTemplate(entries: CharacterBookEntry[]): string {
@@ -664,22 +735,21 @@ export function detectAndConvertMvuConfig(
   entries: CharacterBookEntry[],
   characterId: string,
 ): CharacterAffinityConfig | null {
-  const initvarEntry = entries.find(
-    (e) =>
-      typeof e.comment === "string" &&
-      e.comment.toLowerCase().includes("[initvar]"),
-  );
-  if (!initvarEntry?.content) return null;
+  const isInitvar = (e: CharacterBookEntry) =>
+    typeof e.comment === "string" && e.comment.toLowerCase().includes("[initvar]");
+  // MVU 會把所有 [initvar] 條目合併（不管條目有沒有啟用）；陣列整個取代不合併
+  const initvarEntries = entries.filter((e) => isInitvar(e) && e.content);
+  if (initvarEntries.length === 0) return null;
 
-  let parsed: unknown;
-  try {
-    parsed = jsYaml.load(initvarEntry.content);
-  } catch {
-    return null;
+  let root: Record<string, unknown> | null = null;
+  for (const entry of initvarEntries) {
+    const parsed = parseInitvarContent(entry.content);
+    if (!parsed) continue;
+    root = _.mergeWith(root ?? {}, parsed, (_obj: unknown, src: unknown) =>
+      Array.isArray(src) ? src : undefined,
+    );
   }
-
-  if (!parsed || typeof parsed !== "object") return null;
-  const root = parsed as Record<string, unknown>;
+  if (!root) return null;
 
   const metrics: AffinityMetricConfig[] = [];
 
@@ -693,6 +763,22 @@ export function detectAndConvertMvuConfig(
   const mvuUpdateInstruction = _extractMvuUpdateInstruction(entries);
   const postMutationRules = _extractPostMutationRules(mvuUpdateInstruction);
 
+  // 世界書會照常送出啟用中的條目；卡片已經自己寫了狀態／更新規則時，
+  // 好感度模組就不要再送一份，避免 AI 看到兩套說明
+  const enabled = (e: CharacterBookEntry) => e.enabled !== false && !isInitvar(e);
+  const statusEntryEnabled = entries.some(
+    (e) =>
+      enabled(e) &&
+      typeof e.comment === "string" &&
+      (e.comment.includes("数值状态描述") || e.comment.includes("數值狀態描述")),
+  );
+  const ruleEntryEnabled = entries.some(
+    (e) =>
+      enabled(e) &&
+      ((typeof e.comment === "string" && e.comment.toLowerCase().includes("[mvu_update]")) ||
+        /_\.set\s*\(|<UpdateVariable>|<JSONPatch>/i.test(e.content ?? "")),
+  );
+
   return {
     characterId,
     enabled: true,
@@ -705,6 +791,9 @@ export function detectAndConvertMvuConfig(
     metrics,
     promptTemplate: mvuPromptTemplate,
     updateInstruction: mvuUpdateInstruction,
+    injectStatus: !statusEntryEnabled,
+    injectRules: !ruleEntryEnabled,
+    updateFormat: "mvu",
     lastUpdated: Date.now(),
   };
 }

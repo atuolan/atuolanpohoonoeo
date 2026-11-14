@@ -2045,6 +2045,7 @@ const {
   handleAvatarClick,
   _handleAffinityUpdates,
   rescanAffinityFromMessages,
+  resyncAffinityToMessages,
   _loadAffinityForChat,
   onAffinityRollback,
 } = useChatAffinity({ currentChatId, messages });
@@ -2203,6 +2204,13 @@ const {
   deleteMessage: deleteCurrentChatMessage,
   triggerAIResponse,
   onRoundReplaced: async (removed, restored) => {
+    // 好感度跟著換上來的那一輪走（重抽時回到這一輪之前，換回覆時用那則回覆的數值）
+    const restoredIds = new Set(restored.map((m) => m.id));
+    resyncAffinityToMessages(
+      removed.map((m) => m.id).filter((id) => !restoredIds.has(id)),
+    );
+    // 換回的回覆如果是改版前生成的（沒有樓層記錄），補套用它的更新
+    if (restored.length > 0) rescanAffinityFromMessages();
     syncRoundStoryClock(removed, restored);
     await syncRoundCalendarEvents(removed, restored);
     await syncRoundPlanner(removed, restored);
@@ -3911,6 +3919,8 @@ const {
   currentCharacter,
   saveChatImmediate,
   onReturnedOnline: () => promptStoryClockReturn(),
+  // 單刪：舊聊天（沒有樓層記錄）維持原本「不動數值」，避免刪中間一則把後面的變化也抹掉
+  onMessagesDeleted: (ids) => resyncAffinityToMessages(ids, { legacyRollback: false }),
   focusReplyInput: () => {
     const textarea = isInputExpanded.value
       ? expandedInputRef.value

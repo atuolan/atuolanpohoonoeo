@@ -2393,6 +2393,7 @@ export class PromptBuilder {
           const content = affinityTemplateService.renderAffinityPrompt(
             affinityConfig,
             affinityState,
+            this.options.character?.data?.name,
           );
           if (content) {
             return { role: getRole(), content, identifier: "affinityState" };
@@ -2405,7 +2406,7 @@ export class PromptBuilder {
       case "f2fAffinityUpdateRules":
       case "gcAffinityUpdateRules": {
         const cfg = this.options.affinityConfig;
-        if (cfg?.enabled && cfg.metrics.length > 0) {
+        if (cfg?.enabled) {
           const content = affinityTemplateService.renderUpdateInstruction(cfg);
           if (content) {
             return {
