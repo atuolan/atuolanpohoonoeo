@@ -11,7 +11,8 @@ import {
   catStat,
   catStatAdd,
   eatKibble,
-  KIBBLE_HUNGRY,
+  hungryBelow,
+  MEALS_PER_DAY,
   nextShedAt,
   nextToiletAt,
   SPECIES_DECAY,
@@ -49,14 +50,14 @@ export type SupplyId =
 
 /** users：哪幾種會用到（第一個是主要的；面板的用品照這個分組） */
 export const SUPPLIES: Record<SupplyId, { name: string; unit: string; pack: number; price: number; desc: string; users: PetSpecies[] }> = {
-  kibble: { name: "貓糧", unit: "份", pack: 20, price: 600, desc: "倒在碗裡，牠們餓了自己去吃。一隻一天大約吃 2 份", users: ["cat"] },
+  kibble: { name: "貓糧", unit: "份", pack: 40, price: 600, desc: "倒在碗裡，牠們餓了自己去吃。少量多餐，一隻一天大約吃 4 份", users: ["cat"] },
   can: { name: "罐頭", unit: "個", pack: 1, price: 150, desc: "加菜：很飽，心情也變好", users: ["cat"] },
   treat: { name: "貓條", unit: "條", pack: 5, price: 400, desc: "零食，親密度加比較多；訓練上廁所時當獎勵", users: ["cat"] },
   litter: { name: "貓砂", unit: "次", pack: 30, price: 300, desc: "倒在貓砂盆裡。貓一天大約用 4 次、雪貂 3 次", users: ["cat", "ferret"] },
   dogFood: { name: "狗糧", unit: "份", pack: 20, price: 800, desc: "倒在狗碗裡，餓了自己去吃。一隻一天大約吃 2 份", users: ["dog"] },
   chew: { name: "潔牙骨", unit: "根", pack: 5, price: 400, desc: "零食，親密度加比較多；訓練上尿布墊時當獎勵", users: ["dog"] },
   pad: { name: "尿布墊", unit: "片", pack: 30, price: 300, desc: "狗在家上廁所用。有散步的話一隻一天大約用 2 片", users: ["dog"] },
-  ferretFood: { name: "雪貂糧", unit: "份", pack: 20, price: 700, desc: "倒在雪貂的碗裡，餓了自己去吃。一隻一天大約吃 2 份", users: ["ferret"] },
+  ferretFood: { name: "雪貂糧", unit: "份", pack: 40, price: 700, desc: "倒在雪貂的碗裡，餓了自己去吃。少量多餐，一隻一天大約吃 4 份", users: ["ferret"] },
   paste: { name: "營養膏", unit: "條", pack: 5, price: 300, desc: "零食，親密度加比較多；訓練上廁所時當獎勵", users: ["ferret"] },
   pellet: { name: "鼠糧", unit: "份", pack: 30, price: 200, desc: "放在籠子裡，餓了自己吃。一隻一天大約吃 2 份", users: ["hamster"] },
   seeds: { name: "葵花子", unit: "顆", pack: 10, price: 100, desc: "零食，親密度加比較多；餵熟了比較不會咬人", users: ["hamster"] },
@@ -100,9 +101,9 @@ const walker = { roams: true, cleanSupply: null } as const;
 const caged = { roams: false, toilet: null } as const;
 
 export const SPECIES_INFO: Record<PetSpecies, SpeciesInfo> = {
-  cat: { ...walker, price: 32_000, food: "kibble", snack: "treat", toilet: "litter", vetScale: 1, starter: { kibble: 10, can: 1, treat: 3, litter: 15 } },
+  cat: { ...walker, price: 32_000, food: "kibble", snack: "treat", toilet: "litter", vetScale: 1, starter: { kibble: 20, can: 1, treat: 3, litter: 15 } },
   dog: { ...walker, price: 32_000, food: "dogFood", snack: "chew", toilet: "pad", vetScale: 1.2, starter: { dogFood: 10, chew: 2, pad: 15 } },
-  ferret: { ...walker, price: 20_000, food: "ferretFood", snack: "paste", toilet: "litter", vetScale: 1, starter: { ferretFood: 10, paste: 2, litter: 15 } },
+  ferret: { ...walker, price: 20_000, food: "ferretFood", snack: "paste", toilet: "litter", vetScale: 1, starter: { ferretFood: 20, paste: 2, litter: 15 } },
   hamster: { ...caged, price: 1_500, food: "pellet", snack: "seeds", cleanSupply: "bedding", vetScale: 0.4, starter: { pellet: 15, seeds: 5, bedding: 2 } },
   guineaPig: { ...caged, price: 3_000, food: "hay", snack: "veg", cleanSupply: "bedding", vetScale: 0.5, starter: { hay: 20, veg: 3, bedding: 2 } },
   glider: { ...caged, price: 12_000, food: "fruit", snack: "mealworm", cleanSupply: null, vetScale: 0.6, starter: { fruit: 7, mealworm: 5 } },
@@ -281,7 +282,15 @@ export interface PetHome {
   stash: Stash | null;
   /** 算到什麼時候 */
   simAt: number;
+  /** 一份飼料的大小改過的版本（舊存檔沒有這欄 = 1） */
+  foodVersion?: number;
 }
+
+/**
+ * 一份飼料的大小：第 2 版起貓、雪貂少量多餐，一份是以前的一半（一包的份數加倍）。
+ * 讀到舊存檔時把這兩種的庫存乘 2，能吃的天數不變。
+ */
+export const FOOD_VERSION = 2;
 
 export interface Stash {
   spot: string;
@@ -290,7 +299,7 @@ export interface Stash {
 }
 
 export function emptyPetHome(now: number): PetHome {
-  return { cats: [], stock: emptyStock(), box: 0, insuranceUntil: 0, messes: {}, stash: null, simAt: now };
+  return { cats: [], stock: emptyStock(), box: 0, insuranceUntil: 0, messes: {}, stash: null, simAt: now, foodVersion: FOOD_VERSION };
 }
 
 /** 讀存檔。舊版只有一隻 `cat`：搬進 cats，送一份新手包（舊版沒有庫存，不送會一打開就沒東西吃） */
@@ -311,6 +320,11 @@ export function parsePetHome(raw: unknown, legacyCat: unknown, now: number): Pet
     for (const id of SUPPLY_IDS) {
       const n = st[id];
       home.stock[id] = typeof n === "number" && Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+    }
+    // 舊存檔的一份是現在的兩份
+    if (r.foodVersion !== FOOD_VERSION) {
+      home.stock.kibble *= 2;
+      home.stock.ferretFood *= 2;
     }
     home.box = typeof r.box === "number" && Number.isFinite(r.box) ? Math.max(0, Math.min(99, Math.floor(r.box))) : 0;
     home.insuranceUntil = typeof r.insuranceUntil === "number" && Number.isFinite(r.insuranceUntil) ? r.insuranceUntil : 0;
@@ -364,7 +378,7 @@ export function catsHome(home: PetHome, now: number): CatState[] {
 /** 一隻一天大約用掉多少（零食、罐頭不算：要你餵才會用） */
 function usePerDay(cat: CatState, id: SupplyId): number {
   const info = SPECIES_INFO[cat.species];
-  if (info.food === id) return 2 * SPECIES_DECAY[cat.species].food * (cat.personality === "glutton" ? 1.3 : 1);
+  if (info.food === id) return MEALS_PER_DAY[cat.species] * SPECIES_DECAY[cat.species].food * (cat.personality === "glutton" ? 1.3 : 1);
   if (id === "litter" && info.toilet === "litter") return cat.species === "ferret" ? 3 : 4;
   if (id === "pad" && info.toilet === "pad") return 2;
   if (id === "bedding" && info.cleanSupply === "bedding") return 1 / 7;
@@ -484,7 +498,7 @@ export function simulatePets(home: PetHome, to: number, opts: { live: boolean },
       const info = SPECIES_INFO[cat.species];
       if (!opts.live || !info.roams) {
         const food = info.food;
-        if (catStat(cat, "food", t) < KIBBLE_HUNGRY && h.stock[food] > 0) {
+        if (catStat(cat, "food", t) < hungryBelow(cat.species) && h.stock[food] > 0) {
           h = { ...updateCat(h, id, (c) => eatKibble(c, t)), stock: { ...h.stock, [food]: h.stock[food] - 1 } };
         }
         cat = h.cats.find((c) => c.id === id)!;

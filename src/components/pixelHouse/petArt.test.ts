@@ -22,6 +22,12 @@ describe("寵物的圖", () => {
       expect(h).toBeGreaterThan(0);
       for (const [pose, rows] of Object.entries(art)) checkArt(rows, palettes, `${sp}:${pose}`);
     }
+    // 貓、狗一格都是 1.5 點（畫面上一樣細）
+    for (const sp of ["cat", "dog"] as const) {
+      const { art, w, h } = walkerArt(sp);
+      expect(art.sit[0].length / w, sp).toBe(1.5);
+      expect(art.sit.length / h, sp).toBe(1.5);
+    }
     const ferretPal = Object.values(SPECIES_COLORS.ferret).map((c) => c.palette);
     for (const [k, rows] of Object.entries(FERRET_DANCE)) checkArt(rows, ferretPal, `ferret:${k}`);
     expect(FERRET_DANCE["dance-a"][0].length).toBe(walkerArt("ferret").art.sit[0].length);

@@ -19,7 +19,10 @@ import {
   CAT_JUMP_MS,
   CAT_RUB,
   CAT_RUB_LABEL,
-  KIBBLE_HUNGRY,
+  CAT_WANDER,
+  CAT_WANDER_LABEL,
+  pickWanderSpot,
+  hungryBelow,
   PERCH_FLOOR_Y,
   pickCatFind,
   CAT_SPEED,
@@ -113,6 +116,8 @@ export function useHouseCat(
   let paused = false;
   let started = false;
   let dead = false;
+  /** 到處逛這一趟要去哪（挑到「到處逛」時決定） */
+  let wanderTo: Spot | null = null;
 
   function refreshLevels() {
     if (cat.value) levels.value = catLevels(cat.value, Date.now());
@@ -141,8 +146,9 @@ export function useHouseCat(
       return { room: LITTER_SPOT.room, x: LITTER_SPOT.x + 9, y: LITTER_SPOT.y + 5 };
     }
     if (key === URGE_ACT) return { ...me };
-    // 狗碗在貓碗右邊：站在碗左邊，頭朝右低下去吃
-    if (key === "eat" && isDog.value) return { room: DOG_BOWL_SPOT.room, x: DOG_BOWL_SPOT.x - 6, y: DOG_BOWL_SPOT.y + 7 };
+    if (key === CAT_WANDER) return wanderTo ? { ...wanderTo } : { ...me };
+    // 狗碗在貓碗右邊：站在碗後面一點，頭朝右低下去埋進碗裡（畫面那邊在牠前面再疊一個碗）
+    if (key === "eat" && isDog.value) return { room: DOG_BOWL_SPOT.room, x: DOG_BOWL_SPOT.x, y: DOG_BOWL_SPOT.y + 3 };
     // 雪貂的碗在貓碗左邊
     if (key === "eat" && cat.value?.species === "ferret") return { room: FERRET_BOWL_SPOT.room, x: FERRET_BOWL_SPOT.x - 6, y: FERRET_BOWL_SPOT.y + 7 };
     const a = CAT_ACTS[key];
@@ -157,9 +163,9 @@ export function useHouseCat(
   function pickNext(): string {
     refreshLevels();
     const c = cat.value;
-    // 餓了、碗裡有飯：去吃
-    if (c && levels.value.food < KIBBLE_HUNGRY && store.home.value.stock[SPECIES_INFO[c.species].food] > 0 && act.value !== "eat") return "eat";
-    return pickCatAct({
+    // 餓了、碗裡有飯：去吃（貓一天大約 4 頓、狗 2 頓）
+    if (c && levels.value.food < hungryBelow(c.species) && store.home.value.stock[SPECIES_INFO[c.species].food] > 0 && act.value !== "eat") return "eat";
+    const next = pickCatAct({
       scene: deps.scene.value,
       current: act.value,
       residentAsleep: deps.residentAsleep.value && !sick.value,
@@ -168,6 +174,8 @@ export function useHouseCat(
       personality: c?.personality,
       species: c?.species,
     });
+    if (next === CAT_WANDER) wanderTo = pickWanderSpot(me.room);
+    return next;
   }
 
   function dwell(key: string) {
@@ -539,6 +547,7 @@ export function useHouseCat(
     if (listless.value) return "沒精神，趴著";
     if (act.value === CAT_RUB) return CAT_RUB_LABEL;
     if (act.value === CAT_FOLLOW) return CAT_FOLLOW_LABEL;
+    if (act.value === CAT_WANDER) return CAT_WANDER_LABEL;
     return CAT_ACTS[act.value]?.label ?? "";
   });
 

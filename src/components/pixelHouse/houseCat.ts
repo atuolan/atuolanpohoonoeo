@@ -112,11 +112,12 @@ export const SNAKE_COLORS: ColorTable<SnakeColor> = {
   green: { name: "綠樹蟒", palette: { o: "#2E3B22", b: "#7FB04A", s: "#4F7A2E", w: "#E8E2A6", e: "#1F1D24", t: "#D9453A", c: "#2E3B22" } },
 };
 
+/** 狗的顏色：字母是哪個部位見 petArt.ts 的 DOG_ART */
 export const DOG_COLORS: Record<DogColor, { name: string; palette: Record<string, string> }> = {
-  shiba: { name: "柴犬", palette: { o: "#3B2A26", b: "#E39A4F", s: "#B86E2E", w: "#FBF1DE", e: "#3B2A26", n: "#3B2A26", c: "#3B2A26" } },
-  black: { name: "黑柴", palette: { o: "#1F1D24", b: "#3E3A45", s: "#2A2730", w: "#E9C99A", e: "#F3D98B", n: "#1F1D24", c: "#E9C99A" } },
-  white: { name: "白狗", palette: { o: "#5B4A44", b: "#F6F2EA", s: "#E2DBCF", w: "#FFFFFF", e: "#3B2A26", n: "#3B2A26", c: "#5B4A44" } },
-  brown: { name: "米克斯", palette: { o: "#3B2A26", b: "#A87850", s: "#7E5534", w: "#F1E2C6", e: "#3B2A26", n: "#3B2A26", c: "#3B2A26" } },
+  shiba: { name: "柴犬", palette: { o: "#3B2A26", h: "#F2B26E", b: "#E39A4F", d: "#C97B38", k: "#D98A44", p: "#FBE6CF", w: "#FFF6EA", x: "#EED9C2", r: "#F59A9A", e: "#2A1A14", i: "#2A1A14", n: "#2A1A14", m: "#EE7F8A", c: "#3B2A26", a: "#FFF6EA", t: "#E39A4F", y: "#FFF6EA", f: "#FFF6EA", g: "#EED9C2" } },
+  black: { name: "黑柴", palette: { o: "#16151B", h: "#4E4A56", b: "#3A3742", d: "#2A2830", k: "#2A2830", p: "#E2B880", w: "#F7EDE0", x: "#E2D3C0", r: "#E58C96", e: "#121116", i: "#FFFFFF", n: "#121116", m: "#EE7F8A", c: "#E2B880", a: "#E2B880", t: "#3A3742", y: "#F7EDE0", f: "#F7EDE0", g: "#E2D3C0" } },
+  white: { name: "白狗", palette: { o: "#5B4A44", h: "#FFFFFF", b: "#F7F3EC", d: "#E4DCCE", k: "#EDE5D8", p: "#F7B9BC", w: "#FFFFFF", x: "#EDE5D8", r: "#F7A8AE", e: "#2A1A14", i: "#2A1A14", n: "#3B2A26", m: "#EE7F8A", c: "#5B4A44", a: "#F7F3EC", t: "#F7F3EC", y: "#FFFFFF", f: "#FFFFFF", g: "#E4DCCE" } },
+  brown: { name: "米克斯", palette: { o: "#3B2A26", h: "#C29468", b: "#A87850", d: "#8A5E3B", k: "#8A5E3B", p: "#E3B89A", w: "#F4E6CC", x: "#DFCBA9", r: "#EE9C96", e: "#2A1A14", i: "#2A1A14", n: "#2A1A14", m: "#EE7F8A", c: "#3B2A26", a: "#A87850", t: "#A87850", y: "#F4E6CC", f: "#F4E6CC", g: "#DFCBA9" } },
 };
 
 export const HAMSTER_COLORS: Record<HamsterColor, { name: string; palette: Record<string, string> }> = {
@@ -580,9 +581,21 @@ export function catListless(levels: Record<CatStatKey, number>, sick = false): b
 
 // ===== 照顧 =====
 
-/** 吃一份貓糧加多少飽；飽低於這個才會去吃 */
-export const KIBBLE_GAIN = 50;
-export const KIBBLE_HUNGRY = 50;
+/**
+ * 一天吃幾頓（一份飼料就是一頓）：貓、雪貂少量多餐，一天大約 4 頓；狗一天 2 頓。
+ * 住籠子的照舊（倉鼠、蜜袋鼯 2 份；天竺鼠、蛇吃多吃少已經算在 SPECIES_DECAY 裡）。
+ */
+export const MEALS_PER_DAY: Record<PetSpecies, number> = { cat: 4, ferret: 4, dog: 2, hamster: 2, guineaPig: 2, glider: 2, snake: 2 };
+
+/** 吃一份加多少飽：一天的量平分成幾頓 */
+export function mealGain(species: PetSpecies = "cat"): number {
+  return 100 / MEALS_PER_DAY[species];
+}
+
+/** 飽低於這個才會去吃：吃完剛好差不多滿 */
+export function hungryBelow(species: PetSpecies = "cat"): number {
+  return 100 - mealGain(species);
+}
 /** 洗完很乾淨，但牠不太高興；很乾淨就不用洗 */
 export const CAT_WASH_MOOD = -8;
 export const CAT_WASH_BELOW = 80;
@@ -617,9 +630,9 @@ export function careCat(cat: CatState, care: CatCare, now: number): CatState {
   return { ...next, affinity: Math.min(100, next.affinity + aff) };
 }
 
-/** 吃一份貓糧 */
+/** 吃一份飯（一頓） */
 export function eatKibble(cat: CatState, now: number): CatState {
-  return catStatAdd(cat, "food", KIBBLE_GAIN, now);
+  return catStatAdd(cat, "food", mealGain(cat.species), now);
 }
 
 // ===== 牠叼東西回來 =====
@@ -683,7 +696,44 @@ export const CAT_ACTS: Record<string, CatActDef> = {
   // 窗台：盆栽和花瓶中間那一小塊（跟著窗戶走）
   "sill-living": { room: "living", x: 38, y: 91, anchor: "window", pose: "sit", label: "在窗台看外面", perch: true },
   "sill-bedroom": { room: "bedroom", x: 67, y: 87, anchor: "window", pose: "sit", label: "在窗台看外面", perch: true },
+  // 臥室的懶骨頭上面；大門口（他不在家的時候特別常去等）
+  "nap-beanbag": { room: "bedroom", x: 113, y: 261, anchor: "beanbag", pose: "sleep", label: "窩在懶骨頭上" },
+  "sit-door": { room: "living", x: 110, y: 166, anchor: "door", pose: "sit", label: "在門口等" },
+  // 廚房餐桌前面的地上、浴室的浴墊上：午睡也會換地方
+  "nap-kitchen": { room: "kitchen", x: 64, y: 268, pose: "sleep", label: "在廚房地上打盹" },
+  "nap-bath": { room: "bath", x: 52, y: 249, anchor: "bath-mat", pose: "sleep", label: "在浴墊上睡覺" },
 };
+
+/**
+ * 到處逛：隨便挑一間（比較常挑別間）地上空的地方走過去，坐一下看看。
+ * 位置是設計稿的擺法下地上空著的地方（不跟家具走：家具搬了頂多坐在旁邊）
+ */
+export const CAT_WANDER = "wander";
+export const CAT_WANDER_LABEL = "到處逛逛";
+export const WANDER_SPOTS: Record<RoomId, [number, number][]> = {
+  kitchen: [[20, 174], [56, 200], [30, 268], [64, 262], [96, 270]],
+  living: [[20, 172], [62, 198], [80, 172], [120, 274], [40, 278]],
+  bedroom: [[20, 170], [84, 172], [108, 196], [76, 206], [70, 276]],
+  bath: [[40, 180], [85, 195], [50, 212], [55, 276], [98, 272]],
+};
+
+/** 到處逛去哪：四間裡挑一間（現在這間的機會只有別間的一半），再挑那間的一個地方 */
+export function pickWanderSpot(from: RoomId, rand: () => number = Math.random): { room: RoomId; x: number; y: number } {
+  const rooms = Object.keys(WANDER_SPOTS) as RoomId[];
+  const weights = rooms.map((r) => (r === from ? 1 : 2));
+  let r = rand() * weights.reduce((a, b) => a + b, 0);
+  let room = rooms[rooms.length - 1];
+  for (let i = 0; i < rooms.length; i++) {
+    r -= weights[i];
+    if (r < 0) {
+      room = rooms[i];
+      break;
+    }
+  }
+  const spots = WANDER_SPOTS[room];
+  const [x, y] = spots[Math.min(spots.length - 1, Math.floor(rand() * spots.length))];
+  return { room, x, y };
+}
 
 /** 走到他旁邊蹭他（位置是他現在站的地方旁邊） */
 export const CAT_RUB = "rub";
@@ -694,13 +744,47 @@ export const CAT_FOLLOW_LABEL = "跟在旁邊";
 
 /** 白天、黃昏、晚上各做什麼的機率 */
 export const CAT_WEIGHTS: Record<Scene, Record<string, number>> = {
-  day: { "nap-sofa": 3, "nap-rug": 2, "nap-bedroom-rug": 2, "sit-living": 1, "sit-kitchen": 1, "sit-bedroom": 1, "sit-bath": 1, "play-living": 2, "sill-living": 2, "sill-bedroom": 2, [CAT_RUB]: 2, [CAT_FOLLOW]: 2 },
-  dusk: { "nap-sofa": 2, "nap-rug": 1, "sit-living": 1, "sit-kitchen": 3, "sit-bedroom": 1, "play-living": 2, "sill-living": 2, "sill-bedroom": 1, [CAT_RUB]: 2, [CAT_FOLLOW]: 2 },
-  night: { "nap-bed": 6, "nap-sofa": 3, "nap-rug": 2, "nap-bedroom-rug": 2, "sit-bedroom": 1 },
+  day: {
+    "nap-sofa": 3,
+    "nap-rug": 2,
+    "nap-bedroom-rug": 2,
+    "nap-beanbag": 2,
+    "nap-bed": 1,
+    "nap-kitchen": 1,
+    "nap-bath": 1,
+    "sit-living": 1,
+    "sit-kitchen": 1,
+    "sit-bedroom": 1,
+    "sit-bath": 1,
+    "sit-door": 1,
+    "play-living": 2,
+    "sill-living": 2,
+    "sill-bedroom": 2,
+    [CAT_WANDER]: 5,
+    [CAT_RUB]: 2,
+    [CAT_FOLLOW]: 2,
+  },
+  dusk: {
+    "nap-sofa": 2,
+    "nap-rug": 1,
+    "nap-beanbag": 1,
+    "nap-kitchen": 1,
+    "sit-living": 1,
+    "sit-kitchen": 3,
+    "sit-bedroom": 1,
+    "sit-door": 1,
+    "play-living": 2,
+    "sill-living": 2,
+    "sill-bedroom": 1,
+    [CAT_WANDER]: 4,
+    [CAT_RUB]: 2,
+    [CAT_FOLLOW]: 2,
+  },
+  night: { "nap-bed": 6, "nap-sofa": 3, "nap-rug": 2, "nap-bedroom-rug": 2, "nap-beanbag": 1, "sit-bedroom": 1 },
 };
 
 /** 沒精神時只做這些 */
-const LISTLESS_ACTS = ["nap-sofa", "nap-rug", "nap-bedroom-rug"];
+const LISTLESS_ACTS = ["nap-sofa", "nap-rug", "nap-bedroom-rug", "nap-beanbag"];
 
 /**
  * 牠下一件事做什麼。
@@ -712,9 +796,9 @@ const LISTLESS_ACTS = ["nap-sofa", "nap-rug", "nap-bedroom-rug"];
 const PERSONALITY_BIAS: Record<CatPersonality, (key: string) => number> = {
   glutton: (k) => (k === "sit-kitchen" ? 3 : 1),
   neat: () => 1,
-  clingy: (k) => (k === CAT_RUB || k === CAT_FOLLOW ? 2.5 : 1),
-  lazy: (k) => (k.startsWith("nap-") ? 2.5 : k === "play-living" || k.startsWith("sill-") ? 0.4 : 1),
-  playful: (k) => (k === "play-living" ? 3 : k.startsWith("sill-") ? 1.8 : k.startsWith("nap-") ? 0.6 : 1),
+  clingy: (k) => (k === CAT_RUB || k === CAT_FOLLOW || k === "sit-door" ? 2.5 : 1),
+  lazy: (k) => (k.startsWith("nap-") ? 2.5 : k === "play-living" || k.startsWith("sill-") || k === CAT_WANDER ? 0.4 : 1),
+  playful: (k) => (k === "play-living" ? 3 : k.startsWith("sill-") || k === CAT_WANDER ? 1.8 : k.startsWith("nap-") ? 0.6 : 1),
 };
 
 export function pickCatAct(
@@ -733,10 +817,24 @@ export function pickCatAct(
   const bias = opts.personality ? PERSONALITY_BIAS[opts.personality] : () => 1;
   const dog = opts.species === "dog";
   const ferret = opts.species === "ferret";
-  // 狗：跳不上窗台；比貓更常黏著他。雪貂：一天睡大半天，也不上窗台
+  // 狗：跳不上窗台；比貓更常黏著他、在門口等他。雪貂：一天睡大半天，也不上窗台；醒著到處鑽
   const speciesBias = (k: string) =>
-    dog ? (k === CAT_RUB || k === CAT_FOLLOW ? 1.8 : 1) : ferret ? (k.startsWith("nap-") ? 3 : k === "play-living" ? 4 : 1) : 1;
-  const weights = Object.fromEntries(Object.entries(CAT_WEIGHTS[opts.scene]).map(([k, w]) => [k, w * bias(k) * speciesBias(k)]));
+    dog
+      ? k === CAT_RUB || k === CAT_FOLLOW || k === "sit-door"
+        ? 1.8
+        : 1
+      : ferret
+        ? k.startsWith("nap-")
+          ? 3
+          : k === "play-living"
+            ? 4
+            : k === CAT_WANDER
+              ? 2
+              : 1
+        : 1;
+  // 他不在家：常去門口等他回來
+  const awayBias = (k: string) => (!opts.residentHome && k === "sit-door" ? 4 : 1);
+  const weights = Object.fromEntries(Object.entries(CAT_WEIGHTS[opts.scene]).map(([k, w]) => [k, w * bias(k) * speciesBias(k) * awayBias(k)]));
   let keys = Object.keys(weights).filter((k) => k !== opts.current && !((dog || ferret) && CAT_ACTS[k]?.perch));
   if (!opts.residentHome) keys = keys.filter((k) => k !== CAT_RUB && k !== CAT_FOLLOW);
   if (opts.listless) keys = keys.filter((k) => LISTLESS_ACTS.includes(k));
@@ -750,13 +848,21 @@ export function pickCatAct(
   return keys[keys.length - 1];
 }
 
-/** 每件事做多久（毫秒）：40～90 秒；蹭他短一點；「少走動」再乘 4 倍 */
+/** 每件事做多久（毫秒）：40～90 秒；蹭他、到處逛短一點；「少走動」再乘 4 倍 */
 export function catDwellMs(act: string, rand: () => number = Math.random, calm = false, species?: PetSpecies): number {
   // 雪貂一睡就很久；醒著的時候靜不下來，換事情比貓勤快
   const sleepy = species === "ferret" ? (act.startsWith("nap-") ? 2 : 0.6) : 1;
   const base =
     sleepy *
-    (act === CAT_RUB ? 12_000 + rand() * 10_000 : act === "eat" ? 8_000 : act === CAT_FOLLOW ? 30_000 + rand() * 30_000 : 40_000 + rand() * 50_000);
+    (act === CAT_RUB
+      ? 12_000 + rand() * 10_000
+      : act === "eat"
+        ? 8_000
+        : act === CAT_FOLLOW
+          ? 30_000 + rand() * 30_000
+          : act === CAT_WANDER
+            ? 20_000 + rand() * 20_000
+            : 40_000 + rand() * 50_000);
   return calm ? base * 4 : base;
 }
 

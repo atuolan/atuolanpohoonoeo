@@ -80,10 +80,11 @@ describe("用品", () => {
       expect(s.price).toBeGreaterThan(0);
       expect(s.pack).toBeGreaterThan(0);
     }
-    const h = homeWith([kitty("a"), kitty("b")], { stock: { ...emptyStock(), kibble: 20, litter: 16 } });
+    // 貓一天大約 4 份
+    const h = homeWith([kitty("a"), kitty("b")], { stock: { ...emptyStock(), kibble: 40, litter: 16 } });
     expect(stockDays(h, "kibble")).toBe(5);
     expect(stockDays(h, "litter")).toBe(2);
-    expect(stockDays(homeWith([kitty("a", { personality: "glutton" })], { stock: { ...emptyStock(), kibble: 26, litter: 0 } }), "kibble")).toBe(10);
+    expect(stockDays(homeWith([kitty("a", { personality: "glutton" })], { stock: { ...emptyStock(), kibble: 52, litter: 0 } }), "kibble")).toBe(10);
     expect(stockDays(emptyPetHome(T0), "kibble")).toBe(Infinity);
   });
 });
@@ -203,12 +204,12 @@ describe("補算一段時間", () => {
     expect(r.home.simAt).toBe(T0 + 3 * DAY);
   });
 
-  it("夠吃的話一直不會餓（一天大約兩份）", () => {
+  it("夠吃的話一直不會餓（貓少量多餐，一天大約四份）", () => {
     const h = homeWith([kitty("a")], { stock: { ...emptyStock(), kibble: 100, litter: 100 }, simAt: T0 });
     const r = simulatePets(h, T0 + 5 * DAY, { live: false }, () => 0.999);
-    expect(catStat(r.home.cats[0], "food", T0 + 5 * DAY)).toBeGreaterThan(30);
-    expect(100 - r.home.stock.kibble).toBeGreaterThanOrEqual(8);
-    expect(100 - r.home.stock.kibble).toBeLessThanOrEqual(12);
+    expect(catStat(r.home.cats[0], "food", T0 + 5 * DAY)).toBeGreaterThan(60);
+    expect(100 - r.home.stock.kibble).toBeGreaterThanOrEqual(18);
+    expect(100 - r.home.stock.kibble).toBeLessThanOrEqual(22);
   });
 
   it("關著的時候自己上廁所：大約每 6 小時一次", () => {
@@ -267,6 +268,7 @@ describe("存檔", () => {
         cats: [cat, cat, { ...cat, id: "y" }, { ...cat, id: "z" }, { ...cat, id: "w" }, "壞掉"],
         stock: { kibble: 5.7, can: -3, litter: "很多" },
         box: 2,
+        foodVersion: 2,
         messes: { "mess-bath": "pee", 不存在: "poop", "mess-kitchen": "彩虹" },
       },
       null,
@@ -277,6 +279,14 @@ describe("存檔", () => {
     expect(pets.messes).toEqual({ "mess-bath": "pee" });
     // 有新版就不看舊版
     expect(parsePetHome({ cats: [] }, cat, T0).cats).toEqual([]);
+  });
+
+  it("舊存檔的貓糧、雪貂糧一份是現在的兩份：庫存乘 2，只換一次", () => {
+    const old = parsePetHome({ cats: [], stock: { kibble: 7, ferretFood: 3, dogFood: 5 } }, null, T0);
+    expect(old.stock).toMatchObject({ kibble: 14, ferretFood: 6, dogFood: 5 });
+    expect(old.foodVersion).toBe(2);
+    const again = parsePetHome(JSON.parse(JSON.stringify(old)), null, T0);
+    expect(again.stock).toMatchObject({ kibble: 14, ferretFood: 6, dogFood: 5 });
   });
 });
 

@@ -238,7 +238,13 @@ export interface ActDef {
   behind?: string;
   /** 睡覺：腳的位置（房間格子；跟著 anchor 家具走）。只露出頭在枕頭上，身體在鼓起來的被子裡 */
   lie?: [number, number];
+  /** 坐在這件家具上（椅子）：這件畫在他前面，他往下坐一點、腳藏起來（從背後看只露出椅背上面）。這件家具不在就站著 */
+  seat?: string;
 }
+
+/** 坐下時往下移多少、藏起來多少（都是他身高的幾成）：紙娃娃的腳大約是下面四分之一 */
+export const SEAT_DROP = 0.1;
+export const SEAT_LEGS = 0.25;
 
 export const ACTS: Record<string, ActDef> = {
   tv: { room: "living", x: 81, y: 158, anchor: "tv", pose: "back", label: "看電視" },
@@ -246,7 +252,8 @@ export const ACTS: Record<string, ActDef> = {
   sofa: { room: "living", x: 47, y: 252, anchor: "sofa", pose: "phone", label: "窩沙發滑手機" },
   workout: { room: "living", x: 101, y: 253, anchor: "dumbbell", pose: "happy", label: "運動中", hop: true },
   door: { room: "living", x: 114, y: 160, anchor: "door", pose: "back", label: "等外送" },
-  pc: { room: "bedroom", x: 66, y: 157, anchor: "desk", pose: "back", label: "打電腦" },
+  // 坐在書桌前的電競椅上（椅子中間；椅子搬了跟著走）
+  pc: { room: "bedroom", x: 63, y: 157, anchor: "chair", pose: "back", label: "打電腦", seat: "chair" },
   read: { room: "bedroom", x: 20, y: 160, anchor: "bookshelf", pose: "back", label: "找書看" },
   bedphone: { room: "bedroom", x: 66, y: 252, anchor: "bed", pose: "phone", label: "滑手機" },
   daze: { room: "bedroom", x: 92, y: 196, pose: "sad", label: "發呆" },

@@ -95,6 +95,8 @@ import {
   ROOM_NAMES,
   ROOM_W,
   SCENE_TINT,
+  SEAT_DROP,
+  SEAT_LEGS,
   STRIP_ROOMS,
   type DecorDef,
   type SkinDef,
@@ -714,16 +716,25 @@ const bowlStyle = computed(() => ({
   width: `${u(BOWL_ART.empty[0].length)}px`,
   height: `${u(BOWL_ART.empty.length)}px`,
 }));
-/** 貓站在碗後面低頭吃（狗、雪貂有自己的碗，不用） */
-const catAtBowl = (k: HouseCat) => k.cat.value?.species === "cat" && k.act.value === "eat" && !k.walking.value && k.me.room === BOWL_SPOT.room;
-/** 疊在貓前面的那個碗：位置照牠的腳底算，跟地上那個碗重疊 */
+/** 貓、狗站在自己的碗後面低頭吃（雪貂的吃飯圖頭沒埋進去，不用） */
+const catAtBowl = (k: HouseCat) => {
+  const sp = k.cat.value?.species;
+  return (sp === "cat" || sp === "dog") && k.act.value === "eat" && !k.walking.value && k.me.room === BOWL_SPOT.room;
+};
+/** 疊在牠前面的那個碗：位置照牠的腳底算，跟地上那個碗重疊 */
 function catBowlStyle(k: HouseCat) {
+  const spot = k.isDog.value ? DOG_BOWL_SPOT : BOWL_SPOT;
   return {
-    left: `${u(BOWL_SPOT.x - k.me.x)}px`,
-    top: `${u(BOWL_SPOT.y - k.me.y)}px`,
+    left: `${u(spot.x - k.me.x)}px`,
+    top: `${u(spot.y - k.me.y)}px`,
     width: `${u(BOWL_ART.empty[0].length)}px`,
     height: `${u(BOWL_ART.empty.length)}px`,
   };
+}
+/** 疊在前面的碗用哪張圖（跟地上那個一樣：有飼料就是滿的） */
+function catBowlSrc(k: HouseCat) {
+  if (k.isDog.value) return pets.home.value.stock.dogFood > 0 ? dogBowlImages.full : dogBowlImages.empty;
+  return pets.home.value.stock.kibble > 0 ? bowlImages.full : bowlImages.empty;
 }
 
 /** 狗碗：在貓碗右邊，藍色 */
@@ -770,11 +781,13 @@ function cagedImages(species: CagedSpecies, color: PetColor) {
 const gliderStyle = computed(() => {
   const w = spriteSize.value.w;
   const h = spriteSize.value.h;
+  // 坐著的時候他整個往下移
+  const drop = seatShift.value ? u(seatShift.value.drop) : 0;
   const side = life.facing.value > 0 ? -1 : 1;
   if (gliderOnHim.value?.where === "pocket") {
-    return { left: `${side * w * 0.12 - u(4.5)}px`, top: `${-h * 0.36}px`, width: `${u(9)}px`, height: `${u(4)}px` };
+    return { left: `${side * w * 0.12 - u(4.5)}px`, top: `${-h * 0.36 + drop}px`, width: `${u(9)}px`, height: `${u(4)}px` };
   }
-  return { left: `${side * w * 0.36 - u(4.5)}px`, top: `${-h * 0.57}px`, width: `${u(9)}px`, height: `${u(8)}px` };
+  return { left: `${side * w * 0.36 - u(4.5)}px`, top: `${-h * 0.57 + drop}px`, width: `${u(9)}px`, height: `${u(8)}px` };
 });
 /** 他現在有空讓蜜袋鼯爬上來：在家、醒著、沒在陪狗散步 */
 const residentFree = computed(() => isHome.value && !lying.value && !walkUntil.value);
@@ -1138,6 +1151,18 @@ const dollFlip = computed(() => {
 /** 小人高幾格：紙娃娃照原尺寸，暫用的走路圖拉成 CHAR_HEIGHT */
 const charUnits = computed(() => dollPose.value?.h ?? CHAR_HEIGHT);
 
+/** 坐在哪件家具上（打電腦坐椅子）：走路、躺著、那件家具不在就是站著 */
+const seatedOn = computed(() => {
+  const seat = life.walking.value || lying.value ? undefined : meAct.value?.seat;
+  return seat && roomItems.value[life.me.room].some((i) => i.id === seat) ? seat : null;
+});
+/** 坐下時往下移幾格、下面藏起來幾格（腳在椅子後面） */
+const seatShift = computed(() => {
+  if (!seatedOn.value) return null;
+  const h = charUnits.value;
+  return { drop: Math.round(h * SEAT_DROP), legs: Math.round(h * SEAT_LEGS) };
+});
+
 const spriteSize = computed(() => {
   const p = dollPose.value;
   if (p) return { w: u(p.w), h: u(p.h) };
@@ -1163,11 +1188,14 @@ const meStyle = computed(() => ({
 
 const spriteStyle = computed(() => {
   const { w, h } = spriteSize.value;
+  const seat = seatShift.value;
   return {
     width: `${w}px`,
     height: `${h}px`,
     left: `${-w / 2}px`,
-    top: `${-h + (dollPose.value ? 0 : u(1))}px`,
+    top: `${-h + (dollPose.value ? 0 : u(1)) + (seat ? u(seat.drop) : 0)}px`,
+    // 坐著：腳那一段藏起來（在椅子後面）
+    clipPath: seat ? `inset(0 0 ${u(seat.legs)}px 0)` : undefined,
     // 躺下：先用站姿轉 90 度代替（之後換成睡覺的圖）；紙娃娃沒有走路的圖時，走路一上一下跳
     // 有畫睡覺的圖（已經是躺著的）就不轉
     transform: lying.value
@@ -1209,6 +1237,9 @@ const frontIds = computed(() => {
     // 每間都算（走到房間邊上會跨到隔壁）
     out[room] = isHome.value ? itemsInFront(Object.fromEntries(roomItems.value[room].map((i) => [i.id, i.depth])), meDepth.value) : [];
   }
+  // 坐著：椅子在他前面（椅子算放在書桌上，照前後排會跟書桌一起在他後面）
+  const seat = seatedOn.value;
+  if (seat && !out[life.me.room].includes(seat)) out[life.me.room] = [...out[life.me.room], seat];
   return out;
 });
 
@@ -1985,7 +2016,7 @@ function labelStyle(room: RoomId, it: RenderItem) {
 
       <!-- 他 -->
       <div v-if="isHome" class="ph-me" :class="{ 'is-offscreen': !meVisible }" :style="meStyle">
-        <div v-if="!lying" class="ph-me-shadow" :style="{ width: `${u(24)}px`, height: `${u(3.4)}px` }"></div>
+        <div v-if="!lying && !seatedOn" class="ph-me-shadow" :style="{ width: `${u(24)}px`, height: `${u(3.4)}px` }"></div>
         <div
           v-if="dollPose"
           class="ph-me-sprite ph-doll"
@@ -2206,11 +2237,11 @@ function labelStyle(room: RoomId, it: RenderItem) {
                 <img v-show="ferretDancing(k)" :src="ferretDanceImages(k.cat.value.color)['dance-b']" class="ph-flip-b" alt="" draggable="false" />
               </template>
             </div>
-            <!-- 貓在吃飯：碗再疊一個在牠前面，蓋住下巴，看起來是把頭埋進碗裡（跟地上那個碗同一個位置） -->
+            <!-- 貓、狗在吃飯：碗再疊一個在牠前面，蓋住下巴，看起來是把頭埋進碗裡（跟地上那個碗同一個位置） -->
             <img
               v-if="catAtBowl(k)"
               class="ph-cat-bowl"
-              :src="pets.home.value.stock.kibble > 0 ? bowlImages.full : bowlImages.empty"
+              :src="catBowlSrc(k)"
               :style="catBowlStyle(k)"
               alt=""
               draggable="false"

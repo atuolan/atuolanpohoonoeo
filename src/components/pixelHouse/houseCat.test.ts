@@ -20,7 +20,8 @@ import {
   CAT_PERSONALITY_IDS,
   decayMult,
   eatKibble,
-  KIBBLE_GAIN,
+  mealGain,
+  hungryBelow,
   CAT_GIFT_COINS,
   CAT_H,
   CAT_FIND_CHANCE,
@@ -30,6 +31,10 @@ import {
   pickCatFind,
   PERCH_FLOOR_Y,
   CAT_WEIGHTS,
+  CAT_WANDER,
+  WANDER_SPOTS,
+  pickWanderSpot,
+  type CatState,
 } from "./houseCat";
 import { ROOM_H, ROOM_W } from "./houseData";
 import { parseHouseLifeState } from "./houseLife";
@@ -77,8 +82,10 @@ describe("貓的數值", () => {
 
   it("吃貓糧、罐頭變飽，摸、逗、貓條心情和親密度變好，洗了變乾淨但有點不高興，都不超過 100", () => {
     const hungry = kitty({ food: { v: 10, at: T0 } });
-    expect(catLevels(eatKibble(hungry, T0), T0).food).toBe(10 + KIBBLE_GAIN);
-    expect(catLevels(eatKibble(eatKibble(eatKibble(hungry, T0), T0), T0), T0).food).toBe(100);
+    expect(catLevels(eatKibble(hungry, T0), T0).food).toBe(10 + mealGain("cat"));
+    let full: CatState = hungry;
+    for (let i = 0; i < 5; i++) full = eatKibble(full, T0);
+    expect(catLevels(full, T0).food).toBe(100);
     expect(catLevels(careCat(hungry, "can", T0), T0).food).toBe(10 + CAT_CARE_EFFECT.can[0]);
     const base = kitty();
     expect(catLevels(careCat(base, "pet", T0), T0).mood).toBeGreaterThan(80);
@@ -88,6 +95,20 @@ describe("貓的數值", () => {
     const washed = careCat({ ...base, clean: { v: 20, at: T0 } }, "wash", T0);
     expect(catLevels(washed, T0).clean).toBe(100);
     expect(catLevels(washed, T0).mood).toBeLessThan(80);
+  });
+
+  it("貓少量多餐：一份是四分之一天，吃完差不多滿；狗一天兩頓", () => {
+    expect(mealGain("cat")).toBe(25);
+    expect(hungryBelow("cat")).toBe(75);
+    expect(mealGain("ferret")).toBe(25);
+    expect(mealGain("dog")).toBe(50);
+    expect(hungryBelow("dog")).toBe(50);
+    // 剛好餓了吃一份：差不多滿，6 小時後又餓
+    const cat = kitty({ food: { v: hungryBelow("cat") - 1, at: T0 } });
+    const fed = eatKibble(cat, T0);
+    expect(catLevels(fed, T0).food).toBe(99);
+    expect(catLevels(fed, T0 + 6 * HOUR).food).toBeLessThan(hungryBelow("cat"));
+    expect(catLevels(fed, T0 + 5 * HOUR).food).toBeGreaterThanOrEqual(hungryBelow("cat"));
   });
 
   it("太餓、心情太差、生病會沒精神；很久沒開也只是沒精神，餵一次就好", () => {
@@ -154,8 +175,47 @@ describe("貓會做的事", () => {
       expect(a.y, key).toBeLessThan(ROOM_H);
     }
     for (const weights of Object.values(CAT_WEIGHTS)) {
-      for (const key of Object.keys(weights)) expect(key === CAT_RUB || key === CAT_FOLLOW || !!CAT_ACTS[key], key).toBe(true);
+      for (const key of Object.keys(weights)) expect(key === CAT_RUB || key === CAT_FOLLOW || key === CAT_WANDER || !!CAT_ACTS[key], key).toBe(true);
     }
+  });
+
+  it("到處逛：四間都會去，比較常去別間；每個地方都在地上", () => {
+    const seen = new Set<string>();
+    let other = 0;
+    for (let i = 0; i < 200; i++) {
+      const t = (i + 0.5) / 200;
+      const spot = pickWanderSpot("living", () => t);
+      seen.add(spot.room);
+      if (spot.room !== "living") other++;
+    }
+    expect(seen.size).toBe(4);
+    expect(other / 200).toBeGreaterThan(0.75);
+    expect(pickWanderSpot("bath", () => 0.999999).room).toBeTruthy();
+    for (const spots of Object.values(WANDER_SPOTS)) {
+      for (const [x, y] of spots) {
+        expect(x).toBeGreaterThan(5);
+        expect(x).toBeLessThan(ROOM_W - 5);
+        expect(y).toBeGreaterThan(PERCH_FLOOR_Y);
+        expect(y).toBeLessThan(ROOM_H);
+      }
+    }
+    expect(catDwellMs(CAT_WANDER, () => 0)).toBeLessThan(catDwellMs("nap-sofa", () => 0));
+  });
+
+  it("白天大約四成的時候在客廳以外的地方（到處逛、臥室、廚房、浴室）", () => {
+    const w = CAT_WEIGHTS.day;
+    const total = Object.values(w).reduce((a, b) => a + b, 0);
+    const living = Object.entries(w).filter(([k]) => CAT_ACTS[k]?.room === "living").reduce((a, [, v]) => a + v, 0);
+    expect(living / total).toBeLessThan(0.45);
+  });
+
+  it("他不在家：比較常在門口等", () => {
+    const n = (home: boolean) => {
+      let c = 0;
+      for (let i = 0; i < 400; i++) if (pickCatAct({ ...base, residentHome: home }, () => (i + 0.5) / 400) === "sit-door") c++;
+      return c;
+    };
+    expect(n(false)).toBeGreaterThan(n(true) * 2);
   });
 
   it("他在睡覺：跳上床一起睡", () => {
