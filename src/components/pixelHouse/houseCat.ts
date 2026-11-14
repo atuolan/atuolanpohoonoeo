@@ -13,7 +13,7 @@ import type { RoomId, Scene } from "./houseData";
 
 // ===== 花色 =====
 
-export type CatColor = "gray" | "orange" | "tuxedo" | "white" | "siamese";
+export type CatColor = "gray" | "orange" | "tuxedo" | "white" | "siamese" | "black";
 
 /**
  * 貓的字母是「部位」，顏色由花色決定：
@@ -42,6 +42,11 @@ export const CAT_COLORS: Record<CatColor, { name: string; palette: Record<string
     name: "暹羅貓",
     palette: { o: "#3B2A26", b: "#EFE1C8", s: "#EFE1C8", k: "#6B4E3D", p: "#B07A72", r: "#EDA59C", n: "#6B4E3D", w: "#FBF3E4", f: "#7A5A45", g: "#6B4E3D", t: "#7A5A45", u: "#6B4E3D", y: "#5E4434", e: "#3E6FB8", i: "#FFFFFF" },
   },
+  // 全黑：白毛的部位也是黑的，琥珀色眼睛；閉著的眼睛、腳之間的線用外框色（比毛深一點才看得到）
+  black: {
+    name: "黑貓",
+    palette: { o: "#16151B", b: "#3A3943", s: "#3A3943", k: "#3A3943", p: "#B9808A", r: "#C98590", n: "#D9919B", w: "#3A3943", f: "#3A3943", g: "#2C2B33", t: "#3A3943", u: "#3A3943", y: "#3A3943", e: "#F2C24E", i: "#FFFFFF" },
+  },
 };
 
 export const CAT_COLOR_IDS = Object.keys(CAT_COLORS) as CatColor[];
@@ -64,7 +69,7 @@ export const SPECIES_NAMES: Record<PetSpecies, string> = {
 export const CAGED_SPECIES: PetSpecies[] = ["hamster", "guineaPig", "glider", "snake"];
 export const isCaged = (species: PetSpecies) => CAGED_SPECIES.includes(species);
 
-export type DogColor = "shiba" | "black" | "white" | "brown";
+export type DogColor = "shiba" | "black" | "white" | "brown" | "allBlack";
 export type HamsterColor = "golden" | "gray" | "pearl";
 export type FerretColor = "sable" | "cream" | "albino" | "silver";
 export type GuineaColor = "ginger" | "panda" | "cream";
@@ -121,6 +126,8 @@ export const DOG_COLORS: Record<DogColor, { name: string; palette: Record<string
   shiba: { name: "奶茶", palette: { o: "#3B2A26", w: "#FBF1E6", s: "#D9A066", k: "#B07A45", g: "#E2CDB4", i: "#FFFFFF" } },
   black: { name: "黑白", palette: { o: "#16151B", w: "#F7EFE6", s: "#4A4652", k: "#2E2B35", g: "#CFC6BE", i: "#FFFFFF" } },
   white: { name: "白白", palette: { o: "#5B4A44", w: "#FFFFFF", s: "#EFE3D3", k: "#DCC7AE", g: "#E6DDD3", i: "#FFFFFF" } },
+  // 全黑：眼睛是外框色，所以毛要比外框淺一點，眼睛和反光才看得到
+  allBlack: { name: "黑黑", palette: { o: "#121116", w: "#4A4853", s: "#3C3A44", k: "#2E2D35", g: "#3A3842", i: "#FFFFFF" } },
 };
 
 export const HAMSTER_COLORS: Record<HamsterColor, { name: string; palette: Record<string, string> }> = {
