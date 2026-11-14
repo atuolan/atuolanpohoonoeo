@@ -40,10 +40,11 @@ const kitty = (patch: Record<string, unknown> = {}) => ({ ...adoptCat("咪", "gr
 const HOUR = 3_600_000;
 
 describe("貓的圖", () => {
-  it("每個姿勢都是 18×12，用到的顏色每種花色都有", () => {
+  it("每個姿勢都是 36×24（畫面上 24×16，比例一樣），用到的顏色每種花色都有", () => {
+    expect(36 / 24).toBe(CAT_W / CAT_H);
     for (const [pose, rows] of Object.entries(CAT_ART)) {
-      expect(rows.length, pose).toBe(CAT_H);
-      for (const row of rows) expect(row.length, `${pose}: ${row}`).toBe(CAT_W);
+      expect(rows.length, pose).toBe(24);
+      for (const row of rows) expect(row.length, `${pose}: ${row}`).toBe(36);
       const used = new Set(rows.join("").replace(/\./g, ""));
       for (const id of CAT_COLOR_IDS) for (const ch of used) expect(CAT_COLORS[id].palette[ch], `${pose} ${id} ${ch}`).toBeTruthy();
     }

@@ -714,6 +714,17 @@ const bowlStyle = computed(() => ({
   width: `${u(BOWL_ART.empty[0].length)}px`,
   height: `${u(BOWL_ART.empty.length)}px`,
 }));
+/** 貓站在碗後面低頭吃（狗、雪貂有自己的碗，不用） */
+const catAtBowl = (k: HouseCat) => k.cat.value?.species === "cat" && k.act.value === "eat" && !k.walking.value && k.me.room === BOWL_SPOT.room;
+/** 疊在貓前面的那個碗：位置照牠的腳底算，跟地上那個碗重疊 */
+function catBowlStyle(k: HouseCat) {
+  return {
+    left: `${u(BOWL_SPOT.x - k.me.x)}px`,
+    top: `${u(BOWL_SPOT.y - k.me.y)}px`,
+    width: `${u(BOWL_ART.empty[0].length)}px`,
+    height: `${u(BOWL_ART.empty.length)}px`,
+  };
+}
 
 /** 狗碗：在貓碗右邊，藍色 */
 const dogBowlImages = { empty: pixelSvg(BOWL_ART.empty, DOG_BOWL_PALETTE), full: pixelSvg(BOWL_ART.full, DOG_BOWL_PALETTE) };
@@ -2195,6 +2206,15 @@ function labelStyle(room: RoomId, it: RenderItem) {
                 <img v-show="ferretDancing(k)" :src="ferretDanceImages(k.cat.value.color)['dance-b']" class="ph-flip-b" alt="" draggable="false" />
               </template>
             </div>
+            <!-- 貓在吃飯：碗再疊一個在牠前面，蓋住下巴，看起來是把頭埋進碗裡（跟地上那個碗同一個位置） -->
+            <img
+              v-if="catAtBowl(k)"
+              class="ph-cat-bowl"
+              :src="pets.home.value.stock.kibble > 0 ? bowlImages.full : bowlImages.empty"
+              :style="catBowlStyle(k)"
+              alt=""
+              draggable="false"
+            />
             <button
               class="ph-cat-hit"
               :style="catBox(k.cat.value.species)"
@@ -2618,6 +2638,14 @@ function labelStyle(room: RoomId, it: RenderItem) {
   inset: 0;
   width: 100%;
   height: 100%;
+  image-rendering: crisp-edges;
+  image-rendering: pixelated;
+  -webkit-user-drag: none;
+}
+
+.ph-cat-bowl {
+  position: absolute;
+  pointer-events: none;
   image-rendering: crisp-edges;
   image-rendering: pixelated;
   -webkit-user-drag: none;
