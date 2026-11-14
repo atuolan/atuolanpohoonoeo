@@ -38,6 +38,7 @@ import {
 } from "lucide-vue-next";
 import type { Component } from "vue";
 import { computed, nextTick, onMounted, reactive, ref, watch } from "vue";
+import { formatCoins } from "@/utils/coins";
 
 const props = defineProps<{
   /** 從哪個入口進來就先停在哪一頁（例如外賣 → 美食廣場）；沒給就回到上次停的那頁 */
@@ -143,7 +144,7 @@ onMounted(() => {
       <h1>商店</h1>
       <div class="balance-chip">
         <Coins :size="15" />
-        <span>{{ balance.toLocaleString() }}</span>
+        <span>{{ formatCoins(balance) }}</span>
       </div>
     </header>
 

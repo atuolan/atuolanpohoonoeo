@@ -5,6 +5,7 @@
  * - 換款式：家具的別的顏色、花樣。買了馬上換上；買過的可以隨時換回原本的或換別的，不用再付錢。
  */
 import { computed, ref, watch } from "vue";
+import { formatCoins, formatCoinsShortfall } from "@/utils/coins";
 import { skinSlot, type DecorDef, type RoomId, type SkinDef } from "./houseData";
 import { loadWardrobeBalance, payCoins } from "./wardrobeShop";
 
@@ -96,7 +97,7 @@ async function buySkin(g: SkinGroup, v: SkinDef) {
     const r = await payCoins(v.price, `小屋家具款式：${g.itemName}（${v.name}）`, `pixel-house:skin:${key}`);
     if (!r.ok) {
       message.value =
-        r.error === "insufficient_funds" ? `金幣不夠，還差 ${(v.price - (balance.value ?? 0)).toLocaleString()}` : "付款失敗，再試一次";
+        r.error === "insufficient_funds" ? `金幣不夠，還差 ${formatCoinsShortfall(v.price - (balance.value ?? 0))}` : "付款失敗，再試一次";
       return;
     }
     balance.value = r.balance;
@@ -138,7 +139,7 @@ async function buy(d: DecorDef) {
     const r = await payCoins(d.price, `小屋擺件：${d.name}`, `pixel-house:decor:${d.id}`);
     if (!r.ok) {
       message.value =
-        r.error === "insufficient_funds" ? `金幣不夠，還差 ${(d.price - (balance.value ?? 0)).toLocaleString()}` : "付款失敗，再試一次";
+        r.error === "insufficient_funds" ? `金幣不夠，還差 ${formatCoinsShortfall(d.price - (balance.value ?? 0))}` : "付款失敗，再試一次";
       return;
     }
     balance.value = r.balance;
@@ -165,7 +166,7 @@ function zoom(d: DecorDef): number {
       <section class="ds-sheet" role="dialog" aria-label="擺件商店">
         <header class="ds-head">
           <h2>擺件商店</h2>
-          <span class="ds-coins" aria-label="金幣">金幣 {{ balance === null ? "…" : balance.toLocaleString() }}</span>
+          <span class="ds-coins" aria-label="金幣">金幣 {{ balance === null ? "…" : formatCoins(balance) }}</span>
           <button class="ds-close" aria-label="關閉" @click="emit('close')">×</button>
         </header>
         <div class="ds-tabs" role="tablist">

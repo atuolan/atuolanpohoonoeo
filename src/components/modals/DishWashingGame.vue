@@ -7,9 +7,9 @@
             <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
           </button>
           <h2 class="gs-title">洗碗</h2>
-          <span class="coin-capsule" :aria-label="`金幣 ${balance}`">
+          <span class="coin-capsule" :aria-label="`金幣 ${formatCoins(balance)}`">
             <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true"><circle cx="10" cy="10" r="9" fill="#E8A93A"/><circle cx="10" cy="10" r="6" fill="none" stroke="#FFF1CF" stroke-width="1.5"/><path d="M10 7v6" stroke="#FFF1CF" stroke-width="1.5" stroke-linecap="round"/></svg>
-            <span class="balance-text">{{ balance.toLocaleString() }}</span>
+            <span class="balance-text">{{ formatCoins(balance) }}</span>
           </span>
         </header>
 
@@ -70,6 +70,7 @@
 <script setup lang="ts">
 import { useGameEconomyStore } from "@/stores/gameEconomy";
 import { computed, ref, watch, onUnmounted } from "vue";
+import { formatCoins } from "@/utils/coins";
 import { getShopItemById } from "@/data/shopItems";
 
 const props = defineProps<{ visible: boolean; chatId?: string }>();

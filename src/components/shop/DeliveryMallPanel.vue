@@ -32,11 +32,13 @@ import { useWeatherStore } from "@/stores/weather";
 import type { WaimaiOrderSnapshot } from "@/types/chat";
 import type { WaimaiDestinationSnapshot } from "@/types/waimaiDelivery";
 import {
+    Coins,
     MessageCircleMore,
     Send,
     Store,
 } from "lucide-vue-next";
 import { computed, onMounted, ref } from "vue";
+import { formatCoins, formatCoinsShortfall } from "@/utils/coins";
 
 interface DeliveryMallInjectedMessage {
   content: string;
@@ -154,9 +156,7 @@ const detailEstimate = computed(() => {
   const routeName = formatWaimaiRouteName(routeType);
   const routeText =
     routeType === "cross_border" ? `${routeName}，依收件人所在地計算` : routeName;
-  return {
-    text: `運費 🪙 ${fee}（${routeText}）・合計 🪙 ${item.price + fee}`,
-  };
+  return { fee, routeText, total: item.price + fee };
 });
 
 // 確認視窗用的小計算
@@ -170,10 +170,6 @@ const shortfall = computed(() => (balanceAfter.value < 0 ? -balanceAfter.value :
 const confirmDisabled = computed(
   () => submitting.value || (confirmIsSelfPay.value && shortfall.value > 0),
 );
-
-function formatCoin(value: number): string {
-  return value.toLocaleString("zh-TW");
-}
 
 function sectionEmoji(section: WaimaiMallSection): string {
   return SECTION_EMOJI[section] ?? "🛍️";
@@ -360,7 +356,7 @@ function formatOrderSummary(
 ): string {
   const lines = [
     `商品：${itemName}`,
-    `小計：🪙 ${order.subtotal}｜運費：🪙 ${order.shippingFee}｜總計：🪙 ${order.totalPrice}`,
+    `小計：${order.subtotal} 金幣｜運費：${order.shippingFee} 金幣｜總計：${order.totalPrice} 金幣`,
   ];
 
   if (order.destination) {
@@ -521,7 +517,9 @@ async function confirmOrder() {
                   >{{ tag }}</span
                 >
               </div>
-              <div class="price">🪙 {{ item.price }}</div>
+              <div class="price">
+                <Coins :size="14" class="coin" />{{ formatCoins(item.price) }}
+              </div>
             </div>
           </div>
         </button>
@@ -565,9 +563,12 @@ async function confirmOrder() {
               </span>
             </div>
 
-            <div class="detail-price">🪙 {{ selectedItem.price }}</div>
+            <div class="detail-price">
+              <Coins :size="22" class="coin" />{{ formatCoins(selectedItem.price) }}
+            </div>
             <div v-if="detailEstimate" class="detail-shipping">
-              {{ detailEstimate.text }}
+              運費 <Coins :size="13" class="coin inline" />{{ formatCoins(detailEstimate.fee) }}（{{ detailEstimate.routeText }}）・合計
+              <Coins :size="13" class="coin inline" />{{ formatCoins(detailEstimate.total) }}
             </div>
 
             <div class="detail-actions">
@@ -737,7 +738,7 @@ async function confirmOrder() {
               <div class="confirm-rows">
                 <div class="confirm-row">
                   <span>小計</span>
-                  <span>🪙 {{ formatCoin(pendingOrder.subtotal) }}</span>
+                  <span class="amount"><Coins :size="13" class="coin" />{{ formatCoins(pendingOrder.subtotal) }}</span>
                 </div>
                 <div class="confirm-row">
                   <span>{{
@@ -745,11 +746,11 @@ async function confirmOrder() {
                       ? `運費（${formatWaimaiRouteName(pendingOrder.eta.routeType)}）`
                       : "運費"
                   }}</span>
-                  <span>🪙 {{ formatCoin(pendingOrder.shippingFee) }}</span>
+                  <span class="amount"><Coins :size="13" class="coin" />{{ formatCoins(pendingOrder.shippingFee) }}</span>
                 </div>
                 <div class="confirm-row total">
                   <span>總計</span>
-                  <span>🪙 {{ formatCoin(pendingOrder.totalPrice) }}</span>
+                  <span class="amount"><Coins :size="13" class="coin" />{{ formatCoins(pendingOrder.totalPrice) }}</span>
                 </div>
               </div>
 
@@ -769,11 +770,11 @@ async function confirmOrder() {
               </div>
 
               <div v-if="confirmIsSelfPay" class="confirm-balance">
-                目前餘額 🪙 {{ formatCoin(balance) }} → 付款後 🪙
-                {{ formatCoin(balanceAfter) }}
+                目前餘額 <Coins :size="13" class="coin inline" />{{ formatCoins(balance) }}
+                → 付款後 <Coins :size="13" class="coin inline" />{{ formatCoins(balanceAfter) }}
               </div>
               <div v-if="confirmIsSelfPay && shortfall > 0" class="confirm-error">
-                餘額不足，還差 🪙 {{ formatCoin(shortfall) }}
+                餘額不足，還差 <Coins :size="13" class="coin inline" />{{ formatCoinsShortfall(shortfall) }}
               </div>
               <div v-else-if="confirmError" class="confirm-error">
                 {{ confirmError }}
@@ -931,6 +932,9 @@ async function confirmOrder() {
       }
 
       .price {
+        display: inline-flex;
+        align-items: center;
+        gap: 3px;
         color: #ef4444;
         font-size: 14px;
         font-weight: 700;
@@ -1028,6 +1032,9 @@ async function confirmOrder() {
   }
 
   .detail-price {
+    display: flex;
+    align-items: center;
+    gap: 5px;
     margin-top: 12px;
     font-size: 24px;
     font-weight: 800;
@@ -1190,6 +1197,12 @@ async function confirmOrder() {
       text-align: right;
       min-width: 0;
       word-break: break-all;
+    }
+
+    .amount {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
     }
 
     &.total {
@@ -1378,8 +1391,24 @@ async function confirmOrder() {
 
 // ===== 夜晚模式覆蓋 =====
 // 頁面底色跟著主題變數變深，但商品卡與底部彈窗寫死淺色；
+// 金幣圖示：跟商店其他頁一樣用 Coins，不用 🪙（iPhone 上是銀色的）
+.coin {
+  flex-shrink: 0;
+  color: #d97706;
+
+  &.inline {
+    display: inline-block;
+    vertical-align: -2px;
+    margin: 0 1px 0 2px;
+  }
+}
+
 // body.is-night-mode 由 theme store 同步切換，保持巢狀讓 scoped 附在內層元素上。
 body.is-night-mode {
+  .coin {
+    color: #ffb74d;
+  }
+
   .image-placeholder {
     background: rgba(129, 140, 248, 0.15);
   }

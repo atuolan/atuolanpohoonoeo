@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Coins } from "lucide-vue-next";
 import { computed } from "vue";
 import type { WaimaiOrderSnapshot } from "@/types/chat";
 import { formatWaimaiDestination } from "@/services/waimaiLocation";
@@ -22,7 +23,7 @@ const isFood = computed(() => props.order.item.section === "food");
 
 function formatWaimaiPrice(value?: number): string {
   const amount = Number.isFinite(value) ? Number(value) : 0;
-  return `🪙 ${amount.toLocaleString("zh-TW")}`;
+  return amount.toLocaleString("zh-TW");
 }
 
 const statusLabel = computed(() => {
@@ -195,11 +196,11 @@ const delayReason = computed(() => {
 
     <div class="waimai-price-grid">
       <span>小計</span>
-      <span>{{ formatWaimaiPrice(order.subtotal) }}</span>
+      <span class="waimai-amount"><Coins :size="12" class="waimai-coin" />{{ formatWaimaiPrice(order.subtotal) }}</span>
       <span>運費</span>
-      <span>{{ formatWaimaiPrice(order.shippingFee) }}</span>
+      <span class="waimai-amount"><Coins :size="12" class="waimai-coin" />{{ formatWaimaiPrice(order.shippingFee) }}</span>
       <span class="total-label">總計</span>
-      <span class="total-value">{{ formatWaimaiPrice(order.totalPrice) }}</span>
+      <span class="waimai-amount total-value"><Coins :size="12" class="waimai-coin" />{{ formatWaimaiPrice(order.totalPrice) }}</span>
     </div>
 
     <div v-if="recipientName" class="waimai-recipient">
@@ -304,6 +305,18 @@ const delayReason = computed(() => {
     .total-value {
       font-weight: 700;
       color: #0f172a;
+    }
+
+    .waimai-amount {
+      display: inline-flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 3px;
+    }
+
+    .waimai-coin {
+      flex-shrink: 0;
+      color: #d97706;
     }
   }
 

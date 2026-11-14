@@ -33,6 +33,7 @@ import {
     X,
 } from "lucide-vue-next";
 import { computed, onMounted, ref } from "vue";
+import { formatCoins } from "@/utils/coins";
 import { getGiftIcon } from "@/utils/giftIcon";
 import { getCareIcon } from "@/utils/careIcon";
 import ChatSkinShopPanel from "@/components/shop/ChatSkinShopPanel.vue";
@@ -755,7 +756,7 @@ onMounted(async () => {
               </div>
 
               <div class="modal-balance">
-                購買後餘額：{{ (balance - totalPrice).toLocaleString() }}
+                購買後餘額：{{ formatCoins(balance - totalPrice) }}
               </div>
 
               <div class="modal-actions">
