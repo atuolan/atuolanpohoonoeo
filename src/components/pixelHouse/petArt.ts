@@ -14,7 +14,8 @@ export const DOG_H = 33 * DOG_CELL;
 
 /**
  * 使用者畫的垂耳小狗（原稿朝左，這裡左右翻成朝右；原稿 scripts/pixel-house/source/dog-sheet.png）。
- * 字母是部位，顏色由花色決定（DOG_COLORS）：o 外框（眼睛也是）｜w 奶油色的毛｜s 花斑｜k 耳朵｜g 遠的腳｜i 眼睛反光
+ * 字母是部位，顏色由花色決定（DOG_COLORS）：o 外框（眼睛也是）｜w 奶油色的毛｜s 花斑｜k 耳朵｜g 遠的腳｜i 眼睛反光｜r 腮紅
+ * 腮紅是後來加的（使用者同意）：坐著、吃飯兩邊各 2 格，走路、睡覺眼睛下面 2 格
  */
 export const DOG_ART: Record<CatPose, string[]> = {
   "walk-a": [
@@ -35,7 +36,7 @@ export const DOG_ART: Record<CatPose, string[]> = {
     "...owwwssssookkkkksoookkkkkossssooowwwwwwo.....",
     "....owwssssokkkkksssssokkkosssswooowwwwwwo.....",
     ".....owwssowkkkkksssssokkosssswwwwwwwwwowo.....",
-    "......owwwowwkkkkssssssooowssswwwwwwwwowo......",
+    "......owwwowwkkkkssssssooowssswwrrwwwwowo......",
     ".......ooowwwkkkksswwssssoowwwwwwwwwwwwwo......",
     ".........owwwwkkkwwwwwsssssoowwwwwwwwwwo.......",
     ".........owwwwkkwwwwwwwwwssssoowwoooooo........",
@@ -71,7 +72,7 @@ export const DOG_ART: Record<CatPose, string[]> = {
     "...owwwssssookkkkksoookkkkkossssooowwwwwwo.....",
     "....owwssssokkkkksssssokkkosssswooowwwwwwo.....",
     ".....owwssowkkkkksssssokkosssswwwwwwwwwowo.....",
-    "......owwwowwkkkkssssssooowssswwwwwwwwowo......",
+    "......owwwowwkkkkssssssooowssswwrrwwwwowo......",
     ".......ooowwwkkkksswwssssoowwwwwwwwwwwwwo......",
     ".........owwwwkkkwwwwwsssssoowwwwwwwwwwo.......",
     ".........owwwwkkwwwwwwwwwssssoowwoooooo........",
@@ -101,7 +102,7 @@ export const DOG_ART: Record<CatPose, string[]> = {
     "............okkkkkkossssoowwwwwwoossokko.......",
     "............okkkkkkossssoowwwwwwoosssoo........",
     ".............okkkkosssswwwwwwwwwwwwsso.........",
-    ".............okkkkossswwwwwwwwowwwwwwo.........",
+    ".............okkkkossswrrwwwwwowwwrrwo.........",
     "..............okkoswwwwwwwwwwowowwwwo..........",
     "..............ooooowwwwwwwwwwwwwwwwo...........",
     "...................oowwwwwwwwwwwwoo............",
@@ -152,7 +153,7 @@ export const DOG_ART: Record<CatPose, string[]> = {
     "osssswwwwoowwwwwwwowooooooowwwwwwwwwwwsssosssso",
     "osswwwwwwwwowwwwwwoowwwwwwwoowwwwwwwwwsssokkkso",
     "osswwwwwwwwwowwwwoowwwwwwwwwwowwoowwowsssokkko.",
-    "osswwwwwwwwwowwwwwwowwwwwwwwwwowwowwwoossoooo..",
+    "osswwwwwwwwwowwwwwwowwwwwwwwwworrowwwoossoooo..",
     "osswwwwwwwwwwowwwwwwowwowwwwwwowwwwwwwwso......",
     ".osswwwwwwwwwowwwwwwooooowwwwwoooooooooo.......",
     "..ooooooooooo.ooooooo....ooooo.................",
@@ -182,7 +183,7 @@ export const DOG_ART: Record<CatPose, string[]> = {
     "....owwkkkkwwwwwssssokkkkossssswwwwwwwssoko....",
     "....owwkkkkwwwwwwwwwokkkkossswwwwwwwwwwwoo.....",
     "....owwwkkkkwwwwwwwwwokkoswwwooowwwwwoowo......",
-    "...owwwwwkkkwwwwwwwwwwooowwwwwwwwwwwwwwwo......",
+    "...owwwwwkkkwwwwwwwwwwooowwrrwwwwwwwwwrro......",
     "...owwwwwwwkoowwwwwwwwwwowwwwwwwwwwowwwo.......",
     "...owwwwwwwoggoowwwowwwwwoowwwwwwwowowwo.......",
     "..owwwwwwoogggggoooowwwwwogoowwwwwwwwoo........",

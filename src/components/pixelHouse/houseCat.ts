@@ -122,12 +122,12 @@ export const SNAKE_COLORS: ColorTable<SnakeColor> = {
  * id 沿用舊的（存檔裡存的是 id），名字跟著新的圖（垂耳，不是柴犬了）改
  */
 export const DOG_COLORS: Record<DogColor, { name: string; palette: Record<string, string> }> = {
-  brown: { name: "花花", palette: { o: "#281D1D", w: "#F8EBE3", s: "#8F7368", k: "#654D48", g: "#C3B0A7", i: "#FFFFFF" } },
-  shiba: { name: "奶茶", palette: { o: "#3B2A26", w: "#FBF1E6", s: "#D9A066", k: "#B07A45", g: "#E2CDB4", i: "#FFFFFF" } },
-  black: { name: "黑白", palette: { o: "#16151B", w: "#F7EFE6", s: "#4A4652", k: "#2E2B35", g: "#CFC6BE", i: "#FFFFFF" } },
-  white: { name: "白白", palette: { o: "#5B4A44", w: "#FFFFFF", s: "#EFE3D3", k: "#DCC7AE", g: "#E6DDD3", i: "#FFFFFF" } },
+  brown: { name: "花花", palette: { o: "#281D1D", w: "#F8EBE3", s: "#8F7368", k: "#654D48", g: "#C3B0A7", i: "#FFFFFF", r: "#F4B4B0" } },
+  shiba: { name: "奶茶", palette: { o: "#3B2A26", w: "#FBF1E6", s: "#D9A066", k: "#B07A45", g: "#E2CDB4", i: "#FFFFFF", r: "#F4AEA4" } },
+  black: { name: "黑白", palette: { o: "#16151B", w: "#F7EFE6", s: "#4A4652", k: "#2E2B35", g: "#CFC6BE", i: "#FFFFFF", r: "#F2B0B4" } },
+  white: { name: "白白", palette: { o: "#5B4A44", w: "#FFFFFF", s: "#EFE3D3", k: "#DCC7AE", g: "#E6DDD3", i: "#FFFFFF", r: "#F7B4B8" } },
   // 全黑：眼睛是外框色，所以毛要比外框淺一點，眼睛和反光才看得到
-  allBlack: { name: "黑黑", palette: { o: "#121116", w: "#4A4853", s: "#3C3A44", k: "#2E2D35", g: "#3A3842", i: "#FFFFFF" } },
+  allBlack: { name: "黑黑", palette: { o: "#121116", w: "#4A4853", s: "#3C3A44", k: "#2E2D35", g: "#3A3842", i: "#FFFFFF", r: "#C98590" } },
 };
 
 export const HAMSTER_COLORS: Record<HamsterColor, { name: string; palette: Record<string, string> }> = {
