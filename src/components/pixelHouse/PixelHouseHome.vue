@@ -657,7 +657,7 @@ function catImages(species: PetSpecies, color: PetColor): Record<CatPose, string
   let imgs = catImageCache.get(key);
   if (!imgs) {
     const palette = SPECIES_COLORS[species][color]?.palette ?? {};
-    imgs = Object.fromEntries(Object.entries(walkerArt(species).art).map(([pose, rows]) => [pose, pixelSvg(rows, palette)])) as Record<CatPose, string>;
+    imgs = Object.fromEntries(Object.entries(walkerArt(species, color).art).map(([pose, rows]) => [pose, pixelSvg(rows, palette)])) as Record<CatPose, string>;
     catImageCache.set(key, imgs);
   }
   return imgs;
@@ -702,11 +702,11 @@ function ferretRunImages(color: PetColor): string[] {
 const ferretDancing = (k: HouseCat) => k.cat.value?.species === "ferret" && k.hop.value;
 
 /** 圖的大小（狗比貓大一點）：腳底在 (0, 0) */
-function catBox(species: PetSpecies) {
-  const { w, h } = walkerArt(species);
+function catBox(species: PetSpecies, color?: PetColor) {
+  const { w, h } = walkerArt(species, color);
   return { width: `${u(w)}px`, height: `${u(h)}px`, left: `${-u(w / 2)}px`, top: `${-u(h)}px` };
 }
-const spriteH = (k: HouseCat) => walkerArt(k.cat.value?.species ?? "cat").h;
+const spriteH = (k: HouseCat) => walkerArt(k.cat.value?.species ?? "cat", k.cat.value?.color).h;
 
 /** 飼料碗：有養貓才放；有貓糧時碗裡是滿的 */
 const bowlImages = { empty: pixelSvg(BOWL_ART.empty, BOWL_PALETTE), full: pixelSvg(BOWL_ART.full, BOWL_PALETTE) };
@@ -745,14 +745,14 @@ function zzzImage(k: HouseCat): string {
   let src = zzzCache.get(key);
   if (!src) {
     const o = SPECIES_COLORS[c.species][c.color]?.palette.o ?? "#281D1D";
-    src = pixelSvg(walkerArt(c.species).zzz?.rows ?? [], { o });
+    src = pixelSvg(walkerArt(c.species, c.color).zzz?.rows ?? [], { o });
     zzzCache.set(key, src);
   }
   return src;
 }
-const showZzz = (k: HouseCat) => !!k.cat.value && !!walkerArt(k.cat.value.species).zzz && !k.walking.value && k.poseAt(0) === "sleep";
+const showZzz = (k: HouseCat) => !!k.cat.value && !!walkerArt(k.cat.value.species, k.cat.value.color).zzz && !k.walking.value && k.poseAt(0) === "sleep";
 function zzzStyle(k: HouseCat) {
-  const { art, w, h, zzz } = walkerArt(k.cat.value!.species);
+  const { art, w, h, zzz } = walkerArt(k.cat.value!.species, k.cat.value!.color);
   const gridW = art.sleep[0].length;
   const cell = w / gridW;
   const s = zzz!.spot;
@@ -2241,7 +2241,7 @@ function labelStyle(room: RoomId, it: RenderItem) {
             <div
               class="ph-cat-sprite"
               :class="k.hop.value ? (k.cat.value.species === 'ferret' ? 'is-dance' : 'is-hop') : ''"
-              :style="{ ...catBox(k.cat.value.species), transform: k.facing.value < 0 ? 'scaleX(-1)' : undefined }"
+              :style="{ ...catBox(k.cat.value.species, k.cat.value.color), transform: k.facing.value < 0 ? 'scaleX(-1)' : undefined }"
             >
               <img
                 v-for="(src, pose) in catImages(k.cat.value.species, k.cat.value.color)"
@@ -2277,7 +2277,7 @@ function labelStyle(room: RoomId, it: RenderItem) {
             <img v-if="showZzz(k)" class="ph-cat-bowl" :src="zzzImage(k)" :style="zzzStyle(k)" alt="" draggable="false" />
             <button
               class="ph-cat-hit"
-              :style="catBox(k.cat.value.species)"
+              :style="catBox(k.cat.value.species, k.cat.value.color)"
               :aria-label="`${k.cat.value.name}，${k.label.value}，${k.urge.value ? `點了選牠，再點${k.isDog.value ? '尿布墊' : '貓砂盆'}` : '點了照顧牠'}`"
               @click.stop="onCatTap(k)"
             ></button>

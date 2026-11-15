@@ -69,7 +69,7 @@ export const SPECIES_NAMES: Record<PetSpecies, string> = {
 export const CAGED_SPECIES: PetSpecies[] = ["hamster", "guineaPig", "glider", "snake"];
 export const isCaged = (species: PetSpecies) => CAGED_SPECIES.includes(species);
 
-export type DogColor = "shiba" | "black" | "white" | "brown" | "allBlack";
+export type DogColor = "shiba" | "black" | "white" | "brown" | "allBlack" | "husky";
 export type HamsterColor = "golden" | "gray" | "pearl";
 export type FerretColor = "sable" | "cream" | "albino" | "silver";
 export type GuineaColor = "ginger" | "panda" | "cream";
@@ -128,6 +128,8 @@ export const DOG_COLORS: Record<DogColor, { name: string; palette: Record<string
   white: { name: "白白", palette: { o: "#5B4A44", w: "#FFFFFF", s: "#EFE3D3", k: "#DCC7AE", g: "#E6DDD3", i: "#FFFFFF", r: "#F7B4B8" } },
   // 全黑：眼睛是外框色，所以毛要比外框淺一點，眼睛和反光才看得到
   allBlack: { name: "黑黑", palette: { o: "#121116", w: "#4A4853", s: "#3C3A44", k: "#2E2D35", g: "#3A3842", i: "#FFFFFF", r: "#C98590" } },
+  // 使用者畫的第二隻狗：立耳、捲尾巴，圖不一樣（petArt.ts 的 PRICK_DOG_ART），顏色照原稿
+  husky: { name: "灰灰", palette: { o: "#281D1D", w: "#F2EFEC", s: "#C5BAAD", k: "#C5BAAD", g: "#D5CFC9", i: "#FFFFFF", r: "#E1B5B5" } },
 };
 
 export const HAMSTER_COLORS: Record<HamsterColor, { name: string; palette: Record<string, string> }> = {

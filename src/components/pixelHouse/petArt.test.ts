@@ -14,30 +14,33 @@ function checkArt(rows: string[], palettes: Record<string, string>[], name: stri
 describe("寵物的圖", () => {
   it("會走的（貓、狗、雪貂）：每個姿勢、每個花色都畫得出來，大小一致", () => {
     for (const sp of ["cat", "dog", "ferret"] as const) {
-      const { art, w, h } = walkerArt(sp);
-      const palettes = Object.values(SPECIES_COLORS[sp]).map((c) => c.palette);
-      const sizes = new Set(Object.values(art).map((r) => `${r[0].length}x${r.length}`));
-      expect(sizes.size, `${sp} 每張一樣大`).toBe(1);
-      expect(w).toBeGreaterThan(0);
-      expect(h).toBeGreaterThan(0);
-      for (const [pose, rows] of Object.entries(art)) checkArt(rows, palettes, `${sp}:${pose}`);
+      // 狗有兩種畫法，所以每個花色拿自己的圖、只對自己的調色盤
+      for (const [id, def] of Object.entries(SPECIES_COLORS[sp])) {
+        const { art, w, h, zzz } = walkerArt(sp, id);
+        const sizes = new Set(Object.values(art).map((r) => `${r[0].length}x${r.length}`));
+        expect(sizes.size, `${sp}/${id} 每張一樣大`).toBe(1);
+        expect(w).toBeGreaterThan(0);
+        expect(h).toBeGreaterThan(0);
+        for (const [pose, rows] of Object.entries(art)) checkArt(rows, [def.palette], `${sp}/${id}:${pose}`);
+        // 每一格都是正方形（不會被拉扁）
+        expect(art.sit[0].length / w, `${sp}/${id}`).toBeCloseTo(art.sit.length / h, 6);
+        // 睡覺的 zZ 在圖裡面；雪貂沒有
+        if (sp === "ferret") {
+          expect(zzz).toBeUndefined();
+          continue;
+        }
+        expect(zzz, `${sp}/${id}`).toBeTruthy();
+        expect(zzz!.rows).toHaveLength(zzz!.spot.h);
+        for (const r of zzz!.rows) expect(r.length).toBe(zzz!.spot.w);
+        expect(zzz!.spot.x).toBeGreaterThanOrEqual(0);
+        expect(zzz!.spot.y).toBeGreaterThanOrEqual(0);
+        expect(zzz!.spot.x + zzz!.spot.w, `${sp}/${id}`).toBeLessThanOrEqual(art.sleep[0].length);
+      }
     }
-    // 每一格都是正方形（不會被拉扁）
-    for (const sp of ["cat", "dog", "ferret"] as const) {
-      const { art, w, h } = walkerArt(sp);
-      expect(art.sit[0].length / w, sp).toBeCloseTo(art.sit.length / h, 6);
-    }
-    // 貓、狗睡覺的 zZ 在圖裡面；雪貂沒有
-    for (const sp of ["cat", "dog"] as const) {
-      const { art, zzz } = walkerArt(sp);
-      expect(zzz, sp).toBeTruthy();
-      expect(zzz!.rows).toHaveLength(zzz!.spot.h);
-      for (const r of zzz!.rows) expect(r.length).toBe(zzz!.spot.w);
-      expect(zzz!.spot.x).toBeGreaterThanOrEqual(0);
-      expect(zzz!.spot.y).toBeGreaterThanOrEqual(0);
-      expect(zzz!.spot.x + zzz!.spot.w, sp).toBeLessThanOrEqual(art.sleep[0].length);
-    }
-    expect(walkerArt("ferret").zzz).toBeUndefined();
+    // 立耳小狗（灰灰）是另一套圖，寬度跟垂耳的一樣（腳底中間對齊，吃飯對得到碗）
+    expect(walkerArt("dog", "husky").art).not.toBe(walkerArt("dog", "brown").art);
+    expect(walkerArt("dog", "husky").w).toBe(walkerArt("dog", "brown").w);
+    expect(walkerArt("dog").art).toBe(walkerArt("dog", "brown").art);
     const ferretPal = Object.values(SPECIES_COLORS.ferret).map((c) => c.palette);
     for (const [k, rows] of Object.entries(FERRET_DANCE)) checkArt(rows, ferretPal, `ferret:${k}`);
     expect(FERRET_DANCE["dance-a"][0].length).toBe(walkerArt("ferret").art.sit[0].length);
