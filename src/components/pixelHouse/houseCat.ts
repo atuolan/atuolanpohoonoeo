@@ -69,7 +69,7 @@ export const SPECIES_NAMES: Record<PetSpecies, string> = {
 export const CAGED_SPECIES: PetSpecies[] = ["hamster", "guineaPig", "glider", "snake"];
 export const isCaged = (species: PetSpecies) => CAGED_SPECIES.includes(species);
 
-export type DogColor = "shiba" | "black" | "white" | "brown" | "allBlack" | "husky";
+export type DogColor = "shiba" | "black" | "white" | "brown" | "allBlack" | "husky" | "redShiba";
 export type HamsterColor = "golden" | "gray" | "pearl";
 export type FerretColor = "sable" | "cream" | "albino" | "silver";
 export type GuineaColor = "ginger" | "panda" | "cream";
@@ -130,6 +130,8 @@ export const DOG_COLORS: Record<DogColor, { name: string; palette: Record<string
   allBlack: { name: "黑黑", palette: { o: "#121116", w: "#4A4853", s: "#3C3A44", k: "#2E2D35", g: "#3A3842", i: "#FFFFFF", r: "#C98590" } },
   // 使用者畫的第二隻狗：立耳、捲尾巴，圖不一樣（petArt.ts 的 PRICK_DOG_ART），顏色照原稿
   husky: { name: "灰灰", palette: { o: "#281D1D", w: "#F2EFEC", s: "#C5BAAD", k: "#C5BAAD", g: "#D5CFC9", i: "#FFFFFF", r: "#E1B5B5" } },
+  // 柴犬：灰灰那套圖換顏色。灰灰白色的地方（臉頰、眼睛上面、胸口、肚子、尾巴下面）剛好就是柴犬的「裏白」
+  redShiba: { name: "柴柴", palette: { o: "#3B2419", w: "#FFF6EA", s: "#E39A55", k: "#E39A55", g: "#EEDCC6", i: "#FFFFFF", r: "#F2A79E" } },
 };
 
 export const HAMSTER_COLORS: Record<HamsterColor, { name: string; palette: Record<string, string> }> = {

@@ -995,7 +995,7 @@ export interface WalkerZzz {
 }
 
 /** 狗有兩種畫法：大部分花色用垂耳的（DOG_ART），這幾個花色用立耳的 */
-export const PRICK_DOG_COLORS: readonly string[] = ["husky"];
+export const PRICK_DOG_COLORS: readonly string[] = ["husky", "redShiba"];
 
 /** 會在家裡走的：這種動物（狗還要看花色）的圖和大小；有 zzz 的睡覺時頭上會冒 zZ */
 export function walkerArt(species: PetSpecies, color?: string): { art: Record<CatPose, string[]>; w: number; h: number; zzz?: WalkerZzz } {
