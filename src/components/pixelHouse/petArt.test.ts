@@ -41,6 +41,11 @@ describe("寵物的圖", () => {
     expect(walkerArt("dog", "husky").art).not.toBe(walkerArt("dog", "brown").art);
     expect(walkerArt("dog", "husky").w).toBe(walkerArt("dog", "brown").w);
     expect(walkerArt("dog").art).toBe(walkerArt("dog", "brown").art);
+    // 改花紋的品種：大小跟原本那套一樣（米格魯←垂耳、黑柴←立耳）
+    expect(walkerArt("dog", "beagle").h).toBe(walkerArt("dog", "brown").h);
+    expect(walkerArt("dog", "blackShiba").h).toBe(walkerArt("dog", "husky").h);
+    expect(walkerArt("dog", "beagle").art.sit.join("")).toMatch(/b/);
+    expect(walkerArt("dog", "blackShiba").art.sit.join("")).toMatch(/t/);
     const ferretPal = Object.values(SPECIES_COLORS.ferret).map((c) => c.palette);
     for (const [k, rows] of Object.entries(FERRET_DANCE)) checkArt(rows, ferretPal, `ferret:${k}`);
     expect(FERRET_DANCE["dance-a"][0].length).toBe(walkerArt("ferret").art.sit[0].length);

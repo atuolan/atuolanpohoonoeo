@@ -64,7 +64,11 @@ id 不能跟房間原本的家具一樣，已經上架的 id 不要改（使用�
 
 第二隻狗（立耳、捲尾巴，花色「灰灰」）：`source/dog2-sheet.png`，使用者畫的，排法跟上面一樣（每格 49×42、**朝左**）。
 換回 `petArt.ts` 的 `PRICK_DOG_ART`：字母跟垂耳的一樣（耳朵外框的純黑也當外框 o），左右裁 x 1～47（跟垂耳的同一段，腳底中間才對得齊），上下 8～41，再左右翻。
-睡覺左上角的三個 Z（純黑）拿出來成 `PRICK_DOG_ZZZ`。哪些花色用這套圖：`PRICK_DOG_COLORS`。
+睡覺左上角的三個 Z（純黑）拿出來成 `PRICK_DOG_ZZZ`。哪些花色用哪套圖：`petArt.ts` 的 `DOG_ART_BY_COLOR`（沒寫的用垂耳那套）。
+
+更多品種：只換顏色的（柴柴）直接在 `DOG_COLORS` 加調色盤、`DOG_ART_BY_COLOR` 寫用哪套圖。
+要改花紋的（米格魯、黑柴）寫在 `dog-breeds.py`：從上面兩套照規則換字母，產生 `src/components/pixelHouse/dogBreedArt.ts`（不要手改）。
+原稿換了（`DOG_ART` 或 `PRICK_DOG_ART` 改過）要再跑一次 `python3 scripts/pixel-house/dog-breeds.py`。
 睡覺那張的 zZ（純黑）另外拿出來成 `DOG_ZZZ`，疊在狗上面、不跟著翻。畫面上一格 6/11 點（高 18）。
 
 ## 小人

@@ -69,7 +69,7 @@ export const SPECIES_NAMES: Record<PetSpecies, string> = {
 export const CAGED_SPECIES: PetSpecies[] = ["hamster", "guineaPig", "glider", "snake"];
 export const isCaged = (species: PetSpecies) => CAGED_SPECIES.includes(species);
 
-export type DogColor = "shiba" | "black" | "white" | "brown" | "allBlack" | "husky" | "redShiba";
+export type DogColor = "shiba" | "black" | "white" | "brown" | "allBlack" | "husky" | "redShiba" | "beagle" | "blackShiba";
 export type HamsterColor = "golden" | "gray" | "pearl";
 export type FerretColor = "sable" | "cream" | "albino" | "silver";
 export type GuineaColor = "ginger" | "panda" | "cream";
@@ -118,7 +118,7 @@ export const SNAKE_COLORS: ColorTable<SnakeColor> = {
 };
 
 /**
- * 狗的顏色：字母是哪個部位見 petArt.ts 的 DOG_ART。第一個（花花）是使用者畫的顏色，領養時預設選它。
+ * 狗的顏色：字母是哪個部位見 petArt.ts 的 DOG_ART（用別套圖的花色見 DOG_ART_BY_COLOR）。第一個（花花）是使用者畫的顏色，領養時預設選它。
  * id 沿用舊的（存檔裡存的是 id），名字跟著新的圖（垂耳，不是柴犬了）改
  */
 export const DOG_COLORS: Record<DogColor, { name: string; palette: Record<string, string> }> = {
@@ -132,6 +132,9 @@ export const DOG_COLORS: Record<DogColor, { name: string; palette: Record<string
   husky: { name: "灰灰", palette: { o: "#281D1D", w: "#F2EFEC", s: "#C5BAAD", k: "#C5BAAD", g: "#D5CFC9", i: "#FFFFFF", r: "#E1B5B5" } },
   // 柴犬：灰灰那套圖換顏色。灰灰白色的地方（臉頰、眼睛上面、胸口、肚子、尾巴下面）剛好就是柴犬的「裏白」
   redShiba: { name: "柴柴", palette: { o: "#3B2419", w: "#FFF6EA", s: "#E39A55", k: "#E39A55", g: "#EEDCC6", i: "#FFFFFF", r: "#F2A79E" } },
+  // 下面兩種的圖改過花紋（dogBreedArt.ts），字母不一樣：t 黃褐、b 黑
+  beagle: { name: "米米", palette: { o: "#2A1D18", w: "#FFF8F0", t: "#D08A45", b: "#2E2A2E", k: "#9A5A2E", g: "#E6D6C6", i: "#FFFFFF", r: "#F2A79E" } },
+  blackShiba: { name: "黑柴", palette: { o: "#16131A", w: "#FFF8F0", s: "#2E2A33", t: "#D9944E", g: "#E8D3B8", i: "#FFFFFF", r: "#EBA0A0" } },
 };
 
 export const HAMSTER_COLORS: Record<HamsterColor, { name: string; palette: Record<string, string> }> = {

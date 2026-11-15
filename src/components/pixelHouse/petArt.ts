@@ -3,6 +3,7 @@
  *
  * 省電：倉鼠跑滾輪只用 CSS 換兩張圖（opacity），不用計時器；籠子在畫面外就停。
  */
+import { BEAGLE_DOG_ART, BLACK_SHIBA_DOG_ART } from "./dogBreedArt";
 import { CAT_ART, CAT_H, CAT_W, CAT_ZZZ, CAT_ZZZ_SPOT, type CagePose, type CatPose, type HamsterPose, type PetSpecies } from "./houseCat";
 
 // ===== 狗：格子 47×33（使用者畫的），畫面上一格 6/11 點，面向右，腳底在最下面一列 =====
@@ -994,14 +995,31 @@ export interface WalkerZzz {
   spot: { x: number; y: number; w: number; h: number };
 }
 
-/** 狗有兩種畫法：大部分花色用垂耳的（DOG_ART），這幾個花色用立耳的 */
-export const PRICK_DOG_COLORS: readonly string[] = ["husky", "redShiba"];
+/** 會在家裡走的動物，一種畫法：圖、畫面上的大小、睡覺的 zZ（雪貂沒有） */
+export interface WalkerArt {
+  art: Record<CatPose, string[]>;
+  w: number;
+  h: number;
+  zzz?: WalkerZzz;
+}
+
+const FLOPPY_DOG = { w: DOG_W, h: DOG_H, zzz: { rows: DOG_ZZZ, spot: DOG_ZZZ_SPOT } };
+const PRICK_DOG = { w: PRICK_DOG_W, h: PRICK_DOG_H, zzz: { rows: PRICK_DOG_ZZZ, spot: PRICK_DOG_ZZZ_SPOT } };
+
+/**
+ * 狗的花色不是垂耳那套（DOG_ART）的，在這裡寫用哪套圖：
+ * 立耳那套只換顏色（灰灰、柴柴），或是從兩套改花紋的品種（dogBreedArt.ts，scripts/pixel-house/dog-breeds.py 產生）
+ */
+export const DOG_ART_BY_COLOR: Record<string, WalkerArt> = {
+  husky: { art: PRICK_DOG_ART, ...PRICK_DOG },
+  redShiba: { art: PRICK_DOG_ART, ...PRICK_DOG },
+  blackShiba: { art: BLACK_SHIBA_DOG_ART, ...PRICK_DOG },
+  beagle: { art: BEAGLE_DOG_ART, ...FLOPPY_DOG },
+};
 
 /** 會在家裡走的：這種動物（狗還要看花色）的圖和大小；有 zzz 的睡覺時頭上會冒 zZ */
-export function walkerArt(species: PetSpecies, color?: string): { art: Record<CatPose, string[]>; w: number; h: number; zzz?: WalkerZzz } {
-  if (species === "dog" && color && PRICK_DOG_COLORS.includes(color))
-    return { art: PRICK_DOG_ART, w: PRICK_DOG_W, h: PRICK_DOG_H, zzz: { rows: PRICK_DOG_ZZZ, spot: PRICK_DOG_ZZZ_SPOT } };
-  if (species === "dog") return { art: DOG_ART, w: DOG_W, h: DOG_H, zzz: { rows: DOG_ZZZ, spot: DOG_ZZZ_SPOT } };
+export function walkerArt(species: PetSpecies, color?: string): WalkerArt {
+  if (species === "dog") return (color && DOG_ART_BY_COLOR[color]) || { art: DOG_ART, ...FLOPPY_DOG };
   if (species === "ferret") return { art: FERRET_ART, w: FERRET_W, h: FERRET_H };
   return { art: CAT_ART, w: CAT_W, h: CAT_H, zzz: { rows: CAT_ZZZ, spot: CAT_ZZZ_SPOT } };
 }
