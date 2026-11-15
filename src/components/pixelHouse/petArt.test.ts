@@ -46,6 +46,13 @@ describe("寵物的圖", () => {
     expect(walkerArt("dog", "blackShiba").h).toBe(walkerArt("dog", "husky").h);
     expect(walkerArt("dog", "beagle").art.sit.join("")).toMatch(/b/);
     expect(walkerArt("dog", "blackShiba").art.sit.join("")).toMatch(/t/);
+    expect(walkerArt("dog", "pug").art.sit.join("")).toMatch(/m/);
+    // 柯基腳短：腳底一樣在最下面，圖上面多空兩列
+    const corgi = walkerArt("dog", "corgi").art;
+    for (const pose of ["walk-a", "walk-b", "sit", "eat"] as const) {
+      expect(corgi[pose].slice(0, 2).join("").replace(/\./g, ""), pose).toBe("");
+      expect(corgi[pose][corgi[pose].length - 1].replace(/\./g, "").length, pose).toBeGreaterThan(0);
+    }
     const ferretPal = Object.values(SPECIES_COLORS.ferret).map((c) => c.palette);
     for (const [k, rows] of Object.entries(FERRET_DANCE)) checkArt(rows, ferretPal, `ferret:${k}`);
     expect(FERRET_DANCE["dance-a"][0].length).toBe(walkerArt("ferret").art.sit[0].length);

@@ -98,6 +98,70 @@ def black_shiba(base):
     return out
 
 
+# 巴哥：黑面罩的範圍（左上 x, y, 右下 x, y，含）：眼睛到嘴巴、兩眼外側。框裡面取橢圓（四個角不要，才不會方方的），
+# 頭那一區的毛（不含耳朵、腮紅）變黑
+PUG_MASK = {
+    "sit": (23, 9, 35, 16),
+    "walk-a": (30, 12, 41, 19),
+    "walk-b": (30, 12, 41, 19),
+    "sleep": (29, 26, 39, 30),
+    "eat": (26, 22, 40, 27),
+}
+
+
+def pug(base):
+    """巴哥：全身淺黃褐（w），花斑當深一點的黃褐（d），身體那區的深色也是 d；耳朵（k）黑；臉中間黑面罩（m）。
+    字母：o 外框｜w 黃褐｜d 深一點的黃褐｜k 耳朵｜m 面罩｜g 遠的腳｜i 眼睛反光｜r 腮紅"""
+    out = {}
+    for pose in POSES:
+        g = [list(r) for r in base[pose]]
+        body = FLOPPY_BODY[pose]
+        x0, y0, x1, y1 = PUG_MASK[pose]
+        cx, cy, rx, ry = (x0 + x1) / 2, (y0 + y1) / 2, (x1 - x0) / 2 + 0.5, (y1 - y0) / 2 + 0.5
+        for y, row in enumerate(g):
+            for x, c in enumerate(row):
+                if body(x, y):
+                    if c in "sk":
+                        row[x] = "d"
+                elif ((x - cx) / rx) ** 2 + ((y - cy) / ry) ** 2 <= 1 and c in "ws":
+                    row[x] = "m"
+                elif c == "s":
+                    row[x] = "d"
+        out[pose] = ["".join(r) for r in g]
+    return out
+
+
+# 柯基：腳變短。每張拿掉腳那一段的兩列，上面整個往下移、腳底不動。走路的腳是斜的，拿掉後有的腳底會缺外框，
+# 所以拿掉後把「貼著透明、又不是外框」的格子補成外框（腳底變平的）。哪兩列是一個一個試、看圖挑的
+CORGI_CUT = {"walk-a": [29, 31], "walk-b": [28, 30], "sit": [29, 30], "eat": [28, 30], "sleep": []}
+# 柯基：額頭中間一條白（從臉往上到兩耳中間）
+CORGI_BLAZE = {
+    "sit": [(29, 10), (29, 9), (30, 9), (31, 9)] + [(x, 8) for x in range(27, 32)] + [(x, y) for y in (5, 6, 7) for x in (28, 29, 30)] + [(29, 4)],
+    "walk-a": [(32, 10), (33, 10), (34, 10), (33, 9)],
+    "walk-b": [(32, 11), (33, 11), (34, 11), (33, 10)],
+    "eat": [(33, 19), (34, 19), (35, 19), (34, 18)],
+    "sleep": [],
+}
+
+
+def corgi(base):
+    """柯基：立耳那套，腳短一點（CORGI_CUT），額頭加一條白（CORGI_BLAZE）；顏色交給調色盤（s 橘、w 白）。
+    字母跟立耳那套一樣：o 外框｜w 白｜s 橘｜g 遠的腳｜i 眼睛反光｜r 腮紅"""
+    out = {}
+    for pose in POSES:
+        g = [list(r) for r in base[pose]]
+        for x, y in CORGI_BLAZE[pose]:
+            if g[y][x] == "s":
+                g[y][x] = "w"
+        cut = CORGI_CUT[pose]
+        g = [list("." * len(g[0])) for _ in cut] + [r for y, r in enumerate(g) if y not in cut]
+        edge = [(x, y) for y, row in enumerate(g) for x, c in enumerate(row) if c not in ".o" and touching(g, x, y, ".")]
+        for x, y in edge:
+            g[y][x] = "o"
+        out[pose] = ["".join(r) for r in g]
+    return out
+
+
 def ts_art(name, doc, art):
     s = f"/**\n{doc}\n */\nexport const {name}: Record<CatPose, string[]> = {{\n"
     for pose in POSES:
@@ -122,6 +186,20 @@ def main():
         " * 黑柴：立耳那套（PRICK_DOG_ART）。花斑當黑色，白色貼著黑的那一圈變黃褐（眉毛、臉頰、腳、尾巴），耳朵裡面的白不動。\n"
         " * 字母：o 外框｜w 白｜s 黑｜t 黃褐｜g 遠的腳｜i 眼睛反光｜r 腮紅",
         black_shiba(prick),
+    )
+    body += "\n"
+    body += ts_art(
+        "PUG_DOG_ART",
+        " * 巴哥：垂耳那套（DOG_ART）。全身黃褐、花斑深一點，耳朵黑，臉中間黑面罩（眼睛到嘴巴）。\n"
+        " * 字母：o 外框｜w 黃褐｜d 深一點的黃褐｜k 耳朵｜m 面罩｜g 遠的腳｜i 眼睛反光｜r 腮紅",
+        pug(floppy),
+    )
+    body += "\n"
+    body += ts_art(
+        "CORGI_DOG_ART",
+        " * 柯基：立耳那套（PRICK_DOG_ART），腳短兩格（拿掉腳那一段的兩列），額頭中間一條白。\n"
+        " * 字母跟立耳那套一樣：o 外框｜w 白｜s 橘｜g 遠的腳｜i 眼睛反光｜r 腮紅",
+        corgi(prick),
     )
     OUT.write_text(body)
     print("寫好了", OUT.relative_to(ROOT))

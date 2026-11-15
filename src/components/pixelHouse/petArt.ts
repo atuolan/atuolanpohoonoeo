@@ -3,7 +3,7 @@
  *
  * 省電：倉鼠跑滾輪只用 CSS 換兩張圖（opacity），不用計時器；籠子在畫面外就停。
  */
-import { BEAGLE_DOG_ART, BLACK_SHIBA_DOG_ART } from "./dogBreedArt";
+import { BEAGLE_DOG_ART, BLACK_SHIBA_DOG_ART, CORGI_DOG_ART, PUG_DOG_ART } from "./dogBreedArt";
 import { CAT_ART, CAT_H, CAT_W, CAT_ZZZ, CAT_ZZZ_SPOT, type CagePose, type CatPose, type HamsterPose, type PetSpecies } from "./houseCat";
 
 // ===== 狗：格子 47×33（使用者畫的），畫面上一格 6/11 點，面向右，腳底在最下面一列 =====
@@ -16,7 +16,7 @@ export const DOG_H = 33 * DOG_CELL;
 /**
  * 使用者畫的垂耳小狗（原稿朝左，這裡左右翻成朝右；原稿 scripts/pixel-house/source/dog-sheet.png）。
  * 字母是部位，顏色由花色決定（DOG_COLORS）：o 外框（眼睛也是）｜w 奶油色的毛｜s 花斑｜k 耳朵｜g 遠的腳｜i 眼睛反光｜r 腮紅
- * 腮紅是後來加的（使用者同意）：坐著、吃飯兩邊各 2 格，走路、睡覺眼睛下面 2 格
+ * 腮紅是後來加的（使用者同意）：坐著、吃飯兩邊各 2 格，走路、睡覺眼睛下面 2 格。走路 1 腳中間補了一格外框缺口
  */
 export const DOG_ART: Record<CatPose, string[]> = {
   "walk-a": [
@@ -46,7 +46,7 @@ export const DOG_ART: Record<CatPose, string[]> = {
     ".......owwwwwwkkwwwwwwwwwwwwwwwwwwo............",
     "......owwwwwwwwwwwwwwwwwwwwwwwwwwwo............",
     ".....owwwwwwwwwwwwwoooowwwwwwwwwwwoo...........",
-    "....owwwwwwwwwooooo...ooo.owwwwwwoggo..........",
+    "....owwwwwwwwwooooo...ooooowwwwwwoggo..........",
     "....owwwwoooooggggo......oowwwwwwoggo..........",
     "....owwwo....ogggggo......owwwwwwogggo.........",
     ".....ooo......oggggo......owwwwwogggggo........",
@@ -1015,6 +1015,9 @@ export const DOG_ART_BY_COLOR: Record<string, WalkerArt> = {
   redShiba: { art: PRICK_DOG_ART, ...PRICK_DOG },
   blackShiba: { art: BLACK_SHIBA_DOG_ART, ...PRICK_DOG },
   beagle: { art: BEAGLE_DOG_ART, ...FLOPPY_DOG },
+  pug: { art: PUG_DOG_ART, ...FLOPPY_DOG },
+  // 腳短了兩格，圖上面空兩列，大小還是跟立耳那套一樣
+  corgi: { art: CORGI_DOG_ART, ...PRICK_DOG },
 };
 
 /** 會在家裡走的：這種動物（狗還要看花色）的圖和大小；有 zzz 的睡覺時頭上會冒 zZ */
