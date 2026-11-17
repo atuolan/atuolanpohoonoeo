@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { adoptCat, cagedPose, catStat, gliderOut, hamsterBites, hamsterPose, walkDog, WALK_MS, type CatState } from "./houseCat";
+import { adoptCat, cagedPose, catStat, gliderOut, hamsterBites, hamsterPose, PET_SPECIES_IDS, walkDog, WALK_MS, type CatState } from "./houseCat";
 import { ROOM_H, ROOM_W } from "./houseData";
 import { defaultHouseLifeState, parseHouseLifeState } from "./houseLife";
 import {
@@ -36,6 +36,7 @@ import {
   roomFor,
   SPECIES_INFO,
   hideStash,
+  speciesOwned,
   type PetStock,
 } from "./petHome";
 
@@ -86,6 +87,14 @@ describe("用品", () => {
     expect(stockDays(h, "litter")).toBe(2);
     expect(stockDays(homeWith([kitty("a", { personality: "glutton" })], { stock: { ...emptyStock(), kibble: 52, litter: 0 } }), "kibble")).toBe(10);
     expect(stockDays(emptyPetHome(T0), "kibble")).toBe(Infinity);
+  });
+
+  it("每一種寵物養了都會出現在用品頁，買得到牠的主食", () => {
+    for (const sp of PET_SPECIES_IDS) {
+      const h = homeWith([adoptCat("a", "gray", T0, () => 0.5, "a", sp)]);
+      expect(speciesOwned(h)).toEqual([sp]);
+      expect(SUPPLIES[SPECIES_INFO[sp].food].users).toContain(sp);
+    }
   });
 });
 
