@@ -17,6 +17,7 @@ import {
   nextToiletAt,
   SPECIES_DECAY,
   parseCat,
+  PET_SPECIES_IDS,
   reanchorCat,
   walkOverdue,
   WALK_OVERDUE_MOOD_PER_HOUR,
@@ -411,9 +412,9 @@ export function stockDays(home: PetHome, id: SupplyId): number {
   return perDay > 0 ? home.stock[id] / perDay : Infinity;
 }
 
-/** 家裡有養的種類（用品只顯示這些的） */
+/** 家裡有養的種類（用品只顯示這些的）。照領養頁的順序，每一種都要列（之前漏了後來加的，用品頁就空了） */
 export function speciesOwned(home: Pick<PetHome, "cats">): PetSpecies[] {
-  return (["cat", "dog", "hamster"] as PetSpecies[]).filter((sp) => home.cats.some((c) => c.species === sp));
+  return PET_SPECIES_IDS.filter((sp) => home.cats.some((c) => c.species === sp));
 }
 
 // ===== 上廁所 =====
