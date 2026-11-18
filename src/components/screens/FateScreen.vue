@@ -15,6 +15,7 @@ import { useFateTheme } from "@/composables/useFateTheme";
 import { useAstroDiceStore } from "@/stores/astroDice";
 import { useDivinationStore } from "@/stores/divination";
 import { useLiuyaoStore } from "@/stores/liuyao";
+import type { AstroDiceReading } from "@/types/astroDice";
 import type { DeckId } from "@/types/divination";
 import type { LiuyaoReading, LiuyaoShareSnapshot } from "@/types/liuyao";
 import { computed, onMounted, ref, watch } from "vue";
@@ -65,6 +66,13 @@ function openDeck(id: DeckId) {
 
 function openAstro() {
   view.value = "astro";
+}
+
+/** 從紀錄裡的骰子結果請 AI 解讀 */
+function interpretAstro(r: AstroDiceReading) {
+  astroStore.openReading(r);
+  view.value = "astro";
+  void astroStore.startInterpretation();
 }
 
 function openLiuyao() {
@@ -176,6 +184,7 @@ watch(
         :initial-item="historyItem"
         @reinterpreted="onReinterpreted"
         @open-liuyao="openLiuyaoReading"
+        @interpret-astro="interpretAstro"
       />
 
       <AstroDicePanel v-else-if="view === 'astro'" @back="view = 'main'" />

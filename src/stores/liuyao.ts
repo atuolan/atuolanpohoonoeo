@@ -1,6 +1,7 @@
 /**
  * 六爻 Pinia Store
  * 管理六爻起卦流程狀態、排盤、AI 串流解讀與歷史記錄
+ * 六爻一排好盤就存進紀錄，解讀出來再補上去
  */
 import { db } from "@/db/database";
 import { loadZhouyi, type ZhouyiText } from "@/data/liuyao/zhouyi";
@@ -63,6 +64,8 @@ export const useLiuyaoStore = defineStore("liuyao", () => {
   const currentReadingId = ref<string | null>(null);
   const readings = ref<LiuyaoReading[]>([]);
   const isHistoryLoaded = ref(false);
+  /** 每次請求解讀、起新卦或開舊卦都會遞增，舊的串流就不再寫進畫面 */
+  let interpretRun = 0;
 
   // ===== Computed =====
   const values = computed<YaoValue[]>(() => {
@@ -82,6 +85,7 @@ export const useLiuyaoStore = defineStore("liuyao", () => {
 
   /** 開始起卦 */
   function startCast() {
+    interpretRun += 1;
     if (method.value !== "input") {
       castTime.value = Date.now();
     }
@@ -92,6 +96,7 @@ export const useLiuyaoStore = defineStore("liuyao", () => {
     originalText.value = null;
     changedText.value = null;
     interpretation.value = "";
+    isInterpreting.value = false;
     interpretError.value = null;
     currentReadingId.value = null;
     phase.value = "cast";
@@ -142,12 +147,39 @@ export const useLiuyaoStore = defineStore("liuyao", () => {
       changedText.value = null;
     }
 
+    if (!currentReadingId.value) recordCast();
     phase.value = "board";
+  }
+
+  /** 卦排好就先存一筆（還沒有解讀） */
+  function recordCast() {
+    const reading: LiuyaoReading = {
+      id: crypto.randomUUID(),
+      question: question.value,
+      category: category.value,
+      method: method.value,
+      values: [...values.value],
+      castTime: castTime.value,
+      readerCharacterId: readerCharacterId.value ?? undefined,
+      interpretation: "",
+      createdAt: Date.now(),
+    };
+    currentReadingId.value = reading.id;
+    void saveReading(reading);
   }
 
   /** 開始 AI 串流解讀 */
   async function startInterpretation() {
     if (!chart.value || !facts.value) return;
+    if (!currentReadingId.value) recordCast();
+
+    const run = ++interpretRun;
+    const isCurrent = () => run === interpretRun;
+    const readingId = currentReadingId.value;
+    const readerId = readerCharacterId.value;
+    let text = "";
+    let failed = false;
+    let readerName: string | undefined = undefined;
 
     isInterpreting.value = true;
     interpretation.value = "";
@@ -156,16 +188,15 @@ export const useLiuyaoStore = defineStore("liuyao", () => {
     try {
       // 1. 準備解卦者與人設
       let reader: LiuyaoReader | null = null;
-      let readerName: string | undefined = undefined;
 
-      if (readerCharacterId.value !== null) {
+      if (readerId !== null) {
         const { useCharactersStore } = await import("@/stores/characters");
         const { useUserStore } = await import("@/stores/user");
 
         const charactersStore = useCharactersStore();
         const userStore = useUserStore();
 
-        const char = charactersStore.characters.find((c) => c.id === readerCharacterId.value);
+        const char = charactersStore.characters.find((c) => c.id === readerId);
         if (char) {
           readerName = char.nickname || char.data?.name || "角色";
           const userName = userStore.currentName || "我";
@@ -233,50 +264,38 @@ export const useLiuyaoStore = defineStore("liuyao", () => {
 
       for await (const event of stream) {
         if (event.type === "token" && event.token) {
-          interpretation.value += event.token;
+          text += event.token;
+          if (isCurrent()) interpretation.value = text;
         } else if (event.type === "error") {
-          interpretError.value = event.error || "解讀失敗";
+          failed = true;
+          if (isCurrent()) interpretError.value = event.error || "解讀失敗";
           break;
         }
       }
-
-      // 4. 存檔或更新紀錄
-      if (interpretation.value) {
-        if (!currentReadingId.value) {
-          const newId = crypto.randomUUID();
-          const reading: LiuyaoReading = {
-            id: newId,
-            question: question.value,
-            category: category.value,
-            method: method.value,
-            values: [...values.value],
-            castTime: castTime.value,
-            readerCharacterId: readerCharacterId.value ?? undefined,
-            readerName,
-            interpretation: interpretation.value,
-            createdAt: Date.now(),
-          };
-          currentReadingId.value = newId;
-          await saveReading(reading);
-        } else {
-          const target = readings.value.find((r) => r.id === currentReadingId.value);
-          if (target) {
-            target.interpretation = interpretation.value;
-            target.readerCharacterId = readerCharacterId.value ?? undefined;
-            target.readerName = readerName;
-            await persistHistory();
-          }
-        }
-      }
     } catch (err) {
-      interpretError.value = err instanceof Error ? err.message : "解讀失敗";
+      failed = true;
+      if (isCurrent()) interpretError.value = err instanceof Error ? err.message : "解讀失敗";
     } finally {
-      isInterpreting.value = false;
+      if (isCurrent()) isInterpreting.value = false;
+    }
+
+    // 就算已經離開這頁，解讀也寫回排盤時存的那一筆
+    if (text && readingId) {
+      const target = readings.value.find((r) => r.id === readingId);
+      // 紀錄已被刪掉就不再補回；這次中途出錯、原本已有完整解讀時保留原本的
+      if (target && !(failed && target.interpretation)) {
+        target.interpretation = text;
+        target.readerCharacterId = readerId ?? undefined;
+        target.readerName = readerName;
+        await persistHistory();
+      }
     }
   }
 
   /** 開啟歷史紀錄 */
   async function openReading(r: LiuyaoReading) {
+    interpretRun += 1;
+    isInterpreting.value = false;
     question.value = r.question;
     category.value = r.category;
     method.value = r.method;
@@ -320,6 +339,7 @@ export const useLiuyaoStore = defineStore("liuyao", () => {
 
   /** 重設所有狀態回到首頁 */
   function reset() {
+    interpretRun += 1;
     phase.value = "ask";
     question.value = "";
     category.value = null;

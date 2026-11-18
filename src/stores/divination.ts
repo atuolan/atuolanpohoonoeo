@@ -2,6 +2,7 @@
  * 占卜 Pinia Store（塔羅／雷諾曼／神諭卡共用）
  * 流程：home → setup → table（抽牌＋翻牌）→ interpret
  * 歷史紀錄沿用各牌組原本的 gameStates key 與格式
+ * 牌一抽滿就存進紀錄，解讀出來再補上去（API 出錯或中途離開，牌也不會不見）
  */
 import { deckOrder, decks } from "@/data/decks";
 import { db } from "@/db/database";
@@ -52,6 +53,11 @@ export const useDivinationStore = defineStore("divination", () => {
   const interpretation = ref("");
   const isInterpreting = ref(false);
   const interpretError = ref<string | null>(null);
+
+  /** 這次的牌存進紀錄時用的 id；解讀出來後寫回同一筆 */
+  const currentRecordId = ref<string | null>(null);
+  /** 每次請求解讀或離開解讀都會遞增，舊的串流就不再寫進畫面 */
+  let interpretRun = 0;
 
   // ===== 歷史與偏好 =====
   const rawHistory = ref<Record<DeckId, unknown[]>>({ tarot: [], lenormand: [], oracle: [] });
@@ -119,6 +125,7 @@ export const useDivinationStore = defineStore("divination", () => {
     picked.value = [];
     drawn.value = [];
     revealed.value = new Set();
+    currentRecordId.value = null;
   }
 
   function startTable() {
@@ -147,6 +154,7 @@ export const useDivinationStore = defineStore("divination", () => {
     if (picked.value.includes(deckIndex) || !shuffled.value[deckIndex]) return false;
     picked.value = [...picked.value, deckIndex];
     drawn.value = [...drawn.value, drawnFromDeckIndex(deckIndex, drawn.value.length)];
+    if (isPickComplete.value) recordDraw();
     return true;
   }
 
@@ -162,7 +170,23 @@ export const useDivinationStore = defineStore("divination", () => {
     picked.value = indices;
     drawn.value = indices.map((deckIndex, i) => drawnFromDeckIndex(deckIndex, i));
     revealed.value = new Set();
+    recordDraw();
     return null;
+  }
+
+  /** 牌抽滿就先存一筆（還沒有解讀） */
+  function recordDraw() {
+    if (!tableSpread.value || !isPickComplete.value) return;
+    const record: ReadingRecord = {
+      id: crypto.randomUUID(),
+      deckId: deckId.value,
+      question: question.value,
+      spread: clone(tableSpread.value),
+      drawn: clone(drawn.value),
+      createdAt: Date.now(),
+    };
+    currentRecordId.value = record.id;
+    void saveRecord(record);
   }
 
   function revealCard(index: number) {
@@ -176,6 +200,7 @@ export const useDivinationStore = defineStore("divination", () => {
   }
 
   function clearInterpretation() {
+    interpretRun += 1;
     interpretation.value = "";
     interpretError.value = null;
     isInterpreting.value = false;
@@ -202,15 +227,21 @@ export const useDivinationStore = defineStore("divination", () => {
 
   async function requestInterpretation() {
     if (!tableSpread.value || !isPickComplete.value) return;
+    if (!currentRecordId.value) recordDraw();
     revealAll();
     phase.value = "interpret";
     isInterpreting.value = true;
     interpretation.value = "";
     interpretError.value = null;
 
+    const run = ++interpretRun;
+    const isCurrent = () => run === interpretRun;
     const currentDeck = deck.value;
+    const recordId = currentRecordId.value;
     const spread = tableSpread.value;
     const cards = drawn.value;
+    let text = "";
+    let failed = false;
 
     try {
       const { useSettingsStore } = await import("@/stores/settings");
@@ -242,29 +273,23 @@ export const useDivinationStore = defineStore("divination", () => {
 
       for await (const event of stream) {
         if (event.type === "token" && event.token) {
-          interpretation.value += event.token;
+          text += event.token;
+          if (isCurrent()) interpretation.value = text;
         } else if (event.type === "error") {
-          interpretError.value = event.error || "解讀失敗";
+          failed = true;
+          if (isCurrent()) interpretError.value = event.error || "解讀失敗";
           break;
         }
       }
-
-      if (interpretation.value) {
-        await saveRecord({
-          id: crypto.randomUUID(),
-          deckId: currentDeck.id,
-          question: question.value,
-          spread: clone(spread),
-          drawn: clone(cards),
-          interpretation: interpretation.value,
-          createdAt: Date.now(),
-        });
-      }
     } catch (err) {
-      interpretError.value = err instanceof Error ? err.message : "解讀失敗";
+      failed = true;
+      if (isCurrent()) interpretError.value = err instanceof Error ? err.message : "解讀失敗";
     } finally {
-      isInterpreting.value = false;
+      if (isCurrent()) isInterpreting.value = false;
     }
+
+    // 就算已經離開這頁，解讀也寫回抽牌時存的那一筆
+    if (text && recordId) await saveInterpretation(currentDeck.id, recordId, text, failed);
   }
 
   /** 從歷史紀錄還原牌陣與牌，重新請 AI 解讀 */
@@ -276,6 +301,7 @@ export const useDivinationStore = defineStore("divination", () => {
     picked.value = record.drawn.map((_, i) => i);
     shuffled.value = [];
     revealed.value = new Set(record.drawn.map((_, i) => i));
+    currentRecordId.value = record.id;
     await requestInterpretation();
   }
 
@@ -292,6 +318,20 @@ export const useDivinationStore = defineStore("divination", () => {
   async function saveRecord(record: ReadingRecord) {
     const id = record.deckId;
     rawHistory.value[id] = [decks[id].fromRecord(record), ...rawHistory.value[id]].slice(0, MAX_READINGS);
+    await persist(id);
+  }
+
+  /**
+   * 把解讀寫回紀錄。紀錄已被刪掉就不再補回；
+   * 這次解讀中途出錯、而紀錄原本已有完整解讀時，保留原本的
+   */
+  async function saveInterpretation(id: DeckId, recordId: string, text: string, failed: boolean) {
+    const list = rawHistory.value[id];
+    const index = list.findIndex((r) => (r as { id: string }).id === recordId);
+    if (index < 0) return;
+    const target = list[index] as { interpretation?: string };
+    if (failed && target.interpretation) return;
+    rawHistory.value[id] = list.map((r, i) => (i === index ? { ...target, interpretation: text } : r));
     await persist(id);
   }
 
@@ -348,6 +388,7 @@ export const useDivinationStore = defineStore("divination", () => {
     interpretation,
     isInterpreting,
     interpretError,
+    currentRecordId,
     rawHistory,
     isHistoryLoaded,
     themeMode,

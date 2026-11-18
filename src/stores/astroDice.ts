@@ -1,6 +1,7 @@
 /**
  * 占星骰子 Pinia Store
  * 管理占星骰子狀態、歷史記錄（IndexedDB 持久化）
+ * 骰子一落定就存進紀錄，解讀出來再補上去
  */
 import {
   astroHouses,
@@ -46,6 +47,12 @@ export const useAstroDiceStore = defineStore("astroDice", () => {
   // ===== 歷史記錄 =====
   const readings = ref<AstroDiceReading[]>([]);
   const isHistoryLoaded = ref(false);
+  /** 這次擲骰存進紀錄時用的 id；解讀出來後寫回同一筆 */
+  const currentReadingId = ref<string | null>(null);
+  /** 每次請求解讀或重置都會遞增，舊的串流就不再寫進畫面 */
+  let interpretRun = 0;
+  /** 每次擲骰或重置都會遞增，擲到一半離開就不出結果 */
+  let rollRun = 0;
 
   // ===== 占卜流程方法 =====
 
@@ -58,6 +65,7 @@ export const useAstroDiceStore = defineStore("astroDice", () => {
   async function rollDice() {
     if (isRolling.value) return;
 
+    const run = ++rollRun;
     isRolling.value = true;
     rollingPlanet.value = null;
     rollingSign.value = null;
@@ -70,6 +78,10 @@ export const useAstroDiceStore = defineStore("astroDice", () => {
 
     return new Promise<void>((resolve) => {
       const animate = () => {
+        if (run !== rollRun) {
+          resolve();
+          return;
+        }
         const elapsed = Date.now() - startTime;
         if (elapsed < animDuration) {
           // 隨機顯示符號
@@ -96,6 +108,15 @@ export const useAstroDiceStore = defineStore("astroDice", () => {
             house: finalHouse,
           };
 
+          const reading: AstroDiceReading = {
+            id: crypto.randomUUID(),
+            question: question.value,
+            result: JSON.parse(JSON.stringify(result.value)),
+            createdAt: Date.now(),
+          };
+          currentReadingId.value = reading.id;
+          void saveReading(reading);
+
           isRolling.value = false;
           phase.value = "result";
           resolve();
@@ -108,6 +129,12 @@ export const useAstroDiceStore = defineStore("astroDice", () => {
   /** 開始 AI 解讀（流式） */
   async function startInterpretation() {
     if (!result.value) return;
+
+    const run = ++interpretRun;
+    const isCurrent = () => run === interpretRun;
+    const readingId = currentReadingId.value;
+    let text = "";
+    let failed = false;
 
     isInterpreting.value = true;
     interpretation.value = "";
@@ -156,33 +183,42 @@ export const useAstroDiceStore = defineStore("astroDice", () => {
 
       for await (const event of stream) {
         if (event.type === "token" && event.token) {
-          interpretation.value += event.token;
+          text += event.token;
+          if (isCurrent()) interpretation.value = text;
         } else if (event.type === "error") {
-          interpretError.value = event.error || "解讀失敗";
+          failed = true;
+          if (isCurrent()) interpretError.value = event.error || "解讀失敗";
           break;
         }
       }
-
-      // 儲存占卜記錄
-      if (interpretation.value && result.value) {
-        const reading: AstroDiceReading = {
-          id: crypto.randomUUID(),
-          question: question.value,
-          result: JSON.parse(JSON.stringify(result.value)),
-          interpretation: interpretation.value,
-          createdAt: Date.now(),
-        };
-        await saveReading(reading);
-      }
     } catch (err) {
-      interpretError.value = err instanceof Error ? err.message : "解讀失敗";
+      failed = true;
+      if (isCurrent()) interpretError.value = err instanceof Error ? err.message : "解讀失敗";
     } finally {
-      isInterpreting.value = false;
+      if (isCurrent()) isInterpreting.value = false;
     }
+
+    // 就算已經離開這頁，解讀也寫回擲骰時存的那一筆
+    if (text && readingId) await saveInterpretation(readingId, text, failed);
+  }
+
+  /** 從歷史紀錄還原骰子結果（之後可再請求解讀） */
+  function openReading(r: AstroDiceReading) {
+    interpretRun += 1;
+    question.value = r.question;
+    result.value = JSON.parse(JSON.stringify(r.result));
+    interpretation.value = r.interpretation ?? "";
+    isInterpreting.value = false;
+    interpretError.value = null;
+    currentReadingId.value = r.id;
+    phase.value = "interpret";
   }
 
   /** 重置占卜 */
   function reset() {
+    interpretRun += 1;
+    rollRun += 1;
+    currentReadingId.value = null;
     phase.value = "question";
     question.value = "";
     result.value = null;
@@ -219,6 +255,18 @@ export const useAstroDiceStore = defineStore("astroDice", () => {
     if (readings.value.length > MAX_READINGS) {
       readings.value = readings.value.slice(0, MAX_READINGS);
     }
+    await persistHistory();
+  }
+
+  /**
+   * 把解讀寫回紀錄。紀錄已被刪掉就不再補回；
+   * 這次解讀中途出錯、而紀錄原本已有完整解讀時，保留原本的
+   */
+  async function saveInterpretation(id: string, text: string, failed: boolean) {
+    const target = readings.value.find((r) => r.id === id);
+    if (!target) return;
+    if (failed && target.interpretation) return;
+    target.interpretation = text;
     await persistHistory();
   }
 
@@ -261,10 +309,12 @@ export const useAstroDiceStore = defineStore("astroDice", () => {
     rollingHouse,
     readings,
     isHistoryLoaded,
+    currentReadingId,
     // 方法
     goToPhase,
     rollDice,
     startInterpretation,
+    openReading,
     reset,
     loadHistory,
     deleteReading,

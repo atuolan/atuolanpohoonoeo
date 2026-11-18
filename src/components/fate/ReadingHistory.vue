@@ -12,12 +12,17 @@ import {
 } from "@/components/fate/useCombinedHistory";
 import { decks } from "@/data/decks";
 import { useDivinationStore } from "@/stores/divination";
+import type { AstroDiceReading } from "@/types/astroDice";
 import type { LiuyaoReading } from "@/types/liuyao";
 import { marked } from "marked";
 import { computed, ref } from "vue";
 
 const props = defineProps<{ initialItem?: HistoryItem | null }>();
-const emit = defineEmits<{ reinterpreted: []; openLiuyao: [reading: LiuyaoReading] }>();
+const emit = defineEmits<{
+  reinterpreted: [];
+  openLiuyao: [reading: LiuyaoReading];
+  interpretAstro: [reading: AstroDiceReading];
+}>();
 
 const store = useDivinationStore();
 const { items, remove, clearAll } = useCombinedHistory();
@@ -69,6 +74,11 @@ async function onClearAll() {
 }
 
 async function onReinterpret() {
+  const astro = detail.value?.astro;
+  if (astro) {
+    emit("interpretAstro", astro);
+    return;
+  }
   const record = detail.value?.record;
   if (!record) return;
   emit("reinterpreted");
@@ -125,13 +135,18 @@ defineExpose({ handleBack });
 
       <div class="reading-history__interp">
         <div v-if="detailHtml" class="fate-markdown" v-html="detailHtml" />
-        <p v-else class="reading-history__empty">沒有解讀紀錄</p>
+        <p v-else class="reading-history__empty">還沒有解讀</p>
       </div>
 
       <div class="reading-history__actions">
         <button type="button" class="fate-btn" @click="onDelete(detail)">刪除</button>
-        <button v-if="detail.record" type="button" class="fate-btn fate-btn--primary" @click="onReinterpret">
-          重新解讀
+        <button
+          v-if="detail.record || detail.astro"
+          type="button"
+          class="fate-btn fate-btn--primary"
+          @click="onReinterpret"
+        >
+          {{ detail.interpretation ? "重新解讀" : "請求解讀" }}
         </button>
       </div>
 
@@ -168,7 +183,7 @@ defineExpose({ handleBack });
               <span class="reading-history__item-text">
                 <span class="reading-history__item-q">{{ item.question || "未記錄問題" }}</span>
                 <small>{{ item.summary }}</small>
-                <small>{{ formatWhen(item.createdAt) }}</small>
+                <small>{{ formatWhen(item.createdAt) }}<span v-if="!item.interpretation" class="reading-history__pending">・未解讀</span></small>
               </span>
             </button>
             <button type="button" class="fate-link reading-history__delete" @click="onDelete(item)">刪除</button>
@@ -299,6 +314,10 @@ defineExpose({ handleBack });
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+
+  &__pending {
+    color: var(--f-accent);
   }
 
   &__delete {
