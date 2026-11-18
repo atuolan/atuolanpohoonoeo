@@ -18,20 +18,36 @@ vi.mock("@/stores/settings", () => ({
   }),
 }));
 
+type MockEvent = { type: "token"; token: string } | { type: "error"; error: string };
+const mockStream = vi.hoisted(() => ({
+  events: [] as MockEvent[],
+  /** 設定後，串流吐完第一個事件就停下來等它 resolve */
+  gate: null as Promise<void> | null,
+}));
+
 vi.mock("@/api/OpenAICompatible", () => ({
   OpenAICompatibleClient: class {
     async *generateStream() {
-      yield { type: "token", token: "解" };
-      yield { type: "token", token: "讀" };
+      for (const [i, event] of mockStream.events.entries()) {
+        yield event;
+        if (i === 0 && mockStream.gate) await mockStream.gate;
+      }
     }
   },
 }));
+
+const OK_EVENTS: MockEvent[] = [
+  { type: "token", token: "解" },
+  { type: "token", token: "讀" },
+];
 
 import { db } from "@/db/database";
 import { useDivinationStore } from "../divination";
 
 describe("useDivinationStore", () => {
   beforeEach(async () => {
+    mockStream.events = OK_EVENTS;
+    mockStream.gate = null;
     setActivePinia(createPinia());
     await db.put("gameStates", [], "fate-readings");
     await db.put("gameStates", [], "lenormand-readings");
@@ -115,7 +131,98 @@ describe("useDivinationStore", () => {
     expect(stored).toHaveLength(1);
   });
 
-  it("從歷史重新解讀會還原牌並另存一筆", async () => {
+  it("牌抽滿就先存一筆沒有解讀的紀錄", async () => {
+    const s = useDivinationStore();
+    await s.loadHistory();
+    s.openDeck("tarot");
+    s.selectSpread("starcat-3");
+    s.question = "Q";
+    s.startTable();
+    s.pickCard(1);
+    s.pickCard(2);
+    expect(s.rawHistory.tarot).toHaveLength(0);
+    s.pickCard(3);
+    expect(s.records).toHaveLength(1);
+    expect(s.records[0].id).toBe(s.currentRecordId);
+    expect(s.records[0].interpretation).toBeUndefined();
+    expect(s.records[0].drawn.map((d) => d.card.id)).toEqual(s.drawn.map((d) => d.card.id));
+    await vi.waitFor(async () =>
+      expect(await db.get<unknown[]>("gameStates", "fate-readings")).toHaveLength(1),
+    );
+  });
+
+  it("報數字選滿也會存紀錄", () => {
+    const s = useDivinationStore();
+    s.openDeck("lenormand");
+    s.selectSpread("three-card");
+    s.question = "Q";
+    s.startTable();
+    expect(s.pickByNumbers("1 2 3")).toBeNull();
+    expect(s.records).toHaveLength(1);
+    expect(s.records[0].deckId).toBe("lenormand");
+  });
+
+  it("API 出錯時抽到的牌仍留在紀錄裡", async () => {
+    mockStream.events = [{ type: "error", error: "502" }];
+    const s = useDivinationStore();
+    await s.loadHistory();
+    s.openDeck("tarot");
+    s.selectSpread("starcat-3");
+    s.question = "Q";
+    s.startTable();
+    [1, 2, 3].forEach((i) => s.pickCard(i));
+    await s.requestInterpretation();
+    expect(s.interpretError).toBe("502");
+    s.goHome();
+
+    setActivePinia(createPinia());
+    const s2 = useDivinationStore();
+    await s2.loadHistory();
+    expect(s2.records).toHaveLength(1);
+    expect(s2.records[0]).toMatchObject({ question: "Q", interpretation: undefined });
+    expect(s2.records[0].drawn).toHaveLength(3);
+  });
+
+  it("解讀途中離開，解讀仍寫回同一筆紀錄", async () => {
+    let release!: () => void;
+    mockStream.gate = new Promise<void>((r) => (release = r));
+    const s = useDivinationStore();
+    await s.loadHistory();
+    s.openDeck("tarot");
+    s.selectSpread("starcat-3");
+    s.question = "Q";
+    s.startTable();
+    [1, 2, 3].forEach((i) => s.pickCard(i));
+    const pending = s.requestInterpretation();
+    await vi.waitFor(() => expect(s.interpretation).toBe("解"));
+    s.goHome();
+    release();
+    await pending;
+    expect(s.interpretation).toBe("");
+    expect(s.isInterpreting).toBe(false);
+    expect(s.records).toHaveLength(1);
+    expect(s.records[0].interpretation).toBe("解讀");
+  });
+
+  it("重新解讀中途出錯，不蓋掉原本的解讀", async () => {
+    const s = useDivinationStore();
+    await s.loadHistory();
+    s.openDeck("tarot");
+    s.selectSpread("starcat-3");
+    s.question = "Q";
+    s.startTable();
+    [1, 2, 3].forEach((i) => s.pickCard(i));
+    await s.requestInterpretation();
+    mockStream.events = [
+      { type: "token", token: "半" },
+      { type: "error", error: "斷線" },
+    ];
+    await s.requestInterpretation();
+    expect(s.interpretation).toBe("半");
+    expect(s.records[0].interpretation).toBe("解讀");
+  });
+
+  it("從歷史重新解讀會還原牌並寫回同一筆", async () => {
     const s = useDivinationStore();
     await s.loadHistory();
     s.openDeck("oracle");
@@ -130,7 +237,8 @@ describe("useDivinationStore", () => {
     expect(s.deckId).toBe("oracle");
     expect(s.drawn.map((d) => d.card.id)).toEqual(record.drawn.map((d) => d.card.id));
     expect(s.allRevealed).toBe(true);
-    expect(s.rawHistory.oracle).toHaveLength(2);
+    expect(s.rawHistory.oracle).toHaveLength(1);
+    expect(s.records[0]).toMatchObject({ id: record.id, interpretation: "解讀" });
   });
 
   it("backToSetup 清空已選、goHome 保留問題", () => {

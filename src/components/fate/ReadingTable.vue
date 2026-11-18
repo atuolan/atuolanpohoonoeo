@@ -102,7 +102,7 @@ function handleBack(): boolean {
     }
     return false;
   }
-  if (store.revealed.size > 0 && !confirm("要放棄這次的牌嗎？")) return true;
+  if (store.revealed.size > 0 && !confirm("回到設定重新抽牌嗎？這次的牌已經存在紀錄裡了。")) return true;
   store.backToSetup();
   return true;
 }
