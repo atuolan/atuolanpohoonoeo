@@ -92,6 +92,7 @@ export interface ChatScreenMessage {
   /** 模型看圖時寫的圖片備註（<pic-note>） */
   imageNote?: string;
   imagePrompt?: string;
+  imageNegativePrompt?: string;
   isGift?: boolean;
   giftName?: string;
   giftReceived?: boolean;

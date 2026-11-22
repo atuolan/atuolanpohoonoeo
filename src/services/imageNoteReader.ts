@@ -23,11 +23,12 @@ export async function resolveImageBase64(imageData: string | undefined): Promise
   return source.replace(/\s+/g, "");
 }
 
-/** 讓模型看圖寫備註；失敗時丟出錯誤 */
-export async function readImageNote(
+/** 讓聊天用的模型看一張圖回答指示，回傳原始回覆；失敗時丟出錯誤 */
+export async function askChatModelAboutImage(
+  instruction: string,
   imageBase64: string,
   mimeType: string,
-  caption?: string,
+  temperature = 0.3,
 ): Promise<string> {
   const taskConfig = useSettingsStore().getAPIForTask("chat");
   if (!taskConfig.api.endpoint || !taskConfig.api.apiKey || !taskConfig.api.model) {
@@ -37,12 +38,12 @@ export async function readImageNote(
   const generation = taskConfig.generation;
   const client = new OpenAICompatibleClient({ ...taskConfig.api });
   const stream = client.generateStream({
-    messages: [createImageMessage(buildReadImagePrompt(caption), imageBase64, mimeType, "auto")],
+    messages: [createImageMessage(instruction, imageBase64, mimeType, "auto")],
     settings: {
       maxContextLength: generation.maxContextLength || 200000,
       // 思考模型會先花掉一些輸出 token，跟聊天用同一個上限
       maxResponseLength: generation.maxTokens || 8192,
-      temperature: 0.3,
+      temperature,
       topP: 0.9,
       frequencyPenalty: 0,
       presencePenalty: 0,
@@ -66,7 +67,16 @@ export async function readImageNote(
       throw new Error(String(event.error || "模型沒有回應"));
     }
   }
+  return content;
+}
 
+/** 讓模型看圖寫備註；失敗時丟出錯誤 */
+export async function readImageNote(
+  imageBase64: string,
+  mimeType: string,
+  caption?: string,
+): Promise<string> {
+  const content = await askChatModelAboutImage(buildReadImagePrompt(caption), imageBase64, mimeType);
   const note = cleanImageNoteReply(content);
   if (!note) throw new Error("模型沒有寫出圖片內容");
   return note;

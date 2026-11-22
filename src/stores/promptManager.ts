@@ -192,6 +192,8 @@ const LOCKED_PROMPT_CONTENT_FIXES: Record<string, Array<[string, string]>> = {
   gcGroupXmlFormat: [
     // 轉帳行後面接各成員的帳戶餘額（{{charWallet}}）
     ["（也可以只寫金額 <pay>520</pay>）\n", "（也可以只寫金額 <pay>520</pay>）{{charWallet}}\n"],
+    // 圖片行後面接文生圖提示詞寫法（{{picGuide}}）
+    ['prompt="english%20keywords"/>\n', 'prompt="english%20keywords"/>{{picGuide}}\n'],
     ["<reply-to>被引用的原文</reply-to>回覆內容</msg>", "<reply-to>原訊息開頭幾個字</reply-to>回覆內容</msg>　// reply-to 只照抄原訊息開頭 5～15 個字，不用抄整句"]],
   // 噗浪簡化格式：reactions 選填、<image> 寫在內文、可帶限定詞，並說明何時適合發噗
   onlineModeFeatures: [
@@ -199,8 +201,13 @@ const LOCKED_PROMPT_CONTENT_FIXES: Record<string, Array<[string, string]>> = {
     ["{{charBusyGuide}}\n- 封鎖", "{{charBusyGuide}}\n{{dateGuide}}\n- 封鎖"],
     // 轉帳行後面接角色帳戶餘額（{{charWallet}}）
     ["- 轉帳：<pay>金額</pay> 或 <pay>金額:備註</pay>\n", "- 轉帳：<pay>金額</pay> 或 <pay>金額:備註</pay>{{charWallet}}\n"],
+    // 圖片行後面接文生圖提示詞寫法（{{picGuide}}）
+    ["（prompt 必填英文，用於繪圖）\n", "（prompt 必填英文，用於繪圖）{{picGuide}}\n"],
     ["【噗浪】放在 <content> 內：\n<plurk>\n  <post>發文內容</post>\n  <image>中文描述｜英文提示詞</image>（可選，有配圖時加）\n  <reactions>❤️:12,👍:8,😊:5</reactions>（必填，1-4個表情，數量1-99正整數，👍❤️😂😮😢😠🎉👏🤔😊）\n</plurk>\n", "【噗浪】想發動態時放在 <content> 內，一次最多一則：\n<plurk>發文內容</plurk>\n完整寫法：<plurk qualifier=\"覺得\" reactions=\"❤️12 😂5\">發文內容<image>配圖描述</image></plurk>\n（qualifier 是噗浪限定詞：說／想／愛／覺得／希望／喜歡；reactions 是 1-4 種表情和數量；<image> 是配圖。三者都可省略）\n適合發噗的時候：心情有起伏、剛發生值得分享的事、有些話想讓 {{user}} 看到卻不想當面說（暗示、炫耀、抱怨、曬日常）。不必每輪都發，也別重複最近發過的內容。\n"], ["<reply-to>引用內容</reply-to>回覆內容", "<reply-to>原訊息開頭幾個字</reply-to>回覆內容（只照抄原訊息開頭 5～15 個字，不用抄整句）"]],
-  f2fFormatRules: [["- 噗浪格式：\n  <plurk>\n    <post>發文內容</post>\n    <image>中文描述｜英文提示詞</image>（可選）\n    <reactions>❤️:12,👍:8,😊:5</reactions>（必填，1-4個，數量1-99，👍❤️😂😮😢😠🎉👏🤔😊）\n  </plurk>\n", "- 噗浪（想發動態時，一次最多一則）：<plurk>發文內容</plurk>\n  完整寫法：<plurk qualifier=\"覺得\" reactions=\"❤️12 😂5\">發文內容<image>配圖描述</image></plurk>，qualifier（噗浪限定詞）、reactions（1-4 種表情和數量）、<image>（配圖）都可省略\n  適合發噗的時候：心情有起伏、剛發生值得分享的事、有些話想讓 {{user}} 看到卻不想當面說。不必每輪都發，也別重複最近發過的內容\n"]],
+  f2fFormatRules: [
+    // 展示圖片行後面接文生圖提示詞寫法（{{picGuide}}）
+    ["拿出手機展示的圖片內容描述</show-pic></msg>\n", "拿出手機展示的圖片內容描述</show-pic></msg>{{picGuide}}\n"],
+    ["- 噗浪格式：\n  <plurk>\n    <post>發文內容</post>\n    <image>中文描述｜英文提示詞</image>（可選）\n    <reactions>❤️:12,👍:8,😊:5</reactions>（必填，1-4個，數量1-99，👍❤️😂😮😢😠🎉👏🤔😊）\n  </plurk>\n", "- 噗浪（想發動態時，一次最多一則）：<plurk>發文內容</plurk>\n  完整寫法：<plurk qualifier=\"覺得\" reactions=\"❤️12 😂5\">發文內容<image>配圖描述</image></plurk>，qualifier（噗浪限定詞）、reactions（1-4 種表情和數量）、<image>（配圖）都可省略\n  適合發噗的時候：心情有起伏、剛發生值得分享的事、有些話想讓 {{user}} 看到卻不想當面說。不必每輪都發，也別重複最近發過的內容\n"]],
   plurkPostSystemPrompt: [["輸出格式：\n<plurk>\n  <post>發文內容</post>\n  <image>中文描述｜英文提示詞</image>（有配圖時加，否則省略）\n  <reactions>❤️:12,👍:8</reactions>（必填，1-4個表情，數量1-99，👍❤️😂😮😢😠🎉👏🤔😊）\n</plurk>", "輸出格式：\n<plurk>發文內容</plurk>\n完整寫法：<plurk qualifier=\"覺得\" reactions=\"❤️12 😂5\">發文內容<image>配圖描述</image></plurk>\n（qualifier 是噗浪限定詞：說／想／愛／覺得／希望／喜歡；reactions 是 1-4 種表情和數量；配圖用 <image> 寫在內文裡。三者都可省略）"], ["\n6. 使用繁體中文\n", `\n\n${PLURK_POST_LANGUAGE_MODE}\n`]],
   // 噗浪評論改為批量評論的風格要求（多角色同時留言）；翻譯格式統一成聊天用的「外語<br>中文翻譯」
   plurkCommentSystemPrompt: [

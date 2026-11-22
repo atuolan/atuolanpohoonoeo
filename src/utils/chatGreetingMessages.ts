@@ -92,6 +92,7 @@ export function createGreetingMessages(firstMessage: string): ChatScreenMessage[
           ? parsedMsg.imageDescription
           : undefined,
         imagePrompt: parsedMsg.imagePrompt,
+        imageNegativePrompt: parsedMsg.imageNegativePrompt ?? parsedMsg.showMediaNegativePrompt,
         isHtmlBlock: parsedMsg.isHtmlBlock,
         htmlContent: parsedMsg.isHtmlBlock ? parsedMsg.content : undefined,
         audioTranscript: parsedMsg.isVoice ? parsedMsg.voiceContent : undefined,

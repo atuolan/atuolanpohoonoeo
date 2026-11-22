@@ -4,7 +4,15 @@ import {
   getImageProvider,
   getImageProviderLabel,
   isImageGenReady,
+  type ImageGenResponse,
 } from "@/api/ImageGenApi";
+import type { ImageProvider } from "@/api/NovelAIImageApi";
+import {
+  buildImageReviewPrompt,
+  getSelfReviewMaxRounds,
+  parseImageReviewReply,
+  type ImageReviewVerdict,
+} from "@/utils/picPromptGuide";
 import { useUserStore } from "@/stores/user";
 import type { StoredCharacter } from "@/types/character";
 import { ref, type Ref } from "vue";
@@ -34,6 +42,7 @@ interface Message {
   imageMimeType?: string;
   imageCaption?: string;
   imagePrompt?: string;
+  imageNegativePrompt?: string;
   isStreaming?: boolean;
   [key: string]: any;
 }
@@ -227,6 +236,70 @@ export function useChatMedia(deps: {
     }
   }
 
+  /**
+   * 看圖調整：讓聊天模型看剛生好的圖，它說要重畫就用它改的提示詞再畫一次，最多 selfReviewMaxRounds 次。
+   * 看圖或重畫失敗時保留上一張，不跳錯誤（圖已經有了）。
+   */
+  async function reviewAndRegenerate(ctx: {
+    image: { imageBase64: string; mimeType: string };
+    description: string;
+    provider: ImageProvider;
+    autoTags: string;
+    getPrompts: () => { prompt: string; negative?: string };
+    setPrompts: (prompt: string, negative: string | undefined) => void;
+    generate: (prompt: string, negative: string | undefined) => Promise<ImageGenResponse>;
+    showGenerating: () => void;
+    applyImage: (image: { imageBase64: string; mimeType?: string }) => boolean;
+  }) {
+    const maxRounds = getSelfReviewMaxRounds(settingsStore.novelAIImage);
+    let image = ctx.image;
+    for (let round = 1; round <= maxRounds; round++) {
+      const { prompt, negative } = ctx.getPrompts();
+      let verdict: ImageReviewVerdict;
+      try {
+        const { askChatModelAboutImage } = await import("@/services/imageNoteReader");
+        const reply = await askChatModelAboutImage(
+          buildImageReviewPrompt({
+            description: ctx.description,
+            prompt,
+            negativePrompt: negative,
+            provider: ctx.provider,
+            autoTags: ctx.autoTags,
+            round,
+            maxRounds,
+          }),
+          image.imageBase64,
+          image.mimeType,
+        );
+        verdict = parseImageReviewReply(reply);
+      } catch (error) {
+        console.warn("[AI Image] 看圖調整：模型看圖失敗，保留這張", error);
+        return;
+      }
+      if (!verdict.retry) return;
+
+      console.log(`[AI Image] 看圖調整第 ${round} 次重畫：${verdict.reason || "（沒寫原因）"}`, verdict);
+      const previous = { prompt, negative };
+      ctx.setPrompts(verdict.prompt, verdict.negativePrompt);
+      ctx.showGenerating();
+      let next: ImageGenResponse;
+      try {
+        next = await ctx.generate(verdict.prompt, verdict.negativePrompt);
+      } catch (error) {
+        next = { success: false, error: error instanceof Error ? error.message : String(error) };
+      }
+      if (!next.success || !next.imageBase64) {
+        console.warn("[AI Image] 看圖調整：重畫失敗，換回上一張", next.error);
+        ctx.setPrompts(previous.prompt, previous.negative);
+        ctx.applyImage(image);
+        return;
+      }
+      image = { imageBase64: next.imageBase64, mimeType: next.mimeType || "image/png" };
+      if (!ctx.applyImage(image)) return;
+      deps.saveChat();
+    }
+  }
+
   async function tryGenerateImageForMessage(
     messageId: string,
     imagePrompt?: string,
@@ -247,64 +320,105 @@ export function useChatMedia(deps: {
 
     // 遞補鏈：文生圖（NovelAI / GPT / Banana / MJ / Niji）啟用時用它，否則使用 Pixabay
     if (isImageGenReady(settingsStore.novelAIImage)) {
-      const providerLabel = getImageProviderLabel(
-        getImageProvider(settingsStore.novelAIImage),
-      );
+      const imageSettings = settingsStore.novelAIImage;
+      const provider = getImageProvider(imageSettings);
+      const providerLabel = getImageProviderLabel(provider);
       // 舊資料可能只留下圖片描述，沒有保存英文 prompt；這時退回用描述重生。
-      const novelAIPrompt = imagePrompt?.trim() || effectivePrompt;
+      let currentPrompt = imagePrompt?.trim() || effectivePrompt;
+      // 模型在 <pic negative="..."> 寫的負面提示詞（存在訊息上，重新生成時也帶著）
+      let currentNegative: string | undefined =
+        deps.messages.value[msgIndex].imageNegativePrompt?.trim() || undefined;
+      const characterPrompt = getCharacterPrompt();
+      const userPrompt = getUserPrompt();
 
       const caption = deps.messages.value[msgIndex].imageCaption || "";
-      if (mode === "show-pic") {
-        // 面對面 show-pic：保留 <show-pic> 包裝讓 MessageBubble 持續顯示相機動畫
-        // 不切到 isStreaming，避免相機動畫被打字提示覆蓋
-        deps.messages.value[msgIndex].content = `<show-pic>${caption}</show-pic>`;
-      } else {
-        deps.messages.value[msgIndex].content = `[生成圖片中...] ${caption}`;
-        deps.messages.value[msgIndex].isStreaming = true;
-      }
+      /** 顯示「生成中」：show-pic 保留相機動畫，其他用打字提示 */
+      const showGenerating = () => {
+        const idx = deps.messages.value.findIndex((m) => m.id === messageId);
+        if (idx === -1) return;
+        if (mode === "show-pic") {
+          // 面對面 show-pic：保留 <show-pic> 包裝讓 MessageBubble 持續顯示相機動畫
+          // 不切到 isStreaming，避免相機動畫被打字提示覆蓋
+          deps.messages.value[idx] = {
+            ...deps.messages.value[idx],
+            content: `<show-pic>${caption}</show-pic>`,
+            messageType: undefined,
+          };
+        } else {
+          deps.messages.value[idx] = {
+            ...deps.messages.value[idx],
+            content: `[生成圖片中...] ${caption}`,
+            isStreaming: true,
+          };
+        }
+      };
+      /** 把生好的圖寫進訊息；訊息已被刪掉時回傳 false */
+      const applyImage = (image: { imageBase64: string; mimeType?: string }): boolean => {
+        const idx = deps.messages.value.findIndex((m) => m.id === messageId);
+        if (idx === -1) return false;
+        const mimeType = image.mimeType || "image/png";
+        deps.messages.value[idx] = {
+          ...deps.messages.value[idx],
+          content: deps.messages.value[idx].imageCaption || effectivePrompt,
+          messageType: "image",
+          imageUrl: `data:${mimeType};base64,${image.imageBase64}`,
+          imageData: image.imageBase64,
+          imageMimeType: mimeType,
+          imagePrompt: currentPrompt,
+          imageNegativePrompt: currentNegative,
+          isStreaming: false,
+        };
+        return true;
+      };
+
+      showGenerating();
       isGeneratingImage.value = true;
 
       try {
         const { generateAIImage } = await import("@/api/ImageGenApi");
 
         // NovelAI：iOS 45 秒、其他 60 秒；GPT / Banana / MJ 本來就比較久
-        const timeoutMs = getImageGenTimeoutMs(settingsStore.novelAIImage);
+        const timeoutMs = getImageGenTimeoutMs(imageSettings);
+        const generate = (prompt: string, negative: string | undefined) => {
+          let timer: ReturnType<typeof setTimeout> | undefined;
+          const timeoutPromise = new Promise<never>((_, reject) => {
+            timer = setTimeout(
+              () => reject(new Error(`請求超時（${timeoutMs / 1000}秒），請檢查網絡連接或稍後重試`)),
+              timeoutMs,
+            );
+          });
+          return Promise.race([
+            generateAIImage(prompt, imageSettings, {
+              characterPrompt,
+              userPrompt,
+              negativePrompt: negative,
+              // 「提示詞交給模型」：不套設定裡的固定正負提示詞
+              ignorePresets: !!imageSettings.modelControlsPrompt,
+            }),
+            timeoutPromise,
+          ]).finally(() => clearTimeout(timer));
+        };
 
-        // 添加超時控制
-        const timeoutPromise = new Promise<never>((_, reject) =>
-          setTimeout(
-            () =>
-              reject(
-                new Error(
-                  `請求超時（${timeoutMs / 1000}秒），請檢查網絡連接或稍後重試`,
-                ),
-              ),
-            timeoutMs,
-          ),
-        );
-
-        const result = await Promise.race([
-          generateAIImage(novelAIPrompt, settingsStore.novelAIImage, {
-            characterPrompt: getCharacterPrompt(),
-            userPrompt: getUserPrompt(),
-          }),
-          timeoutPromise,
-        ]);
-
-        const idx = deps.messages.value.findIndex((m) => m.id === messageId);
-        if (idx === -1) return;
+        const result = await generate(currentPrompt, currentNegative);
 
         if (result.success && result.imageBase64) {
-          deps.messages.value[idx] = {
-            ...deps.messages.value[idx],
-            content: deps.messages.value[idx].imageCaption || effectivePrompt,
-            messageType: "image",
-            imageUrl: `data:${result.mimeType || "image/png"};base64,${result.imageBase64}`,
-            imageData: result.imageBase64,
-            imageMimeType: result.mimeType || "image/png",
-            imagePrompt: novelAIPrompt,
-            isStreaming: false,
-          };
+          if (applyImage({ imageBase64: result.imageBase64, mimeType: result.mimeType }) && imageSettings.selfReview) {
+            deps.saveChat();
+            await reviewAndRegenerate({
+              image: { imageBase64: result.imageBase64, mimeType: result.mimeType || "image/png" },
+              description: caption || imageDescription?.trim() || "",
+              provider,
+              autoTags: [characterPrompt, userPrompt].filter(Boolean).join(", "),
+              getPrompts: () => ({ prompt: currentPrompt, negative: currentNegative }),
+              setPrompts: (prompt, negative) => {
+                currentPrompt = prompt;
+                currentNegative = negative;
+              },
+              generate,
+              showGenerating,
+              applyImage,
+            });
+          }
         } else {
           fallbackToDescriptiveImage(messageId, mode);
           console.warn("[AI Image] 生成失敗:", result.error);
@@ -313,11 +427,11 @@ export function useChatMedia(deps: {
           const errorMsg = result.error || "未知錯誤";
           if (errorMsg.includes("503")) {
             alert(
-              `${providerLabel} 圖片生成失敗 (503)\n\n${errorMsg}\n\n提示詞: ${novelAIPrompt}`,
+              `${providerLabel} 圖片生成失敗 (503)\n\n${errorMsg}\n\n提示詞: ${currentPrompt}`,
             );
           } else {
             alert(
-              `${providerLabel} 圖片生成失敗\n\n${errorMsg}\n\n提示詞: ${novelAIPrompt}`,
+              `${providerLabel} 圖片生成失敗\n\n${errorMsg}\n\n提示詞: ${currentPrompt}`,
             );
           }
         }
@@ -330,15 +444,15 @@ export function useChatMedia(deps: {
           error instanceof Error ? error.message : "網絡錯誤或請求超時";
         if (errorMsg.includes("503")) {
           alert(
-            `${providerLabel} 圖片生成異常 (503)\n\n服務暫時不可用，可能原因：\n1. 服務器負載過高\n2. 網絡連接不穩定\n3. API Key 使用頻率過高\n\n建議：\n- 稍後重試（系統已自動重試 3 次）\n- 切換到 WiFi 網絡環境\n- 檢查 API Key 是否有效\n\n提示詞: ${novelAIPrompt}`,
+            `${providerLabel} 圖片生成異常 (503)\n\n服務暫時不可用，可能原因：\n1. 服務器負載過高\n2. 網絡連接不穩定\n3. API Key 使用頻率過高\n\n建議：\n- 稍後重試（系統已自動重試 3 次）\n- 切換到 WiFi 網絡環境\n- 檢查 API Key 是否有效\n\n提示詞: ${currentPrompt}`,
           );
         } else if (errorMsg.includes("超時")) {
           alert(
-            `${providerLabel} 圖片生成超時\n\n${errorMsg}\n\n建議：\n- 檢查網絡連接\n- 切換到更穩定的網絡環境\n- 稍後重試\n\n提示詞: ${novelAIPrompt}`,
+            `${providerLabel} 圖片生成超時\n\n${errorMsg}\n\n建議：\n- 檢查網絡連接\n- 切換到更穩定的網絡環境\n- 稍後重試\n\n提示詞: ${currentPrompt}`,
           );
         } else {
           alert(
-            `${providerLabel} 圖片生成異常\n\n${errorMsg}\n\n提示詞: ${novelAIPrompt}`,
+            `${providerLabel} 圖片生成異常\n\n${errorMsg}\n\n提示詞: ${currentPrompt}`,
           );
         }
       } finally {
