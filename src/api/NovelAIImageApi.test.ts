@@ -142,6 +142,17 @@ describe("官方 NovelAI 請求（params_version 4）", () => {
 });
 
 describe("第三方 API", () => {
+  it("不帶自訂標頭 X-Aguaphone-Client（第三方的 CORS 預檢會擋），走自己的代理才帶", async () => {
+    const relay = await captureRequest(
+      makeSettings({ apiSource: "openai", customBaseUrl: "https://relay.example.com/v1", openaiModel: "x", useProxy: true }),
+    );
+    expect(relay.init.headers as Record<string, string>).not.toHaveProperty("X-Aguaphone-Client");
+
+    const proxied = await captureRequest(makeSettings({ apiSource: "official", useProxy: true }));
+    expect(proxied.url).toContain("/nai/ai/generate-image");
+    expect((proxied.init.headers as Record<string, string>)["X-Aguaphone-Client"]).toBe("aguaphone-pwa");
+  });
+
   it("NovelAI 格式送 JSON（中轉站多半只解析 JSON）", async () => {
     const { url, init, json } = await captureRequest(
       makeSettings({
