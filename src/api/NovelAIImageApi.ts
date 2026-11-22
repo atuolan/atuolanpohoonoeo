@@ -988,8 +988,9 @@ export async function generateImage(
           ...(!isMultipart && { 'Content-Type': 'application/json' }),
           Accept: '*/*',
           // 'User-Agent': NAI_USER_AGENT,
-          // 診斷用：讓代理端/日誌可識別此客戶端來源
-          'X-Aguaphone-Client': 'aguaphone-pwa',
+          // 診斷用：讓代理端/日誌可識別此客戶端來源。只送給自己的代理：
+          // 第三方中轉站的 CORS 不允許這個自訂標頭，預檢會直接擋掉（Failed to fetch）
+          ...(useProxy && { 'X-Aguaphone-Client': 'aguaphone-pwa' }),
         },
         body: requestBody,
         // iOS Safari/WebView: 使用 keepalive 防止連接被提前關閉
