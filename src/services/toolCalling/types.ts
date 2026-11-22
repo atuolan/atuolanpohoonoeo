@@ -9,6 +9,7 @@ export type ChatToolCategory =
   | "memory"
   | "phone"
   | "system"
+  | "image"
   | (string & {});
 
 export interface ChatToolContext {

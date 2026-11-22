@@ -3,7 +3,8 @@
  * 有可用的 MCP 伺服器時才動態載入 MCP 模組（含 SDK）。
  */
 import { isMcpServerAllowedForCharacter } from "@/services/mcp/mcpToolSource";
-import { CHAT_TOOLS } from "@/services/toolCalling/chatTools";
+import { CHAT_TOOLS, DANBOORU_TAGS_TOOL_NAME } from "@/services/toolCalling/chatTools";
+import { isDanbooruTagLookupUseful } from "@/utils/picPromptGuide";
 import type { ChatToolDefinition } from "@/services/toolCalling/types";
 import { useSettingsStore } from "@/stores/settings";
 import type { CharacterToolPermissions } from "@/types/character";
@@ -22,7 +23,11 @@ export function useMcpChatTools() {
     const servers = settingsStore.mcp.servers.filter(
       (server) => server.enabled && server.tools.some((tool) => tool.enabled) && isMcpServerAllowedForCharacter(server.id, permissions),
     );
-    if (!servers.length) return CHAT_TOOLS;
+    // 查 Danbooru 標籤只對 NovelAI 有用；其他生圖服務吃自然語言
+    const builtinTools = CHAT_TOOLS.filter(
+      (tool) => tool.name !== DANBOORU_TAGS_TOOL_NAME || isDanbooruTagLookupUseful(settingsStore.novelAIImage),
+    );
+    if (!servers.length) return builtinTools;
     try {
       const mcp = await import("@/services/mcp");
       const manager = mcp.getMcpClientManager();
@@ -34,10 +39,10 @@ export function useMcpChatTools() {
         caller: manager,
         prepareImages: mcp.downscaleToolImages,
       });
-      return [...CHAT_TOOLS, ...mcpTools];
+      return [...builtinTools, ...mcpTools];
     } catch (error) {
       console.warn("[MCP] 載入工具失敗，這次只用內建工具", error);
-      return CHAT_TOOLS;
+      return builtinTools;
     }
   }
 

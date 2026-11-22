@@ -30,6 +30,10 @@ describe("{{picGuide}}", () => {
     const text = buildPicGuide(gpt);
     expect(text).toContain("自然語言");
     expect(text).toContain("不會自動加品質詞");
+    // 查標籤的提示只給 NovelAI、而且這輪真的有工具時
+    expect(buildPicGuide(gpt, { tagLookup: true })).not.toContain("search_danbooru_tags");
+    expect(buildPicGuide(makeSettings(), { tagLookup: true })).toContain("search_danbooru_tags");
+    expect(nai).not.toContain("search_danbooru_tags");
   });
 });
 

@@ -1,6 +1,7 @@
 import { TOOL_WALLPAPER_PRESETS } from "@/data/wallpaperPresets";
 import { getIncomingCallScheduler } from "@/services/IncomingCallScheduler";
 import { getWeatherByCity } from "@/services/WeatherService";
+import { describeDanbooruTags, searchDanbooruTags } from "@/services/danbooruTags";
 import {
   describeEvents,
   describeMemories,
@@ -39,6 +40,9 @@ function requireService<K extends keyof ChatToolServices>(
   if (!service) throw new Error(`${label}服務未提供`);
   return service as NonNullable<ChatToolServices[K]>;
 }
+
+/** 查 Danbooru 標籤：只在生圖服務是 NovelAI 時給模型（見 useMcpChatTools） */
+export const DANBOORU_TAGS_TOOL_NAME = "search_danbooru_tags";
 
 export const CHAT_TOOLS: ChatToolDefinition[] = [
   {
@@ -213,6 +217,41 @@ export const CHAT_TOOLS: ChatToolDefinition[] = [
       );
       if (!pending) throw new Error("沒有排成：這個角色的待接來電可能已達上限");
       return `已預約來電，${new Date(pending.triggerTime).toLocaleString("zh-TW")} 會打來`;
+    },
+  },
+  {
+    name: DANBOORU_TAGS_TOOL_NAME,
+    displayName: "查 Danbooru 標籤",
+    description:
+      "查 Danbooru 標籤的正式寫法和熱門程度。要傳圖（<pic>）、不確定 NovelAI 提示詞的標籤怎麼寫時，先用英文關鍵字查，例如 twin tails、sitting window、school uniform。張數越多，NovelAI 越認得。一次最多查 5 個關鍵字。",
+    category: "image",
+    risk: "low",
+    timeoutMs: 25_000,
+    parameters: object(
+      {
+        queries: {
+          type: "array",
+          description: "英文關鍵字，1～5 個",
+          items: { type: "string", description: "英文關鍵字，例如 long hair" },
+        },
+        limit: { type: "integer", description: "每個關鍵字最多幾個標籤", enum: [5, 8, 15] },
+      },
+      ["queries"],
+    ),
+    async execute(args, context) {
+      const queries = (Array.isArray(args.queries) ? args.queries : [args.queries])
+        .map((q) => textArg(q))
+        .filter(Boolean)
+        .slice(0, 5);
+      if (!queries.length) throw new Error("要給至少一個英文關鍵字");
+      const limit = typeof args.limit === "number" ? args.limit : 8;
+      const results: string[] = [];
+      for (const query of queries) {
+        const tags = await searchDanbooruTags(query, limit, { signal: context.signal });
+        results.push(describeDanbooruTags(query, tags));
+      }
+      results.push("（名稱已把底線換成空格，直接照抄進 prompt）");
+      return cap(results.join("\n\n"));
     },
   },
 ];

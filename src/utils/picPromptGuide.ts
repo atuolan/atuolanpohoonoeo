@@ -21,14 +21,25 @@ export function getPromptStyleHint(provider: ImageProvider): string {
   }
 }
 
-/** {{picGuide}}：文生圖能用時接在圖片標籤說明後面；不能用時是空字串 */
-export function buildPicGuide(settings: NovelAIImageSettings): string {
+/** 查 Danbooru 標籤只對 NovelAI 有用（吃 danbooru 標籤）；其他服務吃自然語言 */
+export function isDanbooruTagLookupUseful(settings: NovelAIImageSettings): boolean {
+  return isImageGenReady(settings) && getImageProvider(settings) === "novelai";
+}
+
+/**
+ * {{picGuide}}：文生圖能用時接在圖片標籤說明後面；不能用時是空字串。
+ * tagLookup：這一輪模型拿得到 search_danbooru_tags 工具
+ */
+export function buildPicGuide(settings: NovelAIImageSettings, options: { tagLookup?: boolean } = {}): string {
   if (!isImageGenReady(settings)) return "";
   const provider = getImageProvider(settings);
   const lines = [
     `  圖片會用 ${getImageProviderLabel(provider)} 畫：${getPromptStyleHint(provider)}。`,
     '  不想出現在圖裡的東西可以加 negative="英文，逗號分隔"（可省略）。',
   ];
+  if (options.tagLookup && provider === "novelai") {
+    lines.push("  不確定標籤怎麼寫時，先用 search_danbooru_tags 工具查正式寫法再寫 prompt。");
+  }
   if (settings.modelControlsPrompt) {
     lines.push("  不會自動加品質詞和負面詞，需要的話自己寫進 prompt、negative；角色外觀標籤會自動補上。");
   }

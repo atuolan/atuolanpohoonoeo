@@ -349,6 +349,10 @@ import {
   stripPicNote,
 } from "@/utils/picNote";
 import { buildPicGuide } from "@/utils/picPromptGuide";
+import { CHAT_TOOLS, DANBOORU_TAGS_TOOL_NAME } from "@/services/toolCalling/chatTools";
+import { isToolAllowed } from "@/services/toolCalling/permissions";
+
+const DANBOORU_TAGS_TOOL = CHAT_TOOLS.find((tool) => tool.name === DANBOORU_TAGS_TOOL_NAME);
 import {
   applyCharPlannerOps,
   CHAR_PLANNER_CHANGED_EVENT,
@@ -6884,7 +6888,15 @@ async function runAIResponseOnce(
       plurkShareGuide,
       charWallet: charWalletNote,
       // 文生圖：這次用哪個服務、prompt 怎麼寫、可以加 negative（{{picGuide}}）
-      picGuide: buildPicGuide(settingsStore.novelAIImage),
+      picGuide: buildPicGuide(settingsStore.novelAIImage, {
+        // 這一輪模型拿得到查 Danbooru 標籤的工具（只有一對一聊天帶工具）
+        tagLookup:
+          !isGroupChat.value &&
+          chatTaskConfig.api.toolsEnabled !== false &&
+          chatTaskConfig.api.toolProtocol !== "disabled" &&
+          !!DANBOORU_TAGS_TOOL &&
+          isToolAllowed(DANBOORU_TAGS_TOOL, true, char.toolPermissions),
+      }),
       // 約會：邀請等回覆、約會中的地點／付錢／事件（插在聊天紀錄最後面）
       dateNote: await dateCtl.promptNote(),
       // 角色主動約出門的標籤說明：只在單人線上、沒有約會進行中時
