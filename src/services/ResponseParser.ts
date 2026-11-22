@@ -17,6 +17,7 @@ import type { ScheduleCallData } from "@/types/incomingCall";
 import { normalizeEventTime } from "@/utils/calendarEventFormat";
 import { CHAR_PLANNER_TAG_REGEX } from "@/utils/charPlanner";
 import { stripPicNote } from "@/utils/picNote";
+import { NEGATIVE_ATTR_NAMES, readTagAttr, TAG_ATTRS_PATTERN } from "@/utils/tagAttr";
 import {
   CLEANUP_CONTROL_BLOCKS,
   shieldReply,
@@ -100,11 +101,14 @@ export interface ParsedMessage {
   isAiImage?: boolean;
   imageDescription?: string;
   imagePrompt?: string;
+  /** <pic negative="..."> 模型寫的負面提示詞 */
+  imageNegativePrompt?: string;
   // 面對面展示圖片/影片
   isShowPic?: boolean;
   isShowVid?: boolean;
   showMediaDescription?: string;
   showMediaPrompt?: string;
+  showMediaNegativePrompt?: string;
   // 語音訊息相關
   isVoice?: boolean;
   voiceContent?: string;
@@ -489,42 +493,8 @@ function parseTextOnlyContent(content: string): ParsedMessage {
   // 檢查情頭標籤
   parseCoupleAvatarTag(result);
 
-  // 檢查 AI 圖片
-  const picWithPromptMatch = result.content.match(
-    /<pic\s+prompt=["']([^"']+)["']\s*>([\s\S]*?)<\/pic>/i,
-  );
-  const picSimpleMatch = !picWithPromptMatch
-    ? result.content.match(/<pic>([\s\S]*?)<\/pic>/i)
-    : null;
-  if (picWithPromptMatch) {
-    result.isAiImage = true;
-    result.imagePrompt = picWithPromptMatch[1].trim();
-    result.imageDescription = picWithPromptMatch[2].trim();
-    // 移除 <pic> 標籤
-    result.content = result.content
-      .replace(/<pic\s+prompt=["'][^"']+["']\s*>[\s\S]*?<\/pic>/gi, "")
-      .trim();
-  } else if (picSimpleMatch) {
-    result.isAiImage = true;
-    result.imageDescription = picSimpleMatch[1].trim();
-    // 移除 <pic> 標籤
-    result.content = result.content
-      .replace(/<pic>[\s\S]*?<\/pic>/gi, "")
-      .trim();
-  }
-
-  // 檢查面對面展示圖片 <show-pic prompt="...">描述</show-pic>
-  const showPicMatch = result.content.match(
-    /<show-pic(?:\s+prompt=["']([^"']+)["'])?\s*>([\s\S]*?)<\/show-pic>/i,
-  );
-  if (showPicMatch) {
-    result.isShowPic = true;
-    result.showMediaPrompt = showPicMatch[1]?.trim();
-    result.showMediaDescription = showPicMatch[2].trim();
-    result.content = result.content
-      .replace(/<show-pic(?:\s+prompt=["'][^"']+["'])?\s*>[\s\S]*?<\/show-pic>/gi, "")
-      .trim();
-  }
+  // 檢查 AI 圖片 <pic prompt="..." negative="...">中文描述</pic> 與面對面 <show-pic>
+  const showPicMatch = parseImageTags(result);
 
   // 檢查面對面展示影片 <show-vid>描述</show-vid>
   const showVidMatch = !showPicMatch
@@ -762,42 +732,8 @@ function parseMessageContentWithoutTimetravel(content: string): ParsedMessage {
   // 檢查情侶頭像
   parseCoupleAvatarTag(result);
 
-  // 檢查 AI 圖片 <pic prompt="english keywords">中文描述</pic> 或 <pic>中文描述</pic>
-  const picWithPromptMatch = result.content.match(
-    /<pic\s+prompt=["']([^"']+)["']\s*>([\s\S]*?)<\/pic>/i,
-  );
-  const picSimpleMatch = !picWithPromptMatch
-    ? result.content.match(/<pic>([\s\S]*?)<\/pic>/i)
-    : null;
-  if (picWithPromptMatch) {
-    result.isAiImage = true;
-    result.imagePrompt = picWithPromptMatch[1].trim();
-    result.imageDescription = picWithPromptMatch[2].trim();
-    // 移除 <pic> 標籤
-    result.content = result.content
-      .replace(/<pic\s+prompt=["'][^"']+["']\s*>[\s\S]*?<\/pic>/gi, "")
-      .trim();
-  } else if (picSimpleMatch) {
-    result.isAiImage = true;
-    result.imageDescription = picSimpleMatch[1].trim();
-    // 移除 <pic> 標籤
-    result.content = result.content
-      .replace(/<pic>[\s\S]*?<\/pic>/gi, "")
-      .trim();
-  }
-
-  // 檢查面對面展示圖片 <show-pic prompt="...">描述</show-pic>
-  const showPicMatch = result.content.match(
-    /<show-pic(?:\s+prompt=["']([^"']+)["'])?\s*>([\s\S]*?)<\/show-pic>/i,
-  );
-  if (showPicMatch) {
-    result.isShowPic = true;
-    result.showMediaPrompt = showPicMatch[1]?.trim();
-    result.showMediaDescription = showPicMatch[2].trim();
-    result.content = result.content
-      .replace(/<show-pic(?:\s+prompt=["'][^"']+["'])?\s*>[\s\S]*?<\/show-pic>/gi, "")
-      .trim();
-  }
+  // 檢查 AI 圖片 <pic prompt="..." negative="...">中文描述</pic> 與面對面 <show-pic>
+  const showPicMatch = parseImageTags(result);
 
   // 檢查面對面展示影片 <show-vid>描述</show-vid>
   const showVidMatch = !showPicMatch
@@ -1770,42 +1706,8 @@ function parseMessageContent(content: string): ParsedMessage {
   // 檢查情頭標籤
   parseCoupleAvatarTag(result);
 
-  // 檢查 AI 圖片 <pic prompt="english keywords">中文描述</pic> 或 <pic>中文描述</pic>
-  const picWithPromptMatch = result.content.match(
-    /<pic\s+prompt=["']([^"']+)["']\s*>([\s\S]*?)<\/pic>/i,
-  );
-  const picSimpleMatch = !picWithPromptMatch
-    ? result.content.match(/<pic>([\s\S]*?)<\/pic>/i)
-    : null;
-  if (picWithPromptMatch) {
-    result.isAiImage = true;
-    result.imagePrompt = picWithPromptMatch[1].trim();
-    result.imageDescription = picWithPromptMatch[2].trim();
-    // 移除 <pic> 標籤
-    result.content = result.content
-      .replace(/<pic\s+prompt=["'][^"']+["']\s*>[\s\S]*?<\/pic>/gi, "")
-      .trim();
-  } else if (picSimpleMatch) {
-    result.isAiImage = true;
-    result.imageDescription = picSimpleMatch[1].trim();
-    // 移除 <pic> 標籤
-    result.content = result.content
-      .replace(/<pic>[\s\S]*?<\/pic>/gi, "")
-      .trim();
-  }
-
-  // 檢查面對面展示圖片 <show-pic prompt="...">描述</show-pic>
-  const showPicMatch = result.content.match(
-    /<show-pic(?:\s+prompt=["']([^"']+)["'])?\s*>([\s\S]*?)<\/show-pic>/i,
-  );
-  if (showPicMatch) {
-    result.isShowPic = true;
-    result.showMediaPrompt = showPicMatch[1]?.trim();
-    result.showMediaDescription = showPicMatch[2].trim();
-    result.content = result.content
-      .replace(/<show-pic(?:\s+prompt=["'][^"']+["'])?\s*>[\s\S]*?<\/show-pic>/gi, "")
-      .trim();
-  }
+  // 檢查 AI 圖片 <pic prompt="..." negative="...">中文描述</pic> 與面對面 <show-pic>
+  const showPicMatch = parseImageTags(result);
 
   // 檢查面對面展示影片 <show-vid>描述</show-vid>
   const showVidMatch = !showPicMatch
@@ -1926,6 +1828,34 @@ function parseMessageContent(content: string): ParsedMessage {
 function extractAttr(attrs: string, name: string): string | undefined {
   const match = attrs.match(new RegExp(`${name}=["']([^"']+)["']`, "i"));
   return match ? match[1] : undefined;
+}
+
+const PIC_TAG = new RegExp(String.raw`<pic${TAG_ATTRS_PATTERN}\s*>([\s\S]*?)<\/pic>`, "i");
+const SHOW_PIC_TAG = new RegExp(String.raw`<show-pic${TAG_ATTRS_PATTERN}\s*>([\s\S]*?)<\/show-pic>`, "i");
+
+/**
+ * 取出 <pic prompt="..." negative="...">描述</pic> 與 <show-pic ...>描述</show-pic>，
+ * 寫進 result 並從內容移除。prompt、negative 都可省略，屬性順序不限。回傳 show-pic 的比對結果。
+ */
+function parseImageTags(result: ParsedMessage): RegExpMatchArray | null {
+  const pic = result.content.match(PIC_TAG);
+  if (pic) {
+    result.isAiImage = true;
+    result.imagePrompt = readTagAttr(pic[1], "prompt");
+    result.imageNegativePrompt = readTagAttr(pic[1], ...NEGATIVE_ATTR_NAMES);
+    result.imageDescription = pic[2].trim();
+    result.content = result.content.replace(new RegExp(PIC_TAG.source, "gi"), "").trim();
+  }
+
+  const showPic = result.content.match(SHOW_PIC_TAG);
+  if (showPic) {
+    result.isShowPic = true;
+    result.showMediaPrompt = readTagAttr(showPic[1], "prompt");
+    result.showMediaNegativePrompt = readTagAttr(showPic[1], ...NEGATIVE_ATTR_NAMES);
+    result.showMediaDescription = showPic[2].trim();
+    result.content = result.content.replace(new RegExp(SHOW_PIC_TAG.source, "gi"), "").trim();
+  }
+  return showPic;
 }
 
 /**
@@ -3050,6 +2980,7 @@ export interface ParsedGroupMessage extends ParsedMessage {
   isAiImage?: boolean;
   imageDescription?: string;
   imagePrompt?: string;
+  imageNegativePrompt?: string;
   /** 是否為群通話請求 */
   isGroupCallRequest?: boolean;
   groupCallRequestReason?: string;
@@ -3146,6 +3077,7 @@ function parseShieldedGroupResponse(rawResponse: string): ParsedGroupResponse {
           isAiImage: true,
           imageDescription: description,
           imagePrompt: prompt,
+          imageNegativePrompt: readTagAttr(attrs, ...NEGATIVE_ATTR_NAMES),
         });
       } else {
         // 其他自閉合 msg 標籤
@@ -3345,7 +3277,7 @@ export function prettyPrintGroupResponse(parsed: ParsedGroupResponse): string {
       );
     } else if (msg.isAiImage) {
       msgParts.push(
-        `<msg name="${msg.senderName}" type="image" description="${msg.imageDescription ?? ""}" prompt="${msg.imagePrompt ?? ""}"/>`,
+        `<msg name="${msg.senderName}" type="image" description="${msg.imageDescription ?? ""}" prompt="${msg.imagePrompt ?? ""}"${msg.imageNegativePrompt ? ` negative="${msg.imageNegativePrompt}"` : ""}/>`,
       );
     } else {
       // 普通文字訊息 — 重建內部標籤

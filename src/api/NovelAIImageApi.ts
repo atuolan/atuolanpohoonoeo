@@ -82,6 +82,15 @@ export interface NovelAIImageSettings {
   banana?: BananaImageSettings;
   /** Midjourney 與 Niji 共用（同一把 Key、同一個中轉站） */
   midjourney?: MidjourneyImageSettings;
+  /**
+   * 提示詞交給模型：聊天裡模型寫的 <pic> 只用模型自己寫的正負提示詞，
+   * 不加上面的正面前後綴、負面提示詞、品質標籤、負面預設（角色與使用者的外觀標籤照加）
+   */
+  modelControlsPrompt?: boolean;
+  /** 模型看圖自己調整：生完圖讓聊天模型看一眼，不對就改提示詞重生 */
+  selfReview?: boolean;
+  /** 看圖調整最多重生幾次（1～3） */
+  selfReviewMaxRounds?: number;
 }
 
 /** 生圖服務：niji 是 Midjourney 的動漫模型（--niji），跟 midjourney 共用連線設定 */
@@ -464,6 +473,9 @@ export function createDefaultNovelAIImageSettings(): NovelAIImageSettings {
     gpt: createDefaultGptImageSettings(),
     banana: createDefaultBananaImageSettings(),
     midjourney: createDefaultMidjourneyImageSettings(),
+    modelControlsPrompt: false,
+    selfReview: false,
+    selfReviewMaxRounds: 1,
   };
 }
 

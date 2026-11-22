@@ -299,6 +299,8 @@ export interface PromptBuilderOptions {
   dateNote?: string;
   /** 角色主動約出門的標籤說明（{{dateGuide}} 宏）；不能用時是空字串或不傳 */
   dateGuide?: string;
+  /** 文生圖提示詞寫法（{{picGuide}} 宏，接在圖片標籤說明後面）；文生圖沒開時是空字串或不傳 */
+  picGuide?: string;
   /** 角色剛暫離回來那一輪的說明（[剛忙完回來]／[被催回來]），附加在 timeInfo 後面 */
   charAwayReturnNote?: string;
   /** 回送禮物的說明（只在節日、提到禮物、很久沒送時那一輪帶），附加在 timeInfo 後面 */
@@ -699,6 +701,7 @@ export class PromptBuilder {
         plurkShareGuide: options.plurkShareGuide || "",
         charWallet: options.charWallet || "",
         dateGuide: options.dateGuide || "",
+        picGuide: options.picGuide || "",
         userMoodNote: options.userMoodNote || "",
         charPlanner: options.charPlanner || "",
         userCalendar: options.userCalendar || "",
@@ -864,6 +867,7 @@ export class PromptBuilder {
         plurkShareGuide: options.plurkShareGuide || "",
         charWallet: options.charWallet || "",
         dateGuide: options.dateGuide || "",
+        picGuide: options.picGuide || "",
         userMoodNote: options.userMoodNote || "",
         charPlanner: options.charPlanner || "",
         userCalendar: options.userCalendar || "",

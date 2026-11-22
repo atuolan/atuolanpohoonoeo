@@ -530,6 +530,8 @@ export interface ChatMessage {
   imageNote?: string;
   /** 文生圖英文提示詞 */
   imagePrompt?: string;
+  /** 文生圖負面提示詞（模型在 <pic negative="..."> 寫的；看圖調整後是最後一次用的） */
+  imageNegativePrompt?: string;
 
   // --- 音頻/語音相關 ---
   /** 音頻 Blob 在 Audio_Blob_Store 中的 ID */

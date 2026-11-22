@@ -10,9 +10,12 @@ vi.mock("@/services/mcp", () => ({
   downscaleToolImages: vi.fn(),
 }));
 
-import { CHAT_TOOLS } from "@/services/toolCalling/chatTools";
+import { CHAT_TOOLS, DANBOORU_TAGS_TOOL_NAME } from "@/services/toolCalling/chatTools";
 import { useSettingsStore } from "@/stores/settings";
 import { useMcpChatTools } from "./useMcpChatTools";
+
+/** 沒開 NovelAI 時不給查 Danbooru 標籤 */
+const WITHOUT_DANBOORU = CHAT_TOOLS.filter((tool) => tool.name !== DANBOORU_TAGS_TOOL_NAME);
 
 const server = (id: string): McpServerConfig => ({
   id, name: id, description: "", url: `https://${id}.example.com/mcp`, enabled: true, headers: [],
@@ -27,15 +30,23 @@ describe("useMcpChatTools", () => {
   });
 
   it("uses only built-in tools when no MCP server is usable", async () => {
-    expect(await useMcpChatTools().buildChatTools(null)).toBe(CHAT_TOOLS);
+    expect(await useMcpChatTools().buildChatTools(null)).toEqual(WITHOUT_DANBOORU);
     expect(mocks.buildMcpChatTools).not.toHaveBeenCalled();
+  });
+
+  it("offers the Danbooru tag lookup only when NovelAI image generation is ready", async () => {
+    const image = useSettingsStore().novelAIImage;
+    Object.assign(image, { enabled: true, apiKey: "pst-1", provider: "novelai" });
+    expect((await useMcpChatTools().buildChatTools(null)).map((tool) => tool.name)).toContain(DANBOORU_TAGS_TOOL_NAME);
+    image.provider = "gpt";
+    expect((await useMcpChatTools().buildChatTools(null)).map((tool) => tool.name)).not.toContain(DANBOORU_TAGS_TOOL_NAME);
   });
 
   it("adds MCP tools for the servers this character may use", async () => {
     useSettingsStore().mcp.servers = [server("s1"), server("s2")];
     mocks.buildMcpChatTools.mockReturnValue([{ name: "lock_phone" }]);
     const tools = await useMcpChatTools().buildChatTools({ enabled: true, categories: { "mcp:s2": false }, tools: {} });
-    expect(tools.map((tool) => tool.name)).toEqual([...CHAT_TOOLS.map((tool) => tool.name), "lock_phone"]);
+    expect(tools.map((tool) => tool.name)).toEqual([...WITHOUT_DANBOORU.map((tool) => tool.name), "lock_phone"]);
     const options = mocks.buildMcpChatTools.mock.calls[0][0];
     expect(options.servers.map((entry: { id: string }) => entry.id)).toEqual(["s1"]);
     expect(options.reservedNames).toEqual(CHAT_TOOLS.map((tool) => tool.name));
@@ -54,6 +65,6 @@ describe("useMcpChatTools", () => {
   it("falls back to built-in tools when MCP tools cannot be built", async () => {
     useSettingsStore().mcp.servers = [server("s1")];
     mocks.buildMcpChatTools.mockImplementation(() => { throw new Error("boom"); });
-    expect(await useMcpChatTools().buildChatTools(null)).toBe(CHAT_TOOLS);
+    expect(await useMcpChatTools().buildChatTools(null)).toEqual(WITHOUT_DANBOORU);
   });
 });

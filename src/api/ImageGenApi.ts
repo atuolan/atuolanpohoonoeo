@@ -32,7 +32,16 @@ export interface ImageGenResponse extends NovelAIImageResponse {
   mimeType?: string;
 }
 
-type TagPrompts = { characterPrompt?: string; userPrompt?: string };
+export interface ImageGenOptions {
+  /** 角色外觀標籤 */
+  characterPrompt?: string;
+  /** 使用者外觀標籤 */
+  userPrompt?: string;
+  /** 模型在 <pic negative="..."> 寫的負面提示詞；接在設定的負面提示詞後面 */
+  negativePrompt?: string;
+  /** 不套設定裡的固定提示詞（正面前後綴、負面提示詞、品質標籤、負面預設），只用傳進來的 */
+  ignorePresets?: boolean;
+}
 
 // ── 服務清單與小工具 ─────────────────────────────────────────
 
@@ -177,14 +186,51 @@ function okResult(imageBase64: string): ImageGenResponse {
   return { success: true, imageBase64, mimeType: detectImageMime(imageBase64) };
 }
 
+/** 合併負面提示詞：逗號或換行分開，去掉重複（不分大小寫），保留先出現的 */
+export function mergeNegativePrompts(...parts: (string | undefined)[]): string {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const part of parts) {
+    for (const raw of (part || '').split(/[,\n]/)) {
+      const tag = raw.trim();
+      const key = tag.toLowerCase();
+      if (!tag || seen.has(key)) continue;
+      seen.add(key);
+      out.push(tag);
+    }
+  }
+  return out.join(', ');
+}
+
+/** 這次生圖實際用的設定：套上模型寫的負面提示詞；ignorePresets 時拿掉設定裡的固定提示詞 */
+export function resolveImageGenSettings(
+  settings: NovelAIImageSettings,
+  options: Pick<ImageGenOptions, 'negativePrompt' | 'ignorePresets'> = {},
+): NovelAIImageSettings {
+  const modelNegative = options.negativePrompt?.trim() || '';
+  if (options.ignorePresets) {
+    return {
+      ...settings,
+      positivePromptPrefix: '',
+      positivePromptSuffix: '',
+      negativePrompt: mergeNegativePrompts(modelNegative),
+      qualityPreset: 'none',
+      ucPresetId: 'none',
+    };
+  }
+  if (!modelNegative) return settings;
+  return { ...settings, negativePrompt: mergeNegativePrompts(settings.negativePrompt, modelNegative) };
+}
+
 // ── 主要入口 ─────────────────────────────────────────────────
 
 /** 依設定的生圖服務生成一張圖 */
 export async function generateAIImage(
   prompt: string,
-  settings: NovelAIImageSettings,
-  tagPrompts?: TagPrompts,
+  baseSettings: NovelAIImageSettings,
+  tagPrompts?: ImageGenOptions,
 ): Promise<ImageGenResponse> {
+  const settings = resolveImageGenSettings(baseSettings, tagPrompts);
   const provider = getImageProvider(settings);
   if (provider === 'novelai') {
     const result = await generateNovelAIImage(prompt, settings, tagPrompts);

@@ -348,6 +348,11 @@ import {
   findTurnImageMessage,
   stripPicNote,
 } from "@/utils/picNote";
+import { buildPicGuide } from "@/utils/picPromptGuide";
+import { CHAT_TOOLS, DANBOORU_TAGS_TOOL_NAME } from "@/services/toolCalling/chatTools";
+import { isToolAllowed } from "@/services/toolCalling/permissions";
+
+const DANBOORU_TAGS_TOOL = CHAT_TOOLS.find((tool) => tool.name === DANBOORU_TAGS_TOOL_NAME);
 import {
   applyCharPlannerOps,
   CHAR_PLANNER_CHANGED_EVENT,
@@ -6882,6 +6887,16 @@ async function runAIResponseOnce(
       // 噗文分享：可以留言的噗、可以傳的噗（{{plurkShareGuide}}）
       plurkShareGuide,
       charWallet: charWalletNote,
+      // 文生圖：這次用哪個服務、prompt 怎麼寫、可以加 negative（{{picGuide}}）
+      picGuide: buildPicGuide(settingsStore.novelAIImage, {
+        // 這一輪模型拿得到查 Danbooru 標籤的工具（只有一對一聊天帶工具）
+        tagLookup:
+          !isGroupChat.value &&
+          chatTaskConfig.api.toolsEnabled !== false &&
+          chatTaskConfig.api.toolProtocol !== "disabled" &&
+          !!DANBOORU_TAGS_TOOL &&
+          isToolAllowed(DANBOORU_TAGS_TOOL, true, char.toolPermissions),
+      }),
       // 約會：邀請等回覆、約會中的地點／付錢／事件（插在聊天紀錄最後面）
       dateNote: await dateCtl.promptNote(),
       // 角色主動約出門的標籤說明：只在單人線上、沒有約會進行中時
@@ -8244,6 +8259,7 @@ async function runAIResponseOnce(
                   : "pending"
                 : undefined,
               imagePrompt: parsedMsg.imagePrompt,
+              imageNegativePrompt: parsedMsg.imageNegativePrompt ?? parsedMsg.showMediaNegativePrompt,
             };
 
             // 外賣付款結果/送達（群聊）
@@ -8653,6 +8669,7 @@ async function runAIResponseOnce(
                   ? parsedMsg.imageDescription
                   : undefined,
                 imagePrompt: parsedMsg.imagePrompt,
+                imageNegativePrompt: parsedMsg.imageNegativePrompt ?? parsedMsg.showMediaNegativePrompt,
                 isHtmlBlock: parsedMsg.isHtmlBlock,
                 htmlContent: parsedMsg.isHtmlBlock
                   ? parsedMsg.content
@@ -9438,6 +9455,7 @@ async function handleStreamingClose() {
               ? parsedMsg.imageDescription
               : undefined,
             imagePrompt: parsedMsg.imagePrompt,
+            imageNegativePrompt: parsedMsg.imageNegativePrompt ?? parsedMsg.showMediaNegativePrompt,
             audioTranscript: parsedMsg.isVoice
               ? parsedMsg.voiceContent
               : undefined,
@@ -9637,6 +9655,7 @@ async function handleStreamingClose() {
                 ? parsedMsg.imageDescription
                 : undefined,
               imagePrompt: parsedMsg.imagePrompt,
+              imageNegativePrompt: parsedMsg.imageNegativePrompt ?? parsedMsg.showMediaNegativePrompt,
               // HTML 區塊相關
               isHtmlBlock: parsedMsg.isHtmlBlock,
               htmlContent: parsedMsg.isHtmlBlock
@@ -10245,6 +10264,9 @@ function exportNovelAIConfig() {
     gpt: settingsStore.novelAIImage.gpt,
     banana: settingsStore.novelAIImage.banana,
     midjourney: settingsStore.novelAIImage.midjourney,
+    modelControlsPrompt: settingsStore.novelAIImage.modelControlsPrompt,
+    selfReview: settingsStore.novelAIImage.selfReview,
+    selfReviewMaxRounds: settingsStore.novelAIImage.selfReviewMaxRounds,
   };
 
   const json = JSON.stringify(config, null, 2);
@@ -11694,6 +11716,7 @@ function buildRemoteParsedMessages(
               : undefined,
         imageCaption: parsedMsg.isAiImage ? parsedMsg.imageDescription : undefined,
         imagePrompt: parsedMsg.imagePrompt,
+        imageNegativePrompt: parsedMsg.imageNegativePrompt ?? parsedMsg.showMediaNegativePrompt,
         isHtmlBlock: parsedMsg.isHtmlBlock,
         htmlContent: parsedMsg.isHtmlBlock ? parsedMsg.content : undefined,
         audioTranscript: parsedMsg.isCharRecall
@@ -15295,6 +15318,56 @@ useChatCleanup({
                 <span class="setting-hint"
                   >會自動加在每次生成的提示詞最後面</span
                 >
+              </div>
+
+              <!-- 模型指揮生圖 -->
+              <div class="setting-divider">模型指揮生圖</div>
+
+              <div class="setting-row">
+                <div class="setting-label">
+                  <span>提示詞交給模型</span>
+                  <span class="setting-hint"
+                    >聊天裡角色傳的圖只用模型自己寫的正負提示詞，不加上面的負面提示詞、前後綴、品質標籤和負面預設（角色外觀標籤照加）</span
+                  >
+                </div>
+                <label class="toggle-switch">
+                  <input
+                    type="checkbox"
+                    v-model="settingsStore.novelAIImage.modelControlsPrompt"
+                  />
+                  <span class="toggle-slider"></span>
+                </label>
+              </div>
+
+              <div class="setting-row">
+                <div class="setting-label">
+                  <span>模型看圖自己調整</span>
+                  <span class="setting-hint"
+                    >生完圖讓聊天模型看一眼，畫錯就改提示詞重畫。聊天模型要能看圖，每看一次多一次聊天 API 呼叫</span
+                  >
+                </div>
+                <label class="toggle-switch">
+                  <input
+                    type="checkbox"
+                    v-model="settingsStore.novelAIImage.selfReview"
+                  />
+                  <span class="toggle-slider"></span>
+                </label>
+              </div>
+
+              <div
+                class="setting-group"
+                v-if="settingsStore.novelAIImage.selfReview"
+              >
+                <label class="setting-label">最多重畫幾次</label>
+                <select
+                  class="setting-select"
+                  v-model.number="settingsStore.novelAIImage.selfReviewMaxRounds"
+                >
+                  <option :value="1">1 次</option>
+                  <option :value="2">2 次</option>
+                  <option :value="3">3 次</option>
+                </select>
               </div>
 
               <template v-if="naiShowNaiParams">

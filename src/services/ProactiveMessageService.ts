@@ -37,6 +37,7 @@ import {
 import { buildEventScanText, selectImportantEventsForPrompt } from "@/utils/importantEventSelection";
 import type { ImportantEventsLog } from "@/types/importantEvents";
 import { buildCharWalletPromptNote, storyNowForChat } from "@/services/charWallet";
+import { buildPicGuide } from "@/utils/picPromptGuide";
 import {
   applyPromptRegexToHistory,
   applyWorldInfoRegexToLorebooks,
@@ -1103,6 +1104,7 @@ export class ProactiveMessageService {
             isAiImage: true,
             imageDescription: pm.imageDescription,
             imagePrompt: pm.imagePrompt,
+            imageNegativePrompt: pm.imageNegativePrompt,
             messageType: "descriptive-image" as const,
             imageCaption: pm.imageDescription,
           }),
@@ -1637,6 +1639,8 @@ export class ProactiveMessageService {
           [{ characterId: character.id, name: character.data?.name || character.nickname || "角色" }],
           storyNowForChat(chat),
         ),
+        // 文生圖提示詞寫法（{{picGuide}}）
+        picGuide: buildPicGuide(settingsStore.novelAIImage),
         // 噗文分享：可以留言的噗＋（有開設定時）最近的噗；面對面模式不帶
         plurkShareGuide: chat.faceToFaceMode
           ? ""
@@ -1855,6 +1859,7 @@ export class ProactiveMessageService {
                   isAiImage: true,
                   imageDescription: parsed.imageDescription,
                   imagePrompt: parsed.imagePrompt,
+                  imageNegativePrompt: parsed.imageNegativePrompt,
                   messageType: "descriptive-image" as const,
                   imageCaption: parsed.imageDescription,
                 }),

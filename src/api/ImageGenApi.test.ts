@@ -5,7 +5,9 @@ import {
   generateAIImage,
   gptImageSize,
   isImageGenReady,
+  mergeNegativePrompts,
   parseGeminiImageResponse,
+  resolveImageGenSettings,
 } from "./ImageGenApi";
 import {
   applySavedNovelAIImageSettings,
@@ -247,5 +249,76 @@ describe("Midjourney / Niji", () => {
     const result = await generateAIImage("x", s);
     expect(result.success).toBe(false);
     expect(result.error).toContain("禁用詞");
+  });
+});
+
+describe("模型寫的負面提示詞與「提示詞交給模型」", () => {
+  it("合併負面提示詞：去重、不分大小寫、保留順序", () => {
+    expect(mergeNegativePrompts("text, watermark", "Watermark,\nextra fingers", "")).toBe(
+      "text, watermark, extra fingers",
+    );
+  });
+
+  it("沒有模型的負面提示詞時設定原封不動", () => {
+    const s = makeSettings({ negativePrompt: "text" });
+    expect(resolveImageGenSettings(s, {})).toBe(s);
+  });
+
+  it("模型的負面接在設定的後面；交給模型時拿掉固定的提示詞與預設", () => {
+    const s = makeSettings({
+      negativePrompt: "text",
+      positivePromptPrefix: "masterpiece",
+      positivePromptSuffix: "anime style",
+      qualityPreset: "standard",
+      ucPresetId: "heavy",
+    });
+    expect(resolveImageGenSettings(s, { negativePrompt: "dog" }).negativePrompt).toBe("text, dog");
+    expect(resolveImageGenSettings(s, { negativePrompt: "dog", ignorePresets: true })).toMatchObject({
+      negativePrompt: "dog",
+      positivePromptPrefix: "",
+      positivePromptSuffix: "",
+      qualityPreset: "none",
+      ucPresetId: "none",
+    });
+    // 原本的設定不會被改到
+    expect(s.positivePromptPrefix).toBe("masterpiece");
+  });
+
+  it("GPT：模型的負面跟設定的一起寫進 Avoid", async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ data: [{ b64_json: PNG_BASE64 }] }));
+    vi.stubGlobal("fetch", fetchMock);
+    const s = makeSettings({ provider: "gpt", negativePrompt: "text", positivePromptPrefix: "best quality" });
+    s.gpt = { ...s.gpt!, apiKey: "sk-gpt" };
+
+    await generateAIImage("a cat", s, { negativePrompt: "dog" });
+    let body = JSON.parse((fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1].body as string);
+    expect(body.prompt).toBe("best quality, a cat\n\nAvoid: text, dog");
+
+    await generateAIImage("a cat", s, { negativePrompt: "dog", ignorePresets: true, characterPrompt: "red hair" });
+    body = JSON.parse((fetchMock.mock.calls[1] as unknown as [string, RequestInit])[1].body as string);
+    expect(body.prompt).toBe("red hair, a cat\n\nAvoid: dog");
+  });
+
+  it("NovelAI：交給模型時不加品質標籤，負面只有模型寫的", async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ data: [{ b64_json: PNG_BASE64 }] }));
+    vi.stubGlobal("fetch", fetchMock);
+    const s = makeSettings({
+      apiKey: "pst-1",
+      apiSource: "openai",
+      customBaseUrl: "https://example.com/v1",
+      openaiModel: "nai-diffusion-4-5-full",
+      negativePrompt: "text",
+    });
+
+    await generateAIImage("1girl", s, { negativePrompt: "extra fingers" });
+    let body = JSON.parse((fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1].body as string);
+    expect(body.prompt).not.toBe("1girl");
+    expect(body.negative_prompt).toContain("text, extra fingers");
+    expect(body.negative_prompt).not.toBe("text, extra fingers");
+
+    await generateAIImage("1girl", s, { negativePrompt: "extra fingers", ignorePresets: true });
+    body = JSON.parse((fetchMock.mock.calls[1] as unknown as [string, RequestInit])[1].body as string);
+    expect(body.prompt).toBe("1girl");
+    expect(body.negative_prompt).toBe("extra fingers");
   });
 });

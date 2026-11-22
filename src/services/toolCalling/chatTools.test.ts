@@ -97,6 +97,7 @@ describe("chat tools", () => {
       ["search_memory", "查記憶"],
       ["create_calendar_event", "新增行程"],
       ["schedule_call", "預約來電"],
+      ["search_danbooru_tags", "查 Danbooru 標籤"],
     ]);
   });
 });
