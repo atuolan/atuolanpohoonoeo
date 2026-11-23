@@ -67,6 +67,8 @@ export function useChatMedia(deps: {
   getChatId?: () => string | undefined;
   /** 拿畫風參考圖比對、看圖調整通過時，回報那次用的繪師串 */
   onStyleArtistsFound?: (messageId: string, artists: string) => void;
+  /** 角色拿得到「試畫」工具：這時 <pic> 不跑背後的看圖調整，調畫風交給工具 */
+  isDrawToolUsable?: () => boolean;
 }) {
   const settingsStore = useSettingsStore();
   const userStore = useUserStore();
@@ -492,7 +494,11 @@ export function useChatMedia(deps: {
         const result = await generate(currentPrompt, currentNegative);
 
         if (result.success && result.imageBase64) {
-          if (applyImage({ imageBase64: result.imageBase64, mimeType: result.mimeType }) && imageSettings.selfReview) {
+          if (
+            applyImage({ imageBase64: result.imageBase64, mimeType: result.mimeType }) &&
+            imageSettings.selfReview &&
+            !deps.isDrawToolUsable?.()
+          ) {
             deps.saveChat();
             const reference = await resolveReviewReference(messageId);
             const passed = await reviewAndRegenerate({
@@ -638,44 +644,18 @@ export function useChatMedia(deps: {
 
 
   /**
-   * 「畫圖」工具：照提示詞畫一張，插進聊天（beforeMessageId 前面，也就是這次回覆的文字前面）。
-   * 畫不成丟錯（佔位訊息會拿掉），讓模型知道失敗原因。
+   * 「試畫」工具：照提示詞畫一張，只回傳圖（不進聊天；工作紀錄卡片會顯示）。
+   * 畫不成丟錯，讓模型知道失敗原因。
    */
   async function drawImageForTool(request: {
     prompt: string;
     negativePrompt?: string;
-    caption?: string;
-    turnId?: string;
-    beforeMessageId?: string;
     signal?: AbortSignal;
-  }): Promise<{ messageId: string; imageBase64: string; mimeType: string; autoTags: string; providerLabel: string }> {
+  }): Promise<{ imageBase64: string; mimeType: string; autoTags: string; providerLabel: string }> {
     const imageSettings = settingsStore.novelAIImage;
     if (!isImageGenReady(imageSettings)) throw new Error("文生圖沒有設定好，不能畫圖");
     const characterPrompt = getCharacterPrompt();
     const userPrompt = getUserPrompt();
-    const caption = request.caption?.trim() || "";
-    const messageId = `msg_${Date.now()}_draw_${Math.random().toString(36).slice(2, 8)}`;
-    const placeholder: Message = {
-      id: messageId,
-      role: "ai",
-      content: `[生成圖片中...] ${caption}`,
-      timestamp: Date.now(),
-      isStreaming: true,
-      imageCaption: caption || undefined,
-      imagePrompt: request.prompt,
-      imageNegativePrompt: request.negativePrompt,
-      ...(request.turnId ? { turnId: request.turnId } : {}),
-    };
-    const beforeIndex = request.beforeMessageId
-      ? deps.messages.value.findIndex((m) => m.id === request.beforeMessageId)
-      : -1;
-    if (beforeIndex >= 0) deps.messages.value.splice(beforeIndex, 0, placeholder);
-    else deps.messages.value.push(placeholder);
-    deps.scrollToBottom();
-    const removePlaceholder = () => {
-      const index = deps.messages.value.findIndex((m) => m.id === messageId);
-      if (index !== -1) deps.messages.value.splice(index, 1);
-    };
 
     isGeneratingImage.value = true;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -699,34 +679,73 @@ export function useChatMedia(deps: {
         stop,
       ]);
       if (!result.success || !result.imageBase64) throw new Error(result.error || "生圖失敗");
-      const mimeType = result.mimeType || "image/png";
-      const index = deps.messages.value.findIndex((m) => m.id === messageId);
-      if (index === -1) throw new Error("圖片訊息已被刪除");
-      deps.messages.value[index] = {
-        ...deps.messages.value[index],
-        content: caption || request.prompt,
-        messageType: "image",
-        imageUrl: `data:${mimeType};base64,${result.imageBase64}`,
-        imageData: result.imageBase64,
-        imageMimeType: mimeType,
-        isStreaming: false,
-      };
-      deps.scrollToBottom();
       return {
-        messageId,
         imageBase64: result.imageBase64,
-        mimeType,
+        mimeType: result.mimeType || "image/png",
         autoTags: [characterPrompt, userPrompt].filter(Boolean).join(", "),
         providerLabel: getImageProviderLabel(getImageProvider(imageSettings)),
       };
-    } catch (error) {
-      removePlaceholder();
-      throw error;
     } finally {
       clearTimeout(timer);
       if (onAbort) request.signal?.removeEventListener("abort", onAbort);
       isGeneratingImage.value = false;
     }
+  }
+
+  /**
+   * 把選定的試畫貼進聊天：messageId 那則還在就換掉它的圖，否則新增一則角色圖片訊息
+   * （插在 beforeMessageId 前面，也就是這次回覆的文字前面）。回傳圖片訊息的 id。
+   */
+  function postToolImage(request: {
+    imageBase64: string;
+    mimeType: string;
+    prompt?: string;
+    negativePrompt?: string;
+    caption?: string;
+    messageId?: string;
+    turnId?: string;
+    beforeMessageId?: string;
+  }): string {
+    const fields = {
+      messageType: "image",
+      imageUrl: `data:${request.mimeType};base64,${request.imageBase64}`,
+      imageData: request.imageBase64,
+      imageMimeType: request.mimeType,
+      imagePrompt: request.prompt,
+      imageNegativePrompt: request.negativePrompt,
+      // 換了圖，舊的看圖備註不適用
+      imageNote: undefined,
+      isStreaming: false,
+    };
+    const existing = request.messageId ? deps.messages.value.findIndex((m) => m.id === request.messageId) : -1;
+    if (existing !== -1) {
+      const current = deps.messages.value[existing];
+      const caption = request.caption ?? current.imageCaption;
+      deps.messages.value[existing] = {
+        ...current,
+        ...fields,
+        imageCaption: caption || undefined,
+        content: caption || request.prompt || current.content,
+      };
+      return current.id;
+    }
+    const caption = request.caption?.trim() || "";
+    const message: Message = {
+      id: `msg_${Date.now()}_draw_${Math.random().toString(36).slice(2, 8)}`,
+      role: "ai",
+      content: caption || request.prompt || "[圖片]",
+      timestamp: Date.now(),
+      imageCaption: caption || undefined,
+      ...fields,
+      ...(request.turnId ? { turnId: request.turnId } : {}),
+    };
+    const beforeIndex = request.beforeMessageId
+      ? deps.messages.value.findIndex((m) => m.id === request.beforeMessageId)
+      : -1;
+    if (beforeIndex >= 0) deps.messages.value.splice(beforeIndex, 0, message);
+    else deps.messages.value.push(message);
+    deps.scrollToBottom();
+    return message.id;
   }
 
   /** 「看聊天裡的圖」工具：畫風參考圖，或從最新往回數第 nth 張（目前載入的訊息） */
@@ -803,6 +822,7 @@ export function useChatMedia(deps: {
     tryGenerateImageForMessage,
     handleAIGenerateImage,
     drawImageForTool,
+    postToolImage,
     findChatImageForTool,
   };
 }

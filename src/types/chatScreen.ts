@@ -12,6 +12,7 @@ import type {
 import type { LiuyaoShareSnapshot } from "@/types/liuyao";
 import type { HouseNewsShare } from "@/types/houseNews";
 import type { ToolActivityRecord } from "@/types/toolActivity";
+import type { DrawSession } from "@/types/drawSession";
 import type { DiceRollData } from "@/utils/diceRoller";
 
 export type ChatScreenMediaType =
@@ -248,6 +249,8 @@ export interface ChatScreenMessage {
   onlineModeRequestStatus?: "pending" | "accepted" | "rejected";
   /** 這一輪角色用過的工具（只掛在該輪第一則角色訊息上） */
   toolActivity?: ToolActivityRecord[];
+  /** 這一輪角色調畫風的工作紀錄 */
+  drawSession?: DrawSession;
   sentWhileBlocked?: boolean;
   /** user 在角色暫時離開期間留下的（訊息或未接通電話卡），值是 CharAway.id */
   sentWhileAway?: string;

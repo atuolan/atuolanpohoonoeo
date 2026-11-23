@@ -8,6 +8,7 @@ import type { Chat, ChatMessage } from "@/types/chat";
 import type { ChatScreenMessage } from "@/types/chatScreen";
 import type { ToolActivityRecord } from "@/types/toolActivity";
 import { parseGiftTag } from "@/utils/giftTag";
+import { cloneDrawSession } from "@/utils/drawSession";
 
 interface CharacterLookupItem {
   id: string;
@@ -440,6 +441,7 @@ export function convertToStorableMessage(m: any, charName: string): ChatMessage 
     onlineModeRequestStatus: m.onlineModeRequestStatus,
     // 逐筆複製：messages.value 裡是 reactive Proxy，直接存會讓 IndexedDB 丟 DataCloneError
     toolActivity: m.toolActivity ? m.toolActivity.map((entry: ToolActivityRecord) => ({ ...entry })) : undefined,
+    drawSession: m.drawSession ? cloneDrawSession(m.drawSession) : undefined,
     sentWhileBlocked: m.sentWhileBlocked,
     sentWhileAway: m.sentWhileAway,
     isSystemNotification: m.isSystemNotification,

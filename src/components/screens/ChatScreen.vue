@@ -278,6 +278,7 @@ import {
 import { usePhoneCallStore } from "@/stores/phoneCall";
 import { useMcpChatTools } from "@/composables/useMcpChatTools";
 import ToolActivityRow from "@/components/common/ToolActivityRow.vue";
+import DrawSessionCard from "@/components/common/DrawSessionCard.vue";
 import PeekNoteNotice from "@/components/common/PeekNoteNotice.vue";
 import { parsePeekNote } from "@/utils/peekLinks";
 import type { RegexScript } from "@/types/character";
@@ -359,10 +360,24 @@ import { downscaleToolImages } from "@/services/mcp/mcpImages";
 import { CHAT_TOOLS, DANBOORU_TAGS_TOOL_NAME, GENERATE_IMAGE_TOOL_NAME } from "@/services/toolCalling/chatTools";
 import type { ImageToolService } from "@/services/toolCalling/toolServices";
 import { isToolAllowed } from "@/services/toolCalling/permissions";
+import type { DrawSession, DrawStep } from "@/types/drawSession";
+import {
+  cloneDrawSession,
+  describeDrawSessionForPrompt,
+  findDraft,
+  findPrevTurnDrawSession,
+  finalizeDrawSession,
+  isDrawSessionTool,
+  listDrafts,
+  maxAttempt,
+  stepFromToolCall,
+  summarizeStepResult,
+  upsertDrawStep,
+} from "@/utils/drawSession";
 
 const DANBOORU_TAGS_TOOL = CHAT_TOOLS.find((tool) => tool.name === DANBOORU_TAGS_TOOL_NAME);
 const GENERATE_IMAGE_TOOL = CHAT_TOOLS.find((tool) => tool.name === GENERATE_IMAGE_TOOL_NAME);
-/** 一次回覆最多用「畫圖」工具畫幾張 */
+/** 一次回覆最多用「試畫」工具畫幾張 */
 const TOOL_DRAWS_PER_REPLY = 6;
 import {
   applyCharPlannerOps,
@@ -4827,6 +4842,7 @@ const {
   tryGenerateImageForMessage,
   handleAIGenerateImage,
   drawImageForTool,
+  postToolImage,
   findChatImageForTool,
 } = useChatMedia({
   messages,
@@ -4837,34 +4853,228 @@ const {
   getImageStyleRef: () => currentChatData.value?.metadata?.imageStyleRef,
   getChatId: () => currentChatId.value || undefined,
   onStyleArtistsFound: (messageId, artists) => rememberStyleArtists(messageId, artists),
+  // 拿得到畫圖工具時，<pic> 不再跑背後的看圖調整，改由角色自己用工具試畫
+  isDrawToolUsable: () => isDrawToolUsable(currentCharacter.value),
 });
 
-/** 「畫圖」「看聊天裡的圖」工具的服務：每次回覆一個，計算這次畫了幾張 */
-function createImageToolService(beforeMessageId: string, turnId?: string): ImageToolService {
+/** 這個聊天的角色這一輪拿得到「試畫」工具（一對一聊天、有開工具、文生圖設定好、角色沒關掉） */
+function isDrawToolUsable(char: typeof currentCharacter.value): boolean {
+  if (!char || isGroupChat.value || !GENERATE_IMAGE_TOOL) return false;
+  const api = settingsStore.getAPIForTask("chat").api;
+  return (
+    api.toolsEnabled !== false &&
+    api.toolProtocol !== "disabled" &&
+    isImageGenReady(settingsStore.novelAIImage) &&
+    isToolAllowed(GENERATE_IMAGE_TOOL, true, char.toolPermissions)
+  );
+}
+
+// ===== 調畫風工作紀錄 =====
+
+/** 這一輪回覆的工作紀錄（生成中顯示在聊天最下面，回覆完掛到訊息上） */
+const liveDrawSession = ref<DrawSession | null>(null);
+
+function patchLiveDrawSession(step: Partial<DrawStep> & { id: string }): void {
+  const session = liveDrawSession.value ?? { id: `draw_${Date.now()}`, steps: [] };
+  liveDrawSession.value = upsertDrawStep(session, step);
+}
+
+/** 讀試畫存起來的圖（imageCache），回傳純 base64 */
+async function loadDraftBase64(draft: DrawStep): Promise<string> {
+  const { getChatImage } = await import("@/db/operations");
+  const { resolveImageBase64 } = await import("@/services/imageNoteReader");
+  const data = draft.imageRef ? await getChatImage(draft.imageRef) : null;
+  const base64 = await resolveImageBase64(data ?? undefined);
+  if (!base64) throw new Error(`讀不到試畫 #${draft.attempt} 的圖`);
+  return base64;
+}
+
+interface ImageToolSession extends ImageToolService {
+  /** 回覆結束：沒選過就把最後一張貼進聊天；回傳整理好的工作紀錄（沒有就 null） */
+  finish(): Promise<DrawSession | null>;
+}
+
+/**
+ * 「試畫」「選定試畫」「看聊天裡的圖」工具的服務：每次回覆一個。
+ * 試畫記在 liveDrawSession（卡片上看得到），選定的那張才貼進聊天（插在這次回覆的文字前面）。
+ * prevSession 是上一輪的工作紀錄：編號接著往下數，也能看、能選上一輪的試畫。
+ */
+function createImageToolService(
+  beforeMessageId: string,
+  turnId: string | undefined,
+  prevSession: DrawSession | undefined,
+  isSameChat: () => boolean,
+): ImageToolSession {
   let draws = 0;
+  let nextAttempt = maxAttempt(prevSession) + 1;
   const toModelImage = async (image: { imageBase64: string; mimeType: string }) =>
     (await downscaleToolImages([{ mimeType: image.mimeType, data: image.imageBase64 }]))[0];
+  const patch = (step: Partial<DrawStep> & { id: string }) => {
+    if (isSameChat()) patchLiveDrawSession(step);
+  };
+  const findAnyDraft = (attempt: number) =>
+    findDraft(liveDrawSession.value, attempt) ?? findDraft(prevSession, attempt);
+
+  async function choose(request: { attempt: number; caption?: string }) {
+    const draft = findAnyDraft(request.attempt);
+    if (!draft) throw new Error(`沒有試畫 #${request.attempt}（只能選這一輪和上一輪畫成的）`);
+    if (!isSameChat()) throw new Error("使用者已經離開這個聊天");
+    const base64 = await loadDraftBase64(draft);
+    const current = liveDrawSession.value;
+    const replaced = !!current?.chosenMessageId && messages.value.some((m) => m.id === current.chosenMessageId);
+    const messageId = postToolImage({
+      imageBase64: base64,
+      mimeType: draft.mimeType || "image/png",
+      prompt: draft.prompt,
+      negativePrompt: draft.negativePrompt,
+      caption: request.caption,
+      messageId: current?.chosenMessageId,
+      turnId,
+      beforeMessageId,
+    });
+    const session = liveDrawSession.value ?? { id: `draw_${Date.now()}`, steps: [] };
+    liveDrawSession.value = { ...session, chosenAttempt: request.attempt, chosenMessageId: messageId };
+    saveChat();
+    return { attempt: request.attempt, replaced };
+  }
+
   return {
     async draw(request, signal) {
       if (draws >= TOOL_DRAWS_PER_REPLY) {
-        throw new Error(`這次回覆已經畫了 ${TOOL_DRAWS_PER_REPLY} 張，不能再畫；直接回覆使用者`);
+        throw new Error(`這次回覆已經試畫了 ${TOOL_DRAWS_PER_REPLY} 張，不能再畫；用 choose_image 選一張再回覆使用者`);
       }
       draws += 1;
-      const result = await drawImageForTool({ ...request, turnId, beforeMessageId, signal });
+      const attempt = nextAttempt++;
+      const stepId = request.toolCallId || `draw_${attempt}`;
+      patch({
+        id: stepId,
+        kind: "draw",
+        status: "running",
+        at: Date.now(),
+        title: "試畫",
+        attempt,
+        prompt: request.prompt,
+        negativePrompt: request.negativePrompt,
+        note: request.note,
+      });
+      const result = await drawImageForTool({ prompt: request.prompt, negativePrompt: request.negativePrompt, signal });
+      const { saveChatImage } = await import("@/db/operations");
+      const imageRef = await saveChatImage(result.imageBase64, result.mimeType);
+      patch({ id: stepId, status: "success", imageRef, mimeType: result.mimeType, autoTags: result.autoTags || undefined });
       return {
         image: await toModelImage(result),
-        messageId: result.messageId,
+        attempt,
         providerLabel: result.providerLabel,
         autoTags: result.autoTags || undefined,
         remaining: TOOL_DRAWS_PER_REPLY - draws,
       };
     },
+    choose,
     async view(request) {
+      if (request.draft) {
+        const draft = findAnyDraft(request.draft);
+        if (!draft) return null;
+        const image = await toModelImage({ imageBase64: await loadDraftBase64(draft), mimeType: draft.mimeType || "image/png" });
+        return {
+          image,
+          messageId: "",
+          sender: "character",
+          nth: 0,
+          total: 0,
+          prompt: draft.prompt,
+          negativePrompt: draft.negativePrompt,
+          note: draft.note,
+          draft: draft.attempt,
+        };
+      }
       const entry = await findChatImageForTool(request);
       if (!entry) return null;
       return { ...entry, image: await toModelImage(entry.image) };
     },
+    async finish() {
+      const live = liveDrawSession.value;
+      if (!live || !isSameChat()) return null;
+      if (!live.chosenAttempt) {
+        const drafts = listDrafts(live);
+        const last = drafts[drafts.length - 1];
+        if (last?.attempt) {
+          await choose({ attempt: last.attempt }).catch((error) => {
+            console.warn("[調畫風] 自動貼上最後一張試畫失敗", error);
+          });
+        }
+      }
+      return liveDrawSession.value ? finalizeDrawSession(liveDrawSession.value) : null;
+    },
   };
+}
+
+/** 卡片上按「用這張」：把聊天裡那張圖換成這張試畫 */
+async function handlePickDraft(hostMessageId: string, attempt: number): Promise<void> {
+  const host = messages.value.find((m) => m.id === hostMessageId);
+  const session = host?.drawSession;
+  const draft = findDraft(session, attempt);
+  if (!host || !session || !draft) return;
+  try {
+    const base64 = await loadDraftBase64(draft);
+    const hostIndex = messages.value.findIndex((m) => m.id === hostMessageId);
+    const messageId = postToolImage({
+      imageBase64: base64,
+      mimeType: draft.mimeType || "image/png",
+      prompt: draft.prompt,
+      negativePrompt: draft.negativePrompt,
+      messageId: session.chosenMessageId,
+      turnId: host.turnId,
+      // 原本那張被刪掉時，貼在卡片所在訊息的後面
+      beforeMessageId: messages.value[hostIndex + 1]?.id,
+    });
+    const target = messages.value.find((m) => m.id === hostMessageId);
+    if (target) {
+      target.drawSession = { ...session, chosenAttempt: attempt, chosenMessageId: messageId, pickedByUser: true };
+    }
+    saveChat();
+  } catch (error) {
+    showToast(error instanceof Error ? error.message : "換圖失敗");
+  }
+}
+
+/**
+ * 回覆結束（或中斷）時整理這一輪的工作紀錄：沒選圖就貼最後一張，紀錄掛到那張圖的訊息上。
+ * 一張都沒畫成時，改記成一般的工具紀錄（膠囊）。
+ */
+async function settleDrawSession(session: ImageToolSession): Promise<void> {
+  const result = await session.finish();
+  if (!result) return;
+  liveDrawSession.value = null;
+  const host = result.chosenMessageId ? messages.value.find((m) => m.id === result.chosenMessageId) : undefined;
+  if (host) {
+    host.drawSession = cloneDrawSession(result);
+    saveChat();
+    return;
+  }
+  for (const step of result.steps) {
+    liveToolActivity.value = upsertLiveActivity(liveToolActivity.value, {
+      id: step.id,
+      toolName: step.kind,
+      label: step.kind === "draw" ? `試畫${step.attempt ? ` #${step.attempt}` : ""}` : step.title,
+      status: step.status === "running" ? "cancelled" : step.status,
+      ...(step.detail ? { summary: step.detail } : {}),
+      at: step.at,
+    });
+  }
+}
+
+/** 卡片上按「往這張調」：輸入框補上「#N 比較接近，」讓使用者接著打 */
+function handleSteerDraft(attempt: number): void {
+  const prefix = `#${attempt} 比較接近，`;
+  const text = inputText.value.trim();
+  inputText.value = text ? `${prefix}${text}` : prefix;
+  nextTick(() => {
+    const el = messageInputRef.value;
+    if (!el) return;
+    el.focus();
+    el.setSelectionRange(el.value.length, el.value.length);
+    autoResizeInput();
+  });
 }
 
 // ===== 禮物面板處理 =====
@@ -6171,6 +6381,8 @@ async function runAIResponseOnce(
   // 角色暫時離開中不生成；宣告暫離的那則被重新生成或刪掉時，暫離會取消並照常生成
   if (await charAwayCtl.beforeGenerate()) return;
   const generationTurnId = currentTurnId.value || "";
+  /** 這一輪的試畫工具（回覆結束時整理工作紀錄） */
+  let imageToolSession: ImageToolSession | undefined;
 
   // 使用全局狀態管理開始生成
   const startResult = startChatGeneration({
@@ -6418,6 +6630,8 @@ async function runAIResponseOnce(
       settingsStore.novelAIImage.showOwnImagesToModel !== false
         ? findPrevTurnGeneratedImages(messagesToUse)
         : [];
+    // 上一輪調畫風的工作紀錄：這一輪的試畫編號接著往下數，也附上摘要讓角色知道 #幾 是哪張
+    const prevDrawSession = !isGroupChat.value ? findPrevTurnDrawSession(messagesToUse) : undefined;
     let ownImageNoteTarget: Message | undefined;
 
     // 永久診斷：實際發送的輪數 / 消息數。
@@ -7014,6 +7228,8 @@ async function runAIResponseOnce(
           toolsUsableThisTurn &&
           !!GENERATE_IMAGE_TOOL &&
           isToolAllowed(GENERATE_IMAGE_TOOL, true, char.toolPermissions),
+        // 開了「模型看圖自己調整」：傳圖一律用工具試畫（調整過程顯示在工作紀錄卡片上）
+        drawFirst: !!settingsStore.novelAIImage.selfReview,
       }),
       // 約會：邀請等回覆、約會中的地點／付錢／事件（插在聊天紀錄最後面）
       dateNote: await dateCtl.promptNote(),
@@ -7339,6 +7555,11 @@ async function runAIResponseOnce(
       appendedUserPrompts.push(
         buildOwnImagesInstruction(ownImageParts.length, { askNote: askOwnNote, userName: activeUserName }),
       );
+    }
+
+    // 🎨 上一輪的試畫紀錄：使用者說「#2 比較接近」時角色才知道是哪張
+    if (prevDrawSession) {
+      appendedUserPrompts.push(describeDrawSessionForPrompt(prevDrawSession, activeUserName));
     }
 
     // 👉 群聊點名：這一輪使用者訊息 @ 了誰，就要求被 @ 的角色先回覆（不存入聊天記錄）
@@ -7787,12 +8008,16 @@ async function runAIResponseOnce(
       let resolveToolDecision: ((decision: "approve" | "reject" | null) => void) | null = null;
       // 這一輪的工具：內建＋角色可用的 MCP；工具狀態列從這一輪重新開始
       liveToolActivity.value = [];
+      liveDrawSession.value = null;
       const toolActivityChatId = currentChatId.value;
       const chatTools = !isGroupChat.value ? await buildChatTools(char.toolPermissions) : undefined;
       const updateToolActivity = (entry: LiveToolActivity) => {
         if (currentChatId.value !== toolActivityChatId) return;
         liveToolActivity.value = upsertLiveActivity(liveToolActivity.value, entry);
       };
+      // 畫圖、看圖、查繪師這類工具記進調畫風工作紀錄，不放一般的工具膠囊
+      const isSameToolChat = () => currentChatId.value === toolActivityChatId;
+      imageToolSession = createImageToolService(aiMessage.id, generationTurnId || undefined, prevDrawSession, isSameToolChat);
       const generationResult = await runChatGenerationRequest({
         client,
         messages: apiMessages,
@@ -7817,8 +8042,9 @@ async function runAIResponseOnce(
         },
         tools: chatTools,
         // 用畫圖工具試畫、看圖、改提示詞要好幾輪
+        // 用試畫工具看圖、查繪師、試畫、改提示詞、選圖要好幾輪
         maxToolRounds: chatTools?.some((tool) => tool.name === GENERATE_IMAGE_TOOL_NAME)
-          ? TOOL_DRAWS_PER_REPLY + 4
+          ? TOOL_DRAWS_PER_REPLY + 6
           : undefined,
         toolProtocol: chatTaskConfig.api.toolProtocol,
         promptPostProcessing: chatTaskConfig.api.promptPostProcessing,
@@ -7834,8 +8060,8 @@ async function runAIResponseOnce(
           characterName: char.nickname || char.data.name || props.characterName,
           characterAvatar: char.avatar,
           // 內建工具用的服務：行事曆、記憶、音樂、桌布、天氣、來電（型別見 toolServices.ts）
-          // 畫圖、看聊天裡的圖：畫好的圖插在這次回覆的文字前面
-          image: createImageToolService(aiMessage.id, generationTurnId || undefined),
+          // 試畫、選定試畫、看聊天裡的圖：選定的圖插在這次回覆的文字前面
+          image: imageToolSession,
           ...createAppToolServices({
             chatId: toolActivityChatId || props.chatId || "",
             characterId: char.id,
@@ -7855,10 +8081,28 @@ async function runAIResponseOnce(
           }),
         },
         onToolCallStart: (call, tool) => {
-          updateToolActivity({ id: call.id, toolName: call.name, label: tool.displayName ?? call.name, status: "running", at: Date.now() });
+          const drawStep = isDrawSessionTool(call.name) ? stepFromToolCall(call) : null;
+          if (drawStep) {
+            if (isSameToolChat()) patchLiveDrawSession(drawStep);
+          } else {
+            updateToolActivity({ id: call.id, toolName: call.name, label: tool.displayName ?? call.name, status: "running", at: Date.now() });
+          }
           scrollToBottom();
         },
         onToolCallEnd: (call, tool, result) => {
+          const drawStep = liveDrawSession.value?.steps.find((step) => step.id === call.id);
+          if (drawStep) {
+            if (!isSameToolChat()) return;
+            const failed = !result.ok || result.rejected;
+            patchLiveDrawSession({
+              id: call.id,
+              status: failed ? "error" : "success",
+              detail: failed
+                ? (result.error || result.content || "失敗").slice(0, 200)
+                : summarizeStepResult(drawStep.kind, result.content),
+            });
+            return;
+          }
           updateToolActivity({ id: call.id, toolName: call.name, label: tool?.displayName ?? call.name, at: Date.now(), ...summarizeToolResult(result) });
         },
         onConfirmationRequired: (pending) => {
@@ -7877,6 +8121,12 @@ async function runAIResponseOnce(
         resolvedGenerationResult = await resolvedGenerationResult.resolveToolConfirmation!(decision);
         toolDecisionWaiter = null;
         resolveToolDecision = null;
+      }
+      // 調畫風：沒選圖就貼最後一張試畫，工作紀錄掛到那張圖上
+      if (imageToolSession) {
+        const session = imageToolSession;
+        imageToolSession = undefined;
+        await settleDrawSession(session);
       }
       fullContent = resolvedGenerationResult.content;
       generationDiagnostics = resolvedGenerationResult.diagnostics;
@@ -9230,6 +9480,12 @@ async function runAIResponseOnce(
     // 生成把內容留在視窗裡，下一輪的安全網就可能把殘留文字當成新結果收下。
     // 內容本身不清（視窗可能還開著給用戶看），但已無人能認領。
     // 擁有權已被其他並發生成接手時，releaseOwnership 不會動到對方的狀態。
+    // 取消或失敗時也把已經畫好的試畫整理好（沒選就貼最後一張）
+    if (imageToolSession) {
+      const session = imageToolSession;
+      imageToolSession = undefined;
+      await settleDrawSession(session).catch((error) => console.warn("[調畫風] 整理工作紀錄失敗", error));
+    }
     // 本輪沒有產生角色訊息（取消或失敗）時，工具狀態列留到下一次送出；沒做完的標成已取消
     if (liveToolActivity.value.length) {
       liveToolActivity.value = finalizeLiveActivity(liveToolActivity.value);
@@ -10685,6 +10941,7 @@ async function loadOrCreateChat(overrideChatId?: string) {
   }
   if (overrideChatId && overrideChatId !== currentChatId.value) {
     liveToolActivity.value = [];
+    liveDrawSession.value = null;
   }
   // 此函式結尾會用 IDB 讀回的內容整份取代 messages。若還有 debounce 中的儲存
   // 尚未寫入（addUserMessage 走的是 400ms debounce），必須先落地，否則剛送出的
@@ -12860,6 +13117,15 @@ useChatCleanup({
             :entries="message.toolActivity"
           />
 
+          <!-- 本輪角色調畫風的工作紀錄（掛在選定那張圖上） -->
+          <DrawSessionCard
+            v-if="message.role === 'ai' && message.drawSession?.steps.length"
+            :session="message.drawSession"
+            :actor-name="characterName"
+            @pick="(attempt: number) => handlePickDraft(message.id, attempt)"
+            @steer="handleSteerDraft"
+          />
+
           <!-- 角色寫了日記：點了直接打開那篇 -->
           <div
             v-if="message.diaryNoticeId"
@@ -13263,6 +13529,14 @@ useChatCleanup({
           v-if="liveToolActivity.length"
           live
           :entries="liveToolActivity"
+          :actor-name="characterName"
+        />
+
+        <!-- 調畫風即時工作紀錄（生成中） -->
+        <DrawSessionCard
+          v-if="liveDrawSession?.steps.length"
+          live
+          :session="liveDrawSession"
           :actor-name="characterName"
         />
 
@@ -15531,7 +15805,7 @@ useChatCleanup({
                 <div class="setting-label">
                   <span>模型看圖自己調整</span>
                   <span class="setting-hint"
-                    >生完圖讓聊天模型看一眼，畫錯就改提示詞重畫。你在同一輪傳了圖的話，會拿那張當參考圖比對畫風；用 NovelAI 時還能自己查相似繪師換著試。聊天模型要能看圖，每看一次多一次聊天 API 呼叫</span
+                    >角色傳圖時先試畫、自己看圖、改提示詞再畫，滿意了才貼進聊天。每一步（看參考圖、查繪師、每張試畫和它寫的說明）都列在聊天裡的「調畫風」卡片上，你可以並排比較、換成別張，或按「往這張調」接著說。要開工具呼叫、聊天模型要能看圖；每試畫一張多一次聊天 API 呼叫。沒開工具時退回舊方式：生完圖在背後看一眼、不對就重畫</span
                   >
                 </div>
                 <label class="toggle-switch">
@@ -15547,7 +15821,7 @@ useChatCleanup({
                 class="setting-group"
                 v-if="settingsStore.novelAIImage.selfReview"
               >
-                <label class="setting-label">最多重畫幾次</label>
+                <label class="setting-label">最多重畫幾次（沒開工具時的舊方式）</label>
                 <select
                   class="setting-select"
                   v-model.number="settingsStore.novelAIImage.selfReviewMaxRounds"

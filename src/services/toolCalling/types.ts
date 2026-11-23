@@ -16,6 +16,8 @@ export interface ChatToolContext {
   characterId?: string;
   chatId?: string;
   signal?: AbortSignal;
+  /** 這次工具呼叫的 id（引擎執行時帶上） */
+  toolCallId?: string;
   [key: string]: unknown;
 }
 

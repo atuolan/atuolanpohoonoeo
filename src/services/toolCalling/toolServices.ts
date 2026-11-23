@@ -85,11 +85,12 @@ export interface CallSchedulerToolService {
   ): Promise<{ triggerTime: number } | null>;
 }
 
-/** 「畫圖」畫好的一張 */
+/** 「試畫」畫好的一張 */
 export interface DrawToolResult {
   /** 縮小過、要交給模型看的圖 */
   image: ToolImage;
-  messageId: string;
+  /** 試畫編號（同一串調整會接著上一輪往下數） */
+  attempt: number;
   /** 生圖服務名稱，例如 NovelAI */
   providerLabel: string;
   /** 程式自動加上的外觀標籤（角色、使用者） */
@@ -113,15 +114,25 @@ export interface ChatImageToolEntry {
   negativePrompt?: string;
   note?: string;
   isStyleRef?: boolean;
+  /** 看的是試畫時的編號 */
+  draft?: number;
 }
 
 export type ChatImageSender = "any" | "user" | "character";
 
 export interface ImageToolService {
-  /** 照提示詞畫一張，傳進聊天；畫不成要丟錯 */
-  draw(request: { prompt: string; negativePrompt?: string; caption?: string }, signal?: AbortSignal): Promise<DrawToolResult>;
-  /** 找聊天裡的圖：styleRef 時拿畫風參考圖，否則從最新往回數第 nth 張；找不到回傳 null */
-  view(request: { nth: number; sender: ChatImageSender; styleRef?: boolean }): Promise<ChatImageToolEntry | null>;
+  /** 照提示詞試畫一張，記進工作紀錄（不進聊天）；畫不成要丟錯 */
+  draw(
+    request: { prompt: string; negativePrompt?: string; note?: string; toolCallId?: string },
+    signal?: AbortSignal,
+  ): Promise<DrawToolResult>;
+  /** 選定一張試畫貼進聊天（已經選過就換成這張）；找不到那張要丟錯 */
+  choose(request: { attempt: number; caption?: string }): Promise<{ attempt: number; replaced: boolean }>;
+  /**
+   * 找圖：draft 時拿試畫（這一輪或上一輪的編號），styleRef 時拿畫風參考圖，
+   * 否則從最新往回數第 nth 張；找不到回傳 null
+   */
+  view(request: { nth: number; sender: ChatImageSender; styleRef?: boolean; draft?: number }): Promise<ChatImageToolEntry | null>;
 }
 
 /** toolContext 裡給內建工具用的欄位 */

@@ -148,5 +148,8 @@ describe("buildPicGuide drawTool", () => {
     expect(buildPicGuide(settings, { drawTool: true })).toContain("generate_image");
     expect(buildPicGuide(settings, { drawTool: true })).toContain("view_chat_image");
     expect(buildPicGuide(settings)).not.toContain("generate_image");
+    expect(buildPicGuide(settings, { drawTool: true })).toContain("choose_image");
+    expect(buildPicGuide(settings, { drawTool: true })).toContain("想先試畫");
+    expect(buildPicGuide(settings, { drawTool: true, drawFirst: true })).toContain("一律用工具畫，不要寫 <pic>");
   });
 });
