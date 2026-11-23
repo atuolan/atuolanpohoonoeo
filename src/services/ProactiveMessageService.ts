@@ -1640,7 +1640,7 @@ export class ProactiveMessageService {
           storyNowForChat(chat),
         ),
         // 文生圖提示詞寫法（{{picGuide}}）
-        picGuide: buildPicGuide(settingsStore.novelAIImage),
+        picGuide: buildPicGuide(settingsStore.novelAIImage, { styleRef: chat.metadata?.imageStyleRef }),
         // 噗文分享：可以留言的噗＋（有開設定時）最近的噗；面對面模式不帶
         plurkShareGuide: chat.faceToFaceMode
           ? ""

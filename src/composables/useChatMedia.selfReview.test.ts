@@ -18,6 +18,11 @@ vi.mock("@/services/imageNoteReader", () => ({
   askChatModelAboutImage: mocks.askChatModelAboutImage,
   resolveImageBase64: async (data: string) => data,
 }));
+vi.mock("@/db/chatMessageStore", () => ({
+  getChatMessageById: vi.fn(async (id: string) =>
+    id === "old-ref" ? { id, chatId: "c1", imageData: "STYLE", imageMimeType: "image/png" } : undefined,
+  ),
+}));
 vi.mock("@/services/danbooruTags", () => ({
   findRelatedArtists: mocks.findRelatedArtists,
   describeRelatedArtists: () => "常畫「hanfu」的繪師：\n- ink master（出現在 1 組，900 張）",
@@ -102,5 +107,50 @@ describe("看圖調整：拿參考圖比、查繪師後重畫", () => {
     await media.tryGenerateImageForMessage("a1", "cat", "貓");
     expect(mocks.askChatModelAboutImage.mock.calls[0][1]).toEqual([{ imageBase64: "IMG1", mimeType: "image/png" }]);
     expect(mocks.askChatModelAboutImage.mock.calls[0][0]).not.toContain("參考圖");
+  });
+
+  it("聊天的畫風參考圖優先（不在目前載入的訊息就到資料庫找），通過時回報繪師串", async () => {
+    Object.assign(useSettingsStore().novelAIImage, { enabled: true, apiKey: "pst-1", provider: "novelai", selfReview: true });
+    const messages = ref<any[]>([
+      { id: "u1", role: "user", content: "畫一張", timestamp: 1, turnId: "t1", imageData: "TURN", imageMimeType: "image/png" },
+      { id: "a1", role: "ai", content: "<pic>男子</pic>", timestamp: 2, turnId: "t1", messageType: "descriptive-image" },
+    ]);
+    mocks.generateAIImage.mockResolvedValue({ success: true, imageBase64: "IMG1", mimeType: "image/png" });
+    mocks.askChatModelAboutImage.mockResolvedValue("<pic-ok/>");
+    const onStyleArtistsFound = vi.fn();
+    const media = useChatMedia({
+      messages,
+      currentCharacter: ref(undefined),
+      scrollToBottom: () => {},
+      saveChat: () => {},
+      getImageStyleRef: () => ({ messageId: "old-ref", mimeType: "image/png", updatedAt: 1 }),
+      getChatId: () => "c1",
+      onStyleArtistsFound,
+    });
+    await media.tryGenerateImageForMessage("a1", "1boy, artist:ink master, hanfu", "男子");
+    expect(mocks.askChatModelAboutImage.mock.calls[0][1][0]).toEqual({ imageBase64: "STYLE", mimeType: "image/png" });
+    expect(onStyleArtistsFound).toHaveBeenCalledWith("a1", "artist:ink master");
+  });
+
+  it("重畫次數用完沒通過、或參考圖是這一輪傳的，都不回報繪師串", async () => {
+    Object.assign(useSettingsStore().novelAIImage, { enabled: true, apiKey: "pst-1", selfReview: true, selfReviewMaxRounds: 1 });
+    const messages = ref<any[]>([
+      { id: "u1", role: "user", content: "", timestamp: 1, turnId: "t1", imageData: "TURN", imageMimeType: "image/png" },
+      { id: "a1", role: "ai", content: "<pic>x</pic>", timestamp: 2, turnId: "t1", messageType: "descriptive-image" },
+    ]);
+    mocks.generateAIImage.mockResolvedValue({ success: true, imageBase64: "IMG", mimeType: "image/png" });
+    const onStyleArtistsFound = vi.fn();
+    const deps = { messages, currentCharacter: ref(undefined), scrollToBottom: () => {}, saveChat: () => {}, onStyleArtistsFound };
+
+    mocks.askChatModelAboutImage.mockResolvedValue("<pic-ok/>");
+    await useChatMedia(deps).tryGenerateImageForMessage("a1", "artist:a, 1boy", "x");
+    expect(onStyleArtistsFound).not.toHaveBeenCalled();
+
+    mocks.askChatModelAboutImage.mockResolvedValue('<pic-retry prompt="artist:b, 1boy">不像</pic-retry>');
+    await useChatMedia({
+      ...deps,
+      getImageStyleRef: () => ({ messageId: "old-ref", mimeType: "image/png", updatedAt: 1 }),
+    }).tryGenerateImageForMessage("a1", "artist:a, 1boy", "x");
+    expect(onStyleArtistsFound).not.toHaveBeenCalled();
   });
 });

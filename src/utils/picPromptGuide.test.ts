@@ -3,6 +3,8 @@ import { createDefaultNovelAIImageSettings, type NovelAIImageSettings } from "@/
 import {
   buildImageReviewPrompt,
   buildPicGuide,
+  extractArtistTags,
+  parseStyleNoteReply,
   getSelfReviewMaxRounds,
   parseImageReviewReply,
 } from "./picPromptGuide";
@@ -109,5 +111,33 @@ describe("看圖調整", () => {
     expect(getSelfReviewMaxRounds(makeSettings({ selfReviewMaxRounds: undefined }))).toBe(1);
     expect(getSelfReviewMaxRounds(makeSettings({ selfReviewMaxRounds: 9 }))).toBe(5);
     expect(getSelfReviewMaxRounds(makeSettings({ selfReviewMaxRounds: 0 }))).toBe(1);
+  });
+});
+
+describe("畫風參考圖", () => {
+  it("{{picGuide}} 帶上畫風筆記、標籤；繪師串只給 NovelAI", () => {
+    const styleRef = { styleNote: "細碎線稿、去飽和", styleTags: "sketch, muted colors", artists: "artist:a, artist:b" };
+    const nai = buildPicGuide(makeSettings(), { styleRef });
+    expect(nai).toContain("畫風：細碎線稿、去飽和");
+    expect(nai).toContain("畫風標籤：sketch, muted colors");
+    expect(nai).toContain("artist:a, artist:b");
+    const gpt = makeSettings({ provider: "gpt" });
+    gpt.gpt = { ...gpt.gpt!, apiKey: "sk-1" };
+    expect(buildPicGuide(gpt, { styleRef })).not.toContain("artist:a");
+    expect(buildPicGuide(makeSettings(), { styleRef: {} })).not.toContain("指定了畫風");
+  });
+
+  it("解析畫風筆記；沒照格式寫時整段當描述", () => {
+    expect(
+      parseStyleNoteReply('<think>嗯</think><style-note tags="sketch,  muted colors">細碎線稿，\n顏色很淡</style-note>'),
+    ).toEqual({ styleNote: "細碎線稿， 顏色很淡", styleTags: "sketch, muted colors" });
+    expect(parseStyleNoteReply("水彩感、柔光")).toEqual({ styleNote: "水彩感、柔光", styleTags: "" });
+  });
+
+  it("從提示詞取出繪師串（含權重寫法）", () => {
+    expect(extractArtistTags("1boy, artist:ink master, hanfu, {artist:b}, 1.2::artist:c ::, sketch")).toBe(
+      "artist:ink master, {artist:b}, 1.2::artist:c ::",
+    );
+    expect(extractArtistTags("1boy, hanfu")).toBe("");
   });
 });

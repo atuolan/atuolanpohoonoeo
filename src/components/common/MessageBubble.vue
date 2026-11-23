@@ -396,6 +396,11 @@ interface MessageBubbleProps {
   imageNote?: string;
   canReadImage?: boolean;
   imageNoteReading?: boolean;
+  // 畫風參考圖：點開圖片可以設成這個聊天的畫風參考
+  canSetStyleRef?: boolean;
+  isStyleRef?: boolean;
+  styleRefBusy?: boolean;
+  styleNote?: string;
   // AI 文生圖原始 prompt（descriptive-image 失敗時用於重新生成）
   imagePrompt?: string;
   // 音頻相關
@@ -703,6 +708,7 @@ const emit = defineEmits<{
   (e: "regenerateVoice", id: string): void;
   (e: "regenerateImage", id: string): void;
   (e: "readImageNote", id: string): void;
+  (e: "toggleStyleRef", id: string): void;
   (e: "swipe", id: string, direction: "prev" | "next"): void;
   (e: "roundSwipe", id: string, direction: "prev" | "next"): void;
   (e: "reply", id: string): void;
@@ -5148,8 +5154,13 @@ const showTextVoiceTranscript = ref(true);
     :note="imageNote"
     :can-read-image="canReadImage"
     :reading-image="imageNoteReading"
+    :can-set-style-ref="canSetStyleRef"
+    :is-style-ref="isStyleRef"
+    :style-ref-busy="styleRefBusy"
+    :style-note="styleNote"
     @regenerate="handleRegenerateImage"
     @read-image="emit('readImageNote', id)"
+    @toggle-style-ref="emit('toggleStyleRef', id)"
     @update:visible="showPhotoPreview = $event"
   />
 

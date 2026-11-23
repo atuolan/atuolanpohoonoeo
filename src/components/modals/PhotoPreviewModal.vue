@@ -47,7 +47,7 @@
           />
         </div>
 
-        <div v-if="caption || date || canReadImage" class="photo-preview-info">
+        <div v-if="caption || date || canReadImage || canSetStyleRef" class="photo-preview-info">
           <div v-if="caption" class="photo-preview-caption">{{ caption }}</div>
           <div v-if="date" class="photo-preview-date">{{ date }}</div>
           <div v-if="canReadImage" class="photo-preview-note">
@@ -58,6 +58,22 @@
               @click.stop="emit('readImage')"
             >
               {{ readingImage ? "讀圖中…" : note ? "重新讀圖" : "讀圖" }}
+            </button>
+          </div>
+          <div v-if="canSetStyleRef" class="photo-preview-note">
+            <span>{{
+              isStyleRef
+                ? styleNote
+                  ? `畫風參考：${styleNote}`
+                  : "這張是這個聊天的畫風參考"
+                : "設成畫風參考，這個聊天生圖會照這張的畫風調整"
+            }}</span>
+            <button
+              class="photo-preview-note-action"
+              :disabled="styleRefBusy"
+              @click.stop="emit('toggleStyleRef')"
+            >
+              {{ styleRefBusy ? "看畫風中…" : isStyleRef ? "取消畫風參考" : "設為畫風參考" }}
             </button>
           </div>
         </div>
@@ -80,6 +96,14 @@ interface Props {
   /** 顯示「讀圖」按鈕（user 傳的圖） */
   canReadImage?: boolean;
   readingImage?: boolean;
+  /** 顯示「設為畫風參考」（文生圖能用、圖片資料在本機） */
+  canSetStyleRef?: boolean;
+  /** 這張是這個聊天的畫風參考圖 */
+  isStyleRef?: boolean;
+  /** 正在讓模型看畫風 */
+  styleRefBusy?: boolean;
+  /** 模型寫的畫風筆記 */
+  styleNote?: string;
 }
 
 const props = defineProps<Props>();
@@ -87,6 +111,7 @@ const emit = defineEmits<{
   (e: "update:visible", value: boolean): void;
   (e: "regenerate"): void;
   (e: "readImage"): void;
+  (e: "toggleStyleRef"): void;
 }>();
 
 const isVisible = ref(props.visible);
@@ -252,6 +277,12 @@ const regeneratePhoto = () => {
 
 .photo-preview-note-action {
   margin-left: 6px;
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+
   padding: 1px 10px;
   background: none;
   border: 1px solid rgba(255, 255, 255, 0.35);

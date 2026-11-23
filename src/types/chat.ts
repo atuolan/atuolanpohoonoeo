@@ -1036,7 +1036,23 @@ export interface GroupDiaryEntry {
   /** 生成時間 */
   generatedAt: number;
 }
+/** 聊天的畫風參考圖：看圖調整拿它比對，{{picGuide}} 帶上畫風筆記與試過的繪師串 */
+export interface ImageStyleRef {
+  /** 參考圖所在的訊息（圖片從訊息讀，訊息刪掉就失效） */
+  messageId: string;
+  mimeType: string;
+  /** 模型看參考圖寫的畫風描述（中文一兩句） */
+  styleNote?: string;
+  /** 畫風標籤（英文，逗號分隔） */
+  styleTags?: string;
+  /** 看圖調整通過時用的繪師串，例如 artist:a, artist:b */
+  artists?: string;
+  updatedAt: number;
+}
+
 export interface ChatMetadata {
+  /** 畫風參考圖（拿來調整生圖畫風） */
+  imageStyleRef?: ImageStyleRef;
   /** 作者筆記 */
   authorsNote?: AuthorsNoteMetadata;
   /** 是否跳過角色開場白 */
