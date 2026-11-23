@@ -17,6 +17,7 @@ import {
 } from "../db/operations";
 import { refreshChatDerivedMetadata, saveChatMetadata } from "../storage/chatStorage";
 import { loadMessages, saveMessages } from "../storage/chatMessageStorage";
+import { applyJsonlImageExtra, buildJsonlImageExtra } from "../utils/jsonlImages";
 import type {
   AffinityPostMutationRule,
   AffinityMetricConfig,
@@ -1716,8 +1717,11 @@ export class ImportExportService {
       .replace(/\{\{user\}\}/gi, userName)
       .replace(/<user>/gi, userName);
 
-    // 清理 SillyTavern 外部格式
-    let content = this._normalizeSillyTavernMes(raw);
+    // 清理 SillyTavern 外部格式；圖片訊息可以沒有文字（用圖片說明代替）
+    const hasImage = typeof msgData.extra?.image === "string" && !!msgData.extra.image.trim();
+    let content =
+      this._normalizeSillyTavernMes(raw) ||
+      (hasImage ? (typeof msgData.extra?.title === "string" && msgData.extra.title.trim()) || "[圖片]" : "");
     if (!content) return null;
 
     let createdAt = Date.now();
@@ -1751,6 +1755,7 @@ export class ImportExportService {
     }
     if (msgData.extra?.model) message.model = msgData.extra.model;
     if (msgData.extra?.token_count) message.tokenCount = msgData.extra.token_count;
+    applyJsonlImageExtra(message, msgData.extra);
 
     return message;
   }
@@ -1936,6 +1941,10 @@ export class ImportExportService {
           if (msg.model) jsonlMsg.extra.model = msg.model;
           if (msg.tokenCount) jsonlMsg.extra.token_count = msg.tokenCount;
         }
+
+        // 圖片：放在 SillyTavern 也認得的 extra.image（data URL 或網址）
+        const imageExtra = buildJsonlImageExtra(msg);
+        if (imageExtra) jsonlMsg.extra = { ...(jsonlMsg.extra ?? {}), ...imageExtra };
 
         lines.push(JSON.stringify(jsonlMsg));
       }
