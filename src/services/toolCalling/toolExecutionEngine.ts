@@ -270,7 +270,7 @@ export class ToolExecutionEngine {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const timeoutMs = tool.timeoutMs ?? this.timeoutMs;
     try {
-      const promise = Promise.resolve(tool.execute(call.arguments, { ...requestContext, signal: controller.signal } as ChatToolContext));
+      const promise = Promise.resolve(tool.execute(call.arguments, { ...requestContext, signal: controller.signal, toolCallId: call.id } as ChatToolContext));
       const timeout = new Promise<never>((_, reject) => { timer = setTimeout(() => { controller.abort(); reject(new Error("Tool timed out")); }, timeoutMs); });
       const value = await Promise.race([promise, timeout]);
       for (const loaded of extractLoadTools(value)) {

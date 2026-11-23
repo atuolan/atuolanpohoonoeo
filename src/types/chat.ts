@@ -10,6 +10,7 @@ import type { PromptRoleType } from "./promptManager";
 import type { LiuyaoShareSnapshot } from "./liuyao";
 import type { HouseNewsShare } from "./houseNews";
 import type { ToolActivityRecord } from "./toolActivity";
+import type { DrawSession } from "./drawSession";
 import type {
   WaimaiDestinationSnapshot,
   WaimaiEtaSnapshot,
@@ -768,6 +769,8 @@ export interface ChatMessage {
   onlineModeRequestStatus?: "pending" | "accepted" | "rejected";
   /** 這一輪角色用過的工具（只掛在該輪第一則角色訊息上） */
   toolActivity?: ToolActivityRecord[];
+  /** 這一輪角色調畫風的工作紀錄（掛在選定那張圖的訊息上，沒選就掛在該輪第一則角色訊息） */
+  drawSession?: DrawSession;
   /** 是否為道歉外賣送達卡片 */
   isApologyFood?: boolean;
   /** 道歉外賣資料 */

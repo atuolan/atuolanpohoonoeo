@@ -642,6 +642,10 @@ export function collectImageRefs(messages: ChatMessage[]): string[] {
     if (isChatImageRef(msg.imageData) && msg.imageData !== msg.imageUrl) {
       refs.add(msg.imageData!);
     }
+    // 調畫風的試畫圖
+    for (const step of msg.drawSession?.steps ?? []) {
+      if (isChatImageRef(step.imageRef)) refs.add(step.imageRef!);
+    }
   }
   return [...refs];
 }

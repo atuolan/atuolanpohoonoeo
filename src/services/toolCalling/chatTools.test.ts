@@ -97,40 +97,55 @@ describe("chat tools", () => {
       ["search_memory", "查記憶"],
       ["create_calendar_event", "新增行程"],
       ["schedule_call", "預約來電"],
-      ["generate_image", "畫圖"],
+      ["generate_image", "試畫"],
+      ["choose_image", "選定試畫"],
       ["view_chat_image", "看聊天裡的圖"],
       ["search_danbooru_tags", "查 Danbooru 標籤"],
       ["find_danbooru_artists", "找相似繪師"],
     ]);
   });
 
-  it("generate_image draws through the image service and hands the picture back to the model", async () => {
+  it("generate_image draws a numbered draft and hands the picture back to the model", async () => {
     const tool = CHAT_TOOLS.find((entry) => entry.name === "generate_image")!;
     const draw = vi.fn().mockResolvedValue({
       image: { mimeType: "image/jpeg", data: "SMALL" },
-      messageId: "m1",
+      attempt: 3,
       providerLabel: "NovelAI",
       autoTags: "1boy, black hair",
       remaining: 3,
     });
     const result = (await tool.execute(
-      { prompt: "1boy, hanfu", negative: "lowres", caption: "白衣" },
-      { image: { draw, view: vi.fn() } },
+      { prompt: "1boy, hanfu", negative: "lowres", note: "換掉線條太粗的繪師" },
+      { image: { draw, view: vi.fn(), choose: vi.fn() }, toolCallId: "call_1" },
     )) as { summary: string; images: unknown[] };
-    expect(draw).toHaveBeenCalledWith({ prompt: "1boy, hanfu", negativePrompt: "lowres", caption: "白衣" }, undefined);
+    expect(draw).toHaveBeenCalledWith(
+      { prompt: "1boy, hanfu", negativePrompt: "lowres", note: "換掉線條太粗的繪師", toolCallId: "call_1" },
+      undefined,
+    );
     expect(result.images).toEqual([{ mimeType: "image/jpeg", data: "SMALL" }]);
-    expect(result.summary).toContain("已經傳到聊天裡");
+    expect(result.summary).toContain("試畫 #3 畫好了");
     expect(result.summary).toContain("負面提示詞：lowres");
     expect(result.summary).toContain("自動加上的外觀標籤：1boy, black hair");
     expect(result.summary).toContain("還能畫 3 張");
+    expect(result.summary).toContain("choose_image");
   });
 
-  it("generate_image tells the model to stop when no draws are left", async () => {
+  it("generate_image tells the model to pick one when no draws are left", async () => {
     const tool = CHAT_TOOLS.find((entry) => entry.name === "generate_image")!;
-    const draw = vi.fn().mockResolvedValue({ image: { mimeType: "image/png", data: "X" }, messageId: "m", providerLabel: "GPT Image", remaining: 0 });
-    const result = (await tool.execute({ prompt: "a cat" }, { image: { draw, view: vi.fn() } })) as { summary: string };
-    expect(result.summary).toContain("畫圖次數用完了");
+    const draw = vi.fn().mockResolvedValue({ image: { mimeType: "image/png", data: "X" }, attempt: 1, providerLabel: "GPT Image", remaining: 0 });
+    const result = (await tool.execute({ prompt: "a cat" }, { image: { draw, view: vi.fn(), choose: vi.fn() } })) as { summary: string };
+    expect(result.summary).toContain("試畫次數用完了");
     expect(result.summary).toContain("負面提示詞：（沒有）");
+  });
+
+  it("choose_image posts the chosen draft, or swaps it", async () => {
+    const tool = CHAT_TOOLS.find((entry) => entry.name === "choose_image")!;
+    const choose = vi.fn().mockResolvedValueOnce({ attempt: 2, replaced: false }).mockResolvedValueOnce({ attempt: 1, replaced: true });
+    const context = { image: { draw: vi.fn(), view: vi.fn(), choose } };
+    expect(await tool.execute({ attempt: 2, caption: "白衣" }, context)).toContain("試畫 #2 貼進聊天");
+    expect(choose).toHaveBeenCalledWith({ attempt: 2, caption: "白衣" });
+    expect(await tool.execute({ attempt: 1 }, context)).toContain("換成試畫 #1");
+    await expect(tool.execute({}, context)).rejects.toThrow("試畫編號");
   });
 
   it("view_chat_image returns the picture with the prompts that made it", async () => {
@@ -149,7 +164,7 @@ describe("chat tools", () => {
       summary: string;
       images: unknown[];
     };
-    expect(view).toHaveBeenCalledWith({ nth: 2, sender: "character", styleRef: false });
+    expect(view).toHaveBeenCalledWith({ nth: 2, sender: "character", styleRef: false, draft: undefined });
     expect(result.images).toEqual([{ mimeType: "image/jpeg", data: "IMG" }]);
     expect(result.summary).toContain("第 2 張（共 5 張），你畫的");
     expect(result.summary).toContain("正面提示詞：1boy, artist:foo");
@@ -160,5 +175,24 @@ describe("chat tools", () => {
     const view = vi.fn().mockResolvedValue(null);
     expect(await tool.execute({ nth: 9 }, { image: { draw: vi.fn(), view } })).toContain("找不到第 9 張圖");
     expect(await tool.execute({ style_ref: true }, { image: { draw: vi.fn(), view } })).toContain("沒有設定畫風參考圖");
+    expect(await tool.execute({ draft: 4 }, { image: { draw: vi.fn(), view } })).toContain("找不到試畫 #4");
+  });
+
+  it("view_chat_image can look at a draft with the note written for it", async () => {
+    const tool = CHAT_TOOLS.find((entry) => entry.name === "view_chat_image")!;
+    const view = vi.fn().mockResolvedValue({
+      image: { mimeType: "image/png", data: "D" },
+      messageId: "",
+      sender: "character",
+      nth: 0,
+      total: 0,
+      prompt: "1girl, artist:bar",
+      note: "試試厚塗",
+      draft: 2,
+    });
+    const result = (await tool.execute({ draft: 2 }, { image: { draw: vi.fn(), view } })) as { summary: string };
+    expect(view).toHaveBeenCalledWith({ nth: 1, sender: "any", styleRef: false, draft: 2 });
+    expect(result.summary).toContain("這是試畫 #2");
+    expect(result.summary).toContain("你當時的說明：試試厚塗");
   });
 });

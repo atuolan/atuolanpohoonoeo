@@ -35,8 +35,10 @@ export function buildPicGuide(
   settings: NovelAIImageSettings,
   options: {
     tagLookup?: boolean;
-    /** 這一輪模型拿得到 generate_image、view_chat_image 工具 */
+    /** 這一輪模型拿得到 generate_image、choose_image、view_chat_image 工具 */
     drawTool?: boolean;
+    /** 開了「模型看圖自己調整」：傳圖一律用工具試畫，不寫 <pic> */
+    drawFirst?: boolean;
     /** 這個聊天的畫風參考圖（有畫風筆記、試過的繪師串時帶上） */
     styleRef?: Pick<ImageStyleRef, "styleNote" | "styleTags" | "artists">;
   } = {},
@@ -54,7 +56,10 @@ export function buildPicGuide(
   }
   if (options.drawTool) {
     lines.push(
-      "  想先試畫、看效果再調整時（例如使用者要你調畫風、照參考圖畫），改用 generate_image 工具：畫好的圖會直接傳到聊天，你也看得到；不滿意就改提示詞再畫，滿意了再回覆。用工具畫過的圖不要再寫 <pic>。要看聊天裡之前的圖（連同當時的提示詞）或畫風參考圖，用 view_chat_image。",
+      options.drawFirst
+        ? "  要傳圖時一律用工具畫，不要寫 <pic>：先用 generate_image 試畫（note 寫給使用者看：這張想試什麼、跟上一張比改了什麼），看圖檢查，不滿意就改提示詞再試畫，滿意了用 choose_image 選一張貼進聊天，再回覆。試畫會列在聊天裡的工作紀錄卡片上，使用者看得到每一張。"
+        : "  想先試畫、看效果再調整時（例如使用者要你調畫風、照參考圖畫），改用工具：generate_image 試畫（note 寫給使用者看：這張想試什麼、跟上一張比改了什麼），看圖檢查，不滿意就改提示詞再試畫，滿意了用 choose_image 選一張貼進聊天，再回覆。試畫會列在聊天裡的工作紀錄卡片上。用工具畫過的圖不要再寫 <pic>。",
+      "  要看聊天裡之前的圖（連同當時的提示詞）、畫風參考圖或之前的試畫，用 view_chat_image。",
     );
   }
   if (settings.modelControlsPrompt) {
