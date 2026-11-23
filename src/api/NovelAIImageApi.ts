@@ -91,6 +91,8 @@ export interface NovelAIImageSettings {
   selfReview?: boolean;
   /** 看圖調整最多重生幾次（1～5） */
   selfReviewMaxRounds?: number;
+  /** 角色看得到自己畫的圖：下一輪把上一輪畫好的圖送給聊天模型看（沒設定時開啟） */
+  showOwnImagesToModel?: boolean;
 }
 
 /** 生圖服務：niji 是 Midjourney 的動漫模型（--niji），跟 midjourney 共用連線設定 */
@@ -476,6 +478,7 @@ export function createDefaultNovelAIImageSettings(): NovelAIImageSettings {
     modelControlsPrompt: false,
     selfReview: false,
     selfReviewMaxRounds: 1,
+    showOwnImagesToModel: true,
   };
 }
 
