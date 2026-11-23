@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildOwnImagesInstruction,
   buildReadImagePrompt,
   cleanImageNoteReply,
   describeImageForPrompt,
   extractPicNote,
+  findPrevTurnGeneratedImages,
   findTurnImageMessage,
   stripPicNote,
 } from "./picNote";
@@ -99,5 +101,59 @@ describe("buildReadImagePrompt", () => {
   it("有說明時一起附上", () => {
     expect(buildReadImagePrompt("我的新髮型")).toContain("傳圖的人附上的說明：「我的新髮型」");
     expect(buildReadImagePrompt()).not.toContain("說明：");
+  });
+});
+
+describe("findPrevTurnGeneratedImages", () => {
+  const img = (id: string, role: string, extra: Record<string, unknown> = {}) => ({
+    id,
+    role,
+    imageData: "B64",
+    imageMimeType: "image/png",
+    ...extra,
+  });
+
+  it("找緊接在這一輪 user 訊息前那一輪 AI 畫的圖", () => {
+    const messages = [
+      img("old", "ai"),
+      { id: "u0", role: "user" },
+      { id: "a1", role: "ai" },
+      img("a2", "ai"),
+      { id: "u1", role: "user" },
+      { id: "s1", role: "system" },
+    ];
+    expect(findPrevTurnGeneratedImages(messages).map((m) => m.id)).toEqual(["a2"]);
+  });
+
+  it("最多取最新的 limit 張，照原順序", () => {
+    const messages = [{ id: "u0", role: "user" }, img("a1", "ai"), img("a2", "ai"), img("a3", "ai"), { id: "u1", role: "user" }];
+    expect(findPrevTurnGeneratedImages(messages).map((m) => m.id)).toEqual(["a2", "a3"]);
+  });
+
+  it("上一輪 AI 沒畫圖、使用者傳的圖都不算", () => {
+    const messages = [img("a0", "ai"), img("u0", "user"), { id: "a1", role: "ai" }, img("u1", "user")];
+    expect(findPrevTurnGeneratedImages(messages)).toEqual([]);
+  });
+
+  it("沒有圖片資料（還在生成、生成失敗）不算", () => {
+    const messages = [{ id: "u0", role: "user" }, { id: "a1", role: "ai", imageMimeType: "image/png" }, { id: "u1", role: "user" }];
+    expect(findPrevTurnGeneratedImages(messages)).toEqual([]);
+  });
+});
+
+describe("buildOwnImagesInstruction", () => {
+  it("說明是上一輪畫的成品，要以看到的為準", () => {
+    const text = buildOwnImagesInstruction(1);
+    expect(text).toContain("上一輪用 <pic> 畫出來的實際成品");
+    expect(text).toContain("以你看到的畫面為準");
+    expect(text).not.toContain("<pic-note");
+  });
+
+  it("askNote 時請模型寫最後一張的 pic-note", () => {
+    const text = buildOwnImagesInstruction(2, { askNote: true, userName: "小明" });
+    expect(text).toContain("附上的 2 張");
+    expect(text).toContain('<pic-note text="圖片內容"/>');
+    expect(text).toContain("最後一張");
+    expect(text).toContain("不會顯示給 小明");
   });
 });

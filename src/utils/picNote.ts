@@ -59,6 +59,41 @@ export function findTurnImageMessage<T extends TurnMessage>(messages: T[]): T | 
   return undefined;
 }
 
+/**
+ * 角色上一輪畫的圖：這一輪 user 訊息之前、緊接著的那一輪 AI 回覆裡帶圖片資料的訊息（照原順序，最多 limit 張、取最新的）。
+ * 歷史裡畫過的圖只剩提示詞文字，模型不知道實際畫成怎樣；下一輪把成品送給它看一次。
+ */
+export function findPrevTurnGeneratedImages<T extends TurnMessage>(messages: T[], limit = 2): T[] {
+  let i = messages.length - 1;
+  // 跳過這一輪 user 的訊息（和夾在中間的 system 訊息）
+  while (i >= 0 && messages[i].role !== "ai") i--;
+  const found: T[] = [];
+  for (; i >= 0; i--) {
+    const m = messages[i];
+    if (m.role === "user") break;
+    if (m.role === "ai" && m.imageData && m.imageMimeType) found.unshift(m);
+  }
+  return limit > 0 ? found.slice(-limit) : [];
+}
+
+/** 附上角色上一輪畫的圖時給模型的說明；askNote 時順便請它寫最後一張的 <pic-note> */
+export function buildOwnImagesInstruction(count: number, options: { askNote?: boolean; userName?: string } = {}): string {
+  const lines = [
+    "[你上一輪畫的圖]",
+    count > 1
+      ? `附上的 ${count} 張是你上一輪用 <pic> 畫出來的實際成品（照順序）。`
+      : "附上的圖是你上一輪用 <pic> 畫出來的實際成品。",
+    "成品是生圖服務照你寫的提示詞畫的，不一定完全照你的意思；之後提到這些圖時，以你看到的畫面為準。",
+  ];
+  if (options.askNote) {
+    lines.push(
+      `回覆照常寫，另外在整個回覆最後（有 </content> 就放在 </content> 之後）加一個：<pic-note text="圖片內容"/>`,
+      `用一兩句客觀寫下${count > 1 ? "最後一張" : "這張"}圖裡實際畫了什麼（主體、場景、畫風），60 字內。這段不會顯示給 ${options.userName || "User"}，只用來在之後的對話記得這張圖。`,
+    );
+  }
+  return lines.join("\n");
+}
+
 /** 圖片換成給模型看的文字：有備註用備註，沒有就用 user 寫的說明或文生圖提示詞 */
 export function describeImageForPrompt(
   content: string,

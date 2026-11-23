@@ -344,17 +344,24 @@ import { buildChatMetadataFromState } from "@/utils/chatMetadataBuilder";
 import { clampEditNoticeChance, DEFAULT_EDIT_NOTICE_CHANCE } from "@/utils/editNotice";
 import { saveCharStatus } from "@/services/charStatus";
 import {
+  buildOwnImagesInstruction,
   buildPicNoteInstruction,
   describeImageForPrompt,
   extractPicNote,
+  findPrevTurnGeneratedImages,
   findTurnImageMessage,
   stripPicNote,
 } from "@/utils/picNote";
 import { buildPicGuide, buildStyleNotePrompt, parseStyleNoteReply } from "@/utils/picPromptGuide";
-import { CHAT_TOOLS, DANBOORU_TAGS_TOOL_NAME } from "@/services/toolCalling/chatTools";
+import { downscaleToolImages } from "@/services/mcp/mcpImages";
+import { CHAT_TOOLS, DANBOORU_TAGS_TOOL_NAME, GENERATE_IMAGE_TOOL_NAME } from "@/services/toolCalling/chatTools";
+import type { ImageToolService } from "@/services/toolCalling/toolServices";
 import { isToolAllowed } from "@/services/toolCalling/permissions";
 
 const DANBOORU_TAGS_TOOL = CHAT_TOOLS.find((tool) => tool.name === DANBOORU_TAGS_TOOL_NAME);
+const GENERATE_IMAGE_TOOL = CHAT_TOOLS.find((tool) => tool.name === GENERATE_IMAGE_TOOL_NAME);
+/** 一次回覆最多用「畫圖」工具畫幾張 */
+const TOOL_DRAWS_PER_REPLY = 6;
 import {
   applyCharPlannerOps,
   CHAR_PLANNER_CHANGED_EVENT,
@@ -4817,6 +4824,8 @@ const {
   handleImageUpload,
   tryGenerateImageForMessage,
   handleAIGenerateImage,
+  drawImageForTool,
+  findChatImageForTool,
 } = useChatMedia({
   messages,
   currentCharacter,
@@ -4827,6 +4836,34 @@ const {
   getChatId: () => currentChatId.value || undefined,
   onStyleArtistsFound: (messageId, artists) => rememberStyleArtists(messageId, artists),
 });
+
+/** 「畫圖」「看聊天裡的圖」工具的服務：每次回覆一個，計算這次畫了幾張 */
+function createImageToolService(beforeMessageId: string, turnId?: string): ImageToolService {
+  let draws = 0;
+  const toModelImage = async (image: { imageBase64: string; mimeType: string }) =>
+    (await downscaleToolImages([{ mimeType: image.mimeType, data: image.imageBase64 }]))[0];
+  return {
+    async draw(request, signal) {
+      if (draws >= TOOL_DRAWS_PER_REPLY) {
+        throw new Error(`這次回覆已經畫了 ${TOOL_DRAWS_PER_REPLY} 張，不能再畫；直接回覆使用者`);
+      }
+      draws += 1;
+      const result = await drawImageForTool({ ...request, turnId, beforeMessageId, signal });
+      return {
+        image: await toModelImage(result),
+        messageId: result.messageId,
+        providerLabel: result.providerLabel,
+        autoTags: result.autoTags || undefined,
+        remaining: TOOL_DRAWS_PER_REPLY - draws,
+      };
+    },
+    async view(request) {
+      const entry = await findChatImageForTool(request);
+      if (!entry) return null;
+      return { ...entry, image: await toModelImage(entry.image) };
+    },
+  };
+}
 
 // ===== 禮物面板處理 =====
 
@@ -6374,6 +6411,12 @@ async function runAIResponseOnce(
     }
     // 這一輪 user 傳的圖：只有它會送給模型看，模型回覆時順手寫的 <pic-note> 存回這則訊息
     const turnImageMessage = findTurnImageMessage(messagesToUse);
+    // 角色上一輪畫的圖：這一輪送給模型看一次；模型寫的 <pic-note> 存回最後一張
+    const ownImageMessages =
+      settingsStore.novelAIImage.showOwnImagesToModel !== false
+        ? findPrevTurnGeneratedImages(messagesToUse)
+        : [];
+    let ownImageNoteTarget: Message | undefined;
 
     // 永久診斷：實際發送的輪數 / 消息數。
     // 1) console.log：debug overlay 攔截後存入滾動日誌（含時間戳，可回溯歷史）。
@@ -6877,6 +6920,11 @@ async function runAIResponseOnce(
           })
         : undefined;
 
+    // 這一輪模型拿得到工具（只有一對一聊天帶工具）
+    const toolsUsableThisTurn =
+      !isGroupChat.value &&
+      chatTaskConfig.api.toolsEnabled !== false &&
+      chatTaskConfig.api.toolProtocol !== "disabled";
     const builder = new PromptBuilder({
       character: char,
       lorebooks: applyWorldInfoRegex(linkedLorebooks),
@@ -6955,13 +7003,15 @@ async function runAIResponseOnce(
       // 文生圖：這次用哪個服務、prompt 怎麼寫、可以加 negative（{{picGuide}}）
       picGuide: buildPicGuide(settingsStore.novelAIImage, {
         styleRef: currentChatData.value?.metadata?.imageStyleRef,
-        // 這一輪模型拿得到查 Danbooru 標籤的工具（只有一對一聊天帶工具）
+        // 這一輪模型拿得到查 Danbooru 標籤、畫圖的工具（只有一對一聊天帶工具）
         tagLookup:
-          !isGroupChat.value &&
-          chatTaskConfig.api.toolsEnabled !== false &&
-          chatTaskConfig.api.toolProtocol !== "disabled" &&
+          toolsUsableThisTurn &&
           !!DANBOORU_TAGS_TOOL &&
           isToolAllowed(DANBOORU_TAGS_TOOL, true, char.toolPermissions),
+        drawTool:
+          toolsUsableThisTurn &&
+          !!GENERATE_IMAGE_TOOL &&
+          isToolAllowed(GENERATE_IMAGE_TOOL, true, char.toolPermissions),
       }),
       // 約會：邀請等回覆、約會中的地點／付錢／事件（插在聊天紀錄最後面）
       dateNote: await dateCtl.promptNote(),
@@ -7248,8 +7298,32 @@ async function runAIResponseOnce(
     }
 
     // 🖼️ 這一輪送了圖、還沒有備註：請模型順手寫 <pic-note>，之後的回合用它代替重送圖片
-    if (sentTurnImage && turnImageMessage && !turnImageMessage.imageNote) {
+    const askTurnImageNote = !!(sentTurnImage && turnImageMessage && !turnImageMessage.imageNote);
+    if (askTurnImageNote) {
       appendedUserPrompts.push(buildPicNoteInstruction(activeUserName));
+    }
+
+    // 🖼️ 角色上一輪畫的圖：歷史裡只有提示詞文字，這裡把成品縮小後附給模型看一次
+    const ownImageParts: Array<{ type: "image_url"; image_url: { url: string; detail: "auto" } }> = [];
+    const ownImagesShown: Message[] = [];
+    for (const m of ownImageMessages) {
+      const base64 = await resolveImageBase64(m.imageData);
+      if (!base64 || !m.imageMimeType) continue;
+      const [image] = await downscaleToolImages([{ mimeType: m.imageMimeType, data: base64 }]);
+      ownImageParts.push({
+        type: "image_url",
+        image_url: { url: `data:${image.mimeType};base64,${image.data}`, detail: "auto" },
+      });
+      ownImagesShown.push(m);
+    }
+    if (ownImageParts.length > 0) {
+      // 使用者這一輪也傳了圖要寫備註時，<pic-note> 留給那張
+      const lastOwn = ownImagesShown[ownImagesShown.length - 1];
+      const askOwnNote = !askTurnImageNote && !lastOwn.imageNote;
+      if (askOwnNote) ownImageNoteTarget = lastOwn;
+      appendedUserPrompts.push(
+        buildOwnImagesInstruction(ownImageParts.length, { askNote: askOwnNote, userName: activeUserName }),
+      );
     }
 
     // 👉 群聊點名：這一輪使用者訊息 @ 了誰，就要求被 @ 的角色先回覆（不存入聊天記錄）
@@ -7341,11 +7415,15 @@ async function runAIResponseOnce(
       
       apiMessages.splice(insertIndex, 0, {
         role: "user",
-        content: combinedPrompt,
+        content: ownImageParts.length
+          ? [{ type: "text", text: combinedPrompt }, ...ownImageParts]
+          : combinedPrompt,
       });
       promptDebugMessages.splice(insertIndex, 0, {
         role: "user",
-        content: combinedPrompt,
+        content: ownImageParts.length
+          ? `${combinedPrompt}\n\n[附圖 ${ownImageParts.length} 張：上一輪畫的圖]`
+          : combinedPrompt,
         identifier: "appendedUserPrompt",
         name: "附加提示詞",
       });
@@ -7723,6 +7801,10 @@ async function runAIResponseOnce(
           scrollToBottom();
         },
         tools: chatTools,
+        // 用畫圖工具試畫、看圖、改提示詞要好幾輪
+        maxToolRounds: chatTools?.some((tool) => tool.name === GENERATE_IMAGE_TOOL_NAME)
+          ? TOOL_DRAWS_PER_REPLY + 4
+          : undefined,
         toolProtocol: chatTaskConfig.api.toolProtocol,
         promptPostProcessing: chatTaskConfig.api.promptPostProcessing,
         characterId: char.id,
@@ -7737,6 +7819,8 @@ async function runAIResponseOnce(
           characterName: char.nickname || char.data.name || props.characterName,
           characterAvatar: char.avatar,
           // 內建工具用的服務：行事曆、記憶、音樂、桌布、天氣、來電（型別見 toolServices.ts）
+          // 畫圖、看聊天裡的圖：畫好的圖插在這次回覆的文字前面
+          image: createImageToolService(aiMessage.id, generationTurnId || undefined),
           ...createAppToolServices({
             chatId: toolActivityChatId || props.chatId || "",
             characterId: char.id,
@@ -7819,8 +7903,9 @@ async function runAIResponseOnce(
           ? extractDiceTags(picStrippedContent)
           : { content: picStrippedContent, requests: [] as DiceTagRequest[] };
       pendingDiceRequests = diceRequests;
-      if (picNote && turnImageMessage) {
-        const imageMessage = messages.value.find((m) => m.id === turnImageMessage.id);
+      const picNoteTarget = ownImageNoteTarget ?? turnImageMessage;
+      if (picNote && picNoteTarget) {
+        const imageMessage = messages.value.find((m) => m.id === picNoteTarget.id);
         if (imageMessage) imageMessage.imageNote = picNote;
       }
       latestFinalContent = finalContent;
@@ -10333,6 +10418,7 @@ function exportNovelAIConfig() {
     modelControlsPrompt: settingsStore.novelAIImage.modelControlsPrompt,
     selfReview: settingsStore.novelAIImage.selfReview,
     selfReviewMaxRounds: settingsStore.novelAIImage.selfReviewMaxRounds,
+    showOwnImagesToModel: settingsStore.novelAIImage.showOwnImagesToModel,
   };
 
   const json = JSON.stringify(config, null, 2);
@@ -15405,6 +15491,23 @@ useChatCleanup({
                   <input
                     type="checkbox"
                     v-model="settingsStore.novelAIImage.modelControlsPrompt"
+                  />
+                  <span class="toggle-slider"></span>
+                </label>
+              </div>
+
+              <div class="setting-row">
+                <div class="setting-label">
+                  <span>角色看得到自己畫的圖</span>
+                  <span class="setting-hint"
+                    >下一輪把角色上一輪畫好的圖一起送給聊天模型看（最多 2 張，縮小後送），角色才知道實際畫成怎樣。聊天模型要能看圖；不能看圖的模型請關掉</span
+                  >
+                </div>
+                <label class="toggle-switch">
+                  <input
+                    type="checkbox"
+                    :checked="settingsStore.novelAIImage.showOwnImagesToModel !== false"
+                    @change="settingsStore.novelAIImage.showOwnImagesToModel = ($event.target as HTMLInputElement).checked"
                   />
                   <span class="toggle-slider"></span>
                 </label>
