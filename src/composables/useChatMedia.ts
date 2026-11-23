@@ -7,8 +7,10 @@ import {
   type ImageGenResponse,
 } from "@/api/ImageGenApi";
 import type { ImageProvider } from "@/api/NovelAIImageApi";
+import type { ImageStyleRef } from "@/types/chat";
 import {
   buildImageReviewPrompt,
+  extractArtistTags,
   getSelfReviewMaxRounds,
   parseImageReviewReply,
   type ImageReviewAttempt,
@@ -59,6 +61,12 @@ export function useChatMedia(deps: {
   scrollToBottom: () => void;
   saveChat: () => void;
   imageSearchEnabled?: Ref<boolean>;
+  /** 這個聊天的畫風參考圖（看圖調整優先拿它比對） */
+  getImageStyleRef?: () => ImageStyleRef | undefined;
+  /** 參考圖不在目前載入的訊息裡時，到資料庫找要用的聊天 ID */
+  getChatId?: () => string | undefined;
+  /** 拿畫風參考圖比對、看圖調整通過時，回報那次用的繪師串 */
+  onStyleArtistsFound?: (messageId: string, artists: string) => void;
 }) {
   const settingsStore = useSettingsStore();
   const userStore = useUserStore();
@@ -238,6 +246,35 @@ export function useChatMedia(deps: {
     }
   }
 
+  /** 畫風參考圖的原圖：先找目前載入的訊息，沒有再到資料庫找 */
+  async function loadStyleRefImage(styleRef: ImageStyleRef): Promise<ImageForModel | undefined> {
+    let imageData = deps.messages.value.find((m) => m.id === styleRef.messageId)?.imageData as string | undefined;
+    if (!imageData) {
+      const { getChatMessageById } = await import("@/db/chatMessageStore");
+      imageData = (await getChatMessageById(styleRef.messageId, deps.getChatId?.()))?.imageData;
+    }
+    if (!imageData) return undefined;
+    const { resolveImageBase64 } = await import("@/services/imageNoteReader");
+    const imageBase64 = await resolveImageBase64(imageData);
+    return imageBase64 ? { imageBase64, mimeType: styleRef.mimeType } : undefined;
+  }
+
+  /** 看圖調整的參考圖：聊天指定的畫風參考圖優先，沒有就用這一輪使用者傳的圖 */
+  async function resolveReviewReference(
+    messageId: string,
+  ): Promise<{ image: ImageForModel; fromStyleRef: boolean } | undefined> {
+    const styleRef = deps.getImageStyleRef?.();
+    if (styleRef) {
+      const image = await loadStyleRefImage(styleRef).catch((error) => {
+        console.warn("[AI Image] 讀不到畫風參考圖", error);
+        return undefined;
+      });
+      if (image) return { image, fromStyleRef: true };
+    }
+    const turnImage = await findTurnReferenceImage(messageId).catch(() => undefined);
+    return turnImage ? { image: turnImage, fromStyleRef: false } : undefined;
+  }
+
   /**
    * 這張 AI 圖片那一輪使用者傳的圖（拿來當看圖調整的參考圖）：
    * 從圖片訊息往前找，跳過同一輪的 AI 訊息，碰到上一輪的 AI 回覆就停
@@ -264,6 +301,7 @@ export function useChatMedia(deps: {
    * 看圖調整：讓聊天模型看剛生好的圖（有參考圖就一起比），它說要重畫就用它改的提示詞再畫一次，
    * 最多 selfReviewMaxRounds 次。NovelAI 時它可以先要求查相似繪師（每輪一次）。
    * 看圖或重畫失敗時保留上一張，不跳錯誤（圖已經有了）。
+   * 回傳模型最後有沒有說「可以」（重畫次數用完、出錯都算沒有）。
    */
   async function reviewAndRegenerate(ctx: {
     image: ImageForModel;
@@ -276,7 +314,7 @@ export function useChatMedia(deps: {
     generate: (prompt: string, negative: string | undefined) => Promise<ImageGenResponse>;
     showGenerating: () => void;
     applyImage: (image: { imageBase64: string; mimeType?: string }) => boolean;
-  }) {
+  }): Promise<boolean> {
     const maxRounds = getSelfReviewMaxRounds(settingsStore.novelAIImage);
     const canSearchArtists = ctx.provider === "novelai";
     const attempts: ImageReviewAttempt[] = [];
@@ -309,7 +347,7 @@ export function useChatMedia(deps: {
           verdict = parseImageReviewReply(reply);
         } catch (error) {
           console.warn("[AI Image] 看圖調整：模型看圖失敗，保留這張", error);
-          return;
+          return false;
         }
         if (verdict.kind !== "search") break;
         if (!canSearchArtists || ask > 0) {
@@ -325,7 +363,7 @@ export function useChatMedia(deps: {
           artistNotes.push(`查繪師失敗（${error instanceof Error ? error.message : String(error)}），只能用你自己知道的繪師。`);
         }
       }
-      if (!verdict || verdict.kind !== "retry") return;
+      if (!verdict || verdict.kind !== "retry") return verdict?.kind === "ok";
 
       console.log(`[AI Image] 看圖調整第 ${round} 次重畫：${verdict.reason || "（沒寫原因）"}`, verdict);
       attempts.push({ prompt, negativePrompt: negative, reason: verdict.reason });
@@ -342,12 +380,14 @@ export function useChatMedia(deps: {
         console.warn("[AI Image] 看圖調整：重畫失敗，換回上一張", next.error);
         ctx.setPrompts(previous.prompt, previous.negative);
         ctx.applyImage(image);
-        return;
+        return false;
       }
       image = { imageBase64: next.imageBase64, mimeType: next.mimeType || "image/png" };
-      if (!ctx.applyImage(image)) return;
+      if (!ctx.applyImage(image)) return false;
       deps.saveChat();
     }
+    // 最後一次重畫完沒有再看，不算通過
+    return false;
   }
 
   async function tryGenerateImageForMessage(
@@ -454,9 +494,10 @@ export function useChatMedia(deps: {
         if (result.success && result.imageBase64) {
           if (applyImage({ imageBase64: result.imageBase64, mimeType: result.mimeType }) && imageSettings.selfReview) {
             deps.saveChat();
-            await reviewAndRegenerate({
+            const reference = await resolveReviewReference(messageId);
+            const passed = await reviewAndRegenerate({
               image: { imageBase64: result.imageBase64, mimeType: result.mimeType || "image/png" },
-              reference: await findTurnReferenceImage(messageId).catch(() => undefined),
+              reference: reference?.image,
               description: caption || imageDescription?.trim() || "",
               provider,
               autoTags: [characterPrompt, userPrompt].filter(Boolean).join(", "),
@@ -469,6 +510,11 @@ export function useChatMedia(deps: {
               showGenerating,
               applyImage,
             });
+            // 照畫風參考圖畫出滿意的圖：記住這次的繪師串，下次直接從這組開始
+            const artists = extractArtistTags(currentPrompt);
+            if (passed && reference?.fromStyleRef && artists) {
+              deps.onStyleArtistsFound?.(messageId, artists);
+            }
           }
         } else {
           fallbackToDescriptiveImage(messageId, mode);

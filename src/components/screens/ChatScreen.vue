@@ -26,6 +26,7 @@ import {
   fetchImageProviderModels,
   GPT_IMAGE_MODEL_SUGGESTIONS,
   IMAGE_PROVIDERS,
+  isImageGenReady,
   MJ_VERSION_OPTIONS,
   NIJI_VERSION_OPTIONS,
 } from "@/api/ImageGenApi";
@@ -210,7 +211,7 @@ import {
   type PromptDebugMessage,
 } from "@/composables/useStreamingWindow";
 import { db, DB_STORES } from "@/db/database";
-import { readImageNote, resolveImageBase64 } from "@/services/imageNoteReader";
+import { askChatModelAboutImage, readImageNote, resolveImageBase64 } from "@/services/imageNoteReader";
 import {
   createChatRecord,
   deleteChatCascade,
@@ -310,6 +311,7 @@ import type {
   ForwardedFrom,
   GenerationDiagnostics,
   GenerationContaminationProbeResult,
+  ImageStyleRef,
   PlurkActivity,
   RoundTableSettings,
   SubCharSource,
@@ -348,7 +350,7 @@ import {
   findTurnImageMessage,
   stripPicNote,
 } from "@/utils/picNote";
-import { buildPicGuide } from "@/utils/picPromptGuide";
+import { buildPicGuide, buildStyleNotePrompt, parseStyleNoteReply } from "@/utils/picPromptGuide";
 import { CHAT_TOOLS, DANBOORU_TAGS_TOOL_NAME } from "@/services/toolCalling/chatTools";
 import { isToolAllowed } from "@/services/toolCalling/permissions";
 
@@ -2913,6 +2915,66 @@ async function handleReadImageNote(messageId: string) {
   }
 }
 const onMessageReadImageNote = (...args: any[]) => handleReadImageNote(args[0] as string);
+
+// ===== 畫風參考圖：點開圖片設成這個聊天的畫風參考，看圖調整拿它比對；設定時讓模型寫畫風筆記 =====
+const currentImageStyleRef = computed(() => currentChatData.value?.metadata?.imageStyleRef);
+const imageGenReadyForStyleRef = computed(() => isImageGenReady(settingsStore.novelAIImage));
+const settingStyleRefId = ref<string | null>(null);
+
+/** 改這個聊天的畫風參考（undefined＝取消）並存檔 */
+async function updateImageStyleRef(
+  next: ImageStyleRef | undefined,
+  chatId: string | undefined = currentChatId.value || undefined,
+): Promise<boolean> {
+  const chat = currentChatData.value;
+  if (!chat || !chatId || chat.id !== chatId) return false;
+  const metadata = { ...(chat.metadata ?? {}) } as Chat["metadata"];
+  if (next) metadata.imageStyleRef = next;
+  else delete metadata.imageStyleRef;
+  chat.metadata = metadata;
+  await saveChatImmediate();
+  return true;
+}
+
+async function handleToggleStyleRef(messageId: string) {
+  if (settingStyleRefId.value) return;
+  if (currentImageStyleRef.value?.messageId === messageId) {
+    await updateImageStyleRef(undefined);
+    showToast("已取消畫風參考");
+    return;
+  }
+  const message = messages.value.find((m) => m.id === messageId);
+  if (!message?.imageData || !message.imageMimeType) return;
+  const chatId = currentChatId.value || undefined;
+  const styleRef: ImageStyleRef = { messageId, mimeType: message.imageMimeType, updatedAt: Date.now() };
+  if (!(await updateImageStyleRef(styleRef, chatId))) return;
+  settingStyleRefId.value = messageId;
+  try {
+    const base64 = await resolveImageBase64(message.imageData);
+    if (!base64) throw new Error("讀不到這張圖片的資料");
+    const reply = await askChatModelAboutImage(buildStyleNotePrompt(), [
+      { imageBase64: base64, mimeType: message.imageMimeType },
+    ]);
+    const note = parseStyleNoteReply(reply);
+    // 看畫風期間可能取消或換了別張，確認還是這張才寫入
+    if (currentImageStyleRef.value?.messageId !== messageId) return;
+    await updateImageStyleRef({ ...currentImageStyleRef.value, ...note, updatedAt: Date.now() }, chatId);
+    showToast(note.styleNote ? `已設為畫風參考：${note.styleNote}` : "已設為畫風參考");
+  } catch (error) {
+    showToast(`已設為畫風參考，但畫風筆記沒寫成：${error instanceof Error ? error.message : String(error)}`);
+  } finally {
+    settingStyleRefId.value = null;
+  }
+}
+const onMessageToggleStyleRef = (...args: any[]) => handleToggleStyleRef(args[0] as string);
+
+/** 照畫風參考圖畫出滿意的圖：記住那次的繪師串 */
+function rememberStyleArtists(messageId: string, artists: string) {
+  const styleRef = currentImageStyleRef.value;
+  if (!styleRef || styleRef.artists === artists) return;
+  if (!messages.value.some((m) => m.id === messageId)) return;
+  void updateImageStyleRef({ ...styleRef, artists, updatedAt: Date.now() });
+}
 const onMessageRegenerateVoice = async (...args: any[]) => {
   const messageId = args[0] as string;
   if (!chatMinimaxTTSEnabled.value) {
@@ -4761,6 +4823,9 @@ const {
   scrollToBottom,
   saveChat,
   imageSearchEnabled: chatImageSearchEnabled,
+  getImageStyleRef: () => currentChatData.value?.metadata?.imageStyleRef,
+  getChatId: () => currentChatId.value || undefined,
+  onStyleArtistsFound: (messageId, artists) => rememberStyleArtists(messageId, artists),
 });
 
 // ===== 禮物面板處理 =====
@@ -6889,6 +6954,7 @@ async function runAIResponseOnce(
       charWallet: charWalletNote,
       // 文生圖：這次用哪個服務、prompt 怎麼寫、可以加 negative（{{picGuide}}）
       picGuide: buildPicGuide(settingsStore.novelAIImage, {
+        styleRef: currentChatData.value?.metadata?.imageStyleRef,
         // 這一輪模型拿得到查 Danbooru 標籤的工具（只有一對一聊天帶工具）
         tagLookup:
           !isGroupChat.value &&
@@ -12911,6 +12977,10 @@ useChatCleanup({
             :image-note="message.imageNote"
             :can-read-image="message.role === 'user' && !!message.imageData && !!message.imageMimeType"
             :image-note-reading="readingImageNoteId === message.id"
+            :can-set-style-ref="imageGenReadyForStyleRef && !!message.imageData && !!message.imageMimeType"
+            :is-style-ref="currentImageStyleRef?.messageId === message.id"
+            :style-ref-busy="settingStyleRefId === message.id"
+            :style-note="currentImageStyleRef?.messageId === message.id ? currentImageStyleRef?.styleNote : undefined"
             :image-prompt="message.imagePrompt"
             :is-gift="message.isGift"
             :gift-name="message.giftName"
@@ -13037,6 +13107,7 @@ useChatCleanup({
             @regenerate-voice="onMessageRegenerateVoice"
             @regenerate-image="onMessageRegenerateImage"
             @read-image-note="onMessageReadImageNote"
+            @toggle-style-ref="onMessageToggleStyleRef"
             @swipe="onMessageSwipe"
             @round-swipe="onMessageRoundSwipe"
             @reply="onMessageReply"

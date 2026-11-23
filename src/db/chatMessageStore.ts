@@ -487,6 +487,17 @@ export async function deleteChatMessage(
   return true;
 }
 
+/** 讀一則訊息（不限目前載入的分頁）；不存在或不屬於這個聊天時回傳 undefined */
+export async function getChatMessageById(
+  messageId: string,
+  chatId?: string,
+): Promise<StoredChatMessage | undefined> {
+  const db = await getDatabase();
+  const record = await db.get("chatMessages", messageId);
+  if (!record || (chatId && record.chatId !== chatId)) return undefined;
+  return record;
+}
+
 /**
  * 取得指定聊天的訊息數量（不載入全部訊息）
  */

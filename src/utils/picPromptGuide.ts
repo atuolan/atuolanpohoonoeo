@@ -5,6 +5,7 @@
  */
 import { getImageProvider, getImageProviderLabel, isImageGenReady } from "@/api/ImageGenApi";
 import type { ImageProvider, NovelAIImageSettings } from "@/api/NovelAIImageApi";
+import type { ImageStyleRef } from "@/types/chat";
 import { readTagAttr, NEGATIVE_ATTR_NAMES, TAG_ATTRS_PATTERN } from "@/utils/tagAttr";
 
 /** 各生圖服務吃的提示詞寫法 */
@@ -30,7 +31,14 @@ export function isDanbooruTagLookupUseful(settings: NovelAIImageSettings): boole
  * {{picGuide}}：文生圖能用時接在圖片標籤說明後面；不能用時是空字串。
  * tagLookup：這一輪模型拿得到 search_danbooru_tags 工具
  */
-export function buildPicGuide(settings: NovelAIImageSettings, options: { tagLookup?: boolean } = {}): string {
+export function buildPicGuide(
+  settings: NovelAIImageSettings,
+  options: {
+    tagLookup?: boolean;
+    /** 這個聊天的畫風參考圖（有畫風筆記、試過的繪師串時帶上） */
+    styleRef?: Pick<ImageStyleRef, "styleNote" | "styleTags" | "artists">;
+  } = {},
+): string {
   if (!isImageGenReady(settings)) return "";
   const provider = getImageProvider(settings);
   const lines = [
@@ -45,7 +53,51 @@ export function buildPicGuide(settings: NovelAIImageSettings, options: { tagLook
   if (settings.modelControlsPrompt) {
     lines.push("  不會自動加品質詞和負面詞，需要的話自己寫進 prompt、negative；角色外觀標籤會自動補上。");
   }
+  const style = options.styleRef;
+  if (style?.styleNote || style?.styleTags || style?.artists) {
+    lines.push("  這個聊天指定了畫風，畫圖都照這個畫風寫 prompt：");
+    if (style.styleNote) lines.push(`  畫風：${style.styleNote}`);
+    if (style.styleTags) lines.push(`  畫風標籤：${style.styleTags}`);
+    if (style.artists && provider === "novelai") lines.push(`  試過效果好的繪師串（直接寫進 prompt）：${style.artists}`);
+  }
   return `\n${lines.join("\n")}`;
+}
+
+// ===== 畫風參考圖：設定時讓模型看圖寫畫風筆記 =====
+
+/** 畫風筆記長度上限（每輪都會進提示詞，保持精簡） */
+const STYLE_NOTE_MAX = 160;
+const STYLE_TAGS_MAX = 300;
+
+export function buildStyleNotePrompt(): string {
+  return [
+    "[畫風筆記] 這張圖要拿來當之後畫圖的畫風參考。請只看畫風，不寫人物是誰、在做什麼。",
+    "注意：線條（粗細、乾淨或凌亂）、上色方式、色調與飽和度、光線、質感、媒材感、常見的取景構圖。",
+    '只輸出：<style-note tags="英文畫風標籤，逗號分隔，10～20 個">一兩句中文描述畫風，80 字內</style-note>',
+  ].join("\n");
+}
+
+const STYLE_NOTE_TAG = new RegExp(String.raw`<style-note${TAG_ATTRS_PATTERN}\s*>([\s\S]*?)(?:<\/style-note>|$)`, "i");
+
+/** 解析畫風筆記；沒寫標籤時整段回覆當描述 */
+export function parseStyleNoteReply(reply: string): { styleNote: string; styleTags: string } {
+  const text = reply.replace(/<think(?:ing)?>[\s\S]*?<\/think(?:ing)?>/gi, "").trim();
+  const match = text.match(STYLE_NOTE_TAG);
+  const note = (match ? match[2] : text).replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
+  const tags = (match ? readTagAttr(match[1], "tags") : "") || "";
+  return {
+    styleNote: note.slice(0, STYLE_NOTE_MAX),
+    styleTags: tags.replace(/\s+/g, " ").trim().slice(0, STYLE_TAGS_MAX),
+  };
+}
+
+/** 從提示詞取出繪師串（artist:xxx），保持原順序；沒有時回傳空字串 */
+export function extractArtistTags(prompt: string): string {
+  return prompt
+    .split(",")
+    .map((part) => part.trim())
+    .filter((part) => /^[[{(]*\s*artist\s*:/i.test(part) || /^-?\d+(?:\.\d+)?::\s*artist\s*:/i.test(part))
+    .join(", ");
 }
 
 export interface ImageReviewAttempt {
