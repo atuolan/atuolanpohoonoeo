@@ -1677,6 +1677,15 @@ export class PromptBuilder {
           // 否則動態內容會污染可緩存的穩定前綴，導致 Anthropic 緩存「只寫不讀」。
           merged.push(current);
           current = { ...msg };
+        } else if (
+          current.imageData &&
+          msg.imageData &&
+          current.imageData !== msg.imageData
+        ) {
+          // 兩則都帶不同的圖（例如使用者連發好幾張）：合併後只能留一張，前面的圖會被蓋掉，
+          // 所以分開保留，讓每張圖都送得出去
+          merged.push(current);
+          current = { ...msg };
         } else {
           // 合併內容
           current.content = current.content + "\n\n" + msg.content;

@@ -56,4 +56,17 @@ describe("聊天歷史的圖片：只送這一輪的", () => {
     ]);
     expect(built.some((m) => m.imageData === "BASE64DATA")).toBe(true);
   });
+
+  it("這一輪連發好幾張圖，每張都保留圖片資料（不會被合併成只剩最後一張）", async () => {
+    const built = await build([
+      msg(false, "在幹嘛"),
+      { ...msg(true, "[圖片]", image({ imageData: "IMG1" })), id: "u1" },
+      { ...msg(true, "[圖片]", image({ imageData: "IMG2" })), id: "u2" },
+      { ...msg(true, "[圖片]", image({ imageData: "IMG3" })), id: "u3" },
+    ]);
+    const sent = built.map((m) => m.imageData).filter(Boolean);
+    expect(sent).toContain("IMG1");
+    expect(sent).toContain("IMG2");
+    expect(sent).toContain("IMG3");
+  });
 });
