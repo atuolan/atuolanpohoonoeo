@@ -97,9 +97,68 @@ describe("chat tools", () => {
       ["search_memory", "查記憶"],
       ["create_calendar_event", "新增行程"],
       ["schedule_call", "預約來電"],
+      ["generate_image", "畫圖"],
+      ["view_chat_image", "看聊天裡的圖"],
       ["search_danbooru_tags", "查 Danbooru 標籤"],
       ["find_danbooru_artists", "找相似繪師"],
     ]);
   });
-});
 
+  it("generate_image draws through the image service and hands the picture back to the model", async () => {
+    const tool = CHAT_TOOLS.find((entry) => entry.name === "generate_image")!;
+    const draw = vi.fn().mockResolvedValue({
+      image: { mimeType: "image/jpeg", data: "SMALL" },
+      messageId: "m1",
+      providerLabel: "NovelAI",
+      autoTags: "1boy, black hair",
+      remaining: 3,
+    });
+    const result = (await tool.execute(
+      { prompt: "1boy, hanfu", negative: "lowres", caption: "白衣" },
+      { image: { draw, view: vi.fn() } },
+    )) as { summary: string; images: unknown[] };
+    expect(draw).toHaveBeenCalledWith({ prompt: "1boy, hanfu", negativePrompt: "lowres", caption: "白衣" }, undefined);
+    expect(result.images).toEqual([{ mimeType: "image/jpeg", data: "SMALL" }]);
+    expect(result.summary).toContain("已經傳到聊天裡");
+    expect(result.summary).toContain("負面提示詞：lowres");
+    expect(result.summary).toContain("自動加上的外觀標籤：1boy, black hair");
+    expect(result.summary).toContain("還能畫 3 張");
+  });
+
+  it("generate_image tells the model to stop when no draws are left", async () => {
+    const tool = CHAT_TOOLS.find((entry) => entry.name === "generate_image")!;
+    const draw = vi.fn().mockResolvedValue({ image: { mimeType: "image/png", data: "X" }, messageId: "m", providerLabel: "GPT Image", remaining: 0 });
+    const result = (await tool.execute({ prompt: "a cat" }, { image: { draw, view: vi.fn() } })) as { summary: string };
+    expect(result.summary).toContain("畫圖次數用完了");
+    expect(result.summary).toContain("負面提示詞：（沒有）");
+  });
+
+  it("view_chat_image returns the picture with the prompts that made it", async () => {
+    const tool = CHAT_TOOLS.find((entry) => entry.name === "view_chat_image")!;
+    const view = vi.fn().mockResolvedValue({
+      image: { mimeType: "image/jpeg", data: "IMG" },
+      messageId: "m2",
+      sender: "character",
+      nth: 2,
+      total: 5,
+      caption: "白衣",
+      prompt: "1boy, artist:foo",
+      negativePrompt: "lowres",
+    });
+    const result = (await tool.execute({ nth: 2, sender: "character" }, { image: { draw: vi.fn(), view } })) as {
+      summary: string;
+      images: unknown[];
+    };
+    expect(view).toHaveBeenCalledWith({ nth: 2, sender: "character", styleRef: false });
+    expect(result.images).toEqual([{ mimeType: "image/jpeg", data: "IMG" }]);
+    expect(result.summary).toContain("第 2 張（共 5 張），你畫的");
+    expect(result.summary).toContain("正面提示詞：1boy, artist:foo");
+  });
+
+  it("view_chat_image says so when there is no such picture", async () => {
+    const tool = CHAT_TOOLS.find((entry) => entry.name === "view_chat_image")!;
+    const view = vi.fn().mockResolvedValue(null);
+    expect(await tool.execute({ nth: 9 }, { image: { draw: vi.fn(), view } })).toContain("找不到第 9 張圖");
+    expect(await tool.execute({ style_ref: true }, { image: { draw: vi.fn(), view } })).toContain("沒有設定畫風參考圖");
+  });
+});

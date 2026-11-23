@@ -141,3 +141,12 @@ describe("畫風參考圖", () => {
     expect(extractArtistTags("1boy, hanfu")).toBe("");
   });
 });
+
+describe("buildPicGuide drawTool", () => {
+  it("tells the model to try drawing with generate_image when it has the tool", () => {
+    const settings = makeSettings();
+    expect(buildPicGuide(settings, { drawTool: true })).toContain("generate_image");
+    expect(buildPicGuide(settings, { drawTool: true })).toContain("view_chat_image");
+    expect(buildPicGuide(settings)).not.toContain("generate_image");
+  });
+});

@@ -35,6 +35,8 @@ export function buildPicGuide(
   settings: NovelAIImageSettings,
   options: {
     tagLookup?: boolean;
+    /** 這一輪模型拿得到 generate_image、view_chat_image 工具 */
+    drawTool?: boolean;
     /** 這個聊天的畫風參考圖（有畫風筆記、試過的繪師串時帶上） */
     styleRef?: Pick<ImageStyleRef, "styleNote" | "styleTags" | "artists">;
   } = {},
@@ -48,6 +50,11 @@ export function buildPicGuide(
   if (options.tagLookup && provider === "novelai") {
     lines.push(
       "  不確定標籤怎麼寫時，先用 search_danbooru_tags 工具查正式寫法再寫 prompt；要畫出特定畫風（例如照參考圖）時，用 find_danbooru_artists 找繪師，在 prompt 加 artist:名字。",
+    );
+  }
+  if (options.drawTool) {
+    lines.push(
+      "  想先試畫、看效果再調整時（例如使用者要你調畫風、照參考圖畫），改用 generate_image 工具：畫好的圖會直接傳到聊天，你也看得到；不滿意就改提示詞再畫，滿意了再回覆。用工具畫過的圖不要再寫 <pic>。要看聊天裡之前的圖（連同當時的提示詞）或畫風參考圖，用 view_chat_image。",
     );
   }
   if (settings.modelControlsPrompt) {

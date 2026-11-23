@@ -6,7 +6,7 @@
 import type { WeatherData } from "@/services/WeatherService";
 import type { CalendarEventData } from "@/types/calendar";
 import type { ScheduleCallData } from "@/types/incomingCall";
-import type { ChatToolContext } from "./types";
+import type { ChatToolContext, ToolImage } from "./types";
 
 /** 「看行程」列出的一筆 */
 export interface CalendarToolEvent {
@@ -85,6 +85,45 @@ export interface CallSchedulerToolService {
   ): Promise<{ triggerTime: number } | null>;
 }
 
+/** 「畫圖」畫好的一張 */
+export interface DrawToolResult {
+  /** 縮小過、要交給模型看的圖 */
+  image: ToolImage;
+  messageId: string;
+  /** 生圖服務名稱，例如 NovelAI */
+  providerLabel: string;
+  /** 程式自動加上的外觀標籤（角色、使用者） */
+  autoTags?: string;
+  /** 這次回覆還能再畫幾張 */
+  remaining: number;
+}
+
+/** 「看聊天裡的圖」找到的一張 */
+export interface ChatImageToolEntry {
+  /** 縮小過、要交給模型看的圖 */
+  image: ToolImage;
+  messageId: string;
+  sender: "user" | "character";
+  /** 從最新往回數第幾張（1 是最新） */
+  nth: number;
+  /** 聊天裡（目前載入的訊息）一共有幾張符合條件的圖 */
+  total: number;
+  caption?: string;
+  prompt?: string;
+  negativePrompt?: string;
+  note?: string;
+  isStyleRef?: boolean;
+}
+
+export type ChatImageSender = "any" | "user" | "character";
+
+export interface ImageToolService {
+  /** 照提示詞畫一張，傳進聊天；畫不成要丟錯 */
+  draw(request: { prompt: string; negativePrompt?: string; caption?: string }, signal?: AbortSignal): Promise<DrawToolResult>;
+  /** 找聊天裡的圖：styleRef 時拿畫風參考圖，否則從最新往回數第 nth 張；找不到回傳 null */
+  view(request: { nth: number; sender: ChatImageSender; styleRef?: boolean }): Promise<ChatImageToolEntry | null>;
+}
+
 /** toolContext 裡給內建工具用的欄位 */
 export interface ChatToolServices {
   calendar?: CalendarToolService;
@@ -94,6 +133,8 @@ export interface ChatToolServices {
   weather?: WeatherToolService;
   location?: LocationToolService;
   incomingCallScheduler?: CallSchedulerToolService;
+  /** 畫圖、看聊天裡的圖（聊天畫面另外接，不在 createAppToolServices 裡） */
+  image?: ImageToolService;
 }
 
 export function toolService<K extends keyof ChatToolServices>(

@@ -59,6 +59,8 @@ export interface ChatGenerationRequestRunnerContext {
   chatId?: string;
   toolPermissions?: CharacterToolPermissions | null;
   globalToolsEnabled?: boolean;
+  /** 工具迴圈最多幾輪（沒給用引擎預設） */
+  maxToolRounds?: number;
   toolContext?: Record<string, unknown>;
   /** 防截斷（全域開關開著時由 ChatScreen 傳入） */
   antiTruncation?: AntiTruncationOptions;
@@ -101,6 +103,7 @@ export async function runChatGenerationRequest(
     let lastAntiTruncation: AntiTruncationDiagnostics | undefined;
     const engine = new ToolExecutionEngine({
       registry,
+      maxRounds: context.maxToolRounds,
       onCallStart: context.onToolCallStart,
       onCallEnd: context.onToolCallEnd,
       generate: async (messages, requestContext) => {

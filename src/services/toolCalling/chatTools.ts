@@ -17,7 +17,7 @@ import {
   textArg,
   toCalendarEventData,
 } from "./toolFormat";
-import { toolService, type ChatToolServices } from "./toolServices";
+import { toolService, type ChatImageSender, type ChatToolServices } from "./toolServices";
 import type { ChatToolContext, ChatToolDefinition } from "./types";
 import { ToolRegistry } from "./toolRegistry";
 
@@ -50,6 +50,12 @@ function requireService<K extends keyof ChatToolServices>(
 export const DANBOORU_TAGS_TOOL_NAME = "search_danbooru_tags";
 /** 找常畫某類內容的繪師：同上，只在 NovelAI 時給 */
 export const DANBOORU_ARTISTS_TOOL_NAME = "find_danbooru_artists";
+/** 畫圖：畫好的圖傳進聊天、也交給模型看，可以改提示詞重畫（文生圖設定好才給） */
+export const GENERATE_IMAGE_TOOL_NAME = "generate_image";
+/** 看聊天裡的圖：連同畫那張圖用的提示詞 */
+export const VIEW_CHAT_IMAGE_TOOL_NAME = "view_chat_image";
+/** 要文生圖設定好才能用的工具 */
+export const IMAGE_GEN_TOOL_NAMES = [GENERATE_IMAGE_TOOL_NAME];
 /** 只對 NovelAI 有用的工具 */
 export const NOVELAI_ONLY_TOOL_NAMES = [DANBOORU_TAGS_TOOL_NAME, DANBOORU_ARTISTS_TOOL_NAME];
 
@@ -226,6 +232,76 @@ export const CHAT_TOOLS: ChatToolDefinition[] = [
       );
       if (!pending) throw new Error("沒有排成：這個角色的待接來電可能已達上限");
       return `已預約來電，${new Date(pending.triggerTime).toLocaleString("zh-TW")} 會打來`;
+    },
+  },
+  {
+    name: GENERATE_IMAGE_TOOL_NAME,
+    displayName: "畫圖",
+    description:
+      "照提示詞畫一張圖，畫好會直接傳到聊天裡（使用者看得到），你也會拿到這張圖可以看。用來試畫、調整：看完覺得不對就改 prompt / negative 再呼叫一次，直到滿意。用這個工具畫過的圖不要再寫 <pic>，不然會多畫一張。prompt 寫法跟 <pic> 一樣；角色和使用者的外觀標籤會自動加上。",
+    category: "image",
+    risk: "low",
+    // 實際的生圖逾時由服務自己控制（MJ 可能要好幾分鐘）
+    timeoutMs: 600_000,
+    parameters: object(
+      {
+        prompt: string("完整的正面提示詞（英文）"),
+        negative: string("負面提示詞（英文，逗號分隔），可省略"),
+        caption: string("顯示在圖片下面的一句中文說明，可省略"),
+      },
+      ["prompt"],
+    ),
+    async execute(args, context) {
+      const image = requireService(context, "image", "畫圖");
+      const prompt = textArg(args.prompt);
+      if (!prompt) throw new Error("要給 prompt");
+      const negativePrompt = textArg(args.negative) || undefined;
+      const result = await image.draw({ prompt, negativePrompt, caption: textArg(args.caption) || undefined }, context.signal);
+      const lines = [
+        `畫好了（${result.providerLabel}），已經傳到聊天裡，圖附在後面。`,
+        `正面提示詞：${prompt}`,
+        `負面提示詞：${negativePrompt || "（沒有）"}`,
+      ];
+      if (result.autoTags) lines.push(`自動加上的外觀標籤：${result.autoTags}`);
+      lines.push(
+        result.remaining > 0
+          ? `看圖檢查：不滿意就改提示詞再畫（這次回覆還能畫 ${result.remaining} 張）；滿意了就直接回覆使用者。`
+          : "這次回覆的畫圖次數用完了，直接回覆使用者，說明目前的結果和下次可以怎麼改。",
+      );
+      return { summary: lines.join("\n"), images: [result.image] };
+    },
+  },
+  {
+    name: VIEW_CHAT_IMAGE_TOOL_NAME,
+    displayName: "看聊天裡的圖",
+    description:
+      "看聊天裡的圖（使用者傳的、你畫的都可以），連同畫那張圖用的提示詞一起給你。nth 從最新往回數（1 是最新一張）；sender 可以只看使用者傳的（user）或你畫的（character）；style_ref 為 true 時看這個聊天設定的畫風參考圖。要比對、討論之前的圖，或照參考圖調整前，先用這個看清楚。",
+    category: "image",
+    risk: "low",
+    timeoutMs: 30_000,
+    parameters: object({
+      nth: { type: "integer", description: "從最新往回數第幾張，1 是最新，預設 1" },
+      sender: { type: "string", description: "誰的圖：any 全部（預設）、user 使用者傳的、character 你畫的", enum: ["any", "user", "character"] },
+      style_ref: { type: "boolean", description: "看畫風參考圖（忽略 nth、sender）" },
+    }),
+    async execute(args, context) {
+      const image = requireService(context, "image", "看圖");
+      const nth = typeof args.nth === "number" && args.nth >= 1 ? Math.floor(args.nth) : 1;
+      const sender = (["any", "user", "character"].includes(String(args.sender)) ? args.sender : "any") as ChatImageSender;
+      const entry = await image.view({ nth, sender, styleRef: args.style_ref === true });
+      if (!entry) {
+        return args.style_ref === true ? "這個聊天沒有設定畫風參考圖。" : `找不到第 ${nth} 張圖（聊天裡目前載入的圖沒有那麼多）。`;
+      }
+      const lines = [
+        entry.isStyleRef
+          ? "這是畫風參考圖，圖附在後面。"
+          : `從最新往回數第 ${entry.nth} 張（共 ${entry.total} 張），${entry.sender === "user" ? "使用者傳的" : "你畫的"}，圖附在後面。`,
+      ];
+      if (entry.caption) lines.push(`說明：${entry.caption}`);
+      if (entry.prompt) lines.push(`正面提示詞：${entry.prompt}`);
+      if (entry.negativePrompt) lines.push(`負面提示詞：${entry.negativePrompt}`);
+      if (entry.note) lines.push(`之前的圖片備註：${entry.note}`);
+      return { summary: lines.join("\n"), images: [entry.image] };
     },
   },
   {

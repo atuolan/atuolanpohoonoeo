@@ -49,7 +49,7 @@ export interface AppToolServiceOptions {
   isInCallWithCharacter?: () => boolean;
 }
 
-export function createAppToolServices(options: AppToolServiceOptions): Required<ChatToolServices> {
+export function createAppToolServices(options: AppToolServiceOptions): Required<Omit<ChatToolServices, "image">> {
   return {
     calendar: {
       async listEvents(range) {

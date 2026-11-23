@@ -636,11 +636,173 @@ export function useChatMedia(deps: {
     }
   }
 
+
+  /**
+   * 「畫圖」工具：照提示詞畫一張，插進聊天（beforeMessageId 前面，也就是這次回覆的文字前面）。
+   * 畫不成丟錯（佔位訊息會拿掉），讓模型知道失敗原因。
+   */
+  async function drawImageForTool(request: {
+    prompt: string;
+    negativePrompt?: string;
+    caption?: string;
+    turnId?: string;
+    beforeMessageId?: string;
+    signal?: AbortSignal;
+  }): Promise<{ messageId: string; imageBase64: string; mimeType: string; autoTags: string; providerLabel: string }> {
+    const imageSettings = settingsStore.novelAIImage;
+    if (!isImageGenReady(imageSettings)) throw new Error("文生圖沒有設定好，不能畫圖");
+    const characterPrompt = getCharacterPrompt();
+    const userPrompt = getUserPrompt();
+    const caption = request.caption?.trim() || "";
+    const messageId = `msg_${Date.now()}_draw_${Math.random().toString(36).slice(2, 8)}`;
+    const placeholder: Message = {
+      id: messageId,
+      role: "ai",
+      content: `[生成圖片中...] ${caption}`,
+      timestamp: Date.now(),
+      isStreaming: true,
+      imageCaption: caption || undefined,
+      imagePrompt: request.prompt,
+      imageNegativePrompt: request.negativePrompt,
+      ...(request.turnId ? { turnId: request.turnId } : {}),
+    };
+    const beforeIndex = request.beforeMessageId
+      ? deps.messages.value.findIndex((m) => m.id === request.beforeMessageId)
+      : -1;
+    if (beforeIndex >= 0) deps.messages.value.splice(beforeIndex, 0, placeholder);
+    else deps.messages.value.push(placeholder);
+    deps.scrollToBottom();
+    const removePlaceholder = () => {
+      const index = deps.messages.value.findIndex((m) => m.id === messageId);
+      if (index !== -1) deps.messages.value.splice(index, 1);
+    };
+
+    isGeneratingImage.value = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let onAbort: (() => void) | undefined;
+    try {
+      const { generateAIImage } = await import("@/api/ImageGenApi");
+      const timeoutMs = getImageGenTimeoutMs(imageSettings);
+      const stop = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`生圖超時（${timeoutMs / 1000} 秒）`)), timeoutMs);
+        onAbort = () => reject(new Error("已取消"));
+        if (request.signal?.aborted) onAbort();
+        else request.signal?.addEventListener("abort", onAbort, { once: true });
+      });
+      const result = await Promise.race([
+        generateAIImage(request.prompt, imageSettings, {
+          characterPrompt,
+          userPrompt,
+          negativePrompt: request.negativePrompt,
+          ignorePresets: !!imageSettings.modelControlsPrompt,
+        }),
+        stop,
+      ]);
+      if (!result.success || !result.imageBase64) throw new Error(result.error || "生圖失敗");
+      const mimeType = result.mimeType || "image/png";
+      const index = deps.messages.value.findIndex((m) => m.id === messageId);
+      if (index === -1) throw new Error("圖片訊息已被刪除");
+      deps.messages.value[index] = {
+        ...deps.messages.value[index],
+        content: caption || request.prompt,
+        messageType: "image",
+        imageUrl: `data:${mimeType};base64,${result.imageBase64}`,
+        imageData: result.imageBase64,
+        imageMimeType: mimeType,
+        isStreaming: false,
+      };
+      deps.scrollToBottom();
+      return {
+        messageId,
+        imageBase64: result.imageBase64,
+        mimeType,
+        autoTags: [characterPrompt, userPrompt].filter(Boolean).join(", "),
+        providerLabel: getImageProviderLabel(getImageProvider(imageSettings)),
+      };
+    } catch (error) {
+      removePlaceholder();
+      throw error;
+    } finally {
+      clearTimeout(timer);
+      if (onAbort) request.signal?.removeEventListener("abort", onAbort);
+      isGeneratingImage.value = false;
+    }
+  }
+
+  /** 「看聊天裡的圖」工具：畫風參考圖，或從最新往回數第 nth 張（目前載入的訊息） */
+  async function findChatImageForTool(request: {
+    nth: number;
+    sender: "any" | "user" | "character";
+    styleRef?: boolean;
+  }): Promise<
+    | {
+        image: ImageForModel;
+        messageId: string;
+        sender: "user" | "character";
+        nth: number;
+        total: number;
+        caption?: string;
+        prompt?: string;
+        negativePrompt?: string;
+        note?: string;
+        isStyleRef?: boolean;
+      }
+    | null
+  > {
+    const styleRef = deps.getImageStyleRef?.();
+    if (request.styleRef) {
+      if (!styleRef) return null;
+      const image = await loadStyleRefImage(styleRef);
+      if (!image) return null;
+      const message = deps.messages.value.find((m) => m.id === styleRef.messageId);
+      return {
+        image,
+        messageId: styleRef.messageId,
+        sender: message?.role === "ai" ? "character" : "user",
+        nth: 0,
+        total: 0,
+        caption: message?.imageCaption,
+        prompt: message?.imagePrompt,
+        negativePrompt: message?.imageNegativePrompt,
+        note: styleRef.styleNote,
+        isStyleRef: true,
+      };
+    }
+    const candidates = deps.messages.value.filter(
+      (m) =>
+        !m.isStreaming &&
+        !!m.imageData &&
+        !!m.imageMimeType &&
+        (m.role === "user" || m.role === "ai") &&
+        (request.sender === "any" || (request.sender === "user") === (m.role === "user")),
+    );
+    const nth = Math.max(1, Math.floor(request.nth || 1));
+    const message = candidates[candidates.length - nth];
+    if (!message) return null;
+    const { resolveImageBase64 } = await import("@/services/imageNoteReader");
+    const imageBase64 = await resolveImageBase64(message.imageData);
+    if (!imageBase64) return null;
+    return {
+      image: { imageBase64, mimeType: message.imageMimeType! },
+      messageId: message.id,
+      sender: message.role === "user" ? "user" : "character",
+      nth,
+      total: candidates.length,
+      caption: message.imageCaption,
+      prompt: message.imagePrompt,
+      negativePrompt: message.imageNegativePrompt,
+      note: message.imageNote,
+      isStyleRef: styleRef?.messageId === message.id,
+    };
+  }
+
   return {
     isGeneratingImage,
     handleMediaSelect,
     handleImageUpload,
     tryGenerateImageForMessage,
     handleAIGenerateImage,
+    drawImageForTool,
+    findChatImageForTool,
   };
 }

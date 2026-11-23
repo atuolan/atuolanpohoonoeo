@@ -3,7 +3,8 @@
  * 有可用的 MCP 伺服器時才動態載入 MCP 模組（含 SDK）。
  */
 import { isMcpServerAllowedForCharacter } from "@/services/mcp/mcpToolSource";
-import { CHAT_TOOLS, NOVELAI_ONLY_TOOL_NAMES } from "@/services/toolCalling/chatTools";
+import { CHAT_TOOLS, IMAGE_GEN_TOOL_NAMES, NOVELAI_ONLY_TOOL_NAMES } from "@/services/toolCalling/chatTools";
+import { isImageGenReady } from "@/api/ImageGenApi";
 import { isDanbooruTagLookupUseful } from "@/utils/picPromptGuide";
 import type { ChatToolDefinition } from "@/services/toolCalling/types";
 import { useSettingsStore } from "@/stores/settings";
@@ -25,7 +26,13 @@ export function useMcpChatTools() {
     );
     // 查 Danbooru 標籤、找繪師只對 NovelAI 有用；其他生圖服務吃自然語言
     const novelAIReady = isDanbooruTagLookupUseful(settingsStore.novelAIImage);
-    const builtinTools = CHAT_TOOLS.filter((tool) => novelAIReady || !NOVELAI_ONLY_TOOL_NAMES.includes(tool.name));
+    // 畫圖要文生圖設定好
+    const imageGenReady = isImageGenReady(settingsStore.novelAIImage);
+    const builtinTools = CHAT_TOOLS.filter(
+      (tool) =>
+        (novelAIReady || !NOVELAI_ONLY_TOOL_NAMES.includes(tool.name)) &&
+        (imageGenReady || !IMAGE_GEN_TOOL_NAMES.includes(tool.name)),
+    );
     if (!servers.length) return builtinTools;
     try {
       const mcp = await import("@/services/mcp");
