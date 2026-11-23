@@ -2,7 +2,7 @@
  * 點開圖片「讀圖」：讓聊天用的模型重新看一張 user 傳的圖，寫成圖片備註。
  * 模型回覆時忘了寫 <pic-note>，或寫得不對時用。
  */
-import { createImageMessage, OpenAICompatibleClient } from "@/api/OpenAICompatible";
+import { OpenAICompatibleClient } from "@/api/OpenAICompatible";
 import { getChatImage, isChatImageRef } from "@/db/operations";
 import { useSettingsStore } from "@/stores/settings";
 import { pickGenerationToggles } from "@/utils/generationToggles";
@@ -23,11 +23,15 @@ export async function resolveImageBase64(imageData: string | undefined): Promise
   return source.replace(/\s+/g, "");
 }
 
-/** 讓聊天用的模型看一張圖回答指示，回傳原始回覆；失敗時丟出錯誤 */
+export interface ImageForModel {
+  imageBase64: string;
+  mimeType: string;
+}
+
+/** 讓聊天用的模型看圖（可以好幾張，照順序放）回答指示，回傳原始回覆；失敗時丟出錯誤 */
 export async function askChatModelAboutImage(
   instruction: string,
-  imageBase64: string,
-  mimeType: string,
+  images: ImageForModel[],
   temperature = 0.3,
 ): Promise<string> {
   const taskConfig = useSettingsStore().getAPIForTask("chat");
@@ -38,7 +42,18 @@ export async function askChatModelAboutImage(
   const generation = taskConfig.generation;
   const client = new OpenAICompatibleClient({ ...taskConfig.api });
   const stream = client.generateStream({
-    messages: [createImageMessage(instruction, imageBase64, mimeType, "auto")],
+    messages: [
+      {
+        role: "user",
+        content: [
+          { type: "text", text: instruction },
+          ...images.map((image) => ({
+            type: "image_url" as const,
+            image_url: { url: `data:${image.mimeType};base64,${image.imageBase64}`, detail: "auto" as const },
+          })),
+        ],
+      },
+    ],
     settings: {
       maxContextLength: generation.maxContextLength || 200000,
       // 思考模型會先花掉一些輸出 token，跟聊天用同一個上限
@@ -76,7 +91,7 @@ export async function readImageNote(
   mimeType: string,
   caption?: string,
 ): Promise<string> {
-  const content = await askChatModelAboutImage(buildReadImagePrompt(caption), imageBase64, mimeType);
+  const content = await askChatModelAboutImage(buildReadImagePrompt(caption), [{ imageBase64, mimeType }]);
   const note = cleanImageNoteReply(content);
   if (!note) throw new Error("模型沒有寫出圖片內容");
   return note;

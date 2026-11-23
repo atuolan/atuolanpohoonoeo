@@ -15343,7 +15343,7 @@ useChatCleanup({
                 <div class="setting-label">
                   <span>模型看圖自己調整</span>
                   <span class="setting-hint"
-                    >生完圖讓聊天模型看一眼，畫錯就改提示詞重畫。聊天模型要能看圖，每看一次多一次聊天 API 呼叫</span
+                    >生完圖讓聊天模型看一眼，畫錯就改提示詞重畫。你在同一輪傳了圖的話，會拿那張當參考圖比對畫風；用 NovelAI 時還能自己查相似繪師換著試。聊天模型要能看圖，每看一次多一次聊天 API 呼叫</span
                   >
                 </div>
                 <label class="toggle-switch">
@@ -15367,6 +15367,8 @@ useChatCleanup({
                   <option :value="1">1 次</option>
                   <option :value="2">2 次</option>
                   <option :value="3">3 次</option>
+                  <option :value="4">4 次</option>
+                  <option :value="5">5 次</option>
                 </select>
               </div>
 

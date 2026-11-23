@@ -89,7 +89,7 @@ export interface NovelAIImageSettings {
   modelControlsPrompt?: boolean;
   /** 模型看圖自己調整：生完圖讓聊天模型看一眼，不對就改提示詞重生 */
   selfReview?: boolean;
-  /** 看圖調整最多重生幾次（1～3） */
+  /** 看圖調整最多重生幾次（1～5） */
   selfReviewMaxRounds?: number;
 }
 

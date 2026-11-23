@@ -10,12 +10,12 @@ vi.mock("@/services/mcp", () => ({
   downscaleToolImages: vi.fn(),
 }));
 
-import { CHAT_TOOLS, DANBOORU_TAGS_TOOL_NAME } from "@/services/toolCalling/chatTools";
+import { CHAT_TOOLS, DANBOORU_TAGS_TOOL_NAME, NOVELAI_ONLY_TOOL_NAMES } from "@/services/toolCalling/chatTools";
 import { useSettingsStore } from "@/stores/settings";
 import { useMcpChatTools } from "./useMcpChatTools";
 
 /** 沒開 NovelAI 時不給查 Danbooru 標籤 */
-const WITHOUT_DANBOORU = CHAT_TOOLS.filter((tool) => tool.name !== DANBOORU_TAGS_TOOL_NAME);
+const WITHOUT_DANBOORU = CHAT_TOOLS.filter((tool) => !NOVELAI_ONLY_TOOL_NAMES.includes(tool.name));
 
 const server = (id: string): McpServerConfig => ({
   id, name: id, description: "", url: `https://${id}.example.com/mcp`, enabled: true, headers: [],
@@ -37,7 +37,9 @@ describe("useMcpChatTools", () => {
   it("offers the Danbooru tag lookup only when NovelAI image generation is ready", async () => {
     const image = useSettingsStore().novelAIImage;
     Object.assign(image, { enabled: true, apiKey: "pst-1", provider: "novelai" });
-    expect((await useMcpChatTools().buildChatTools(null)).map((tool) => tool.name)).toContain(DANBOORU_TAGS_TOOL_NAME);
+    const names = (await useMcpChatTools().buildChatTools(null)).map((tool) => tool.name);
+    expect(names).toContain(DANBOORU_TAGS_TOOL_NAME);
+    expect(names).toContain("find_danbooru_artists");
     image.provider = "gpt";
     expect((await useMcpChatTools().buildChatTools(null)).map((tool) => tool.name)).not.toContain(DANBOORU_TAGS_TOOL_NAME);
   });

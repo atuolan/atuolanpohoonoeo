@@ -1,7 +1,12 @@
 import { TOOL_WALLPAPER_PRESETS } from "@/data/wallpaperPresets";
 import { getIncomingCallScheduler } from "@/services/IncomingCallScheduler";
 import { getWeatherByCity } from "@/services/WeatherService";
-import { describeDanbooruTags, searchDanbooruTags } from "@/services/danbooruTags";
+import {
+  describeDanbooruTags,
+  describeRelatedArtists,
+  findRelatedArtists,
+  searchDanbooruTags,
+} from "@/services/danbooruTags";
 import {
   describeEvents,
   describeMemories,
@@ -43,6 +48,10 @@ function requireService<K extends keyof ChatToolServices>(
 
 /** 查 Danbooru 標籤：只在生圖服務是 NovelAI 時給模型（見 useMcpChatTools） */
 export const DANBOORU_TAGS_TOOL_NAME = "search_danbooru_tags";
+/** 找常畫某類內容的繪師：同上，只在 NovelAI 時給 */
+export const DANBOORU_ARTISTS_TOOL_NAME = "find_danbooru_artists";
+/** 只對 NovelAI 有用的工具 */
+export const NOVELAI_ONLY_TOOL_NAMES = [DANBOORU_TAGS_TOOL_NAME, DANBOORU_ARTISTS_TOOL_NAME];
 
 export const CHAT_TOOLS: ChatToolDefinition[] = [
   {
@@ -252,6 +261,36 @@ export const CHAT_TOOLS: ChatToolDefinition[] = [
       }
       results.push("（名稱已把底線換成空格，直接照抄進 prompt）");
       return cap(results.join("\n\n"));
+    },
+  },
+  {
+    name: DANBOORU_ARTISTS_TOOL_NAME,
+    displayName: "找相似繪師",
+    description:
+      "找常畫某類內容的 Danbooru 繪師，用來湊 NovelAI 的繪師串，讓畫風接近使用者要的樣子（例如使用者給了參考圖）。queries 每組寫 1～2 個最能代表那種圖的標籤，例如 \"hanfu, male focus\"、\"monochrome, sketch\"；最多 3 組，多組都出現的繪師比較相關。找到的是內容相近，畫風要自己判斷。",
+    category: "image",
+    risk: "low",
+    timeoutMs: 30_000,
+    parameters: object(
+      {
+        queries: {
+          type: "array",
+          description: "1～3 組，每組 1～2 個英文標籤，用逗號分開",
+          items: { type: "string", description: "例如 hanfu, male focus" },
+        },
+        limit: { type: "integer", description: "最多列幾位繪師", enum: [5, 10, 15] },
+      },
+      ["queries"],
+    ),
+    async execute(args, context) {
+      const queries = (Array.isArray(args.queries) ? args.queries : [args.queries])
+        .map((q) => textArg(q))
+        .filter(Boolean)
+        .slice(0, 3);
+      if (!queries.length) throw new Error("要給至少一組標籤");
+      const limit = typeof args.limit === "number" ? args.limit : 10;
+      const artists = await findRelatedArtists(queries, limit, { signal: context.signal });
+      return cap(describeRelatedArtists(queries, artists));
     },
   },
 ];
