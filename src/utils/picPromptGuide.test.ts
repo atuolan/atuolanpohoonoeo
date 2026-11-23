@@ -57,26 +57,57 @@ describe("看圖調整", () => {
   });
 
   it("<pic-ok/> 或看不懂的回覆不重畫", () => {
-    expect(parseImageReviewReply("<pic-ok/>")).toEqual({ retry: false });
-    expect(parseImageReviewReply("看起來不錯！")).toEqual({ retry: false });
-    expect(parseImageReviewReply('<pic-retry negative="x">沒寫 prompt</pic-retry>')).toEqual({ retry: false });
+    expect(parseImageReviewReply("<pic-ok/>")).toEqual({ kind: "ok" });
+    expect(parseImageReviewReply("看起來不錯！")).toEqual({ kind: "ok" });
+    expect(parseImageReviewReply('<pic-retry negative="x">沒寫 prompt</pic-retry>')).toEqual({ kind: "ok" });
+  });
+
+  it("<find-artists> 讀出查詢組（最多 3 組）", () => {
+    expect(parseImageReviewReply('<find-artists queries="hanfu, male focus | monochrome, sketch"/>')).toEqual({
+      kind: "search",
+      queries: ["hanfu, male focus", "monochrome, sketch"],
+    });
+    expect(parseImageReviewReply('<find-artists queries="a|b|c|d">')).toMatchObject({ queries: ["a", "b", "c"] });
+    expect(parseImageReviewReply('<find-artists queries=""/>')).toEqual({ kind: "ok" });
+  });
+
+  it("有參考圖：說明圖片順序、列出試過的版本與查到的繪師，可以要求查繪師", () => {
+    const prompt = buildImageReviewPrompt({
+      description: "古風男子",
+      prompt: "1boy, hanfu",
+      provider: "novelai",
+      round: 2,
+      maxRounds: 3,
+      hasReference: true,
+      attempts: [{ prompt: "1boy", reason: "畫風太亮" }],
+      artistNotes: ["常畫「hanfu」的繪師：\n- someone"],
+      canSearchArtists: true,
+    });
+    expect(prompt).toContain("第 1 張是使用者給的參考圖");
+    expect(prompt).toContain("畫風（線條、上色、色調");
+    expect(prompt).toContain("1. prompt：1boy｜negative：（沒有）｜不對的地方：畫風太亮");
+    expect(prompt).toContain("- someone");
+    expect(prompt).toContain("<find-artists");
+    expect(buildImageReviewPrompt({ description: "", prompt: "x", provider: "gpt", round: 1, maxRounds: 1 })).not.toContain(
+      "<find-artists",
+    );
   });
 
   it("<pic-retry> 讀出新的提示詞與原因，思考內容不算", () => {
     const reply =
       '<think>手好像多一根 <pic-retry prompt="nope">x</pic-retry></think>\n<pic-retry prompt="1girl, reading, cafe, holding book" negative="extra fingers, text">手指多了一根</pic-retry>';
     expect(parseImageReviewReply(reply)).toEqual({
-      retry: true,
+      kind: "retry",
       prompt: "1girl, reading, cafe, holding book",
       negativePrompt: "extra fingers, text",
       reason: "手指多了一根",
     });
-    expect(parseImageReviewReply('<pic-retry prompt="cat"/>')).toMatchObject({ retry: true, prompt: "cat", reason: "" });
+    expect(parseImageReviewReply('<pic-retry prompt="cat"/>')).toMatchObject({ kind: "retry", prompt: "cat", reason: "" });
   });
 
-  it("最多重畫次數限制在 1～3", () => {
+  it("最多重畫次數限制在 1～5", () => {
     expect(getSelfReviewMaxRounds(makeSettings({ selfReviewMaxRounds: undefined }))).toBe(1);
-    expect(getSelfReviewMaxRounds(makeSettings({ selfReviewMaxRounds: 9 }))).toBe(3);
+    expect(getSelfReviewMaxRounds(makeSettings({ selfReviewMaxRounds: 9 }))).toBe(5);
     expect(getSelfReviewMaxRounds(makeSettings({ selfReviewMaxRounds: 0 }))).toBe(1);
   });
 });

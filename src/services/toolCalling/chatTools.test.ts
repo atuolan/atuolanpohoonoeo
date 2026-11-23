@@ -98,6 +98,7 @@ describe("chat tools", () => {
       ["create_calendar_event", "新增行程"],
       ["schedule_call", "預約來電"],
       ["search_danbooru_tags", "查 Danbooru 標籤"],
+      ["find_danbooru_artists", "找相似繪師"],
     ]);
   });
 });

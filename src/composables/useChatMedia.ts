@@ -11,8 +11,10 @@ import {
   buildImageReviewPrompt,
   getSelfReviewMaxRounds,
   parseImageReviewReply,
+  type ImageReviewAttempt,
   type ImageReviewVerdict,
 } from "@/utils/picPromptGuide";
+import type { ImageForModel } from "@/services/imageNoteReader";
 import { useUserStore } from "@/stores/user";
 import type { StoredCharacter } from "@/types/character";
 import { ref, type Ref } from "vue";
@@ -237,11 +239,35 @@ export function useChatMedia(deps: {
   }
 
   /**
-   * 看圖調整：讓聊天模型看剛生好的圖，它說要重畫就用它改的提示詞再畫一次，最多 selfReviewMaxRounds 次。
+   * 這張 AI 圖片那一輪使用者傳的圖（拿來當看圖調整的參考圖）：
+   * 從圖片訊息往前找，跳過同一輪的 AI 訊息，碰到上一輪的 AI 回覆就停
+   */
+  async function findTurnReferenceImage(messageId: string): Promise<ImageForModel | undefined> {
+    const index = deps.messages.value.findIndex((m) => m.id === messageId);
+    if (index === -1) return undefined;
+    const turnId = deps.messages.value[index].turnId;
+    for (let i = index - 1; i >= 0; i--) {
+      const m = deps.messages.value[i];
+      if (m.role === "ai") {
+        if (turnId && m.turnId === turnId) continue;
+        return undefined;
+      }
+      if (m.role !== "user" || !m.imageData || !m.imageMimeType) continue;
+      const { resolveImageBase64 } = await import("@/services/imageNoteReader");
+      const imageBase64 = await resolveImageBase64(m.imageData);
+      return imageBase64 ? { imageBase64, mimeType: m.imageMimeType } : undefined;
+    }
+    return undefined;
+  }
+
+  /**
+   * 看圖調整：讓聊天模型看剛生好的圖（有參考圖就一起比），它說要重畫就用它改的提示詞再畫一次，
+   * 最多 selfReviewMaxRounds 次。NovelAI 時它可以先要求查相似繪師（每輪一次）。
    * 看圖或重畫失敗時保留上一張，不跳錯誤（圖已經有了）。
    */
   async function reviewAndRegenerate(ctx: {
-    image: { imageBase64: string; mimeType: string };
+    image: ImageForModel;
+    reference?: ImageForModel;
     description: string;
     provider: ImageProvider;
     autoTags: string;
@@ -252,33 +278,57 @@ export function useChatMedia(deps: {
     applyImage: (image: { imageBase64: string; mimeType?: string }) => boolean;
   }) {
     const maxRounds = getSelfReviewMaxRounds(settingsStore.novelAIImage);
+    const canSearchArtists = ctx.provider === "novelai";
+    const attempts: ImageReviewAttempt[] = [];
+    const artistNotes: string[] = [];
+    const { askChatModelAboutImage } = await import("@/services/imageNoteReader");
     let image = ctx.image;
+
     for (let round = 1; round <= maxRounds; round++) {
       const { prompt, negative } = ctx.getPrompts();
-      let verdict: ImageReviewVerdict;
-      try {
-        const { askChatModelAboutImage } = await import("@/services/imageNoteReader");
-        const reply = await askChatModelAboutImage(
-          buildImageReviewPrompt({
-            description: ctx.description,
-            prompt,
-            negativePrompt: negative,
-            provider: ctx.provider,
-            autoTags: ctx.autoTags,
-            round,
-            maxRounds,
-          }),
-          image.imageBase64,
-          image.mimeType,
-        );
-        verdict = parseImageReviewReply(reply);
-      } catch (error) {
-        console.warn("[AI Image] 看圖調整：模型看圖失敗，保留這張", error);
-        return;
+      let verdict: ImageReviewVerdict | undefined;
+      // 每輪最多先查一次繪師，查完再看一次圖
+      for (let ask = 0; ask < 2; ask++) {
+        try {
+          const reply = await askChatModelAboutImage(
+            buildImageReviewPrompt({
+              description: ctx.description,
+              prompt,
+              negativePrompt: negative,
+              provider: ctx.provider,
+              autoTags: ctx.autoTags,
+              round,
+              maxRounds,
+              hasReference: !!ctx.reference,
+              attempts,
+              artistNotes,
+              canSearchArtists: canSearchArtists && ask === 0,
+            }),
+            ctx.reference ? [ctx.reference, image] : [image],
+          );
+          verdict = parseImageReviewReply(reply);
+        } catch (error) {
+          console.warn("[AI Image] 看圖調整：模型看圖失敗，保留這張", error);
+          return;
+        }
+        if (verdict.kind !== "search") break;
+        if (!canSearchArtists || ask > 0) {
+          verdict = { kind: "ok" };
+          break;
+        }
+        try {
+          const { describeRelatedArtists, findRelatedArtists } = await import("@/services/danbooruTags");
+          const artists = await findRelatedArtists(verdict.queries, 10);
+          artistNotes.push(describeRelatedArtists(verdict.queries, artists));
+        } catch (error) {
+          console.warn("[AI Image] 看圖調整：查繪師失敗", error);
+          artistNotes.push(`查繪師失敗（${error instanceof Error ? error.message : String(error)}），只能用你自己知道的繪師。`);
+        }
       }
-      if (!verdict.retry) return;
+      if (!verdict || verdict.kind !== "retry") return;
 
       console.log(`[AI Image] 看圖調整第 ${round} 次重畫：${verdict.reason || "（沒寫原因）"}`, verdict);
+      attempts.push({ prompt, negativePrompt: negative, reason: verdict.reason });
       const previous = { prompt, negative };
       ctx.setPrompts(verdict.prompt, verdict.negativePrompt);
       ctx.showGenerating();
@@ -406,6 +456,7 @@ export function useChatMedia(deps: {
             deps.saveChat();
             await reviewAndRegenerate({
               image: { imageBase64: result.imageBase64, mimeType: result.mimeType || "image/png" },
+              reference: await findTurnReferenceImage(messageId).catch(() => undefined),
               description: caption || imageDescription?.trim() || "",
               provider,
               autoTags: [characterPrompt, userPrompt].filter(Boolean).join(", "),

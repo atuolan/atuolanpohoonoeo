@@ -1,7 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   buildDanbooruTagsUrl,
+  buildRelatedArtistsPath,
   describeDanbooruTags,
+  describeRelatedArtists,
+  findRelatedArtists,
+  parseRelatedArtists,
+  toRelatedTagQuery,
   resetDanbooruRoute,
   searchDanbooruTags,
   toDanbooruTagPattern,
@@ -90,5 +95,61 @@ describe("search_danbooru_tags 工具", () => {
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+});
+
+describe("找相似繪師", () => {
+  it("每組最多 2 個標籤，空白換底線", () => {
+    expect(toRelatedTagQuery("Hanfu, male focus, long hair")).toBe("hanfu male_focus");
+    expect(toRelatedTagQuery(" ， ")).toBe("");
+    const url = new URL(`https://x${buildRelatedArtistsPath("hanfu male_focus")}`);
+    expect(url.pathname).toBe("/related_tag.json");
+    expect(url.searchParams.get("search[query]")).toBe("hanfu male_focus");
+    expect(url.searchParams.get("search[category]")).toBe("artist");
+  });
+
+  it("新版格式：只留繪師分類，讀出張數與相關程度", () => {
+    expect(
+      parseRelatedArtists({
+        related_tags: [
+          { tag: { name: "artist_a", post_count: 1200, category: 1 }, cosine_similarity: 0.3 },
+          { tag: { name: "hanfu", post_count: 99999, category: 0 }, cosine_similarity: 0.9 },
+        ],
+      }),
+    ).toEqual([{ name: "artist_a", postCount: 1200, score: 0.3 }]);
+  });
+
+  it("舊版格式 tags: [[name, category]] 也認得", () => {
+    expect(parseRelatedArtists({ tags: [["artist_a", 1], ["hanfu", 0], ["artist_b", 1]] }).map((a) => a.name)).toEqual([
+      "artist_a",
+      "artist_b",
+    ]);
+  });
+
+  it("合併多組查詢：多組都出現的排前面", async () => {
+    const byQuery: Record<string, unknown> = {
+      "hanfu male_focus": {
+        related_tags: [
+          { tag: { name: "only_one", post_count: 500, category: 1 }, cosine_similarity: 0.9 },
+          { tag: { name: "both_sides", post_count: 800, category: 1 }, cosine_similarity: 0.2 },
+        ],
+      },
+      "monochrome sketch": {
+        related_tags: [{ tag: { name: "both_sides", post_count: 800, category: 1 }, cosine_similarity: 0.2 }],
+      },
+    };
+    const fetchImpl = vi.fn(async (url: string) =>
+      jsonResponse(byQuery[new URL(url).searchParams.get("search[query]") || ""] ?? {}),
+    );
+    const artists = await findRelatedArtists(["hanfu, male focus", "monochrome, sketch"], 5, {
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+    expect(artists.map((a) => [a.name, a.hits])).toEqual([
+      ["both sides", 2],
+      ["only one", 1],
+    ]);
+    const text = describeRelatedArtists(["hanfu, male focus"], artists);
+    expect(text).toContain("- both sides（出現在 2 組，800 張）");
+    expect(text).toContain("artist:");
   });
 });
