@@ -344,12 +344,14 @@ import { buildChatMetadataFromState } from "@/utils/chatMetadataBuilder";
 import { clampEditNoticeChance, DEFAULT_EDIT_NOTICE_CHANCE } from "@/utils/editNotice";
 import { saveCharStatus } from "@/services/charStatus";
 import {
+  assignPicNotes,
   buildOwnImagesInstruction,
   buildPicNoteInstruction,
   describeImageForPrompt,
-  extractPicNote,
+  extractPicNotes,
   findPrevTurnGeneratedImages,
-  findTurnImageMessage,
+  findTurnImageMessages,
+  MAX_TURN_IMAGES,
   stripPicNote,
 } from "@/utils/picNote";
 import { buildPicGuide, buildStyleNotePrompt, parseStyleNoteReply } from "@/utils/picPromptGuide";
@@ -6410,7 +6412,7 @@ async function runAIResponseOnce(
       messagesToUse = eligibleMessages.slice(-actualCount);
     }
     // 這一輪 user 傳的圖：只有它會送給模型看，模型回覆時順手寫的 <pic-note> 存回這則訊息
-    const turnImageMessage = findTurnImageMessage(messagesToUse);
+    const turnImageMessages = findTurnImageMessages(messagesToUse);
     // 角色上一輪畫的圖：這一輪送給模型看一次；模型寫的 <pic-note> 存回最後一張
     const ownImageMessages =
       settingsStore.novelAIImage.showOwnImagesToModel !== false
@@ -7176,15 +7178,21 @@ async function runAIResponseOnce(
 
     // 將消息轉換為 API 格式（處理圖片訊息）
     // PromptBuilder 只讓這一輪使用者訊息帶圖片資料（更早的已換成文字），
-    // 這裡再只送最後一張的 base64，其餘用文字描述替代，避免請求 body 過大（nginx 413 錯誤）
-    const reversedIndices = promptResult.messages.map((_, i) => i).reverse();
-    const lastImageMsgIndex = reversedIndices.find((i) => {
+    // 這一輪傳了好幾張就全部送（最多 MAX_TURN_IMAGES 張、取最新的）；不只一張時先縮小，避免請求 body 過大（nginx 413 錯誤）
+    // 「確認最終輸出」會在最後把這一輪的圖再帶一次：同一張只送一次（送後面那則），前面的換成文字
+    const sendImageIndices = new Set<number>();
+    const seenImageData = new Set<string>();
+    for (let i = promptResult.messages.length - 1; i >= 0 && sendImageIndices.size < MAX_TURN_IMAGES; i--) {
       const msg = promptResult.messages[i] as any;
-      return msg.role === "user" && msg.imageData && msg.imageMimeType;
-    });
+      if (msg.role !== "user" || !msg.imageData || !msg.imageMimeType) continue;
+      if (seenImageData.has(msg.imageData)) continue;
+      seenImageData.add(msg.imageData);
+      sendImageIndices.add(i);
+    }
+    const shrinkTurnImages = sendImageIndices.size > 1;
 
     const apiMessages = [] as Array<any>;
-    let sentTurnImage = false;
+    let sentTurnImageCount = 0;
     const promptDebugMessages: PromptDebugMessage[] = [];
     const stringifyDebugContent = (content: unknown): string =>
       typeof content === "string" ? content : JSON.stringify(content);
@@ -7219,19 +7227,22 @@ async function runAIResponseOnce(
       const m = promptResult.messages[index];
       const msgWithImage = m as any;
       if (msgWithImage.imageData && msgWithImage.imageMimeType) {
-        if (index === lastImageMsgIndex) {
-          // 最後一條帶圖片的用戶訊息：保留 base64 給 Vision API
+        if (sendImageIndices.has(index)) {
+          // 這一輪用戶傳的圖：保留 base64 給 Vision API
           const resolvedImageBase64 = await resolveImageBase64(msgWithImage.imageData);
           if (resolvedImageBase64) {
+            const image = shrinkTurnImages
+              ? (await downscaleToolImages([{ mimeType: msgWithImage.imageMimeType, data: resolvedImageBase64 }]))[0]
+              : { mimeType: msgWithImage.imageMimeType, data: resolvedImageBase64 };
             const apiMessage = createImageMessage(
               m.content,
-              resolvedImageBase64,
-              msgWithImage.imageMimeType,
+              image.data,
+              image.mimeType,
               "auto",
             );
             apiMessages.push(apiMessage);
             promptDebugMessages.push(toPromptDebugMessage(m, apiMessage));
-            sentTurnImage = true;
+            sentTurnImageCount += 1;
           } else {
             console.warn("[ChatScreen] 圖片訊息無法解析為可送出的 base64，已降級為文字描述", {
               messageId: msgWithImage.id,
@@ -7298,9 +7309,13 @@ async function runAIResponseOnce(
     }
 
     // 🖼️ 這一輪送了圖、還沒有備註：請模型順手寫 <pic-note>，之後的回合用它代替重送圖片
-    const askTurnImageNote = !!(sentTurnImage && turnImageMessage && !turnImageMessage.imageNote);
+    // 好幾張時照順序一張寫一個（全部都有備註就不用寫）
+    const askTurnImageNote =
+      sentTurnImageCount > 0 &&
+      sentTurnImageCount === turnImageMessages.length &&
+      turnImageMessages.some((m) => !m.imageNote);
     if (askTurnImageNote) {
-      appendedUserPrompts.push(buildPicNoteInstruction(activeUserName));
+      appendedUserPrompts.push(buildPicNoteInstruction(activeUserName, turnImageMessages.length));
     }
 
     // 🖼️ 角色上一輪畫的圖：歷史裡只有提示詞文字，這裡把成品縮小後附給模型看一次
@@ -7894,7 +7909,7 @@ async function runAIResponseOnce(
           : fullContent;
       fullContent = rawFullContent;
       // 圖片備註只存進那則圖片訊息，不進聊天內容
-      const { content: picStrippedContent, note: picNote } = extractPicNote(
+      const { content: picStrippedContent, notes: picNotes } = extractPicNotes(
         processAiOutputTemplate(applyAIOutputRegex(fullContent)),
       );
       // 多人卡面對面是小說式一整段：<dice> 先從正文抽出來（群聊解析器自己會處理）
@@ -7903,11 +7918,11 @@ async function runAIResponseOnce(
           ? extractDiceTags(picStrippedContent)
           : { content: picStrippedContent, requests: [] as DiceTagRequest[] };
       pendingDiceRequests = diceRequests;
-      const picNoteTarget = ownImageNoteTarget ?? turnImageMessage;
-      if (picNote && picNoteTarget) {
-        const imageMessage = messages.value.find((m) => m.id === picNoteTarget.id);
-        if (imageMessage) imageMessage.imageNote = picNote;
-      }
+      // 備註寫回圖片：角色上一輪畫的那張，或這一輪使用者傳的（照順序一張一個）
+      const picNoteTargets = (ownImageNoteTarget ? [ownImageNoteTarget] : turnImageMessages)
+        .map((target) => messages.value.find((m) => m.id === target.id))
+        .filter((m): m is Message => !!m);
+      assignPicNotes(picNoteTargets, ownImageNoteTarget ? picNotes.slice(-1) : picNotes);
       latestFinalContent = finalContent;
       generationDiagnostics.apiContentLength = fullContent.length;
       generationDiagnostics.finalContentLength = finalContent.length;
@@ -12042,7 +12057,7 @@ function toStoredRemoteMessage(message: Message, fallbackName: string): ChatMess
 }
 
 async function landRemoteGenerationTask(task: BgGenerationTaskView): Promise<void> {
-  const { content: picStrippedContent, note: picNote } = extractPicNote(
+  const { content: picStrippedContent, notes: picNotes } = extractPicNotes(
     processAiOutputTemplate(applyAIOutputRegex(task.content || "")),
   );
   // 後台生成一律走單人解析器：<dice> 先從正文抽出來，落地到目前聊天時再擲
@@ -12110,10 +12125,9 @@ async function landRemoteGenerationTask(task: BgGenerationTaskView): Promise<voi
       messages.value.push(...remoteMessages);
     }
     // 圖片備註存回這批回覆之前、這一輪 user 傳的圖
-    if (picNote) {
+    if (picNotes.length) {
       const beforeReply = messages.value.slice(0, Math.max(0, messages.value.indexOf(remoteMessages[0])));
-      const imageMessage = findTurnImageMessage(beforeReply);
-      if (imageMessage) imageMessage.imageNote = picNote;
+      assignPicNotes(findTurnImageMessages(beforeReply), picNotes);
     }
 
     await applyRemoteParsedMessageSideEffects(remoteMessages);

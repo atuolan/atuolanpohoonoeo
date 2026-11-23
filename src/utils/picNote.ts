@@ -18,20 +18,49 @@ export function stripPicNote(text: string): string {
   return text.replace(PIC_NOTE_TAG_REGEX, "").replace(PIC_NOTE_PARTIAL_REGEX, "").trim();
 }
 
-/** 取出備註（有好幾個時取最後一個有字的），並回傳拿掉標籤後的回覆 */
-export function extractPicNote(text: string): { content: string; note: string | null } {
-  let note: string | null = null;
+/** 取出所有有字的備註（照出現順序），並回傳拿掉標籤後的回覆 */
+export function extractPicNotes(text: string): { content: string; notes: string[] } {
+  const notes: string[] = [];
   for (const match of text.matchAll(PIC_NOTE_TAG_REGEX)) {
     const quoted = (match[1] ?? "").match(/\btext\s*=\s*(?:"([^"]*)"|'([^']*)')/i);
     const raw = (quoted ? (quoted[1] ?? quoted[2]) : undefined) ?? match[2] ?? "";
     const cleaned = raw.replace(/\s+/g, " ").trim().slice(0, PIC_NOTE_MAX_LENGTH);
-    if (cleaned) note = cleaned;
+    if (cleaned) notes.push(cleaned);
   }
-  return { content: stripPicNote(text), note };
+  return { content: stripPicNote(text), notes };
 }
 
-/** 傳圖那一輪附加給模型的指示 */
-export function buildPicNoteInstruction(userName: string): string {
+/** 取出備註（有好幾個時取最後一個有字的），並回傳拿掉標籤後的回覆 */
+export function extractPicNote(text: string): { content: string; note: string | null } {
+  const { content, notes } = extractPicNotes(text);
+  return { content, note: notes.length ? notes[notes.length - 1] : null };
+}
+
+/**
+ * 備註寫回圖片：照順序一張一個；備註比圖少時，只有一個備註就給最後一張（舊的單張寫法），
+ * 其他沒對到的不動
+ */
+export function assignPicNotes<T extends { imageNote?: string }>(images: T[], notes: string[]): void {
+  if (!images.length || !notes.length) return;
+  if (notes.length === 1 && images.length > 1) {
+    images[images.length - 1].imageNote = notes[0];
+    return;
+  }
+  images.forEach((image, index) => {
+    if (notes[index]) image.imageNote = notes[index];
+  });
+}
+
+/** 傳圖那一輪附加給模型的指示；count 張時請它照順序一張寫一個 */
+export function buildPicNoteInstruction(userName: string, count = 1): string {
+  if (count > 1) {
+    return [
+      "[圖片備註]",
+      `${userName} 這一輪傳了 ${count} 張圖片（照傳送順序附上）。回覆照常寫，另外在整個回覆最後（有 </content> 就放在 </content> 之後）照圖片順序加 ${count} 個：`,
+      '<pic-note text="第 1 張的內容"/><pic-note text="第 2 張的內容"/>…',
+      `每個用一兩句客觀寫下那張圖裡有什麼（主體、場景、看得到的文字），60 字內。這段不會顯示給 ${userName}，只用來在之後的對話記得這些圖。`,
+    ].join("\n");
+  }
   return [
     "[圖片備註]",
     `${userName} 這一輪傳了圖片。回覆照常寫，另外在整個回覆最後（有 </content> 就放在 </content> 之後）加一個：`,
@@ -44,6 +73,23 @@ interface TurnMessage {
   role: string;
   imageData?: string;
   imageMimeType?: string;
+}
+
+/** 一輪最多送幾張使用者的圖給模型看 */
+export const MAX_TURN_IMAGES = 4;
+
+/**
+ * 這一輪 user 傳的所有圖（照傳送順序，最多 limit 張、取最新的）。
+ * 範圍跟 PromptBuilder 的「最後一輪使用者訊息」一樣：遇到 AI 回覆就停，system 訊息跳過
+ */
+export function findTurnImageMessages<T extends TurnMessage>(messages: T[], limit = MAX_TURN_IMAGES): T[] {
+  const found: T[] = [];
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    if (m.role === "ai") break;
+    if (m.role === "user" && m.imageData && m.imageMimeType) found.unshift(m);
+  }
+  return limit > 0 ? found.slice(-limit) : [];
 }
 
 /**

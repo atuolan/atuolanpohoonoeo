@@ -1,12 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
+  assignPicNotes,
   buildOwnImagesInstruction,
+  buildPicNoteInstruction,
   buildReadImagePrompt,
   cleanImageNoteReply,
   describeImageForPrompt,
   extractPicNote,
+  extractPicNotes,
   findPrevTurnGeneratedImages,
   findTurnImageMessage,
+  findTurnImageMessages,
   stripPicNote,
 } from "./picNote";
 
@@ -155,5 +159,38 @@ describe("buildOwnImagesInstruction", () => {
     expect(text).toContain('<pic-note text="圖片內容"/>');
     expect(text).toContain("最後一張");
     expect(text).toContain("不會顯示給 小明");
+  });
+});
+
+describe("這一輪傳了好幾張圖", () => {
+  const img = (id: string, role: string) => ({ id, role, imageData: id, imageMimeType: "image/png" });
+
+  it("findTurnImageMessages 照順序取這一輪使用者的圖，最多 limit 張", () => {
+    const messages = [img("u0", "user"), { id: "a0", role: "ai" }, img("u1", "user"), { id: "s", role: "system" }, img("u2", "user"), img("u3", "user")];
+    expect(findTurnImageMessages(messages).map((m) => m.id)).toEqual(["u1", "u2", "u3"]);
+    expect(findTurnImageMessages(messages, 2).map((m) => m.id)).toEqual(["u2", "u3"]);
+    expect(findTurnImageMessages([...messages, { id: "a1", role: "ai" }])).toEqual([]);
+  });
+
+  it("extractPicNotes 照順序取出全部備註", () => {
+    const { content, notes } = extractPicNotes('好看<pic-note text="一隻貓"/><pic-note text="  兩隻狗 "/><pic-note text=""/>');
+    expect(content).toBe("好看");
+    expect(notes).toEqual(["一隻貓", "兩隻狗"]);
+  });
+
+  it("assignPicNotes 一張一個；只有一個備註時給最後一張", () => {
+    const images = [{ imageNote: undefined as string | undefined }, { imageNote: "舊" }, { imageNote: undefined as string | undefined }];
+    assignPicNotes(images, ["A", "B"]);
+    expect(images.map((i) => i.imageNote)).toEqual(["A", "B", undefined]);
+    const two = [{ imageNote: undefined as string | undefined }, { imageNote: undefined as string | undefined }];
+    assignPicNotes(two, ["只有一個"]);
+    expect(two.map((i) => i.imageNote)).toEqual([undefined, "只有一個"]);
+  });
+
+  it("好幾張時請模型照順序各寫一個備註", () => {
+    const text = buildPicNoteInstruction("小明", 3);
+    expect(text).toContain("傳了 3 張圖片");
+    expect(text).toContain("照圖片順序加 3 個");
+    expect(buildPicNoteInstruction("小明")).toContain("加一個");
   });
 });
