@@ -60,6 +60,7 @@ export function buildPicGuide(
         ? "  要傳圖時一律用工具畫，不要寫 <pic>：先用 generate_image 試畫（note 寫給使用者看：這張想試什麼、跟上一張比改了什麼），看圖檢查，不滿意就改提示詞再試畫，滿意了用 choose_image 選一張貼進聊天，再回覆。試畫會列在聊天裡的工作紀錄卡片上，使用者看得到每一張。"
         : "  想先試畫、看效果再調整時（例如使用者要你調畫風、照參考圖畫），改用工具：generate_image 試畫（note 寫給使用者看：這張想試什麼、跟上一張比改了什麼），看圖檢查，不滿意就改提示詞再試畫，滿意了用 choose_image 選一張貼進聊天，再回覆。試畫會列在聊天裡的工作紀錄卡片上。用工具畫過的圖不要再寫 <pic>。",
       "  要看聊天裡之前的圖（連同當時的提示詞）、畫風參考圖或之前的試畫，用 view_chat_image。",
+      "  generate_image、choose_image、view_chat_image 是工具，照工具呼叫的方式用，不是像 <pic> 那樣寫成標籤。",
     );
   }
   if (settings.modelControlsPrompt) {
