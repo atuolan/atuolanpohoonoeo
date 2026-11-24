@@ -233,4 +233,19 @@ describe("ToolExecutionEngine", () => {
     expect(result.content).toBe("notes");
     expect(generate).toHaveBeenCalledTimes(3);
   });
+
+  it("runs tools the model wrote as tags instead of dropping them", async () => {
+    const draw = definition({ name: "generate_image", execute: (args) => `drew ${String(args.prompt)}`,
+      parameters: { type: "object", properties: { prompt: { type: "string" } }, additionalProperties: false } });
+    const generate = generator([
+      { content: '<generate_image prompt="1boy" />\n<generate_image prompt="1girl" />', toolCalls: [] },
+      { content: "畫好了", toolCalls: [] },
+    ]);
+    const engine = new ToolExecutionEngine({ registry: new ToolRegistry([draw]), generate });
+    const result = await engine.run([], context());
+    if (result.status !== "completed") throw new Error("expected completion");
+    expect(result.toolResults.map((r) => r.content)).toEqual(["drew 1boy", "drew 1girl"]);
+    expect(result.content).toBe("畫好了");
+    expect(generate).toHaveBeenCalledTimes(2);
+  });
 });

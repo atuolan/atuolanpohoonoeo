@@ -2,6 +2,7 @@ import type { APIMessage, ImageContent, TextContent } from "@/api/OpenAICompatib
 import { isToolAllowed } from "./permissions";
 import { validateJsonSchema } from "./jsonSchema";
 import type { ToolRegistry } from "./toolRegistry";
+import { extractTagToolCalls } from "./tagToolCalls";
 import type { CharacterToolPermissions } from "@/types/character";
 import type { ChatToolContext, ChatToolDefinition, PendingToolConfirmation, ToolCall, ToolImage, ToolResult } from "./types";
 
@@ -180,8 +181,16 @@ export class ToolExecutionEngine {
       try { generated = await this.generateWithImageFallback(state); }
       catch (error) { return this.complete(state, `工具生成失敗：${errorMessage(error)}`); }
       state.generatedContent = generated.content ?? "";
-      if (state.generatedContent.trim()) state.lastNonEmptyContent = state.generatedContent;
       state.calls = generated.toolCalls ?? [];
+      // 模型把工具寫成標籤（例如 <generate_image prompt="..."/>）時也認得，不然標籤會被當雜訊清掉、回覆變空白
+      if (!state.calls.length) {
+        const tagged = extractTagToolCalls(state.generatedContent, this.registry.list(), `tag_r${state.round}`);
+        if (tagged.toolCalls.length) {
+          state.generatedContent = tagged.content;
+          state.calls = tagged.toolCalls;
+        }
+      }
+      if (state.generatedContent.trim()) state.lastNonEmptyContent = state.generatedContent;
       state.callIndex = 0;
       state.assistantMessageAppended = false;
       if (!state.calls.length) {
