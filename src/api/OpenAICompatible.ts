@@ -1536,10 +1536,11 @@ export class OpenAICompatibleClient {
     const rawContent = textProtocol ? parsed.content : parsed.content || choice?.message?.content;
     const reasoningContent =
       choice?.message?.reasoning_content ?? choice?.message?.reasoning;
+    // 呼叫工具的那一輪正文可以是空的，這時不拿推理內容當回覆
     const content =
       typeof rawContent === "string" && rawContent.length > 0
         ? rawContent
-        : typeof reasoningContent === "string" && reasoningContent.length > 0
+        : typeof reasoningContent === "string" && reasoningContent.length > 0 && !parsed.toolCalls?.length
           ? reasoningContent
           : (rawContent ?? "");
     const diagnostics = this.extractResponseDiagnostics(
@@ -2171,7 +2172,8 @@ export class OpenAICompatibleClient {
       // 必須先緩衝。但這裡刻意分塊 yield 而非整段一次吐出：
       // 整段當成單一 token 會讓下游的 tokenCount 只加 1（tokens/秒 失真），
       // 串流視窗也會在一瞬間刷出一整塊文字而非逐步顯示。
-      if (!fullContent && fullReasoning) {
+      // 這一輪是在呼叫工具時正文本來就可以是空的，推理內容不能拿來當回覆
+      if (!fullContent && fullReasoning && !parsedToolCalls.length) {
         console.warn(
           `[API Stream] 正文為空但收到推理內容（reasoning_content），回退為正文。長度: ${fullReasoning.length}`,
         );
@@ -2261,8 +2263,8 @@ export class OpenAICompatibleClient {
         return;
       }
 
-      // 空回應：提供詳細診斷資訊
-      if (!fullContent) {
+      // 空回應：提供詳細診斷資訊（這一輪有呼叫工具時正文本來就可以是空的）
+      if (!fullContent && !parsedToolCalls.length) {
         const diagParts = [
           `[API Stream] 流式回應為空`,
           `chunks: ${chunkCount}`,

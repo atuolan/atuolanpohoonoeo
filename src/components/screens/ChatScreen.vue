@@ -357,7 +357,12 @@ import {
 } from "@/utils/picNote";
 import { buildPicGuide, buildStyleNotePrompt, parseStyleNoteReply } from "@/utils/picPromptGuide";
 import { downscaleToolImages } from "@/services/mcp/mcpImages";
-import { CHAT_TOOLS, DANBOORU_TAGS_TOOL_NAME, GENERATE_IMAGE_TOOL_NAME } from "@/services/toolCalling/chatTools";
+import {
+  CHAT_TOOLS,
+  CHOOSE_IMAGE_TOOL_NAME,
+  DANBOORU_TAGS_TOOL_NAME,
+  GENERATE_IMAGE_TOOL_NAME,
+} from "@/services/toolCalling/chatTools";
 import type { ImageToolService } from "@/services/toolCalling/toolServices";
 import { isToolAllowed } from "@/services/toolCalling/permissions";
 import type { DrawSession, DrawStep } from "@/types/drawSession";
@@ -8046,6 +8051,8 @@ async function runAIResponseOnce(
         maxToolRounds: chatTools?.some((tool) => tool.name === GENERATE_IMAGE_TOOL_NAME)
           ? TOOL_DRAWS_PER_REPLY + 6
           : undefined,
+        // 試畫時模型常在呼叫工具那幾輪寫一大段分析；最後沒寫回覆就再請它寫，不拿分析當回覆
+        nudgeEmptyReplyAfter: [GENERATE_IMAGE_TOOL_NAME, CHOOSE_IMAGE_TOOL_NAME],
         toolProtocol: chatTaskConfig.api.toolProtocol,
         promptPostProcessing: chatTaskConfig.api.promptPostProcessing,
         characterId: char.id,
@@ -13063,6 +13070,9 @@ useChatCleanup({
             message.faceToFaceRequestStatus,
             message.onlineModeRequestStatus,
             message.toolActivity?.length,
+            // 調畫風卡片在圖片貼出來之後才掛上；按「用這張」會換掉圖
+            message.drawSession,
+            message.imageUrl,
             isSelectingMessages && selectedMessageIds.includes(message.id),
             searchResults.includes(message.id),
             searchResults[currentSearchIndex] === message.id,

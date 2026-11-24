@@ -101,4 +101,27 @@ describe("generateStream reasoning_content 回退", () => {
     expect(tokens.join("")).toBe("正式回覆");
     expect(done?.content).toBe("正式回覆");
   });
+
+  it("文字工具協議：這一輪只呼叫工具時，推理內容不拿來當回覆", async () => {
+    const block = "```tool_calls\n" + JSON.stringify([{ id: "c1", name: "choose_image", arguments: { attempt: 9 } }]) + "\n```";
+    const response = sseResponse([
+      `data: ${JSON.stringify({ choices: [{ delta: { reasoning_content: "Let me evaluate the drafts... #9 is best." } }] })}`,
+      `data: ${JSON.stringify({ choices: [{ delta: { content: block } }] })}`,
+      "data: [DONE]",
+    ]);
+    vi.stubGlobal("fetch", vi.fn(async () => response));
+    const client = new OpenAICompatibleClient(api({ toolProtocol: "text" }));
+    let done: { content?: string; toolCalls?: Array<{ name: string }> } | undefined;
+    for await (const event of client.generateStream({
+      messages,
+      settings,
+      apiSettings: api({ toolProtocol: "text" }),
+      tools: [{ name: "choose_image", description: "pick", parameters: { type: "object", properties: {} } }],
+      toolProtocol: "text",
+    } as any)) {
+      if (event.type === "done") done = event as typeof done;
+    }
+    expect(done?.toolCalls?.map((call) => call.name)).toEqual(["choose_image"]);
+    expect(done?.content ?? "").toBe("");
+  });
 });

@@ -205,4 +205,32 @@ describe("ToolExecutionEngine", () => {
     expect(result.content).toBe("好，這就幫你鎖上～");
     expect(generate).toHaveBeenCalledTimes(2);
   });
+
+  it("asks once more for a reply when drawing tools ran and the final round is empty", async () => {
+    const draw = definition({ name: "generate_image" });
+    const generate = generator([
+      { content: "Let me evaluate the drafts... #2 looks best.", toolCalls: [{ id: "c1", name: "generate_image", arguments: {} }] },
+      { content: "", toolCalls: [] },
+      { content: "畫好了，你看看～", toolCalls: [] },
+    ]);
+    const engine = new ToolExecutionEngine({ registry: new ToolRegistry([draw]), generate, nudgeEmptyReplyAfter: ["generate_image"] });
+    const result = await engine.run([], context());
+    if (result.status !== "completed") throw new Error("expected completion");
+    expect(result.content).toBe("畫好了，你看看～");
+    expect(generate).toHaveBeenCalledTimes(3);
+    expect(result.messages.some((m) => typeof m.content === "string" && m.content.includes("工具都用完了"))).toBe(true);
+  });
+
+  it("only nudges once, then falls back to the last non-empty text", async () => {
+    const draw = definition({ name: "generate_image" });
+    const generate = generator([
+      { content: "notes", toolCalls: [{ id: "c1", name: "generate_image", arguments: {} }] },
+      { content: "", toolCalls: [] },
+    ]);
+    const engine = new ToolExecutionEngine({ registry: new ToolRegistry([draw]), generate, nudgeEmptyReplyAfter: ["generate_image"] });
+    const result = await engine.run([], context());
+    if (result.status !== "completed") throw new Error("expected completion");
+    expect(result.content).toBe("notes");
+    expect(generate).toHaveBeenCalledTimes(3);
+  });
 });
