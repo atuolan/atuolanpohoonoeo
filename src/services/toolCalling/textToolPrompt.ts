@@ -39,7 +39,8 @@ export function buildTextToolInstructions(tools: OpenAIToolDefinition[]): string
     "1. 只能使用上面列出的工具，arguments 要符合參數格式；每次呼叫的 id 都要不同。",
     "2. 需要實際操作時要真的呼叫工具，不要只用文字假裝已經做了。",
     "3. 輸出 tool_calls 區塊後就停下來，等系統回傳「工具結果」再繼續回覆。",
-    "4. 不需要工具時照平常回覆，不要輸出 tool_calls 區塊。",
+    "4. 有 tool_calls 區塊的那次輸出，區塊外的文字使用者看不到：不要在這次寫給使用者的回覆，也不要寫長篇分析。",
+    "5. 工具都用完、不再需要工具時，才照平常格式寫給使用者看的回覆（這次不要有 tool_calls 區塊）。",
     "</tools>",
   ].join("\n");
 }

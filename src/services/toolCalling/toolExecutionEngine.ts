@@ -39,6 +39,8 @@ interface RunState {
   assistantMessageAppended: boolean;
   /** 這一輪工具回傳、還沒交給模型的圖片 */
   pendingImages: ToolImage[];
+  /** 已經請模型補寫過回覆 */
+  nudgedForReply?: boolean;
   /** 帶圖 user 訊息在 messages 裡的位置；模型接受後清掉 */
   imageMessageIndex?: number;
 }
@@ -57,7 +59,15 @@ export interface ToolExecutionEngineOptions {
   onCallStart?: (call: ToolCall, tool: ChatToolDefinition) => void;
   /** 工具有結果時呼叫（含失敗與拒絕；重複呼叫不通知） */
   onCallEnd?: (call: ToolCall, tool: ChatToolDefinition | undefined, result: ToolResult) => void;
+  /**
+   * 用過這些工具後，最後一輪卻沒寫回覆時，再請模型寫一次回覆（只請一次），
+   * 不拿呼叫工具那幾輪的文字當回覆（那些多半是模型邊做邊想的筆記，例如調畫風時的分析）。
+   */
+  nudgeEmptyReplyAfter?: string[];
 }
+
+/** 最後一輪沒寫回覆時補的提醒 */
+export const FINAL_REPLY_NUDGE = "（系統提示：工具都用完了。前面呼叫工具時寫的文字使用者看不到。現在直接照平常格式寫給使用者看的回覆，不要再呼叫工具。）";
 
 const DEFAULT_TIMEOUT_MS = 15_000;
 const DEFAULT_MAX_ROUNDS = 5;
@@ -113,6 +123,7 @@ export class ToolExecutionEngine {
   private readonly maxResultChars: number;
   private readonly onCallStart?: ToolExecutionEngineOptions["onCallStart"];
   private readonly onCallEnd?: ToolExecutionEngineOptions["onCallEnd"];
+  private readonly nudgeEmptyReplyAfter: Set<string>;
 
   constructor(options: ToolExecutionEngineOptions) {
     this.registry = options.registry;
@@ -122,6 +133,7 @@ export class ToolExecutionEngine {
     this.maxResultChars = options.maxResultChars ?? DEFAULT_MAX_RESULT_CHARS;
     this.onCallStart = options.onCallStart;
     this.onCallEnd = options.onCallEnd;
+    this.nudgeEmptyReplyAfter = new Set(options.nudgeEmptyReplyAfter ?? []);
   }
 
   async run(initialMessages: APIMessage[], requestContext: ToolExecutionRequestContext): Promise<ToolExecutionOutcome> {
@@ -172,13 +184,24 @@ export class ToolExecutionEngine {
       state.calls = generated.toolCalls ?? [];
       state.callIndex = 0;
       state.assistantMessageAppended = false;
-      if (!state.calls.length) return this.complete(state, state.generatedContent || state.lastNonEmptyContent);
+      if (!state.calls.length) {
+        if (!state.generatedContent.trim() && this.shouldNudgeForReply(state)) {
+          state.nudgedForReply = true;
+          state.messages.push({ role: "user", content: FINAL_REPLY_NUDGE });
+          continue;
+        }
+        return this.complete(state, state.generatedContent || state.lastNonEmptyContent);
+      }
       const outcome = await this.continueCalls(state);
       if (outcome.status === "confirmation_required") return outcome;
       if (outcome.content !== "") return outcome;
     }
     state.toolResults.push({ toolCallId: "round-cap", name: "tool_execution", content: "Maximum tool execution rounds reached", ok: false, error: "Maximum tool execution rounds reached" });
     return this.complete(state, state.generatedContent || state.lastNonEmptyContent || "Maximum tool execution rounds reached");
+  }
+
+  private shouldNudgeForReply(state: RunState): boolean {
+    return !state.nudgedForReply && state.toolResults.some((result) => this.nudgeEmptyReplyAfter.has(result.name));
   }
 
   /** 帶圖的請求失敗時，把圖片換成文字說明再試一次（模型可能不支援看圖） */
