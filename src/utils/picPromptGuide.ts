@@ -22,6 +22,42 @@ export function getPromptStyleHint(provider: ImageProvider): string {
   }
 }
 
+/** 角色卡上的外觀標籤（生圖時自動加在提示詞前面） */
+export function getCharacterAppearanceTags(
+  character?: { data?: { extensions?: Record<string, any> } } | null,
+): string {
+  const ext = character?.data?.extensions;
+  const explicitPrompt = ext?.naiCharacterPrompt?.trim();
+  if (explicitPrompt) return explicitPrompt;
+  return ext?.sd_character_prompt?.positive?.trim() || "";
+}
+
+/** 使用者的外觀標籤：設定裡開了「注入使用者 tag」才加 */
+export function getUserAppearanceTags(
+  settings: Pick<NovelAIImageSettings, "useUserTag">,
+  persona?: { naiUserPrompt?: string } | null,
+): string {
+  if (!settings.useUserTag) return "";
+  return persona?.naiUserPrompt?.trim() || "";
+}
+
+/**
+ * NovelAI 的 prompt 寫法細則：景別、光線、表情視線這些小說不會寫、但沒寫畫面就平淡的東西要補，
+ * 景別外的身體部位不寫（NAI 會硬塞進畫面）；不寫品質詞（程式加）、整串不要太長（超過會被截掉）
+ */
+function buildNovelAIRules(modelControlsPrompt: boolean): string[] {
+  return [
+    "  NovelAI 的 prompt 這樣寫：",
+    "  - 只寫看得到的東西，總共 20～35 個標籤；太長後面會被截掉",
+    "  - 依序寫：人數（1girl、1boy、1boy, 1girl；沒有人寫 no humans）→ 景別（close-up、upper body、cowboy shot、full body、wide shot 只選一個）→ 動作姿勢 → 服裝 → 場景與道具 → 光線與時間（sunlight、golden hour、night、window light、backlighting…）→ 色調氛圍（warm colors、cold colors、soft lighting、depth of field…）",
+    "  - 每個人都寫一個表情（smile、blush、pout、surprised、crying、expressionless…）和一個視線（looking at viewer、looking away、looking down、closed eyes…）",
+    "  - 景別看不到的部位不要寫：upper body、close-up 就不寫鞋子、腿、裙長，不然會被硬塞進畫面",
+    "  - 用 danbooru 真的有的標籤：gentle smile、shy expression、beautiful 這類形容不是標籤，寫 smile、blush 就好",
+    ...(modelControlsPrompt ? [] : ["  - 不要寫品質詞（masterpiece、best quality、highres…），程式會自動加"]),
+    "  - 劇情沒提到的人和東西不要加",
+  ];
+}
+
 /** 查 Danbooru 標籤只對 NovelAI 有用（吃 danbooru 標籤）；其他服務吃自然語言 */
 export function isDanbooruTagLookupUseful(settings: NovelAIImageSettings): boolean {
   return isImageGenReady(settings) && getImageProvider(settings) === "novelai";
@@ -41,6 +77,8 @@ export function buildPicGuide(
     drawFirst?: boolean;
     /** 這個聊天的畫風參考圖（有畫風筆記、試過的繪師串時帶上） */
     styleRef?: Pick<ImageStyleRef, "styleNote" | "styleTags" | "artists">;
+    /** 生圖時自動加上的外觀標籤（讓模型不要重寫、不要寫出衝突的髮色瞳色） */
+    appearanceTags?: { character?: string; user?: string };
   } = {},
 ): string {
   if (!isImageGenReady(settings)) return "";
@@ -49,6 +87,18 @@ export function buildPicGuide(
     `  圖片會用 ${getImageProviderLabel(provider)} 畫：${getPromptStyleHint(provider)}。`,
     '  不想出現在圖裡的東西可以加 negative="英文，逗號分隔"（可省略）。',
   ];
+  if (provider === "novelai") lines.push(...buildNovelAIRules(!!settings.modelControlsPrompt));
+  const characterTags = options.appearanceTags?.character?.trim();
+  const userTags = options.appearanceTags?.user?.trim();
+  if (characterTags || userTags) {
+    const tagList = [
+      characterTags && `角色：${characterTags}`,
+      userTags && `使用者：${userTags}`,
+    ].filter(Boolean);
+    lines.push(
+      `  外觀標籤會自動加在 prompt 前面（${tagList.join("；")}），不用再寫，也不要寫出跟它衝突的髮色、瞳色、髮型。`,
+    );
+  }
   if (options.tagLookup && provider === "novelai") {
     lines.push(
       "  不確定標籤怎麼寫時，先用 search_danbooru_tags 工具查正式寫法再寫 prompt；要畫出特定畫風（例如照參考圖）時，用 find_danbooru_artists 找繪師，在 prompt 加 artist:名字。",
@@ -64,7 +114,7 @@ export function buildPicGuide(
     );
   }
   if (settings.modelControlsPrompt) {
-    lines.push("  不會自動加品質詞和負面詞，需要的話自己寫進 prompt、negative；角色外觀標籤會自動補上。");
+    lines.push("  不會自動加品質詞和負面詞，需要的話自己寫進 prompt、negative。");
   }
   const style = options.styleRef;
   if (style?.styleNote || style?.styleTags || style?.artists) {
