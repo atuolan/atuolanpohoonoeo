@@ -522,7 +522,42 @@ function getSkipCfgAboveSigma(model: NovelAIModel, width: number, height: number
 }
 
 /**
- * 按層級組裝最終 prompt（角色 -> 使用者 -> 全域前綴 -> 主體 -> 全域後綴）
+ * 照逗號切開提示詞，但不切斷權重群組：
+ * `1.2::artist:a, artist:b::`、`{artist:a, artist:b}` 這種跨逗號的群組算一段。
+ * 括號或 :: 沒有收尾（寫壞了）的部分退回一般的逗號切法。
+ */
+export function splitPromptUnits(input?: string): string[] {
+  const units: string[] = [];
+  let pending: string[] = [];
+  let depth = 0;
+  let inWeight = false;
+  for (const part of (input || "").split(",")) {
+    pending.push(part);
+    for (const ch of part) {
+      if (ch === "{" || ch === "[") depth++;
+      else if (ch === "}" || ch === "]") depth--;
+    }
+    if ((part.match(/::/g) || []).length % 2 === 1) inWeight = !inWeight;
+    if (depth <= 0 && !inWeight) {
+      units.push(pending.join(",").trim());
+      pending = [];
+      depth = 0;
+    }
+  }
+  units.push(...pending.map((part) => part.trim()));
+  return units.filter(Boolean);
+}
+
+/** 是不是繪師標籤：artist:xxx，可帶 {} [] 括號或 1.2:: 權重 */
+export function isArtistUnit(unit: string): boolean {
+  return /^[[{(]*\s*(?:-?\d+(?:\.\d+)?::\s*)?[[{(]*\s*artist\s*:/i.test(unit);
+}
+
+/**
+ * 按層級組裝最終 prompt：
+ * 繪師（前綴裡的 -> 模型 prompt 與後綴裡的）-> 前綴其餘 -> 角色 -> 使用者 -> 主體 -> 後綴
+ * 繪師放最前面：NovelAI 越前面的標籤越重，繪師決定整張圖的畫風
+ * 前綴整段跟著往前（它本來就是「加在所有生成前面」），沒寫 artist: 的繪師串放前綴也一樣在前面
  */
 export function buildPromptWithTags(
   imagePrompt: string,
@@ -530,18 +565,20 @@ export function buildPromptWithTags(
   characterPrompt?: string,
   userPrompt?: string,
 ): string {
-  const splitParts = (input?: string): string[] =>
-    (input || "")
-      .split(",")
-      .map((part) => part.trim())
-      .filter(Boolean);
+  const prefix = splitPromptUnits(settings.positivePromptPrefix);
+  const body = splitPromptUnits(imagePrompt);
+  const suffix = splitPromptUnits(settings.positivePromptSuffix);
+  const notArtist = (unit: string) => !isArtistUnit(unit);
 
   const orderedParts = [
-    ...splitParts(characterPrompt),
-    ...splitParts(userPrompt),
-    ...splitParts(settings.positivePromptPrefix),
-    ...splitParts(imagePrompt),
-    ...splitParts(settings.positivePromptSuffix),
+    ...prefix.filter(isArtistUnit),
+    ...body.filter(isArtistUnit),
+    ...suffix.filter(isArtistUnit),
+    ...prefix.filter(notArtist),
+    ...splitPromptUnits(characterPrompt),
+    ...splitPromptUnits(userPrompt),
+    ...body.filter(notArtist),
+    ...suffix.filter(notArtist),
   ];
 
   // 以不區分大小寫方式去重，保留第一次出現順序

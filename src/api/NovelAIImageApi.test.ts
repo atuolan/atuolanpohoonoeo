@@ -1,12 +1,14 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   applySavedNovelAIImageSettings,
+  buildPromptWithTags,
   createDefaultNovelAIImageSettings,
   DEFAULT_NEGATIVE_PROMPT,
   generateImage,
   getQualityPresetOptions,
   getUcPresetOptions,
   type NovelAIImageSettings,
+  splitPromptUnits,
 } from "./NovelAIImageApi";
 
 // 1x1 PNG
@@ -257,5 +259,52 @@ describe("選單選項", () => {
       "none",
     ]);
     expect(getUcPresetOptions("some-other-model")).toEqual([]);
+  });
+});
+
+describe("提示詞組裝順序", () => {
+  it("繪師放最前面：前綴裡的、模型寫的、後綴裡的，再接前綴其餘、角色、使用者、畫面、後綴", () => {
+    const settings = makeSettings({
+      positivePromptPrefix: "artist:ningen mame, masterpiece",
+      positivePromptSuffix: "artist:ciloranko, depth of field",
+    });
+    const prompt = buildPromptWithTags(
+      "1girl, cafe, 1.2::artist:wlop::, smile",
+      settings,
+      "long black hair, blue eyes",
+      "short brown hair",
+    );
+    expect(prompt).toBe(
+      "artist:ningen mame, 1.2::artist:wlop::, artist:ciloranko, masterpiece, long black hair, blue eyes, short brown hair, 1girl, cafe, smile, depth of field",
+    );
+  });
+
+  it("沒寫 artist: 的繪師串放前綴，也排在角色外觀前面", () => {
+    const settings = makeSettings({ positivePromptPrefix: "0.8::nnmbpx::, healthyman" });
+    expect(buildPromptWithTags("sitting", settings, "red hair")).toBe(
+      "0.8::nnmbpx::, healthyman, red hair, sitting",
+    );
+  });
+
+  it("跨逗號的權重群組整段一起搬，不會被拆開", () => {
+    const settings = makeSettings();
+    expect(buildPromptWithTags("smile, 1.2::artist:a, artist:b::, {artist:c, artist:d}", settings)).toBe(
+      "1.2::artist:a, artist:b::, {artist:c, artist:d}, smile",
+    );
+  });
+
+  it("切群組：括號、:: 沒收尾時退回一般逗號切法", () => {
+    expect(splitPromptUnits("a, {b, c}, 2::d, e::, f")).toEqual(["a", "{b, c}", "2::d, e::", "f"]);
+    expect(splitPromptUnits("a, {b, c")).toEqual(["a", "{b", "c"]);
+    expect(splitPromptUnits("-0.8::feet::, g")).toEqual(["-0.8::feet::", "g"]);
+  });
+
+  it("送出的請求也是繪師在最前面", async () => {
+    const { json } = await captureRequest(
+      makeSettings({ model: "nai-diffusion-4-5-full", qualityPreset: "none" }),
+      "1girl, artist:wlop",
+    );
+    expect(json.input).toBe("artist:wlop, 1girl");
+    expect(json.parameters.v4_prompt.caption.base_caption).toBe("artist:wlop, 1girl");
   });
 });
