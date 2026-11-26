@@ -522,7 +522,42 @@ function getSkipCfgAboveSigma(model: NovelAIModel, width: number, height: number
 }
 
 /**
- * 按層級組裝最終 prompt（角色 -> 使用者 -> 全域前綴 -> 主體 -> 全域後綴）
+ * 照逗號切開提示詞，但不切斷權重群組：
+ * `1.2::artist:a, artist:b::`、`{artist:a, artist:b}` 這種跨逗號的群組算一段。
+ * 括號或 :: 沒有收尾（寫壞了）的部分退回一般的逗號切法。
+ */
+export function splitPromptUnits(input?: string): string[] {
+  const units: string[] = [];
+  let pending: string[] = [];
+  let depth = 0;
+  let inWeight = false;
+  for (const part of (input || "").split(",")) {
+    pending.push(part);
+    for (const ch of part) {
+      if (ch === "{" || ch === "[") depth++;
+      else if (ch === "}" || ch === "]") depth--;
+    }
+    if ((part.match(/::/g) || []).length % 2 === 1) inWeight = !inWeight;
+    if (depth <= 0 && !inWeight) {
+      units.push(pending.join(",").trim());
+      pending = [];
+      depth = 0;
+    }
+  }
+  units.push(...pending.map((part) => part.trim()));
+  return units.filter(Boolean);
+}
+
+/** 是不是繪師標籤：artist:xxx，可帶 {} [] 括號或 1.2:: 權重 */
+export function isArtistUnit(unit: string): boolean {
+  return /^[[{(]*\s*(?:-?\d+(?:\.\d+)?::\s*)?[[{(]*\s*artist\s*:/i.test(unit);
+}
+
+/**
+ * 按層級組裝最終 prompt：
+ * 繪師（前綴裡的 -> 模型 prompt 與後綴裡的）-> 前綴其餘 -> 角色 -> 使用者 -> 主體 -> 後綴
+ * 繪師放最前面：NovelAI 越前面的標籤越重，繪師決定整張圖的畫風
+ * 前綴整段跟著往前（它本來就是「加在所有生成前面」），沒寫 artist: 的繪師串放前綴也一樣在前面
  */
 export function buildPromptWithTags(
   imagePrompt: string,
@@ -530,31 +565,96 @@ export function buildPromptWithTags(
   characterPrompt?: string,
   userPrompt?: string,
 ): string {
-  const splitParts = (input?: string): string[] =>
-    (input || "")
-      .split(",")
-      .map((part) => part.trim())
-      .filter(Boolean);
+  const parts = buildPromptParts(imagePrompt, settings, characterPrompt, userPrompt);
+  return [...parts.head, ...parts.body, ...parts.tail].join(", ");
+}
 
-  const orderedParts = [
-    ...splitParts(characterPrompt),
-    ...splitParts(userPrompt),
-    ...splitParts(settings.positivePromptPrefix),
-    ...splitParts(imagePrompt),
-    ...splitParts(settings.positivePromptSuffix),
-  ];
+/**
+ * 組好的提示詞分三段（已去重）：
+ * head＝繪師、前綴、角色與使用者外觀（固定的，不能少）
+ * body＝模型寫的畫面（越後面越不重要，太長時從這裡的尾巴剪）
+ * tail＝後綴
+ */
+export interface PromptParts {
+  head: string[];
+  body: string[];
+  tail: string[];
+}
 
-  // 以不區分大小寫方式去重，保留第一次出現順序
-  const deduped: string[] = [];
+export function buildPromptParts(
+  imagePrompt: string,
+  settings: NovelAIImageSettings,
+  characterPrompt?: string,
+  userPrompt?: string,
+): PromptParts {
+  const prefix = splitPromptUnits(settings.positivePromptPrefix);
+  const body = splitPromptUnits(imagePrompt);
+  const suffix = splitPromptUnits(settings.positivePromptSuffix);
+  const notArtist = (unit: string) => !isArtistUnit(unit);
+
+  // 以不區分大小寫方式去重，保留第一次出現的位置
   const seen = new Set<string>();
-  for (const part of orderedParts) {
-    const key = part.toLowerCase();
-    if (seen.has(key)) continue;
-    seen.add(key);
-    deduped.push(part);
-  }
+  const keepNew = (units: string[]) =>
+    units.filter((unit) => {
+      const key = unit.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
 
-  return deduped.join(", ");
+  return {
+    head: keepNew([
+      ...prefix.filter(isArtistUnit),
+      ...body.filter(isArtistUnit),
+      ...suffix.filter(isArtistUnit),
+      ...prefix.filter(notArtist),
+      ...splitPromptUnits(characterPrompt),
+      ...splitPromptUnits(userPrompt),
+    ]),
+    body: keepNew(body.filter(notArtist)),
+    tail: keepNew(suffix.filter(notArtist)),
+  };
+}
+
+/**
+ * V4 起的提示詞（T5）上限 512 token，超過的部分 NovelAI 直接截掉。
+ * 品質標籤在最後面，最先被截，畫面就變醜。
+ */
+export const NAI_PROMPT_TOKEN_LIMIT = 512;
+
+/**
+ * 粗估 T5 token 數（拿不到 NovelAI 的分詞器，只求量級對）：
+ * 英文字 7 個字母內算 1、更長每 5 個字母 1；數字、標點各 1；權重語法 1.2:: 與 {} [] 不算。
+ */
+export function estimateNaiTokens(text: string): number {
+  const plain = text.replace(/-?\d+(?:\.\d+)?::|::|[{}[\]]/g, " ");
+  let count = 1; // 結尾的 </s>
+  for (const [word] of plain.matchAll(/[a-z]+|\d|[^\sa-z\d]/gi)) {
+    count += /^[a-z]+$/i.test(word) && word.length > 7 ? Math.ceil(word.length / 5) : 1;
+  }
+  return count;
+}
+
+/**
+ * 組出最後送出的正面提示詞（含品質標籤）。
+ * V4 起估計超過上限時，從模型寫的畫面尾巴開始拿掉標籤，
+ * 讓 NovelAI 不會把繪師、外觀、後綴、品質標籤截掉；拿掉的標籤放在 dropped。
+ */
+export function fitPromptToLimit(
+  parts: PromptParts,
+  model: NovelAIModel,
+  qualityPreset: NovelAIQualityPreset,
+): { prompt: string; dropped: string[] } {
+  const body = [...parts.body];
+  const build = () => applyQualityTags([...parts.head, ...body, ...parts.tail].join(", "), model, qualityPreset);
+  const dropped: string[] = [];
+  let prompt = build();
+  if (isV3Model(model)) return { prompt, dropped };
+  while (body.length && estimateNaiTokens(prompt) > NAI_PROMPT_TOKEN_LIMIT) {
+    dropped.unshift(body.pop()!);
+    prompt = build();
+  }
+  return { prompt, dropped };
 }
 
 /**
@@ -910,12 +1010,13 @@ export async function generateImage(
   }
 
   try {
-    const basePrompt = buildPromptWithTags(
+    const promptParts = buildPromptParts(
       prompt,
       settings,
       tagPrompts?.characterPrompt,
       tagPrompts?.userPrompt,
     );
+    const basePrompt = [...promptParts.head, ...promptParts.body, ...promptParts.tail].join(', ');
     const apiSource = settings.apiSource ?? 'official';
     const openaiModel = settings.openaiModel?.trim() ?? '';
 
@@ -925,9 +1026,17 @@ export async function generateImage(
       : (isKnownNovelAIModel(settings.model) ? settings.model : null);
     const ucPresetId = presetModel ? resolveUcPresetId(presetModel, settings.ucPresetId) : 'none';
     const qualityPreset = presetModel ? resolveQualityPreset(presetModel, settings.qualityPreset) : 'none';
-    const finalPrompt = presetModel
-      ? applyQualityTags(basePrompt, presetModel, qualityPreset)
-      : basePrompt;
+    let finalPrompt = basePrompt;
+    if (presetModel) {
+      const fitted = fitPromptToLimit(promptParts, presetModel, qualityPreset);
+      finalPrompt = fitted.prompt;
+      if (fitted.dropped.length) {
+        console.warn(
+          `[NovelAI] 提示詞超過約 ${NAI_PROMPT_TOKEN_LIMIT} token，拿掉畫面最後 ${fitted.dropped.length} 個標籤：`,
+          fitted.dropped.join(', '),
+        );
+      }
+    }
     const negativePrompt = presetModel
       ? buildNegativePrompt(presetModel, ucPresetId, settings.negativePrompt || '', basePrompt)
       : (settings.negativePrompt || '');

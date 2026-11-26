@@ -355,7 +355,13 @@ import {
   MAX_TURN_IMAGES,
   stripPicNote,
 } from "@/utils/picNote";
-import { buildPicGuide, buildStyleNotePrompt, parseStyleNoteReply } from "@/utils/picPromptGuide";
+import {
+  buildPicGuide,
+  buildStyleNotePrompt,
+  getCharacterAppearanceTags,
+  getUserAppearanceTags,
+  parseStyleNoteReply,
+} from "@/utils/picPromptGuide";
 import { downscaleToolImages } from "@/services/mcp/mcpImages";
 import {
   CHAT_TOOLS,
@@ -7224,6 +7230,11 @@ async function runAIResponseOnce(
       // 文生圖：這次用哪個服務、prompt 怎麼寫、可以加 negative（{{picGuide}}）
       picGuide: buildPicGuide(settingsStore.novelAIImage, {
         styleRef: currentChatData.value?.metadata?.imageStyleRef,
+        // 生圖時自動加上的外觀標籤（跟 useChatMedia 送出時用的同一份）
+        appearanceTags: {
+          character: getCharacterAppearanceTags(currentCharacter.value),
+          user: getUserAppearanceTags(settingsStore.novelAIImage, userStore.currentPersona),
+        },
         // 這一輪模型拿得到查 Danbooru 標籤、畫圖的工具（只有一對一聊天帶工具）
         tagLookup:
           toolsUsableThisTurn &&

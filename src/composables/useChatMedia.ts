@@ -11,7 +11,9 @@ import type { ImageStyleRef } from "@/types/chat";
 import {
   buildImageReviewPrompt,
   extractArtistTags,
+  getCharacterAppearanceTags,
   getSelfReviewMaxRounds,
+  getUserAppearanceTags,
   parseImageReviewReply,
   type ImageReviewAttempt,
   type ImageReviewVerdict,
@@ -75,15 +77,11 @@ export function useChatMedia(deps: {
   const isGeneratingImage = ref(false);
 
   function getCharacterPrompt(): string {
-    const ext = deps.currentCharacter.value?.data?.extensions;
-    const explicitPrompt = ext?.naiCharacterPrompt?.trim();
-    if (explicitPrompt) return explicitPrompt;
-    return ext?.sd_character_prompt?.positive?.trim() || "";
+    return getCharacterAppearanceTags(deps.currentCharacter.value);
   }
 
   function getUserPrompt(): string {
-    if (!settingsStore.novelAIImage.useUserTag) return "";
-    return userStore.currentPersona?.naiUserPrompt?.trim() || "";
+    return getUserAppearanceTags(settingsStore.novelAIImage, userStore.currentPersona);
   }
 
   function handleMediaSelect(

@@ -4,6 +4,8 @@ import {
   buildImageReviewPrompt,
   buildPicGuide,
   extractArtistTags,
+  getCharacterAppearanceTags,
+  getUserAppearanceTags,
   parseStyleNoteReply,
   getSelfReviewMaxRounds,
   parseImageReviewReply,
@@ -151,5 +153,44 @@ describe("buildPicGuide drawTool", () => {
     expect(buildPicGuide(settings, { drawTool: true })).toContain("choose_image");
     expect(buildPicGuide(settings, { drawTool: true })).toContain("想先試畫");
     expect(buildPicGuide(settings, { drawTool: true, drawFirst: true })).toContain("一律用工具畫，不要寫 <pic>");
+  });
+});
+
+describe("{{picGuide}} 的 NovelAI 寫法與外觀標籤", () => {
+  it("NovelAI 才有景別、光線、表情視線、不寫品質詞的細則", () => {
+    const nai = buildPicGuide(makeSettings());
+    expect(nai).toContain("景別");
+    expect(nai).toContain("cowboy shot");
+    expect(nai).toContain("golden hour");
+    expect(nai).toContain("looking at viewer");
+    expect(nai).toContain("不要寫品質詞");
+
+    const gpt = makeSettings({ provider: "gpt" });
+    gpt.gpt = { ...gpt.gpt!, apiKey: "sk-1" };
+    expect(buildPicGuide(gpt)).not.toContain("cowboy shot");
+  });
+
+  it("交給模型時不叫它別寫品質詞", () => {
+    const text = buildPicGuide(makeSettings({ modelControlsPrompt: true }));
+    expect(text).not.toContain("不要寫品質詞");
+    expect(text).toContain("不會自動加品質詞");
+  });
+
+  it("有外觀標籤時列出來，叫模型不要重寫或寫出衝突的", () => {
+    const text = buildPicGuide(makeSettings(), {
+      appearanceTags: { character: "1boy, black hair", user: "1girl, pink hair" },
+    });
+    expect(text).toContain("角色：1boy, black hair");
+    expect(text).toContain("使用者：1girl, pink hair");
+    expect(text).toContain("不要寫出跟它衝突");
+    expect(buildPicGuide(makeSettings(), { appearanceTags: { character: " " } })).not.toContain("外觀標籤會自動加");
+  });
+
+  it("外觀標籤來源：角色卡的 NAI 欄位優先，使用者要開設定才加", () => {
+    expect(getCharacterAppearanceTags({ data: { extensions: { naiCharacterPrompt: " a ", sd_character_prompt: { positive: "b" } } } })).toBe("a");
+    expect(getCharacterAppearanceTags({ data: { extensions: { sd_character_prompt: { positive: "b" } } } })).toBe("b");
+    expect(getCharacterAppearanceTags(undefined)).toBe("");
+    expect(getUserAppearanceTags({ useUserTag: false }, { naiUserPrompt: "x" })).toBe("");
+    expect(getUserAppearanceTags({ useUserTag: true }, { naiUserPrompt: " x " })).toBe("x");
   });
 });

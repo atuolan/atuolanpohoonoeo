@@ -1,12 +1,17 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   applySavedNovelAIImageSettings,
+  buildPromptWithTags,
   createDefaultNovelAIImageSettings,
   DEFAULT_NEGATIVE_PROMPT,
+  estimateNaiTokens,
+  fitPromptToLimit,
   generateImage,
+  NAI_PROMPT_TOKEN_LIMIT,
   getQualityPresetOptions,
   getUcPresetOptions,
   type NovelAIImageSettings,
+  splitPromptUnits,
 } from "./NovelAIImageApi";
 
 // 1x1 PNG
@@ -257,5 +262,94 @@ describe("選單選項", () => {
       "none",
     ]);
     expect(getUcPresetOptions("some-other-model")).toEqual([]);
+  });
+});
+
+describe("提示詞組裝順序", () => {
+  it("繪師放最前面：前綴裡的、模型寫的、後綴裡的，再接前綴其餘、角色、使用者、畫面、後綴", () => {
+    const settings = makeSettings({
+      positivePromptPrefix: "artist:ningen mame, masterpiece",
+      positivePromptSuffix: "artist:ciloranko, depth of field",
+    });
+    const prompt = buildPromptWithTags(
+      "1girl, cafe, 1.2::artist:wlop::, smile",
+      settings,
+      "long black hair, blue eyes",
+      "short brown hair",
+    );
+    expect(prompt).toBe(
+      "artist:ningen mame, 1.2::artist:wlop::, artist:ciloranko, masterpiece, long black hair, blue eyes, short brown hair, 1girl, cafe, smile, depth of field",
+    );
+  });
+
+  it("沒寫 artist: 的繪師串放前綴，也排在角色外觀前面", () => {
+    const settings = makeSettings({ positivePromptPrefix: "0.8::nnmbpx::, healthyman" });
+    expect(buildPromptWithTags("sitting", settings, "red hair")).toBe(
+      "0.8::nnmbpx::, healthyman, red hair, sitting",
+    );
+  });
+
+  it("跨逗號的權重群組整段一起搬，不會被拆開", () => {
+    const settings = makeSettings();
+    expect(buildPromptWithTags("smile, 1.2::artist:a, artist:b::, {artist:c, artist:d}", settings)).toBe(
+      "1.2::artist:a, artist:b::, {artist:c, artist:d}, smile",
+    );
+  });
+
+  it("切群組：括號、:: 沒收尾時退回一般逗號切法", () => {
+    expect(splitPromptUnits("a, {b, c}, 2::d, e::, f")).toEqual(["a", "{b, c}", "2::d, e::", "f"]);
+    expect(splitPromptUnits("a, {b, c")).toEqual(["a", "{b", "c"]);
+    expect(splitPromptUnits("-0.8::feet::, g")).toEqual(["-0.8::feet::", "g"]);
+  });
+
+  it("送出的請求也是繪師在最前面", async () => {
+    const { json } = await captureRequest(
+      makeSettings({ model: "nai-diffusion-4-5-full", qualityPreset: "none" }),
+      "1girl, artist:wlop",
+    );
+    expect(json.input).toBe("artist:wlop, 1girl");
+    expect(json.parameters.v4_prompt.caption.base_caption).toBe("artist:wlop, 1girl");
+  });
+});
+
+describe("提示詞太長時（V4 起上限約 512 token）", () => {
+  it("粗估 token：短字 1、長字每 5 個字母 1、標點 1，權重語法不算", () => {
+    expect(estimateNaiTokens("1girl, smile")).toBe(1 + 1 + 1 + 1 + 1); // 1 girl , smile </s>
+    expect(estimateNaiTokens("masterpiece")).toBe(1 + 3);
+    expect(estimateNaiTokens("1.2::smile::")).toBe(estimateNaiTokens("smile"));
+  });
+
+  it("沒超過就原樣、品質詞照樣接在最後", () => {
+    const parts = { head: ["artist:a", "long hair"], body: ["1girl", "smile"], tail: ["sunset"] };
+    expect(fitPromptToLimit(parts, "nai-diffusion-4-5-full", "standard")).toEqual({
+      prompt: "artist:a, long hair, 1girl, smile, sunset, location, very aesthetic, masterpiece, no text",
+      dropped: [],
+    });
+  });
+
+  it("超過時從模型寫的畫面尾巴拿掉，繪師、外觀、後綴、品質詞都保住", () => {
+    const body = Array.from({ length: 200 }, (_, i) => `tag${i}`);
+    const parts = { head: ["artist:a", "long hair"], body, tail: ["sunset"] };
+    const { prompt, dropped } = fitPromptToLimit(parts, "nai-diffusion-4-5-full", "standard");
+    expect(estimateNaiTokens(prompt)).toBeLessThanOrEqual(NAI_PROMPT_TOKEN_LIMIT);
+    expect(prompt.startsWith("artist:a, long hair, tag0, tag1")).toBe(true);
+    expect(prompt.endsWith("sunset, location, very aesthetic, masterpiece, no text")).toBe(true);
+    expect(dropped.length).toBeGreaterThan(0);
+    expect(dropped[dropped.length - 1]).toBe("tag199");
+    expect(prompt).not.toContain("tag199");
+  });
+
+  it("V3 不剪（不同的上限）", () => {
+    const body = Array.from({ length: 200 }, (_, i) => `tag${i}`);
+    const { dropped } = fitPromptToLimit({ head: [], body, tail: [] }, "nai-diffusion-3", "standard");
+    expect(dropped).toEqual([]);
+  });
+
+  it("送出的請求是剪過的版本", async () => {
+    const longPrompt = Array.from({ length: 200 }, (_, i) => `tag${i}`).join(", ");
+    const { json } = await captureRequest(makeSettings({ model: "nai-diffusion-4-5-full" }), longPrompt);
+    expect(json.input).not.toContain("tag199");
+    expect(json.input.endsWith("masterpiece, no text")).toBe(true);
+    expect(json.parameters.v4_prompt.caption.base_caption).toBe(json.input);
   });
 });

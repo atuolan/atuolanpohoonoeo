@@ -37,7 +37,7 @@ import {
 import { buildEventScanText, selectImportantEventsForPrompt } from "@/utils/importantEventSelection";
 import type { ImportantEventsLog } from "@/types/importantEvents";
 import { buildCharWalletPromptNote, storyNowForChat } from "@/services/charWallet";
-import { buildPicGuide } from "@/utils/picPromptGuide";
+import { buildPicGuide, getCharacterAppearanceTags, getUserAppearanceTags } from "@/utils/picPromptGuide";
 import {
   applyPromptRegexToHistory,
   applyWorldInfoRegexToLorebooks,
@@ -1640,7 +1640,13 @@ export class ProactiveMessageService {
           storyNowForChat(chat),
         ),
         // 文生圖提示詞寫法（{{picGuide}}）
-        picGuide: buildPicGuide(settingsStore.novelAIImage, { styleRef: chat.metadata?.imageStyleRef }),
+        picGuide: buildPicGuide(settingsStore.novelAIImage, {
+          styleRef: chat.metadata?.imageStyleRef,
+          appearanceTags: {
+            character: getCharacterAppearanceTags(character),
+            user: getUserAppearanceTags(settingsStore.novelAIImage, userStore.currentPersona),
+          },
+        }),
         // 噗文分享：可以留言的噗＋（有開設定時）最近的噗；面對面模式不帶
         plurkShareGuide: chat.faceToFaceMode
           ? ""
