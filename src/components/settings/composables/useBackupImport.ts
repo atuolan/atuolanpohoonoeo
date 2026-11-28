@@ -16,6 +16,7 @@ import {
 } from "@/services/backupCoverage";
 import { getLegacyBackupService } from "@/services/LegacyBackupService";
 import { DATA_URL_MEDIA_KEYS } from "@/utils/backupMediaExtractor";
+import { openLazyZip, type LazyZip } from "@/utils/lazyZip";
 import { saveMessages, upsertMessages } from "@/storage/chatMessageStorage";
 import { refreshChatDerivedMetadata, saveChatMetadata } from "@/storage/chatStorage";
 import {
@@ -27,6 +28,9 @@ import {
 import { useThemeStore } from "@/stores/theme";
 import { createDefaultCharacterData, type StoredCharacter } from "@/types/character";
 import { ref } from "vue";
+
+/** 還原聊天圖片時每批處理的訊息數：一批的圖片同時在記憶體裡 */
+const CHAT_MEDIA_BATCH = 20;
 
 export function useBackupImport() {
   const settingsStore = useSettingsStore();
@@ -218,56 +222,56 @@ export function useBackupImport() {
     return index >= 0 ? parts.slice(index).join("/") : null;
   }
 
-  function findBackupJsonEntry(
-    files: Record<string, Uint8Array>,
-  ): [string, Uint8Array] | undefined {
-    return Object.entries(files).find(([name]) => {
-      const baseName = getZipEntryBaseName(name);
-      return baseName === "backup.json" || baseName === "data.json";
-    });
-  }
-
-  function getZipChatJsonEntries(
-    files: Record<string, Uint8Array>,
-  ): Array<[string, Uint8Array]> {
-    return Object.entries(files)
-      .map(([name, content]) => {
-        const relativeName = getZipEntryRelativeToFolder(name, "chats");
-        return relativeName ? [relativeName, content] as [string, Uint8Array] : null;
-      })
-      .filter(
-        (entry): entry is [string, Uint8Array] =>
-          !!entry && entry[0].toLowerCase().endsWith(".json"),
-      );
-  }
-
-  /** 分包備份的聊天續段：chat-segments/<chatId>.<n>.json，依段號排序 */
-  function getZipChatSegmentEntries(
-    files: Record<string, Uint8Array>,
-  ): Array<[string, Uint8Array]> {
-    return Object.entries(files)
-      .map(([name, content]) => {
-        const relativeName = getZipEntryRelativeToFolder(name, "chat-segments");
-        return relativeName ? [relativeName, content] as [string, Uint8Array] : null;
-      })
-      .filter(
-        (entry): entry is [string, Uint8Array] =>
-          !!entry && entry[0].toLowerCase().endsWith(".json"),
-      )
-      .sort((a, b) => a[0].localeCompare(b[0], undefined, { numeric: true }));
-  }
-
-  function collectZipMediaFiles(
-    files: Record<string, Uint8Array>,
-  ): Record<string, Uint8Array> {
-    const result: Record<string, Uint8Array> = {};
-    for (const [filename, content] of Object.entries(files)) {
-      const mediaName = getZipEntryRelativeToFolder(filename, "media");
-      if (mediaName) {
-        result[mediaName] = content;
+  /** 資料夾（chats/、chat-segments/）下的 .json：[資料夾起算的相對路徑, ZIP 條目名] */
+  function getZipJsonEntriesInFolder(
+    names: string[],
+    folderName: string,
+  ): Array<[string, string]> {
+    const result: Array<[string, string]> = [];
+    for (const name of names) {
+      const relativeName = getZipEntryRelativeToFolder(name, folderName);
+      if (relativeName && relativeName.toLowerCase().endsWith(".json")) {
+        result.push([relativeName, name]);
       }
     }
     return result;
+  }
+
+  /** JSON 文字裡引用到的 media/ 路徑（備份把圖片換成 "media/..." 字串） */
+  function collectMediaRefs(jsonText: string): Set<string> {
+    const refs = new Set<string>();
+    for (const m of jsonText.matchAll(/"(media\/[^"\\]+)"/g)) refs.add(m[1]);
+    return refs;
+  }
+
+  /** 退路：整包讀進記憶體解壓（目錄讀不懂的 ZIP 才走這裡） */
+  async function openEagerZip(file: File): Promise<LazyZip> {
+    const arrayBuffer = await file.arrayBuffer();
+    let files: Record<string, Uint8Array>;
+    try {
+      const { unzip } = await import("fflate");
+      files = await new Promise<Record<string, Uint8Array>>((resolve, reject) => {
+        unzip(new Uint8Array(arrayBuffer), (err, d) => (err ? reject(err) : resolve(d)));
+      });
+    } catch (fflateErr) {
+      console.warn("[Import] fflate 解壓失敗，嘗試 jszip:", fflateErr);
+      const JSZip = (await import("jszip")).default;
+      const zip = await JSZip.loadAsync(arrayBuffer);
+      files = {};
+      for (const [name, entry] of Object.entries(zip.files)) {
+        if (!entry.dir) files[name] = await entry.async("uint8array");
+      }
+    }
+    const names = Object.keys(files);
+    return {
+      names,
+      has: (name) => name in files,
+      read: async (name) => {
+        const bytes = files[name];
+        if (!bytes) throw new Error(`ZIP 裡沒有 ${name}`);
+        return bytes;
+      },
+    };
   }
 
   /**
@@ -330,71 +334,95 @@ export function useBackupImport() {
     let data: any;
     let mediaFiles: Record<string, Uint8Array> = {};
     let backupPart: { backupId: string; partIndex: number; totalParts?: number } | undefined;
-    let segmentFileEntries: Array<[string, Uint8Array]> = [];
+    /** [chat-segments/ 下的相對路徑, ZIP 條目名]；內容導入時才讀 */
+    let segmentFileEntries: Array<[string, string]> = [];
+    /** 這個 ZIP；只有 .zip 備份有 */
+    let zipSource: LazyZip | undefined;
+    /** media/ 相對路徑 → ZIP 條目名 */
+    const mediaEntryNames = new Map<string, string>();
+
+    /** 把用到的媒體從 ZIP 讀進 mediaFiles；回傳這次新載入的 key，用完可再放掉 */
+    async function loadMedia(refs: Iterable<string>): Promise<string[]> {
+      const loaded: string[] = [];
+      if (!zipSource) return loaded;
+      for (const ref of refs) {
+        if (mediaFiles[ref]) continue;
+        const entryName = mediaEntryNames.get(ref);
+        if (!entryName) continue;
+        mediaFiles[ref] = await zipSource.read(entryName);
+        loaded.push(ref);
+      }
+      return loaded;
+    }
+
+    function unloadMedia(keys: string[]): void {
+      for (const key of keys) delete mediaFiles[key];
+    }
+
+    /**
+     * 還原一個聊天（或續段）的媒體並轉成儲存格式。訊息分批處理，
+     * 同一時間只有一批的圖片在記憶體裡（Agent 畫圖的聊天動輒上百張大圖）。
+     */
+    async function prepareChatMessagesForStorage(chat: any): Promise<any[]> {
+      const messages: any[] = Array.isArray(chat.messages) ? chat.messages : [];
+      chat.messages = [];
+      const chatLevel = await loadMedia(collectMediaRefs(JSON.stringify(chat)));
+      restoreChatMedia(chat, mediaFiles);
+      unloadMedia(chatLevel);
+
+      const stored: any[] = [];
+      for (let i = 0; i < messages.length; i += CHAT_MEDIA_BATCH) {
+        const batch = messages.slice(i, i + CHAT_MEDIA_BATCH);
+        const loaded = await loadMedia(collectMediaRefs(JSON.stringify(batch)));
+        restoreChatMedia({ messages: batch }, mediaFiles);
+        unloadMedia(loaded);
+        stored.push(...(await extractImagesFromMessages(batch)));
+        for (let j = i; j < i + batch.length; j++) messages[j] = null;
+      }
+      return stored;
+    }
     /** 本包的錄音清單（audio-blobs.json）；錄音本體在同包的 media/ */
     let audioBlobEntries: BackupAudioBlobEntry[] = [];
 
     // 檢查檔案類型
     if (fileName.endsWith(".zip")) {
-      // 讀取檔案內容
-      const arrayBuffer = await file.arrayBuffer();
-      const bytes = new Uint8Array(arrayBuffer);
-
-      // 檢查 ZIP magic bytes (PK: 0x50 0x4B)
-      const isRealZip =
-        bytes.length >= 4 && bytes[0] === 0x50 && bytes[1] === 0x4b;
+      // 先看開頭 4 bytes：副檔名是 .zip 但實際不是 ZIP 時當 JSON 解析
+      const head = new Uint8Array(await file.slice(0, 4).arrayBuffer());
+      const isRealZip = head.length >= 4 && head[0] === 0x50 && head[1] === 0x4b;
 
       if (!isRealZip) {
-        // 檔案副檔名是 .zip 但實際不是 ZIP — 嘗試當 JSON 解析
         console.warn(
           "[Import] 檔案非有效 ZIP（magic bytes 不符），嘗試當 JSON 解析",
         );
         try {
-          const text = new TextDecoder().decode(bytes);
-          data = JSON.parse(text);
+          data = JSON.parse(await file.text());
         } catch {
           throw new Error("檔案既不是有效的 ZIP 也不是有效的 JSON，可能已損壞");
         }
       } else {
-        // 真正的 ZIP — 先嘗試 fflate，失敗則 fallback 到 jszip
-        let files: Record<string, Uint8Array>;
-        let unzipper = "fflate";
-
+        // 按需讀取：只讀目錄，要哪個檔案才解壓那一個（整包解壓在 iPhone 上會讓 App 重開）
+        let unzipper = "lazy";
         try {
-          const { unzip } = await import("fflate");
-          files = await new Promise<Record<string, Uint8Array>>(
-            (resolve, reject) => {
-              unzip(bytes, (err, d) => {
-                if (err) reject(err);
-                else resolve(d);
-              });
-            },
-          );
-        } catch (fflateErr) {
-          unzipper = "jszip";
-          console.warn("[Import] fflate 解壓失敗，嘗試 jszip:", fflateErr);
-          const JSZip = (await import("jszip")).default;
-          const zip = await JSZip.loadAsync(arrayBuffer);
-          files = {};
-          for (const [name, entry] of Object.entries(zip.files)) {
-            if (!entry.dir) {
-              files[name] = await entry.async("uint8array");
-            }
-          }
+          zipSource = await openLazyZip(file);
+        } catch (lazyErr) {
+          console.warn("[Import] 按需讀取失敗，改整包解壓:", lazyErr);
+          unzipper = "eager";
+          zipSource = await openEagerZip(file);
         }
 
         const { strFromU8 } = await import("fflate");
-        const fileEntries = Object.entries(files);
-        const zipEntryNames = fileEntries.map(([name]) => name);
+        const source = zipSource;
+        const readText = async (name: string) => strFromU8(await source.read(name));
+        const zipEntryNames = source.names;
 
         // 分包資訊：新版備份每包都有 metadata.json
-        const metadataEntry = fileEntries.find(
-          ([name]) => getZipEntryBaseName(name) === "metadata.json",
+        const metadataName = zipEntryNames.find(
+          (name) => getZipEntryBaseName(name) === "metadata.json",
         );
         let metadata: any = null;
-        if (metadataEntry) {
+        if (metadataName) {
           try {
-            metadata = JSON.parse(strFromU8(metadataEntry[1]));
+            metadata = JSON.parse(await readText(metadataName));
           } catch {
             /* metadata 只是附加資訊，壞掉不影響導入 */
           }
@@ -408,22 +436,36 @@ export function useBackupImport() {
           };
         }
 
-        const chatFileEntries = getZipChatJsonEntries(files);
-        segmentFileEntries = getZipChatSegmentEntries(files);
-
-        const audioManifestEntry = fileEntries.find(
-          ([name]) => getZipEntryBaseName(name) === "audio-blobs.json",
+        const chatFileEntries = getZipJsonEntriesInFolder(zipEntryNames, "chats");
+        segmentFileEntries = getZipJsonEntriesInFolder(zipEntryNames, "chat-segments").sort(
+          (a, b) => a[0].localeCompare(b[0], undefined, { numeric: true }),
         );
-        if (audioManifestEntry) {
-          const manifest = JSON.parse(strFromU8(audioManifestEntry[1]));
+        for (const name of zipEntryNames) {
+          const mediaName = getZipEntryRelativeToFolder(name, "media");
+          if (mediaName) mediaEntryNames.set(mediaName, name);
+        }
+
+        const audioManifestName = zipEntryNames.find(
+          (name) => getZipEntryBaseName(name) === "audio-blobs.json",
+        );
+        if (audioManifestName) {
+          const manifest = JSON.parse(await readText(audioManifestName));
           audioBlobEntries = Array.isArray(manifest?.records) ? manifest.records : [];
         }
 
         // 檢查必要檔案（相容 backup.json 和 data.json 兩種命名）。
         // 分包備份只有第 1 包有 backup.json，後續分包只裝聊天或錄音。
-        const backupEntry = findBackupJsonEntry(files);
-        if (backupEntry) {
-          data = JSON.parse(strFromU8(backupEntry[1]));
+        const backupName = zipEntryNames.find((name) => {
+          const baseName = getZipEntryBaseName(name);
+          return baseName === "backup.json" || baseName === "data.json";
+        });
+        let backupJsonLength = 0;
+        if (backupName) {
+          const backupText = await readText(backupName);
+          backupJsonLength = backupText.length;
+          data = JSON.parse(backupText);
+          // backup.json 裡（角色頭像、貼圖、主題…）用到的媒體先載入，整包導入期間都留著
+          await loadMedia(collectMediaRefs(backupText));
         } else if (
           backupPart &&
           (chatFileEntries.length > 0 ||
@@ -440,53 +482,32 @@ export function useBackupImport() {
           throw new Error("ZIP 中找不到 backup.json 或 data.json");
         }
 
-        // 收集媒體檔案
-        mediaFiles = collectZipMediaFiles(files);
-
         console.info("[Import] ZIP 解包診斷", {
           unzipper,
-          entryCount: fileEntries.length,
-          backupJsonName: backupEntry?.[0] ?? null,
-          backupJsonBytes: backupEntry?.[1].byteLength ?? 0,
+          entryCount: zipEntryNames.length,
+          backupJsonName: backupName ?? null,
+          backupJsonLength,
           part: backupPart ?? null,
           segmentFiles: segmentFileEntries.length,
           characters: Array.isArray(data.characters) ? data.characters.length : null,
           inlineChats: Array.isArray(data.chats) ? data.chats.length : null,
           chatFiles: chatFileEntries.length,
-          mediaFiles: Object.keys(mediaFiles).length,
+          mediaFiles: mediaEntryNames.size,
           sampleEntries: zipEntryNames.slice(0, 20),
         });
 
-        // 相容新版流式備份格式：聊天存在 chats/*.json 中
-        // 不再一次性解析所有聊天到 data.chats，改為保留原始 Uint8Array 引用
-        // 在導入階段逐個解析、還原、寫入 IDB，降低記憶體峰值
+        // 新版流式備份格式：聊天存在 chats/*.json 中，導入階段才逐個讀出來
         if (
           !data.chats ||
           !Array.isArray(data.chats) ||
           data.chats.length === 0
         ) {
           if (chatFileEntries.length > 0) {
-            // 保留原始 bytes 引用，不立即解析
             (data as any)._pendingChatFiles = chatFileEntries;
             data.chats = []; // 佔位，後續逐個處理
             console.log(
               `[Import] 偵測到 ${chatFileEntries.length} 個流式聊天檔案，將逐個處理`,
             );
-          }
-        }
-
-        // 釋放不再需要的 ZIP 條目（非 media/、非 chats/、非 backup.json）
-        for (const key of Object.keys(files)) {
-          const baseName = getZipEntryBaseName(key);
-          if (
-            !getZipEntryRelativeToFolder(key, "media") &&
-            !getZipEntryRelativeToFolder(key, "chats") &&
-            !getZipEntryRelativeToFolder(key, "chat-segments") &&
-            baseName !== "backup.json" &&
-            baseName !== "data.json" &&
-            baseName !== "metadata.json"
-          ) {
-            delete files[key];
           }
         }
       }
@@ -571,7 +592,7 @@ export function useBackupImport() {
     // 導入聊天（圖片分離儲存）
     // 逐個處理流式備份的聊天檔案，避免一次性載入所有聊天到記憶體
     let importedChatCount = 0;
-    const pendingChatFiles: Array<[string, Uint8Array]> | undefined = (
+    const pendingChatFiles: Array<[string, string]> | undefined = (
       data as any
     )._pendingChatFiles;
     if (pendingChatFiles && pendingChatFiles.length > 0) {
@@ -579,20 +600,17 @@ export function useBackupImport() {
       for (let ci = 0; ci < pendingChatFiles.length; ci++) {
         let chatFileName = "";
         try {
-          const [currentChatFileName, content] = pendingChatFiles[ci];
+          const [currentChatFileName, entryName] = pendingChatFiles[ci];
           chatFileName = currentChatFileName;
-          const chat = JSON.parse(strFromU8(content));
-          // 釋放原始 bytes
+          const chat = JSON.parse(strFromU8(await zipSource!.read(entryName)));
           pendingChatFiles[ci] = null as any;
-          // 還原媒體
-          restoreChatMedia(chat, mediaFiles);
+          // 還原媒體（分批）並轉成儲存格式
+          const msgsForStorage = await prepareChatMessagesForStorage(chat);
           if (await ensureCharacterForImportedChat(chat, importedCharacterIds)) {
             recoveredCharacterCount++;
           }
           // v24：訊息分離儲存
-          const messagesToSave = chat.messages || [];
-          if (messagesToSave.length > 0) {
-            const msgsForStorage = await extractImagesFromMessages(messagesToSave);
+          if (msgsForStorage.length > 0) {
             if (session.segmentedChatIds.has(chat.id)) {
               // 同一批導入裡這個聊天的續段先到了（檔案順序亂了）：
               // 整個覆蓋會把續段的訊息刪掉，只能合併
@@ -623,16 +641,12 @@ export function useBackupImport() {
     if (segmentFileEntries.length > 0) {
       const { strFromU8 } = await import("fflate");
       for (let si = 0; si < segmentFileEntries.length; si++) {
-        const [segmentName, content] = segmentFileEntries[si];
-        // 釋放原始 bytes
-        segmentFileEntries[si] = null as any;
+        const [segmentName, entryName] = segmentFileEntries[si];
         try {
-          const segment = JSON.parse(strFromU8(content));
+          const segment = JSON.parse(strFromU8(await zipSource!.read(entryName)));
           if (!segment?.id) continue;
-          restoreChatMedia(segment, mediaFiles);
-          const messagesToSave = segment.messages || [];
-          if (messagesToSave.length > 0) {
-            const msgsForStorage = await extractImagesFromMessages(messagesToSave);
+          const msgsForStorage = await prepareChatMessagesForStorage(segment);
+          if (msgsForStorage.length > 0) {
             await upsertMessages(segment.id, msgsForStorage);
           }
           session.segmentedChatIds.add(segment.id);
@@ -1027,7 +1041,10 @@ export function useBackupImport() {
     // 錄音：本包的 media/ 檔還原成 Blob，id 不變，訊息與收藏裡的 audioBlobId 才對得上
     let importedAudioCount = 0;
     for (const entry of audioBlobEntries) {
-      const bytes = entry?.media ? mediaFiles[entry.media] : undefined;
+      const entryName = entry?.media ? mediaEntryNames.get(entry.media) : undefined;
+      const bytes = entry?.media
+        ? mediaFiles[entry.media] ?? (entryName ? await zipSource?.read(entryName) : undefined)
+        : undefined;
       if (!entry?.id || !bytes) continue;
       const mimeType = entry.mimeType || getMimeTypeFromFilename(entry.media);
       await db.put("audio-blobs", {
@@ -1064,7 +1081,7 @@ export function useBackupImport() {
       "錄音": importedAudioCount,
       "語音收藏": data.favoriteAudios?.length || 0,
       "圖庫圖片": data.imageGallery?.length || 0,
-      "媒體": Object.keys(mediaFiles).length,
+      "媒體": mediaEntryNames.size,
       },
       part: backupPart,
     };
