@@ -556,4 +556,54 @@ describe("備份來回", () => {
       expect(new Uint8Array(await restored!.blob.arrayBuffer())).toEqual(r.bytes);
     }
   });
+
+  it("很多張圖的聊天（超過一批）每張圖都還原回來，順序不亂", async () => {
+    const count = 45;
+    const images = Array.from({ length: count }, (_, i) => dataUrl("image/png", 400 + i, 100 + i));
+    await db.put(DB_STORES.CHATS, {
+      id: "chat-draw",
+      name: "畫圖的聊天",
+      characterId: "char-1",
+      messages: [],
+      createdAt: 1,
+      updatedAt: 1,
+    });
+    const messages: ChatMessage[] = [];
+    for (let i = 0; i < count; i++) {
+      await db.put(DB_STORES.IMAGE_CACHE, {
+        id: `chatimg_draw_${i}`,
+        data: images[i],
+        thumbnail: "",
+        fileName: "chat-image",
+        fileSize: images[i].length,
+        mimeType: "image/png",
+        createdAt: 1,
+        lastUsedAt: 1,
+        useCount: 0,
+      });
+      messages.push({
+        id: `draw-${i}`,
+        sender: "assistant",
+        name: "小明",
+        is_user: false,
+        status: "sent",
+        content: `第 ${i} 張`,
+        imageUrl: `chatimg_draw_${i}`,
+        createdAt: 10 + i,
+        updatedAt: 10 + i,
+      });
+    }
+    await appendChatMessages("chat-draw", messages);
+
+    const zip = await buildBackupZipStreaming();
+    await resetDatabases();
+    await importFiles([zipFile("aguaphone-backup.zip", zip)]);
+
+    const restored = await loadMessages("chat-draw");
+    expect(restored.map((m) => m.id)).toEqual(messages.map((m) => m.id));
+    for (let i = 0; i < count; i++) {
+      expect(isChatImageRef(restored[i].imageUrl)).toBe(true);
+      expect(await getChatImage(restored[i].imageUrl!)).toBe(images[i]);
+    }
+  });
 });
