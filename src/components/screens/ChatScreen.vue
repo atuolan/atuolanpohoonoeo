@@ -9519,6 +9519,9 @@ const {
   jsonlFileInputRef,
   triggerJsonlImport,
   handleJsonlFileSelected,
+  showJsonlImportChoice,
+  pickJsonlFile,
+  cancelJsonlImport,
   exportCurrentChat,
   startNewConversation,
   confirmNewConversation,
@@ -16546,6 +16549,44 @@ useChatCleanup({
               <button class="btn-confirm" @click="createNewChatFile(true)">
                 帶開場白
               </button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
+
+    <!-- 匯入 JSONL：選檔前先決定覆蓋還是另建（不用原生 confirm，iOS 會被選檔畫面吃掉） -->
+    <Teleport to="body">
+      <Transition name="fade">
+        <div
+          v-if="showJsonlImportChoice"
+          class="new-chat-confirm-overlay"
+          @click.self="cancelJsonlImport"
+        >
+          <div class="new-chat-confirm-modal">
+            <h3>匯入聊天記錄（JSONL）</h3>
+            <div class="new-conv-mode-list">
+              <div class="new-conv-mode-option selected" @click="pickJsonlFile('new')">
+                <div class="greeting-option-content">
+                  <span class="greeting-option-label">建立新聊天</span>
+                  <span class="greeting-option-preview"
+                    >匯入成一個新的聊天，目前這個聊天不會被動到。</span
+                  >
+                </div>
+              </div>
+              <div class="new-conv-mode-option" @click="pickJsonlFile('replace')">
+                <div class="greeting-option-content">
+                  <span class="greeting-option-label">覆蓋目前這個聊天</span>
+                  <span
+                    class="greeting-option-preview"
+                    style="color: var(--color-danger, #e53e3e);"
+                    >用檔案內容取代「{{ currentChatData?.name || "目前聊天" }}」的訊息。原本的內容會另存成「（覆蓋前備份）」聊天。</span
+                  >
+                </div>
+              </div>
+            </div>
+            <div class="new-chat-confirm-actions">
+              <button class="btn-cancel" @click="cancelJsonlImport">取消</button>
             </div>
           </div>
         </div>
