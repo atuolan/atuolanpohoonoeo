@@ -61,9 +61,31 @@ export function useChatExport(deps: {
     return list;
   });
 
+  /** 匯入 JSONL 前先問要覆蓋還是另建（App 內的視窗，iOS 的原生 confirm 會被選檔畫面吃掉） */
+  const showJsonlImportChoice = ref(false);
+  /** 選檔前就決定好的匯入方式；檔案選好後照這個做，不再另外問 */
+  let jsonlImportMode: "replace" | "new" | null = null;
+
   function triggerJsonlImport() {
     deps.showMoreMenu.value = false;
+    if (!deps.currentChatId.value) {
+      alert("沒有當前聊天");
+      return;
+    }
+    jsonlImportMode = null;
+    showJsonlImportChoice.value = true;
+  }
+
+  /** 在選擇視窗按下按鈕：記下方式後才開選檔（同一個點擊裡開，iOS 才放行） */
+  function pickJsonlFile(mode: "replace" | "new") {
+    jsonlImportMode = mode;
+    showJsonlImportChoice.value = false;
     jsonlFileInputRef.value?.click();
+  }
+
+  function cancelJsonlImport() {
+    jsonlImportMode = null;
+    showJsonlImportChoice.value = false;
   }
 
   async function handleJsonlFileSelected(event: Event) {
@@ -83,17 +105,20 @@ export function useChatExport(deps: {
       return;
     }
 
-    // 詢問用戶選擇匯入方式
-    const choice = confirm(
-      `請選擇匯入方式：\n\n確定 = 覆蓋當前聊天\n取消 = 創建新聊天\n\n檔案: ${file.name}`,
-    );
+    const mode = jsonlImportMode;
+    jsonlImportMode = null;
+    if (!mode) {
+      // 沒經過選擇視窗就選了檔案：什麼都不做，絕不預設成覆蓋
+      input.value = "";
+      return;
+    }
 
     try {
       const { getImportExportService } =
         await import("@/services/ImportExportService");
       const service = getImportExportService();
 
-      if (choice) {
+      if (mode === "replace") {
         // 覆蓋當前聊天
         const result = await service.replaceChatFromJsonl(
           file,
@@ -104,7 +129,10 @@ export function useChatExport(deps: {
           await deps.loadOrCreateChat();
           await nextTick();
           deps.scrollToBottom();
-          alert(`匯入成功！已覆蓋當前聊天，共 ${result.messageCount || 0} 條訊息`);
+          const backupNote = result.backupChat
+            ? `\n\n原本的內容已另存為「${result.backupChat.name}」，可從「聊天檔案」切換回去`
+            : "";
+          alert(`匯入成功！已覆蓋當前聊天，共 ${result.messageCount || 0} 條訊息${backupNote}`);
         } else {
           alert(`匯入失敗: ${result.error}`);
         }
@@ -380,6 +408,9 @@ export function useChatExport(deps: {
     jsonlFileInputRef,
     triggerJsonlImport,
     handleJsonlFileSelected,
+    showJsonlImportChoice,
+    pickJsonlFile,
+    cancelJsonlImport,
     exportCurrentChat,
     startNewConversation,
     confirmNewConversation,

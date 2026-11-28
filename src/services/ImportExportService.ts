@@ -10,8 +10,6 @@ import _ from "lodash";
 import type { ConversationSummary, DiaryEntry } from "../db/database";
 import { db, DB_STORES } from "../db/database";
 import {
-  collectImageRefs,
-  deleteChatImagesByRefs,
   extractImagesFromMessages,
   restoreImagesToMessages,
 } from "../db/operations";
@@ -1958,7 +1956,8 @@ export class ImportExportService {
   }
 
   /**
-   * 從 JSONL 覆蓋當前聊天（清空後重新導入）
+   * 從 JSONL 覆蓋當前聊天（清空後重新導入）。
+   * 覆蓋前會把原本的訊息另存成一個「（覆蓋前備份）」聊天，選錯聊天也救得回來。
    */
   async replaceChatFromJsonl(
     file: File,
@@ -1966,6 +1965,8 @@ export class ImportExportService {
   ): Promise<{
     success: boolean;
     messageCount?: number;
+    /** 覆蓋前的內容另存到的聊天（原本沒有訊息就不會建立） */
+    backupChat?: Chat;
     error?: string;
   }> {
     try {
@@ -2003,13 +2004,8 @@ export class ImportExportService {
         return { success: false, error: "找不到目標聊天" };
       }
 
-      // v24：從 chatMessages 表載入舊訊息以清理圖片
-      const oldMsgList = await loadMessages(targetChatId);
-      if (oldMsgList.length > 0) {
-        const oldMessages = await restoreImagesToMessages(oldMsgList);
-        const imageRefs = collectImageRefs(oldMessages);
-        await deleteChatImagesByRefs(imageRefs);
-      }
+      // 原本的訊息不刪：整份搬到新的備份聊天（圖片引用跟著走，所以舊圖片也不清）
+      const backupChat = await this._copyChatAsBackup(chat, await loadMessages(targetChatId));
 
       // 匯入 variables
       if (metadata.chat_metadata?.variables) {
@@ -2030,7 +2026,7 @@ export class ImportExportService {
       await saveChatMetadata(chat);
       await refreshChatDerivedMetadata(targetChatId);
 
-      return { success: true, messageCount: messages.length };
+      return { success: true, messageCount: messages.length, backupChat };
     } catch (e) {
       console.error(
         "[ImportExportService] Failed to replace chat from JSONL:",
@@ -2038,6 +2034,38 @@ export class ImportExportService {
       );
       return { success: false, error: String(e) };
     }
+  }
+
+  /** 把聊天目前的訊息另存成新聊天「（覆蓋前備份）」；沒有訊息就不建立 */
+  private async _copyChatAsBackup(
+    chat: Chat,
+    storedMessages: ChatMessage[],
+  ): Promise<Chat | undefined> {
+    if (storedMessages.length === 0) return undefined;
+    const now = Date.now();
+    const backup: Chat = {
+      ...JSON.parse(JSON.stringify(chat)),
+      id: crypto.randomUUID(),
+      name: `${chat.name || "聊天"}（覆蓋前備份）`,
+      messages: [],
+      createdAt: now,
+      updatedAt: now,
+    };
+    // 訊息 ID 是整個訊息表的主鍵，換新的才不會跟原聊天搶同一筆；回覆引用跟著換（同建立分支）
+    const idMap = new Map<string, string>();
+    const copied = storedMessages.map((msg) => {
+      const id = crypto.randomUUID();
+      idMap.set(msg.id, id);
+      return { ...msg, id };
+    });
+    for (const msg of copied as any[]) {
+      if (msg.replyTo && idMap.has(msg.replyTo)) msg.replyTo = idMap.get(msg.replyTo);
+      if (msg.replyToId && idMap.has(msg.replyToId)) msg.replyToId = idMap.get(msg.replyToId);
+    }
+    await saveMessages(backup.id, copied);
+    await saveChatMetadata(backup);
+    await refreshChatDerivedMetadata(backup.id);
+    return backup;
   }
 
   /**
